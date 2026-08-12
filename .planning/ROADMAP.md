@@ -39,6 +39,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 1: Foundation & Toolchain
 **Goal**: A single static mediadiff binary builds reproducibly and runs on Linux, macOS and Windows, with every toolchain decision the later phases depend on already made and recorded.
 **Depends on**: Nothing (first phase)
+**UI hint**: no
 **Requirements**: BUILD-01, BUILD-02, BUILD-03, BUILD-04, BUILD-05, BUILD-06, BUILD-07, BUILD-08, BUILD-09, BUILD-10, CLI-05, CLI-09
 **Success Criteria** (what must be TRUE):
   1. `mediadiff --version` runs from a clean checkout on Linux (GCC ≥ 12 / Clang ≥ 15), macOS (Xcode 15+) and Windows (VS 2022 v143), printing the tool version, the linked FFmpeg library versions, and the enabled feature set with `vmaf` absent by default.
@@ -52,6 +53,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 2: Core Engine
 **Goal**: The complete compare engine — registry, comparison semantics, policy resolution, snapshots, all four report formats and `dir` orchestration — works end to end against stub measurements, so every analyzer that follows plugs into finished machinery.
 **Depends on**: Phase 1
+**UI hint**: no
 **Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-06, CLI-07, CLI-08, CLI-10, ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, ENG-06, ENG-07, ENG-08, ENG-09, ENG-10, ENG-11, ENG-12, ENG-13, ENG-14, ENG-15, ENG-16, SNAP-01, SNAP-02, SNAP-03, SNAP-04, SNAP-05, SNAP-06, SNAP-07, REPORT-01, REPORT-02, REPORT-03, REPORT-04, REPORT-05, REPORT-06, REPORT-07, DIR-01, DIR-02, DIR-03, DIR-04, DIR-05, TRUST-03, TRUST-05, TRUST-08, DOC-01, DOC-02
 **Success Criteria** (what must be TRUE):
   1. `mediadiff snapshot f && mediadiff compare f f.snap.json` is clean by construction, the `*.snap.json` reads cleanly in `git diff` with times stored as rationals, its envelope carries a decode-path signature that already includes the libavcodec/libavformat/swscale toolchain versions, `compare` refuses an incompatible `schema_version` major with exit 65, and `snapshot` refuses to overwrite a tracked baseline in CI without an explicit `--force`.
@@ -65,6 +67,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 3: Probe Layer, Container & Size
 **Goal**: Real media enters the engine — one header pass and one packet sweep feed every container, metadata and size check, plus the shared primitives that later phases consume instead of recomputing.
 **Depends on**: Phase 2
+**UI hint**: no
 **Requirements**: PROBE-01, PROBE-02, PROBE-04, PROBE-05, PROBE-06, PROBE-07, PROBE-08, PROBE-09, PROBE-10, CONT-01, CONT-02, CONT-03, CONT-04, CONT-05, CONT-06, CONT-07, CONT-08, CONT-09, SIZE-01, DIR-06, TRUST-06, TRUST-09, DOC-03
 **Success Criteria** (what must be TRUE):
   1. `mediadiff inspect` on an MP4/MOV, a Matroska/WebM and an MPEG-TS file renders a complete container section — generic topology including subtitle and caption track presence, per-format mechanisms (faststart, brands, edit lists, Cues placement, CodecDelay, CC errors, PCR/PSI intervals, null ratio), per-program measurements on multi-program TS, and metadata tags compared as a set with volatile keys ignored but still shown under `-v`.
@@ -78,6 +81,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 4: Video Analysis
 **Goal**: Every `video.*` fact — stream parameters, GOP structure, colorimetry and HDR metadata — is measured from a parser pass that costs a fraction of full decode.
 **Depends on**: Phase 3
+**UI hint**: no
 **Requirements**: PROBE-03, VIDEO-01, VIDEO-02, VIDEO-03, VIDEO-04, VIDEO-05, VIDEO-06, VIDEO-07, VIDEO-08, VIDEO-09, VIDEO-10, VIDEO-12
 **Success Criteria** (what must be TRUE):
   1. A silent color-range flip produces exactly **one** finding, on `video.color.range`, whether it was spelled as a `yuvj420p` pix_fmt or as a range flag; primaries, transfer, matrix and chroma location compare alongside it; and a change **to** `unspecified` is reported as metadata loss rather than treated as a wildcard match.
@@ -91,6 +95,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 5: Timeline Analysis
 **Goal**: The family mediadiff is judged on — every `timeline.*` check and the A/V drift algorithm — computed on integer/rational math with false positives designed out.
 **Depends on**: Phase 3 (Phase 4 for GOP-adjacent evidence)
+**UI hint**: no
 **Requirements**: TIME-01, TIME-02, TIME-03, TIME-04, TIME-05, TIME-06, TIME-07, TIME-08, TIME-09, TIME-10, TIME-11, DOC-04, PERF-01, PERF-03, PERF-05
 **Success Criteria** (what must be TRUE):
   1. A 0.1% audio clock error is reported as `linear-drift` with a rate in ms/min and an end delta; a spliced 100 ms trim is reported as `step` with the step time; a pure offset is reported as `constant-offset` — and each fixture produces exactly the intended finding and **nothing else**, with the full checkpoint trajectory stored in the fingerprint so snapshot comparison keeps the same fidelity.
@@ -104,6 +109,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 6: Audio Analysis
 **Goal**: The audio decode path and every `audio.*` check, moving the decode-determinism classes from shared vocabulary to a mechanically enforced guarantee.
 **Depends on**: Phase 3
+**UI hint**: no
 **Requirements**: AUDIO-01, AUDIO-02, AUDIO-03, AUDIO-04, AUDIO-05, AUDIO-06, AUDIO-07, AUDIO-08, AUDIO-09, AUDIO-10, TRUST-01, TRUST-02, PERF-04
 **Success Criteria** (what must be TRUE):
   1. `mediadiff inspect` renders a complete audio section — codec, profile carrying the HE-AAC SBR signaling mode (implicit vs explicit), sample rate, sample format/bit depth, channel count and canonical layout — and `5.1` vs `5.1(side)` is reported as a regression rather than matching on channel count.
@@ -117,6 +123,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 7: Content & Quality
 **Goal**: The video decode path closes v1 — frame-exact content comparison, perceptual scoring and opt-in full-reference quality metrics, all inside one decode sweep and under the same trust guarantees as everything before it.
 **Depends on**: Phase 4, Phase 5, Phase 6
+**UI hint**: no
 **Requirements**: VIDEO-11, CONTENT-01, CONTENT-02, CONTENT-03, CONTENT-04, CONTENT-05, CONTENT-06, CONTENT-07, CONTENT-08, CONTENT-09, CONTENT-10, CONTENT-11, TRUST-04, TRUST-07, PERF-02
 **Success Criteria** (what must be TRUE):
   1. A one-frame bitstream corruption is located exactly — first divergent frame index and PTS, contiguous divergent ranges merged at 1-frame gaps, total differing count — from a hash chain computed over exactly `bytes_per_row(width) × height` per plane, never `linesize`.
