@@ -18,13 +18,17 @@ mediadiff_apply_warnings(mediadiff_integration_tests)
 
 include(CTest)
 include(Catch)
-catch_discover_tests(mediadiff_integration_tests)
+# TEST_PREFIX mirrors the unit suite's `unit.` convention so that
+# `ctest -R integration` genuinely selects this suite. Without it the filter
+# matches zero tests and reports success — a silently-passing gate, which is
+# the precise failure mode this project treats as P0.
+catch_discover_tests(mediadiff_integration_tests TEST_PREFIX "integration.")
 
 # BUILD-04: standalone CMake script (cmake -P), not part of the build graph
 # — kept as a CTest test so it participates in the per-wave `ctest` sampling
 # loop without slowing every incremental `cmake --build`.
 add_test(
-  NAME static_link
+  NAME integration.static_link
   COMMAND "${CMAKE_COMMAND}" "-DMEDIADIFF_BINARY=$<TARGET_FILE:mediadiff>"
           -P "${CMAKE_CURRENT_SOURCE_DIR}/check_static_link.cmake"
 )
