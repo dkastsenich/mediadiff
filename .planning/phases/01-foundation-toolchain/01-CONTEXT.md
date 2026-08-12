@@ -34,7 +34,9 @@ All eight decisions below were auto-resolved under `--auto` using the recommende
 
   **Record the pin as an explicit decision in PROJECT.md Key Decisions with this rationale.** BUILD-10 is satisfied by the recording, not merely by the pin existing.
 
-- **D-02: Use `tl-expected` from vcpkg, aliased behind `mediadiff::expected<T,E>` in a single `src/util/expected.h`.** — **Reversibility:** reversible — the alias is the whole point; swapping to `std::expected` on a future C++23 bump touches one header.
+- **D-02: Use `tl-expected` from vcpkg, aliased behind a project-owned `expected` type in a single `src/util/expected.h`.** — **Reversibility:** reversible — the alias is the whole point; swapping to `std::expected` on a future C++23 bump touches one header.
+
+  The alias is spelled `mediadiff::expected<T, E>`.
 
   `std::expected` is C++23; the project targets C++20 (ARCHITECTURE). Hand-rolling means writing and testing the monadic operations (`and_then`, `transform`, `or_else`) that `core/` will lean on constantly — pure cost. `tl-expected` is header-only, tracks the standard proposal closely, and is one manifest line. `expected-lite` is an acceptable substitute if the port is unhealthy at pin time.
 
