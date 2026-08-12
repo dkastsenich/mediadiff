@@ -73,7 +73,13 @@ endif()
 # --- Warnings-as-errors on first-party targets only -------------------------
 function(mediadiff_apply_warnings target)
   if(MSVC)
-    target_compile_options(${target} PRIVATE /W4 /WX)
+    # /utf-8 per PROJECT.md's Windows toolchain constraint: without it MSVC
+    # interprets narrow-string universal-character-name escapes (\uXXXX /
+    # \UXXXXXXXX, as used by tests/unit/test_fs_utf8.cpp's non-ASCII
+    # fixtures) and any non-ASCII source bytes using the ambient code page
+    # instead of UTF-8, which would silently corrupt exactly the kind of
+    # literal this plan's shim exists to handle correctly (D-04).
+    target_compile_options(${target} PRIVATE /W4 /WX /utf-8)
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
   endif()
@@ -85,6 +91,17 @@ mediadiff_apply_warnings(libmediadiff)
 add_executable(mediadiff src/cli/main.cpp)
 target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11)
 mediadiff_apply_warnings(mediadiff)
+
+if(WIN32)
+  # UTF-8 active-code-page manifest (D-04, CLI-09) — belt-and-braces
+  # covering any narrow-API path src/util/fs.h does not reach. MSVC's
+  # default /manifest:embed linker behavior embeds this .manifest source
+  # file automatically; no manifest-tool invocation needed.
+  target_sources(mediadiff PRIVATE app.manifest)
+  # CommandLineToArgvW (src/cli/main.cpp's Windows entry point) lives in
+  # Shell32.
+  target_link_libraries(mediadiff PRIVATE Shell32)
+endif()
 
 enable_testing()
 add_subdirectory(tests)

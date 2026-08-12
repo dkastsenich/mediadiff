@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  UTF-8 active code page declaration (D-04, CLI-09) — belt-and-braces
+  covering any Windows narrow-API path src/util/fs.h does not reach.
+  mediadiff's own file I/O already goes through the wide-character shim in
+  src/util/fs.h regardless of this setting; this manifest is the backstop
+  for any third-party narrow-API call this project does not control
+  directly. Requires Windows 10 1903 or later, which D-04 already accepts
+  as the floor. Attached to the mediadiff executable only, via a WIN32
+  guard in CMakeLists.txt; MSVC's default /manifest:embed linker behavior
+  embeds this manifest source file automatically.
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1"
+          xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+    <asmv3:application>
+        <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">
+            <activeCodePage>UTF-8</activeCodePage>
+        </asmv3:windowsSettings>
+    </asmv3:application>
+</assembly>
