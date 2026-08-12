@@ -12,12 +12,12 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **BUILD-01**: Project builds from a clean checkout on Linux (GCC ≥ 12 / Clang ≥ 15), macOS (Xcode 15+), and Windows (VS 2022 v143) via CMake ≥ 3.25 presets — *x64-linux verified in Plan 01-01; macOS and Windows land with the CI matrix in Plan 01-05*
 - [x] **BUILD-02**: Dependencies resolve reproducibly through a vcpkg manifest with a pinned `builtin-baseline`, vcpkg itself pinned as a git submodule
 - [x] **BUILD-03**: FFmpeg links as a decode-only LGPL subset (`avcodec`, `avformat`, `swscale`, `swresample`, `dav1d`, `zlib`; `default-features: false`), with a build-time assertion that no GPL component is linked
-- [ ] **BUILD-04**: The release artifact is a single static binary per platform requiring no runtime FFmpeg install (`x64-windows-static-md` on Windows; static triplets elsewhere)
+- [x] **BUILD-04**: The release artifact is a single static binary per platform requiring no runtime FFmpeg install (`x64-windows-static-md` on Windows; static triplets elsewhere)
 - [ ] **BUILD-05**: CI runs a 3-OS matrix with warnings-as-errors (`/W4`, `-Wall -Wextra`) and green status is required to merge
 - [ ] **BUILD-06**: CI caches vcpkg binaries so an incremental build does not rebuild FFmpeg — **[R]** using NuGet/GitHub-Packages or `lukka/run-vcpkg`, **not** the removed `x-gha` backend (research: STACK, corrects doc 00 §5.1)
 - [x] **BUILD-07**: **[R]** An `expected<T, E>` implementation is pinned as an explicit dependency, since `std::expected` is C++23 and the project targets C++20 (research: ARCHITECTURE — gap in doc 00 §5.2 vs doc 00 §9)
 - [ ] **BUILD-08**: `scripts/gen_corpus.{sh,ps1}` synthesizes every test fixture deterministically (`-flags +bitexact -fflags +bitexact`); no media binary is ever committed to git
-- [ ] **BUILD-09**: Optional `libvmaf` support is gated behind `MEDIADIFF_WITH_VMAF` and absent by default
+- [x] **BUILD-09**: Optional `libvmaf` support is gated behind `MEDIADIFF_WITH_VMAF` and absent by default
 - [x] **BUILD-10**: **[R]** The FFmpeg major-version baseline is an explicitly recorded decision (9.0 vs 8.1), not an incidental consequence of the vcpkg baseline (research: STACK — FFmpeg 9.0 released 2026-08-04; docs say "7.x/8.x")
 
 ### CLI Surface
@@ -247,12 +247,12 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | BUILD-01 | Phase 1 | Complete |
 | BUILD-02 | Phase 1 | Complete |
 | BUILD-03 | Phase 1 | Complete |
-| BUILD-04 | Phase 1 | Pending |
+| BUILD-04 | Phase 1 | Complete |
 | BUILD-05 | Phase 1 | Pending |
 | BUILD-06 | Phase 1 | Pending |
 | BUILD-07 | Phase 1 | Complete |
 | BUILD-08 | Phase 1 | Pending |
-| BUILD-09 | Phase 1 | Pending |
+| BUILD-09 | Phase 1 | Complete |
 | BUILD-10 | Phase 1 | Complete |
 | CLI-01 | Phase 2 | Pending |
 | CLI-02 | Phase 2 | Pending |
