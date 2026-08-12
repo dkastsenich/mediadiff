@@ -47,7 +47,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Two machines resolving the same manifest get the same dependency set — the FFmpeg major-version baseline and the `expected<T, Error>` implementation are both explicit, recorded decisions rather than incidental consequences of the vcpkg baseline.
   4. CI is green across the 3-OS matrix with warnings-as-errors, and a repeat run restores vcpkg binaries from cache instead of rebuilding FFmpeg from source.
   5. A path containing non-ASCII characters opens correctly on Windows with color output still rendering, and `scripts/gen_corpus` regenerates every fixture deterministically from a tree containing no committed media binary.
-**Plans**: TBD
+**Plans**: 5 plans in 3 waves
+Plans:
+- [ ] 01-01-PLAN.md — Tracer: vcpkg manifest, CMake presets and lib/cli targets build one static binary on x64-linux that prints `--version` and passes the LGPL and `expected<T,E>` unit tests; FFmpeg pin recorded in PROJECT.md
+- [ ] 01-02-PLAN.md — Integration harness asserting all four `--version` fields, the optional quality-metric feature absent by default, and no FFmpeg shared-library dependency in the shipped executable
+- [ ] 01-03-PLAN.md — Windows UTF-8 text handling: `util/fs.h` shim, UTF-16 argv conversion at entry, UTF-8 code-page manifest, VT output, non-ASCII round-trip test
+- [ ] 01-04-PLAN.md — Repository tree, licence/notice/format/ignore files, the ENG-16 library-boundary lint, and the deterministic `gen_corpus` skeleton with recorded generator identity
+- [ ] 01-05-PLAN.md — 3-OS blocking CI matrix plus 2 non-blocking legs with warnings-as-errors, boundary lint, and vcpkg binary caching via a NuGet feed on GitHub Packages
 **Source doc**: `claude_docs/00-design-and-requirements.md` (design-doc phase 0)
 
 ### Phase 2: Core Engine
@@ -141,7 +147,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Toolchain | 0/TBD | Not started | - |
+| 1. Foundation & Toolchain | 0/5 | Planned | - |
 | 2. Core Engine | 0/TBD | Not started | - |
 | 3. Probe Layer, Container & Size | 0/TBD | Not started | - |
 | 4. Video Analysis | 0/TBD | Not started | - |
