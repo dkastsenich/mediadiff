@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Foundation & Toolchain
 status: executing
-stopped_at: Phase 1 planned and verified; paused before execution pending ffmpeg + VCPKG_PAT_TOKEN setup
-last_updated: "2026-08-12T18:28:56.054Z"
+stopped_at: Completed 01-01-PLAN.md (tracer plan) — x64-linux mediadiff --version working, 6/6 unit tests pass
+last_updated: "2026-08-12T21:46:09.099Z"
 last_activity: 2026-08-12
 last_activity_desc: Roadmap created; 138 v1 requirements mapped across 7 phases
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # Project State
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 
 ## Current Position
 
-Phase: 1 of 7 (Foundation & Toolchain)
-Plan: 0 of TBD in current phase
+Phase: 1 (Foundation & Toolchain) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-08-12 — Roadmap created; 138 v1 requirements mapped across 7 phases
+Last activity: 2026-08-12 — Phase 1 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -54,6 +54,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 50min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -67,6 +72,8 @@ Recent decisions affecting current work:
 - [Roadmap]: Interval statistics (PROBE-10) extracted as a shared probe-level primitive in Phase 3, consumed by both Phase 4 video and Phase 5 timeline — resolves the frame-rate ordering inversion without reordering phases (hazard A).
 - [Roadmap]: Trust requirements (TRUST-01..09) distributed across Phases 2/3/6/7 rather than collected into a trailing trust phase.
 - [Phase 1 scope]: Two open decisions must be recorded during Phase 1 — FFmpeg major baseline (9.0 vs 8.1, BUILD-10) and the `expected<T,E>` implementation (backport library vs hand-rolled, BUILD-07).
+- [Phase 1]: FFmpeg pinned to 8.1 (port-version 4) via vcpkg.json overrides — recorded in PROJECT.md per BUILD-10
+- [Phase 1]: mediadiff::expected<T,E> aliases tl-expected 1.3.1 in src/util/expected.h, the sole permitted tl::expected naming site — recorded in PROJECT.md per BUILD-07
 
 ### Pending Todos
 
@@ -88,6 +95,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-12T18:28:56.041Z
-Stopped at: Phase 1 planned and verified; paused before execution pending ffmpeg + VCPKG_PAT_TOKEN setup
-Resume file: .planning/phases/01-foundation-toolchain/01-01-PLAN.md
+Last session: 2026-08-12T21:46:09.084Z
+Stopped at: Completed 01-01-PLAN.md (tracer plan) — x64-linux mediadiff --version working, 6/6 unit tests pass
+Resume file: None
