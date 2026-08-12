@@ -237,17 +237,172 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Populated during roadmap creation.
+Which phases cover which requirements. Every v1 requirement maps to exactly one phase.
+
+Phase numbering note: ROADMAP phases are 1-7; the design docs number their phases 0-6.
+ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap creation) | — | Pending |
+| BUILD-01 | Phase 1 | Pending |
+| BUILD-02 | Phase 1 | Pending |
+| BUILD-03 | Phase 1 | Pending |
+| BUILD-04 | Phase 1 | Pending |
+| BUILD-05 | Phase 1 | Pending |
+| BUILD-06 | Phase 1 | Pending |
+| BUILD-07 | Phase 1 | Pending |
+| BUILD-08 | Phase 1 | Pending |
+| BUILD-09 | Phase 1 | Pending |
+| BUILD-10 | Phase 1 | Pending |
+| CLI-01 | Phase 2 | Pending |
+| CLI-02 | Phase 2 | Pending |
+| CLI-03 | Phase 2 | Pending |
+| CLI-04 | Phase 2 | Pending |
+| CLI-05 | Phase 1 | Pending |
+| CLI-06 | Phase 2 | Pending |
+| CLI-07 | Phase 2 | Pending |
+| CLI-08 | Phase 2 | Pending |
+| CLI-09 | Phase 1 | Pending |
+| CLI-10 | Phase 2 | Pending |
+| ENG-01 | Phase 2 | Pending |
+| ENG-02 | Phase 2 | Pending |
+| ENG-03 | Phase 2 | Pending |
+| ENG-04 | Phase 2 | Pending |
+| ENG-05 | Phase 2 | Pending |
+| ENG-06 | Phase 2 | Pending |
+| ENG-07 | Phase 2 | Pending |
+| ENG-08 | Phase 2 | Pending |
+| ENG-09 | Phase 2 | Pending |
+| ENG-10 | Phase 2 | Pending |
+| ENG-11 | Phase 2 | Pending |
+| ENG-12 | Phase 2 | Pending |
+| ENG-13 | Phase 2 | Pending |
+| ENG-14 | Phase 2 | Pending |
+| ENG-15 | Phase 2 | Pending |
+| ENG-16 | Phase 2 | Pending |
+| SNAP-01 | Phase 2 | Pending |
+| SNAP-02 | Phase 2 | Pending |
+| SNAP-03 | Phase 2 | Pending |
+| SNAP-04 | Phase 2 | Pending |
+| SNAP-05 | Phase 2 | Pending |
+| SNAP-06 | Phase 2 | Pending |
+| SNAP-07 | Phase 2 | Pending |
+| REPORT-01 | Phase 2 | Pending |
+| REPORT-02 | Phase 2 | Pending |
+| REPORT-03 | Phase 2 | Pending |
+| REPORT-04 | Phase 2 | Pending |
+| REPORT-05 | Phase 2 | Pending |
+| REPORT-06 | Phase 2 | Pending |
+| REPORT-07 | Phase 2 | Pending |
+| DIR-01 | Phase 2 | Pending |
+| DIR-02 | Phase 2 | Pending |
+| DIR-03 | Phase 2 | Pending |
+| DIR-04 | Phase 2 | Pending |
+| DIR-05 | Phase 2 | Pending |
+| DIR-06 | Phase 3 | Pending |
+| PROBE-01 | Phase 3 | Pending |
+| PROBE-02 | Phase 3 | Pending |
+| PROBE-03 | Phase 4 | Pending |
+| PROBE-04 | Phase 3 | Pending |
+| PROBE-05 | Phase 3 | Pending |
+| PROBE-06 | Phase 3 | Pending |
+| PROBE-07 | Phase 3 | Pending |
+| PROBE-08 | Phase 3 | Pending |
+| PROBE-09 | Phase 3 | Pending |
+| PROBE-10 | Phase 3 | Pending |
+| CONT-01 | Phase 3 | Pending |
+| CONT-02 | Phase 3 | Pending |
+| CONT-03 | Phase 3 | Pending |
+| CONT-04 | Phase 3 | Pending |
+| CONT-05 | Phase 3 | Pending |
+| CONT-06 | Phase 3 | Pending |
+| CONT-07 | Phase 3 | Pending |
+| CONT-08 | Phase 3 | Pending |
+| CONT-09 | Phase 3 | Pending |
+| VIDEO-01 | Phase 4 | Pending |
+| VIDEO-02 | Phase 4 | Pending |
+| VIDEO-03 | Phase 4 | Pending |
+| VIDEO-04 | Phase 4 | Pending |
+| VIDEO-05 | Phase 4 | Pending |
+| VIDEO-06 | Phase 4 | Pending |
+| VIDEO-07 | Phase 4 | Pending |
+| VIDEO-08 | Phase 4 | Pending |
+| VIDEO-09 | Phase 4 | Pending |
+| VIDEO-10 | Phase 4 | Pending |
+| VIDEO-11 | Phase 7 | Pending |
+| VIDEO-12 | Phase 4 | Pending |
+| TIME-01 | Phase 5 | Pending |
+| TIME-02 | Phase 5 | Pending |
+| TIME-03 | Phase 5 | Pending |
+| TIME-04 | Phase 5 | Pending |
+| TIME-05 | Phase 5 | Pending |
+| TIME-06 | Phase 5 | Pending |
+| TIME-07 | Phase 5 | Pending |
+| TIME-08 | Phase 5 | Pending |
+| TIME-09 | Phase 5 | Pending |
+| TIME-10 | Phase 5 | Pending |
+| TIME-11 | Phase 5 | Pending |
+| AUDIO-01 | Phase 6 | Pending |
+| AUDIO-02 | Phase 6 | Pending |
+| AUDIO-03 | Phase 6 | Pending |
+| AUDIO-04 | Phase 6 | Pending |
+| AUDIO-05 | Phase 6 | Pending |
+| AUDIO-06 | Phase 6 | Pending |
+| AUDIO-07 | Phase 6 | Pending |
+| AUDIO-08 | Phase 6 | Pending |
+| AUDIO-09 | Phase 6 | Pending |
+| AUDIO-10 | Phase 6 | Pending |
+| SIZE-01 | Phase 3 | Pending |
+| CONTENT-01 | Phase 7 | Pending |
+| CONTENT-02 | Phase 7 | Pending |
+| CONTENT-03 | Phase 7 | Pending |
+| CONTENT-04 | Phase 7 | Pending |
+| CONTENT-05 | Phase 7 | Pending |
+| CONTENT-06 | Phase 7 | Pending |
+| CONTENT-07 | Phase 7 | Pending |
+| CONTENT-08 | Phase 7 | Pending |
+| CONTENT-09 | Phase 7 | Pending |
+| CONTENT-10 | Phase 7 | Pending |
+| CONTENT-11 | Phase 7 | Pending |
+| TRUST-01 | Phase 6 | Pending |
+| TRUST-02 | Phase 6 | Pending |
+| TRUST-03 | Phase 2 | Pending |
+| TRUST-04 | Phase 7 | Pending |
+| TRUST-05 | Phase 2 | Pending |
+| TRUST-06 | Phase 3 | Pending |
+| TRUST-07 | Phase 7 | Pending |
+| TRUST-08 | Phase 2 | Pending |
+| TRUST-09 | Phase 3 | Pending |
+| DOC-01 | Phase 2 | Pending |
+| DOC-02 | Phase 2 | Pending |
+| DOC-03 | Phase 3 | Pending |
+| DOC-04 | Phase 5 | Pending |
+| PERF-01 | Phase 5 | Pending |
+| PERF-02 | Phase 7 | Pending |
+| PERF-03 | Phase 5 | Pending |
+| PERF-04 | Phase 6 | Pending |
+| PERF-05 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 138 total
-- Mapped to phases: 0
-- Unmapped: 138 ⚠️
+- Mapped to phases: 138
+- Unmapped: 0
+
+| Phase | Name | Requirements |
+|-------|------|--------------|
+| 1 | Foundation & Toolchain | 12 |
+| 2 | Core Engine | 48 |
+| 3 | Probe Layer, Container & Size | 23 |
+| 4 | Video Analysis | 12 |
+| 5 | Timeline Analysis | 15 |
+| 6 | Audio Analysis | 13 |
+| 7 | Content & Quality | 15 |
+| **Total** | | **138** |
+
+Requirements placed outside the phase their ID prefix suggests (SIZE-01, PROBE-03, PROBE-10,
+DIR-06, VIDEO-11, all TRUST-*, all DOC-*, all PERF-*) are justified individually in
+`.planning/ROADMAP.md` under "Cross-cutting requirement placements".
 
 ---
 *Requirements defined: 2026-08-12*
-*Last updated: 2026-08-12 after initial definition*
+*Last updated: 2026-08-12 after roadmap creation (traceability populated)*
