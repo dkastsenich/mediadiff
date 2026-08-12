@@ -1,0 +1,9 @@
+# CMake build output (per-preset binary dirs)
+/build/
+
+# vcpkg local caches/buildtrees produced by `cmake --preset` inside the
+# submodule (the submodule itself is pinned/tracked; its runtime output isn't)
+/vcpkg/buildtrees/
+/vcpkg/downloads/
+/vcpkg/packages/
+/vcpkg/installed/

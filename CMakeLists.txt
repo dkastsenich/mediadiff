@@ -1,0 +1,90 @@
+cmake_minimum_required(VERSION 3.25)
+
+project(mediadiff VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# --- Toolchain floor guard --------------------------------------------------
+# Compiler-floor requirement per PROJECT.md constraints: GCC >= 12, Clang >= 15,
+# AppleClang (Xcode 15+, reports as AppleClang >= 15), MSVC v143 (>= 19.30).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
+  message(FATAL_ERROR "mediadiff requires GCC >= 12, found ${CMAKE_CXX_COMPILER_VERSION}")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+  message(FATAL_ERROR "mediadiff requires Clang >= 15, found ${CMAKE_CXX_COMPILER_VERSION}")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 15)
+  message(FATAL_ERROR "mediadiff requires AppleClang (Xcode 15+) >= 15, found ${CMAKE_CXX_COMPILER_VERSION}")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 19.30)
+  message(FATAL_ERROR "mediadiff requires MSVC v143 (>= 19.30), found ${CMAKE_CXX_COMPILER_VERSION}")
+endif()
+
+option(MEDIADIFF_WITH_VMAF "Enable libvmaf-backed quality metrics" OFF)
+
+# --- Configure-time GPL fast-fail (belt-and-braces; the mandatory check is
+#     the runtime avutil_license()/avcodec_license()/avformat_license()
+#     assertion in tests/unit/test_license.cpp, per D-03) --------------------
+# vcpkg manifest-mode installs do not reliably produce the classic dpkg-style
+# `installed/vcpkg/status` file, so this scans the resolved install tree for
+# GPL-only codec artifacts directly instead of parsing any vcpkg-internal state.
+foreach(forbidden_lib x264 x265 xvidcore)
+  find_library(_FORBIDDEN_${forbidden_lib} NAMES ${forbidden_lib}
+               PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib" NO_DEFAULT_PATH)
+  if(_FORBIDDEN_${forbidden_lib})
+    message(FATAL_ERROR "GPL-only codec '${forbidden_lib}' resolved into the vcpkg install tree — check vcpkg.json features/overrides.")
+  endif()
+endforeach()
+
+find_package(FFMPEG REQUIRED)
+find_package(CLI11 CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
+
+# --- libmediadiff ------------------------------------------------------------
+# No stdout, no exit() — ENG-16 architectural invariant (D-07). Enforced
+# structurally in Plan 04 via a CI lint over this target's sources.
+add_library(libmediadiff STATIC
+  src/util/version.cpp
+)
+set_target_properties(libmediadiff PROPERTIES OUTPUT_NAME mediadiff_core)
+
+target_include_directories(libmediadiff PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
+)
+target_include_directories(libmediadiff SYSTEM PUBLIC ${FFMPEG_INCLUDE_DIRS})
+target_link_directories(libmediadiff PUBLIC ${FFMPEG_LIBRARY_DIRS})
+target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt)
+
+if(APPLE)
+  # vcpkg's FindFFMPEG.cmake.in has no Apple-framework pass-through, while the
+  # ffmpeg portfile unconditionally enables AppKit/AVFoundation/CoreImage/
+  # AudioToolbox/VideoToolbox on macOS — link the frameworks explicitly.
+  target_link_libraries(libmediadiff PUBLIC
+    "-framework AppKit" "-framework AVFoundation" "-framework CoreImage"
+    "-framework AudioToolbox" "-framework VideoToolbox"
+    "-framework CoreMedia" "-framework CoreVideo" "-framework CoreFoundation" "-framework Security"
+  )
+endif()
+
+target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VERSION="${PROJECT_VERSION}")
+if(MEDIADIFF_WITH_VMAF)
+  target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_WITH_VMAF)
+endif()
+
+# --- Warnings-as-errors on first-party targets only -------------------------
+function(mediadiff_apply_warnings target)
+  if(MSVC)
+    target_compile_options(${target} PRIVATE /W4 /WX)
+  else()
+    target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+  endif()
+endfunction()
+
+mediadiff_apply_warnings(libmediadiff)
+
+# --- mediadiff executable ----------------------------------------------------
+add_executable(mediadiff src/cli/main.cpp)
+target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11)
+mediadiff_apply_warnings(mediadiff)
+
+enable_testing()
+add_subdirectory(tests)

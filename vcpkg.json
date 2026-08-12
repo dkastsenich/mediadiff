@@ -1,0 +1,29 @@
+{
+  "name": "mediadiff",
+  "version-string": "0.1.0",
+  "builtin-baseline": "105fdc246ba9a28b0789284217b0d1120446d43f",
+  "overrides": [
+    { "name": "ffmpeg", "version": "8.1", "port-version": 4 }
+  ],
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": ["avcodec", "avformat", "swscale", "swresample", "dav1d", "zlib"]
+    },
+    "cli11",
+    "fmt",
+    "nlohmann-json",
+    "tomlplusplus",
+    "xxhash",
+    "libebur128",
+    "catch2",
+    "tl-expected"
+  ],
+  "features": {
+    "vmaf": {
+      "description": "libvmaf quality metric",
+      "dependencies": ["libvmaf"]
+    }
+  }
+}

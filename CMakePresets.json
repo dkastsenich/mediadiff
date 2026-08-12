@@ -1,0 +1,33 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    { "name": "x64-linux", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-linux" } },
+    { "name": "arm64-osx", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "arm64-osx" } },
+    { "name": "x64-windows-static-md", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-windows-static-md" } },
+    { "name": "arm64-linux", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "arm64-linux" } },
+    { "name": "x64-osx", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-osx" } }
+  ],
+  "buildPresets": [
+    { "name": "x64-linux", "configurePreset": "x64-linux" },
+    { "name": "arm64-osx", "configurePreset": "arm64-osx" },
+    { "name": "x64-windows-static-md", "configurePreset": "x64-windows-static-md" },
+    { "name": "arm64-linux", "configurePreset": "arm64-linux" },
+    { "name": "x64-osx", "configurePreset": "x64-osx" }
+  ],
+  "testPresets": [
+    { "name": "x64-linux", "configurePreset": "x64-linux", "output": { "outputOnFailure": true } },
+    { "name": "arm64-osx", "configurePreset": "arm64-osx", "output": { "outputOnFailure": true } },
+    { "name": "x64-windows-static-md", "configurePreset": "x64-windows-static-md", "output": { "outputOnFailure": true } }
+  ]
+}
