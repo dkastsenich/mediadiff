@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Foundation & Toolchain
 status: executing
-stopped_at: Completed 01-02-PLAN.md (integration harness — CLI-05, BUILD-09, BUILD-04)
-last_updated: "2026-08-12T22:29:32.365Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-08-12T22:39:52.754Z"
 last_activity: 2026-08-12
 last_activity_desc: Roadmap created; 138 v1 requirements mapped across 7 phases
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 1 (Foundation & Toolchain) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-08-12 — Phase 1 execution started
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [████░░░░░░] 40%
 |------|----------|-------|-------|
 | Phase 01 P01 | 50min | 3 tasks | 14 files |
 | Phase 01 P02 | ~25min | 2 tasks | 5 files |
+| Phase 01 P04 | 30min | 2 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 1]: mediadiff::expected<T,E> aliases tl-expected 1.3.1 in src/util/expected.h, the sole permitted tl::expected naming site — recorded in PROJECT.md per BUILD-07
 - [Phase ?]: BUILD-04 negative control built locally (gcc --no-as-needed against apt libavcodec60) since no naturally dynamically-linked-against-FFmpeg binary existed in the sandbox
 - [Phase ?]: Integration Catch2 test names carry no TEST_PREFIX (unlike unit's 'unit.'); the required -R version_output/-R vmaf_absent filters match directly via literal TEST_CASE name substrings
+- [Phase ?]: gen_corpus version parser explicitly accepts git-describe 'N-<count>-g<hash>' snapshot ffmpeg builds (this machine's real ffmpeg: N-126086-ge5ecfe8970-20260812) as satisfying the 6.1 floor, rather than rejecting them for lacking a bare MAJOR.MINOR
+- [Phase ?]: ENG-16 lint's SCAN_DIRS list drawn from CMakeLists.txt's actual add_library(libmediadiff ...) membership (includes src/util, excludes src/cli), not an assumed directory convention
 
 ### Pending Todos
 
@@ -98,6 +101,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-12T22:29:32.351Z
-Stopped at: Completed 01-02-PLAN.md (integration harness — CLI-05, BUILD-09, BUILD-04)
+Last session: 2026-08-12T22:39:52.740Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
