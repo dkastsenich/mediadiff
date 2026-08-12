@@ -19,3 +19,12 @@ mediadiff_apply_warnings(mediadiff_integration_tests)
 include(CTest)
 include(Catch)
 catch_discover_tests(mediadiff_integration_tests)
+
+# BUILD-04: standalone CMake script (cmake -P), not part of the build graph
+# — kept as a CTest test so it participates in the per-wave `ctest` sampling
+# loop without slowing every incremental `cmake --build`.
+add_test(
+  NAME static_link
+  COMMAND "${CMAKE_COMMAND}" "-DMEDIADIFF_BINARY=$<TARGET_FILE:mediadiff>"
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/check_static_link.cmake"
+)
