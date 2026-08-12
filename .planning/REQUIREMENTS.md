@@ -9,7 +9,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Build & Distribution
 
-- [x] **BUILD-01**: Project builds from a clean checkout on Linux (GCC ≥ 12 / Clang ≥ 15), macOS (Xcode 15+), and Windows (VS 2022 v143) via CMake ≥ 3.25 presets
+- [ ] **BUILD-01**: Project builds from a clean checkout on Linux (GCC ≥ 12 / Clang ≥ 15), macOS (Xcode 15+), and Windows (VS 2022 v143) via CMake ≥ 3.25 presets — *x64-linux verified in Plan 01-01; macOS and Windows land with the CI matrix in Plan 01-05*
 - [x] **BUILD-02**: Dependencies resolve reproducibly through a vcpkg manifest with a pinned `builtin-baseline`, vcpkg itself pinned as a git submodule
 - [x] **BUILD-03**: FFmpeg links as a decode-only LGPL subset (`avcodec`, `avformat`, `swscale`, `swresample`, `dav1d`, `zlib`; `default-features: false`), with a build-time assertion that no GPL component is linked
 - [ ] **BUILD-04**: The release artifact is a single static binary per platform requiring no runtime FFmpeg install (`x64-windows-static-md` on Windows; static triplets elsewhere)
