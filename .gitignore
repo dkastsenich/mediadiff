@@ -7,3 +7,12 @@
 /vcpkg/downloads/
 /vcpkg/packages/
 /vcpkg/installed/
+
+# CMAKE_EXPORT_COMPILE_COMMANDS database, wherever a tool copies/symlinks it
+# to the repo root (the per-preset copy under /build/ is already covered above)
+/compile_commands.json
+
+# Generated test fixtures (BUILD-08): the generator manifest is provenance and
+# stays tracked; the media it describes is never committed.
+tests/fixtures/*
+!tests/fixtures/GENERATOR_MANIFEST.json

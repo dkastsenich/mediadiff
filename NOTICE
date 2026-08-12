@@ -1,0 +1,52 @@
+mediadiff
+Copyright the mediadiff contributors.
+
+This product is licensed under the Apache License, Version 2.0. See the
+LICENSE file for the full text.
+
+================================================================================
+Third-Party Notices
+================================================================================
+
+This product statically links libraries from the FFmpeg project
+(https://ffmpeg.org).
+
+  FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
+
+  The FFmpeg libraries linked by this build (libavcodec, libavformat,
+  libavutil, libswscale, libswresample) are used under the terms of the
+  GNU Lesser General Public License, version 2.1 or later ("LGPL version
+  2.1 or later"). This build enables no GPL-only component: it is compiled
+  from a decode-only feature set (avcodec, avformat, swscale, swresample,
+  dav1d, zlib) with `default-features` disabled and no `--enable-gpl` /
+  `--enable-nonfree` configuration flag, which mediadiff's own build asserts
+  both at CMake-configure time (a forbidden-artifact scan for GPL-only
+  codecs such as x264/x265/xvidcore) and at runtime (an exact-match
+  assertion against `avutil_license()`, `avcodec_license()`, and
+  `avformat_license()`, each of which is required to report exactly
+  "LGPL version 2.1 or later"). The linked build's own configuration line
+  is surfaced in `mediadiff --version` for anyone auditing a specific binary.
+
+  Because the LGPL requires that recipients be able to obtain the source
+  of the LGPL-licensed libraries linked into a distributed binary:
+
+    - The exact FFmpeg version and vcpkg port used to build any given
+      mediadiff release is recorded in that release's build metadata
+      (see `mediadiff --version`, and the vcpkg pin in this repository's
+      `vcpkg.json`).
+    - FFmpeg's corresponding source code is publicly available from the
+      upstream project at https://github.com/FFmpeg/FFmpeg (tag matching
+      the linked version) and via the vcpkg registry at
+      https://github.com/microsoft/vcpkg (ports/ffmpeg, at the git-tree
+      commit pinned by this repository's `vcpkg.json`).
+    - dav1d, the one non-FFmpeg-core decode feature enabled in this build,
+      is BSD-2-Clause licensed and does not carry an LGPL source-availability
+      obligation; its source is available at
+      https://code.videolan.org/videolan/dav1d.
+
+  The LGPL itself, version 2.1, is available at
+  https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+
+  No warranty is provided by the mediadiff project for the third-party
+  components listed above; each remains subject to its own upstream
+  license terms.
