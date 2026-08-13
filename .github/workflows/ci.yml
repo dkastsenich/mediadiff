@@ -1,0 +1,253 @@
+name: CI
+
+# Deliberately no path-based filtering of any kind anywhere in this file: a
+# required check that is skipped for a documentation-only diff reports green
+# without having run, and that is the exact failure mode a required check
+# exists to prevent (BUILD-05 "empty" assumption, 01-05-PLAN.md).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Minimum at the workflow root; jobs widen only what they individually need.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: build (${{ matrix.preset }})
+    runs-on: ${{ matrix.runner }}
+    # The two D-06 non-blocking legs must be unable to influence the
+    # aggregate required status in either direction (BUILD-05 "ordering"
+    # assumption) — expressed here in the file, not only in a branch
+    # protection rule.
+    continue-on-error: ${{ !matrix.blocking }}
+    permissions:
+      contents: read
+      # Grants github.token read access to the GitHub Packages NuGet feed so
+      # a fork-originated run can restore from the vcpkg binary cache without
+      # ever holding write credentials (D-05/D-06 threat T-01-04). The push
+      # credential is the VCPKG_PAT_TOKEN secret below, unrelated to this
+      # permissions block and structurally unavailable to fork-triggered runs.
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- Blocking (D-06): green across these three gates a merge ---
+          - preset: x64-linux
+            runner: ubuntu-24.04
+            blocking: true
+          - preset: arm64-osx
+            runner: macos-15
+            blocking: true
+          # PROJECT.md pins the Windows toolchain to VS2022 (MSVC v143) —
+          # windows-latest now resolves to Windows Server 2025 / VS2026, so
+          # windows-2022 is pinned explicitly rather than floated.
+          - preset: x64-windows-static-md
+            runner: windows-2022
+            blocking: true
+          # --- Non-blocking (D-06): build and report, never gate ---
+          - preset: arm64-linux
+            runner: ubuntu-24.04-arm
+            blocking: false
+          # No free Intel-hosted macOS runner exists on GitHub Actions as of
+          # this plan's execution date (only paid "-large"/"-intel" tiers
+          # remain) — cross-built from the same arm64 host as arm64-osx via
+          # Xcode's native -arch x86_64 support and this preset's own
+          # VCPKG_TARGET_TRIPLET=x64-osx. See 01-05-SUMMARY.md for the full
+          # reasoning; non-blocking status is exactly what makes this
+          # acceptable turbulence per research/STACK.md's known failure
+          # classes note.
+          - preset: x64-osx
+            runner: macos-15
+            blocking: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install nasm (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y nasm
+
+      - name: Install nasm (macOS)
+        if: runner.os == 'macOS'
+        run: brew install nasm
+
+      - name: Install nasm (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install nasm -y --no-progress
+          echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
+
+      - name: Install mono for vcpkg's NuGet client (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y mono-complete
+
+      - name: Install mono for vcpkg's NuGet client (macOS)
+        if: runner.os == 'macOS'
+        run: brew install mono
+
+      - name: Bootstrap vcpkg (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Bootstrap vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Add vcpkg to PATH
+        run: echo "${{ github.workspace }}/vcpkg" >> "$GITHUB_PATH"
+
+      # Fork PRs use the plain `pull_request` trigger (never the
+      # fork-privileged variant), so GitHub does not expose repository
+      # secrets — including VCPKG_PAT_TOKEN — to those runs at all. This
+      # step expresses that same boundary explicitly in the workflow too,
+      # per BUILD-06's prohibition, rather than relying on the platform
+      # default alone.
+      - name: Determine vcpkg cache write eligibility
+        id: cache_gate
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ] || \
+             [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Trusted runs (push to main, or a same-repo pull request): read-write
+      # access to the cache feed, authenticated with the PAT. The ambient
+      # workflow token cannot push to a GitHub Packages NuGet feed (Pitfall
+      # 3, 01-RESEARCH.md) — a Personal Access Token is required.
+      - name: Register vcpkg NuGet feed (read-write, trusted runs only)
+        if: steps.cache_gate.outputs.trusted == 'true'
+        env:
+          VCPKG_NUGET_TOKEN: ${{ secrets.VCPKG_PAT_TOKEN }}
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+        run: |
+          NUGET_EXE="$(vcpkg fetch nuget | tail -n 1)"
+          if [ "$RUNNER_OS" = "Windows" ]; then RUN_NUGET=("$NUGET_EXE"); else RUN_NUGET=(mono "$NUGET_EXE"); fi
+          "${RUN_NUGET[@]}" sources add -source "$FEED_URL" -storepasswordincleartext \
+            -name GitHubPackages -username "${{ github.repository_owner }}" -password "$VCPKG_NUGET_TOKEN"
+          "${RUN_NUGET[@]}" setapikey "$VCPKG_NUGET_TOKEN" -source "$FEED_URL"
+          echo "VCPKG_BINARY_SOURCES=clear;nuget,GitHubPackages,readwrite" >> "$GITHUB_ENV"
+
+      # Fork-originated runs: read-only access via the auto-downgraded
+      # ambient token (github.token — the same credential as
+      # secrets.GITHUB_TOKEN, referenced here through the context property
+      # instead). GitHub forces this token to read-only on fork-triggered
+      # `pull_request` runs regardless of the `permissions:` block above, so
+      # a fork contributor benefits from the cache but can never obtain a
+      # credential that writes to it.
+      - name: Register vcpkg NuGet feed (read-only, fork-originated runs)
+        if: steps.cache_gate.outputs.trusted != 'true'
+        env:
+          VCPKG_NUGET_TOKEN: ${{ github.token }}
+          FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+        run: |
+          NUGET_EXE="$(vcpkg fetch nuget | tail -n 1)"
+          if [ "$RUNNER_OS" = "Windows" ]; then RUN_NUGET=("$NUGET_EXE"); else RUN_NUGET=(mono "$NUGET_EXE"); fi
+          "${RUN_NUGET[@]}" sources add -source "$FEED_URL" -storepasswordincleartext \
+            -name GitHubPackages -username "${{ github.repository_owner }}" -password "$VCPKG_NUGET_TOKEN"
+          echo "VCPKG_BINARY_SOURCES=clear;nuget,GitHubPackages,read" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} 2>&1 | tee configure.log
+
+      # BUILD-06's assertion is against vcpkg's own restore output, never
+      # wall-clock timing (shared-runner timing is flaky in the false-green
+      # direction). This step never fails the build — it surfaces the
+      # evidence a human compares across two runs; see 01-05-SUMMARY.md for
+      # the actual restore-vs-build proof once two runs exist.
+      - name: Summarize vcpkg binary-cache outcome for this run
+        run: |
+          echo "--- vcpkg install/restore lines from this run's configure step ---"
+          grep -iE "restored|installing|building" configure.log || echo "(no install/restore lines found — see full configure.log on failure)"
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      # ctest --preset only exists for the 3 blocking triplets in
+      # CMakePresets.json (owned by Plan 01, not modified here) — every
+      # preset's binaryDir is build/<presetName>, so --test-dir reaches the
+      # same CTestTestfile.cmake for all 5 legs without needing a change
+      # there. No -R filter is used (the full suite runs on every leg), but
+      # this still asserts the discovered count is non-zero: a green ctest
+      # run that silently discovered no tests is the same false-pass this
+      # phase already hit three times against a -R filter, and is exactly
+      # what a required check must never report as success.
+      - name: Test
+        run: |
+          TEST_DIR="build/${{ matrix.preset }}"
+          TOTAL=$(ctest --test-dir "$TEST_DIR" -N | grep -c '^  Test #')
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "::error::ctest discovered zero tests in $TEST_DIR — a green run that executed nothing is a false pass, not a success."
+            exit 1
+          fi
+          echo "ctest discovered $TOTAL tests in $TEST_DIR."
+          ctest --test-dir "$TEST_DIR" --output-on-failure
+
+      # Windows-only: the sole platform that can run the PowerShell corpus
+      # generator. Proves the version-gate failure branch (deferred here
+      # explicitly by Plan 04, since the shell variant's equivalent branch
+      # is already proven) and cross-checks the manifest key order Plan 04
+      # recorded.
+      - name: Install system ffmpeg for the corpus generator's positive-path check (Windows)
+        if: matrix.preset == 'x64-windows-static-md'
+        run: choco install ffmpeg -y --no-progress
+
+      - name: PowerShell corpus generator version-gate and manifest-order cross-check (Windows, owed to Plan 04)
+        if: matrix.preset == 'x64-windows-static-md'
+        shell: pwsh
+        run: |
+          $script = "./scripts/gen_corpus.ps1"
+
+          # Negative path: a nonexistent generator must be rejected nonzero.
+          $env:MEDIADIFF_FFMPEG = "C:\nonexistent\ffmpeg.exe"
+          & $script
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "gen_corpus version-gate failure branch did not fire against a nonexistent MEDIADIFF_FFMPEG."
+            exit 1
+          }
+          Write-Host "Negative path OK: exited $LASTEXITCODE against a nonexistent ffmpeg path."
+
+          # Positive path: a real system ffmpeg must produce the manifest
+          # with the key order 01-04-SUMMARY.md recorded: generator,
+          # configuration, generated_at (shared with the shell variant).
+          Remove-Item Env:\MEDIADIFF_FFMPEG -ErrorAction SilentlyContinue
+          & $script
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "gen_corpus failed against a real system ffmpeg."
+            exit 1
+          }
+          $raw = Get-Content tests/fixtures/GENERATOR_MANIFEST.json -Raw
+          $keys = [regex]::Matches($raw, '"([A-Za-z_]+)"\s*:') | ForEach-Object { $_.Groups[1].Value }
+          $expected = @("generator", "configuration", "generated_at")
+          if (($keys -join ",") -ne ($expected -join ",")) {
+            Write-Error "GENERATOR_MANIFEST.json key order is [$($keys -join ',')], expected [$($expected -join ',')]."
+            exit 1
+          }
+          Write-Host "Manifest key order confirmed: $($keys -join ', ')"
+
+  lint:
+    name: lint (ENG-16 boundary)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # No submodules needed — the lint reads only first-party sources.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ENG-16 boundary lint
+        run: bash scripts/lint_eng16.sh
