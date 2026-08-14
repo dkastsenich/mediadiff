@@ -72,6 +72,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
+          # fetch-depth: 0 is REQUIRED, not a preference. vcpkg.json pins ffmpeg
+          # to 8.1#4 via `overrides` (decision D-01) — a version older than the
+          # builtin-baseline — so vcpkg resolves the port by running
+          # `git read-tree <historical-tree-sha>` inside the vcpkg submodule.
+          # The default shallow clone (fetch-depth: 1) does not contain that
+          # object and fails with "failed to unpack tree object ... vcpkg was
+          # cloned as a shallow repository". Do not shrink this back.
+          fetch-depth: 0
 
       - name: Install nasm (Linux)
         if: runner.os == 'Linux'
