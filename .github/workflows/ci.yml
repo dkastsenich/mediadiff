@@ -213,14 +213,29 @@ jobs:
       - name: Test
         run: |
           TEST_DIR="build/${{ matrix.preset }}"
-          # `|| true` is load-bearing. Actions runs bash with `-e -o pipefail`,
-          # and `grep -c` exits 1 when it counts zero matches — so without it
-          # the assignment fails and `set -e` kills the step BEFORE the check
-          # below, meaning the diagnostic never prints in the one scenario it
-          # exists for. grep still writes "0" to stdout on that path, so TOTAL
-          # is correctly 0 and the check runs. (Verified by reproducing the
-          # step under `bash --noprofile --norc -e -o pipefail`.)
-          TOTAL=$(ctest --test-dir "$TEST_DIR" -N | grep -c '^  Test #' || true)
+          # Parse CTest's own "Total Tests: N" line rather than counting the
+          # listing. Counting the listing is what the previous version did, via
+          # `grep -c '^  Test #'`, and it was wrong in a way that only showed up
+          # once the suite grew: CTest RIGHT-ALIGNS the test number, so a
+          # single-digit entry reads "  Test  #1:" (two spaces) and a
+          # double-digit one "  Test #10:" (one space). The pattern matched only
+          # the double-digit form — it reported 2 against an 11-test suite, and
+          # with 9 or fewer tests it would have counted 0 and failed the build
+          # claiming zero tests were discovered. A guard against a false PASS
+          # that manufactures a false FAIL is worse than no guard.
+          #
+          # `Total Tests:` is CTest's own count, needs no alignment guessing,
+          # and is verified to print "Total Tests: 0" for an empty suite — so
+          # the zero case this guard exists for is still caught.
+          #
+          # `|| true` on the pipeline stays load-bearing: Actions runs bash with
+          # `-e -o pipefail`, and a failing sed/grep in the pipeline would kill
+          # the step before the check below could print its diagnostic.
+          TOTAL=$(ctest --test-dir "$TEST_DIR" -N | sed -n 's/^Total Tests: \([0-9]\+\)$/\1/p' || true)
+          if [ -z "$TOTAL" ]; then
+            echo "::error::could not parse a test count from 'ctest -N' in $TEST_DIR — refusing to assume the suite is healthy."
+            exit 1
+          fi
           if [ "$TOTAL" -eq 0 ]; then
             echo "::error::ctest discovered zero tests in $TEST_DIR — a green run that executed nothing is a false pass, not a success."
             exit 1

@@ -248,8 +248,8 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | BUILD-02 | Phase 1 | Complete |
 | BUILD-03 | Phase 1 | Complete |
 | BUILD-04 | Phase 1 | Complete |
-| BUILD-05 | Phase 1 | Pending |
-| BUILD-06 | Phase 1 | Pending |
+| BUILD-05 | Phase 1 | Complete |
+| BUILD-06 | Phase 1 | Complete |
 | BUILD-07 | Phase 1 | Complete |
 | BUILD-08 | Phase 1 | Complete |
 | BUILD-09 | Phase 1 | Complete |
@@ -262,7 +262,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CLI-06 | Phase 2 | Pending |
 | CLI-07 | Phase 2 | Pending |
 | CLI-08 | Phase 2 | Pending |
-| CLI-09 | Phase 1 | Pending |
+| CLI-09 | Phase 1 | Complete |
 | CLI-10 | Phase 2 | Pending |
 | ENG-01 | Phase 2 | Pending |
 | ENG-02 | Phase 2 | Pending |
