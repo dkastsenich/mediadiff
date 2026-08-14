@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <regex>
+#include <vector>
 #include <string>
 
 #include "cli_harness.h"
@@ -16,6 +17,51 @@ using mediadiff::test::run_cli;
 std::string to_lower(std::string s) {
   std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return s;
+}
+
+// Line-anchored matching without regex_constants::multiline.
+//
+// MSVC's <regex> does not implement C++17's `multiline` flag — neither as
+// `std::regex_constants::multiline` nor as a `std::basic_regex` static member
+// (libstdc++ provides both, which is why the member spelling compiled on
+// Linux). Rather than depend on a flag one supported toolchain lacks, the
+// output is split into lines and each line is tested with std::regex_match,
+// which anchors to the entire string by definition and so needs no flag and
+// no `^`/`$`. Behaviour is identical on every toolchain.
+//
+// This is also a marginally stronger assertion than the multiline form: a
+// single concatenated blob cannot fully match any one per-line pattern.
+std::vector<std::string> split_lines(const std::string& text) {
+  std::vector<std::string> lines;
+  std::string current;
+  for (char c : text) {
+    if (c == '\n') {
+      if (!current.empty() && current.back() == '\r') {
+        current.pop_back();  // tolerate CRLF, which the Windows leg produces
+      }
+      lines.push_back(current);
+      current.clear();
+    } else {
+      current.push_back(c);
+    }
+  }
+  if (!current.empty()) {
+    if (current.back() == '\r') {
+      current.pop_back();
+    }
+    lines.push_back(current);
+  }
+  return lines;
+}
+
+bool any_line_matches(const std::string& text, const std::string& pattern) {
+  const std::regex re(pattern);
+  for (const std::string& line : split_lines(text)) {
+    if (std::regex_match(line, re)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace
@@ -34,17 +80,14 @@ TEST_CASE("version_output - CLI-05 fields present in real binary output", "[inte
 
   // Tool-version line matches a semantic-version shape, independent of the
   // other fields.
-  std::regex tool_version_re(R"(^mediadiff \d+\.\d+\.\d+$)", std::regex_constants::multiline);
-  REQUIRE(std::regex_search(result.out, tool_version_re));
+  const std::string tool_version_pattern = R"(mediadiff \d+\.\d+\.\d+)";
+  REQUIRE(any_line_matches(result.out, tool_version_pattern));
 
   // One line per libav library, each matched independently so a single
   // concatenated blob cannot satisfy all three at once.
-  std::regex libavcodec_re(R"(^libavcodec \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex_constants::multiline);
-  std::regex libavformat_re(R"(^libavformat \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex_constants::multiline);
-  std::regex libavutil_re(R"(^libavutil \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex_constants::multiline);
-  REQUIRE(std::regex_search(result.out, libavcodec_re));
-  REQUIRE(std::regex_search(result.out, libavformat_re));
-  REQUIRE(std::regex_search(result.out, libavutil_re));
+  REQUIRE(any_line_matches(result.out, R"(libavcodec \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\))"));
+  REQUIRE(any_line_matches(result.out, R"(libavformat \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\))"));
+  REQUIRE(any_line_matches(result.out, R"(libavutil \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\))"));
 
   // The exact allowed LGPL string (D-03) — never a substring/absence test.
   REQUIRE(result.out.find("license: LGPL version 2.1 or later") != std::string::npos);
@@ -59,7 +102,7 @@ TEST_CASE("version_output - CLI-05 fields present in real binary output", "[inte
   CliResult reduced = run_cli({"--version"}, &minimal_env);
   REQUIRE(reduced.exit_code == 0);
   REQUIRE(reduced.out.find("license: LGPL version 2.1 or later") != std::string::npos);
-  REQUIRE(std::regex_search(reduced.out, tool_version_re));
+  REQUIRE(any_line_matches(reduced.out, tool_version_pattern));
 }
 
 // BUILD-09: the optional quality-metric feature is absent from the default

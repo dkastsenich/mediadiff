@@ -6,49 +6,45 @@ files_modified:
   - tests/integration/test_version_output.cpp
 ---
 
-# Quick Task 260814-r2m — MSVC: `std::regex::multiline` → `std::regex_constants::multiline`
+# Quick Task 260814-r2m — line matching without `multiline`
 
-## Problem
+## Correction to the first attempt
 
-CI run `31807543756`, Windows leg, Build step (8 errors across 4 lines):
+The first fix (commit `25d2dfd`) changed `std::regex::multiline` to
+`std::regex_constants::multiline` on the reasoning that the former is a libstdc++ extension and the
+latter is the standard C++17 spelling MSVC would accept.
+
+**That was wrong, and it was asserted with unearned confidence.** MSVC's `<regex>` implements
+neither spelling — it never tracked C++17's regex additions at all. CI run `31813450769` returned
+the same failure with the namespace-qualified name:
 
 ```
 tests\integration\test_version_output.cpp(37): error C2039:
-  'multiline': is not a member of 'std::basic_regex<char,std::regex_traits<char>>'
-tests\integration\test_version_output.cpp(37): error C2065: 'multiline': undeclared identifier
+  'multiline': is not a member of 'std::regex_constants'
 ```
 
-## Root cause
+The conclusion had been inferred from the *shape* of the previous error message rather than
+verified against MSVC's actual support. It cost a CI round.
 
-The test constructed regexes with `std::regex::multiline` — reading the flag as a static member of
-`basic_regex`. C++17 added `multiline` to the `std::regex_constants` namespace; libstdc++
-additionally re-exports the `syntax_option_type` flags as `basic_regex` static members, so the
-member spelling compiles on GCC. MSVC's STL does not re-export `multiline` that way.
+## Actual fix
 
-`std::regex_constants::multiline` is the portable spelling and is what the standard specifies.
+Stop depending on a flag one supported toolchain does not have. `split_lines()` splits the output
+and `any_line_matches()` tests each line with `std::regex_match`, which anchors to the whole string
+by definition — no flag, no `^`/`$`, identical behaviour on GCC, AppleClang and MSVC.
 
-## Fix
+This is also marginally stronger than the multiline form: a single concatenated blob cannot fully
+match any one per-line pattern, which is exactly the property the original comment said the test
+was defending.
 
-Replaced all four occurrences (lines 37, 42, 43, 44). No behavioural change — the same flag value
-reaches the same constructor; only the qualification differs.
+## Second defect found while rewriting
 
-## Portability sweep
+`split_lines()` strips a trailing `\r`. Windows writes stdout in text mode, so the binary's `\n`
+becomes `\r\n` — and `std::regex_match` on `"mediadiff 0.1.0\r"` fails, because `\r` is not in the
+pattern.
 
-Since this was the third consecutive MSVC first-contact failure, the codebase was swept for related
-landmines rather than fixing this one in isolation and spending another CI round:
-
-| Check | Result |
-|---|---|
-| Other `std::regex::<flag>` member-style usages | none |
-| MSVC-deprecated CRT calls (`strcpy`, `sprintf`, `getenv`, …) | none |
-| `__attribute__`, `__PRETTY_FUNCTION__`, other GCC extensions | none |
-| Unguarded POSIX headers / `ssize_t` | none — see below |
-
-`tests/integration/cli_harness.h` matched the POSIX grep (`<sys/select.h>`, `<sys/wait.h>`,
-`<unistd.h>`, `ssize_t`, `read()`), but inspection showed those sit inside its `#else` branch. The
-header is correctly split at lines 20/24/33 (includes) and 59/142/254 (implementation), with a
-Windows path and a `posix_spawn` path. Plan 01-02 handled this properly; it was a false alarm from
-a grep that could not see preprocessor structure.
+**The test would therefore have failed on Windows even if MSVC had supported `multiline`**, for a
+second and completely independent reason. The original `$`-anchored multiline form had the same
+exposure. This was found by reasoning about the Windows runtime while rewriting, not by CI.
 
 ## Verification
 
@@ -56,15 +52,18 @@ a grep that could not see preprocessor structure.
 |---|---|
 | `cmake --build --preset x64-linux` | succeeds |
 | `ctest --test-dir build/x64-linux` | 10/10 |
-| Remaining `std::regex::multiline` occurrences | 0 |
+| `multiline` outside comments | 0 occurrences |
+| CRLF tolerated | yes, explicitly |
 
-**Unproven from here:** the MSVC compile. Only a real CI run settles it.
+**Unproven from here:** the MSVC compile. Only CI settles it. Unlike the previous attempt, this
+change relies on no MSVC-specific feature support — `std::regex_match`, `std::string` and
+`std::vector` are universally available — so the remaining risk is a different error in a different
+file, not this one.
 
-## Pattern note
+## Process note
 
-Three consecutive Windows failures — MinGW-instead-of-MSVC, `_wfopen`, now `multiline` — all trace
-to the same cause: the Windows code paths from plans 01-02 and 01-03 had never been compiled by
-MSVC, because earlier runs failed before reaching them (configure, then MinGW link). Each fix
-uncovers the next file in build order. This is expected first-contact fallout rather than
-recurring regression, and it converges — but it is the argument for CI touching every target
-platform as early as possible, which is exactly what BUILD-05 exists to enforce.
+Two CI rounds were spent on one defect because a portability claim was reasoned about rather than
+verified. Where a fact cannot be checked locally — MSVC support from a Linux host — the correct
+move is either to say so explicitly and treat the push as an experiment, or to choose an approach
+that does not depend on the unverifiable fact. The second option was available from the start and
+is what was ultimately adopted.
