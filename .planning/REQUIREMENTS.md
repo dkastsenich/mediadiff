@@ -9,12 +9,12 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Build & Distribution
 
-- [ ] **BUILD-01**: Project builds from a clean checkout on Linux (GCC ≥ 12 / Clang ≥ 15), macOS (Xcode 15+), and Windows (VS 2022 v143) via CMake ≥ 3.25 presets — *x64-linux verified in Plan 01-01; macOS and Windows land with the CI matrix in Plan 01-05*
+- [x] **BUILD-01**: Project builds from a clean checkout on Linux (GCC ≥ 12 / Clang ≥ 15), macOS (Xcode 15+), and Windows (VS 2022 v143) via CMake ≥ 3.25 presets — *all three blocking legs green in CI run 31823918842 (MSVC v143 / VS 17.0 confirmed)*
 - [x] **BUILD-02**: Dependencies resolve reproducibly through a vcpkg manifest with a pinned `builtin-baseline`, vcpkg itself pinned as a git submodule
 - [x] **BUILD-03**: FFmpeg links as a decode-only LGPL subset (`avcodec`, `avformat`, `swscale`, `swresample`, `dav1d`, `zlib`; `default-features: false`), with a build-time assertion that no GPL component is linked
 - [x] **BUILD-04**: The release artifact is a single static binary per platform requiring no runtime FFmpeg install (`x64-windows-static-md` on Windows; static triplets elsewhere)
-- [ ] **BUILD-05**: CI runs a 3-OS matrix with warnings-as-errors (`/W4`, `-Wall -Wextra`) and green status is required to merge
-- [ ] **BUILD-06**: CI caches vcpkg binaries so an incremental build does not rebuild FFmpeg — **[R]** using NuGet/GitHub-Packages or `lukka/run-vcpkg`, **not** the removed `x-gha` backend (research: STACK, corrects doc 00 §5.1)
+- [ ] **BUILD-05**: CI runs a 3-OS matrix with warnings-as-errors (`/W4`, `-Wall -Wextra`) and green status is required to merge — *matrix green in run 31823918842 with warnings-as-errors active; **branch protection on `main` is NOT configured**, so green is not yet required to merge*
+- [x] **BUILD-06**: CI caches vcpkg binaries so an incremental build does not rebuild FFmpeg — **[R]** using NuGet/GitHub-Packages or `lukka/run-vcpkg`, **not** the removed `x-gha` backend (research: STACK, corrects doc 00 §5.1)
 - [x] **BUILD-07**: **[R]** An `expected<T, E>` implementation is pinned as an explicit dependency, since `std::expected` is C++23 and the project targets C++20 (research: ARCHITECTURE — gap in doc 00 §5.2 vs doc 00 §9)
 - [x] **BUILD-08**: `scripts/gen_corpus.{sh,ps1}` synthesizes every test fixture deterministically (`-flags +bitexact -fflags +bitexact`); no media binary is ever committed to git
 - [x] **BUILD-09**: Optional `libvmaf` support is gated behind `MEDIADIFF_WITH_VMAF` and absent by default
