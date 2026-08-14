@@ -108,7 +108,16 @@ inline FILE* fopen_utf8(std::string_view path, std::string_view mode) {
   if (wide_mode.empty()) {
     return nullptr;
   }
-  return _wfopen(wide_path.c_str(), wide_mode.c_str());
+  // _wfopen_s rather than _wfopen: MSVC deprecates the latter (C4996), and
+  // /W4 /WX promotes that to a hard error (BUILD-05). The secure variant
+  // reports failure through its errno_t return and leaves the out-parameter
+  // untouched, so it is initialised to nullptr here and the failure path
+  // returns nullptr — preserving this function's contract exactly.
+  FILE* handle = nullptr;
+  if (_wfopen_s(&handle, wide_path.c_str(), wide_mode.c_str()) != 0) {
+    return nullptr;
+  }
+  return handle;
 }
 
 #else  // !_WIN32
