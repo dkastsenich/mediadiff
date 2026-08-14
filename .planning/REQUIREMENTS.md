@@ -30,7 +30,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **CLI-06**: Exit codes follow the contract: `0` clean, `1` fail findings, `2` warn under `--strict`, `64` usage, `65` unreadable input, `66` decode failure mid-analysis, `70` internal
 - [ ] **CLI-07**: On exit code `66`, partial JSON is still emitted so CI can see what was measured before the failure
 - [ ] **CLI-08**: Color output auto-disables on `NO_COLOR`, non-TTY stdout, and `CI=true`, but stays enabled when `GITHUB_ACTIONS=true`; `--no-color` and `--ascii` force it manually
-- [ ] **CLI-09**: **[R]** Windows non-ASCII paths work end to end — UTF-16 args via `CommandLineToArgvW` converted once to UTF-8, all file I/O through a `util/fs.h` shim, VT sequences enabled via `SetConsoleMode` (research: PITFALLS — must be phase 0, not retrofitted)
+- [x] **CLI-09**: **[R]** Windows non-ASCII paths work end to end — UTF-16 args via `CommandLineToArgvW` converted once to UTF-8, all file I/O through a `util/fs.h` shim, VT sequences enabled via `SetConsoleMode` (research: PITFALLS — must be phase 0, not retrofitted)
 - [ ] **CLI-10**: A tolerance given in the wrong unit for a check is a usage error (exit `64`) that names the expected unit
 
 ### Core Engine
