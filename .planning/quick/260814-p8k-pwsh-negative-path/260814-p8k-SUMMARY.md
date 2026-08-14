@@ -8,82 +8,99 @@ files_modified:
 
 # Quick Task 260814-p8k — the negative-path check could not observe its own gate
 
-## What CI showed
+## The defect
 
-Run `31815097799`, Windows leg. Everything through the C++ toolchain now passes:
-
-```
-Initialise MSVC x64 developer environment -> success
-Configure                                 -> success
-Build                                     -> success
-Test                                      -> success
-PowerShell corpus generator version-gate  -> failure
-```
-
-The failure:
+Run `31815097799`, Windows leg. Everything through the C++ toolchain passed — Configure, Build and
+Test all succeeded under MSVC for the first time. Only this step failed:
 
 ```
-Write-Error: D:\a\_temp\...ps1:6
+Write-Error: ...ps1:6
    6 | & $script
      | gen_corpus requires a system ffmpeg >= 6.1 on PATH (or MEDIADIFF_FFMPEG
      | pointing at one); 'C:\nonexistent\ffmpeg.exe' was not found.
 ```
 
-## Root cause
-
 `gen_corpus.ps1` was working exactly as designed. The step deliberately points `MEDIADIFF_FFMPEG`
-at a nonexistent path to prove the version gate rejects it, then inspects `$LASTEXITCODE`.
+at a nonexistent path to prove the version gate rejects it, then inspects `$LASTEXITCODE`. The gate
+fired — and firing is what killed the step, because the error propagated before the exit-code check
+was ever reached.
 
-GitHub Actions prepends `$ErrorActionPreference = 'Stop'` to every `pwsh` step. The script reports
-the missing generator with `Write-Error` (line 32) before its `exit 1` (line 33). Under `Stop`,
-that `Write-Error` is promoted to a *terminating* error — so the script never reaches its own
-`exit 1`, and the exception propagates and aborts the step at `& $script`. Line 242's
-`$LASTEXITCODE` check was never evaluated.
+**The gate firing correctly failed the check that exists to prove it fires.**
 
-**The gate firing correctly failed the check that exists to prove it fires.** This is the same
-class of defect as the two ctest filters that silently matched zero tests earlier in this phase: a
-check structurally incapable of observing what it is meant to observe. It differs in direction —
-those failed open (green while testing nothing), this one failed closed (red while the thing under
-test was healthy) — but the root shape is identical.
+## Two failed attempts, and why
 
-## Fix
+**Attempt 1** relaxed `$ErrorActionPreference` in the calling step. It failed (run `31818756795`),
+moving the error only as far as the new line. The reason: **`gen_corpus.ps1` sets
+`$ErrorActionPreference = 'Stop'` itself, at line 16.** A caller-side relaxation cannot override
+what the callee sets in its own scope.
 
-Confined to `.github/workflows/ci.yml`. The preference is relaxed around the deliberate failure
-only, the exit code captured immediately, then the preference restored so genuine errors in the
-rest of the step still stop it:
+That header had not been read before writing the fix — only a grep for how the failure was
+*reported* (`Write-Error` / `exit 1`), not for what preference the script *set*. Acting on
+inference rather than reading the source is what produced a wasted CI round, for the third time in
+this sequence.
 
-```powershell
-$previousEap = $ErrorActionPreference
-$ErrorActionPreference = 'Continue'
-$negativeOutput = & $script 2>&1 | Out-String
-$negativeExit = $LASTEXITCODE
-$ErrorActionPreference = $previousEap
+## What actually fixed it
+
+PowerShell was installed locally (7.4.6, self-contained tarball into `~/.local/pwsh`) so the
+behaviour could be **executed rather than reasoned about**. The Actions harness reproduces as:
+
+```
+pwsh -NoProfile -Command '$ErrorActionPreference = "stop"; . step.ps1'
 ```
 
-`gen_corpus.ps1` was **not** modified. `Write-Error` followed by `exit 1` is idiomatic and behaves
-correctly in a normal pwsh session, where the default preference is `Continue`. The defect was in
-the harness's assumption, not the script.
+That reproduced the CI failure exactly — same message, same line, and the check after it never
+reached.
 
-The positive path below it is deliberately left as-is: there, a failure *should* stop the step, so
-`Stop` is the wanted behaviour.
+The working fix runs `gen_corpus.ps1` in a **child pwsh process** for both the negative and
+positive paths. A terminating error inside a child process cannot propagate as an exception into
+the parent; it only makes the child exit nonzero — which is precisely the signal being asserted on.
+This is correct by construction and immune to whatever preference the script sets internally.
 
-## Verification
+The negative path additionally asserts the output *mentions the missing generator*, since a nonzero
+exit alone would also be satisfied by an unrelated crash — the gate must fire for the right reason.
+
+`gen_corpus.ps1` was **not** modified. `$ErrorActionPreference = 'Stop'` plus `Write-Error` plus
+`exit 1` is correct, idiomatic, and behaves properly when a developer runs the script directly. The
+defect was entirely in the harness's assumption about it.
+
+## Verification — executed, not inferred
+
+The step body was extracted **programmatically from the committed `ci.yml`** and run under the
+reproduced Actions harness:
+
+```
+Negative path OK: exited 1 against a nonexistent ffmpeg path.
+gen_corpus: manifest written to tests/fixtures/GENERATOR_MANIFEST.json.
+Manifest key order confirmed: generator, configuration, generated_at
+step exit=0
+```
+
+That covers the whole step — negative path, positive path, and the manifest key-order assertion —
+not merely the half that was failing. The only substitutions were the Windows path and the pwsh
+binary location; both environmental, neither logical.
 
 | Check | Result |
 |---|---|
-| `.github/workflows/ci.yml` parses as YAML | ✓ |
-| `scripts/gen_corpus.ps1` modified | no — harness-only fix |
-| Positive-path semantics changed | no |
+| YAML parses | ✓ |
+| Verbatim step body under `EAP=stop` | exit 0 |
+| Negative path observed firing, for the right reason | ✓ |
+| Positive path + manifest key order | ✓ |
+| `scripts/gen_corpus.ps1` modified | no |
 
-**Not verified locally:** `pwsh` is not installed on this Linux host, so the step body could not be
-syntax-checked. This is the same unverifiable-from-here gap that produced two wasted CI rounds on
-the `regex multiline` fix. Stating it plainly rather than implying confidence that was not earned:
-the reasoning about `$ErrorActionPreference` is well-established Actions behaviour and matches the
-observed log precisely, but the edit itself has not been executed anywhere.
+Residual risk is now confined to genuine platform differences (Windows path separators, the
+Chocolatey-installed ffmpeg), not to the control flow that caused three failed rounds.
 
-## Phase status after this run
+## The pattern this belongs to
 
-Windows now compiles and **passes its tests** under MSVC — the first time that has happened. The
-blocking legs stand at `x64-linux` ✓, `arm64-osx` ✓, and `x64-windows-static-md` failing only on
-this harness step. The two advisory legs (`arm64-linux`, `x64-osx`) remain failing and untouched by
-design.
+Third instance in this phase of one shape: a check structurally unable to observe what it exists to
+observe. `ctest -R unit` and `ctest -R integration` each silently matched zero tests and reported
+green — failing *open*. This one failed *closed*. Same root defect, opposite direction. For a
+project whose stated core value is that an untrustworthy check is worse than no check, that
+recurrence is worth a standing CI assertion rather than three separate one-off fixes.
+
+## Process note
+
+Three CI rounds were spent on PowerShell semantics that could have been settled locally in minutes
+by installing an interpreter. The lesson is not "read more carefully" but "when a fact is
+unverifiable in the current environment, either make it verifiable or choose an approach that does
+not depend on it." Both options were available from the start.
