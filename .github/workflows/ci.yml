@@ -237,13 +237,29 @@ jobs:
           $script = "./scripts/gen_corpus.ps1"
 
           # Negative path: a nonexistent generator must be rejected nonzero.
+          #
+          # GitHub Actions prepends `$ErrorActionPreference = 'Stop'` to every
+          # pwsh step. gen_corpus.ps1 reports a missing generator with
+          # Write-Error and then `exit 1`; under 'Stop' that Write-Error is
+          # promoted to a terminating error, so the script never reaches its
+          # own `exit 1` and this step aborts at the invocation below —
+          # $LASTEXITCODE is never inspected. The result is that the version
+          # gate firing CORRECTLY fails the very check that exists to prove it
+          # fires (observed: run 31815097799). Relax the preference around the
+          # deliberate failure only, then restore it so genuine errors in the
+          # rest of the step still stop it.
           $env:MEDIADIFF_FFMPEG = "C:\nonexistent\ffmpeg.exe"
-          & $script
-          if ($LASTEXITCODE -eq 0) {
+          $previousEap = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          $negativeOutput = & $script 2>&1 | Out-String
+          $negativeExit = $LASTEXITCODE
+          $ErrorActionPreference = $previousEap
+          Write-Host $negativeOutput
+          if ($negativeExit -eq 0) {
             Write-Error "gen_corpus version-gate failure branch did not fire against a nonexistent MEDIADIFF_FFMPEG."
             exit 1
           }
-          Write-Host "Negative path OK: exited $LASTEXITCODE against a nonexistent ffmpeg path."
+          Write-Host "Negative path OK: exited $negativeExit against a nonexistent ffmpeg path."
 
           # Positive path: a real system ffmpeg must produce the manifest
           # with the key order 01-04-SUMMARY.md recorded: generator,
