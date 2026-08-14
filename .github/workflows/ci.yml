@@ -221,6 +221,30 @@ jobs:
           echo "ctest discovered $TOTAL tests in $TEST_DIR."
           ctest --test-dir "$TEST_DIR" --output-on-failure
 
+      # CLI-09's remaining checkpoint needs a real Windows console, which CI
+      # structurally cannot provide: Actions redirects stdout to a pipe, so
+      # GetConsoleMode fails and enable_vt_output() correctly no-ops. Publish
+      # the built binaries so a human can run the check on a real console
+      # WITHOUT installing Visual Studio, vcpkg, or building anything.
+      #
+      # `mediadiff_unit_tests.exe` is a self-contained Catch2 binary — it can
+      # be run directly with a tag filter, no CTest or build tree required:
+      #     mediadiff_unit_tests.exe "[console]"
+      #
+      # The integration test binary is deliberately NOT published: it spawns
+      # the CLI via an absolute path baked in at build time (MEDIADIFF_BINARY),
+      # which points at the runner's workspace and would not resolve elsewhere.
+      - name: Upload Windows verification bundle (CLI-09 manual checkpoint)
+        if: matrix.preset == 'x64-windows-static-md'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediadiff-windows-x64
+          path: |
+            build/x64-windows-static-md/mediadiff.exe
+            build/x64-windows-static-md/tests/unit/mediadiff_unit_tests.exe
+          if-no-files-found: error
+          retention-days: 14
+
       # Windows-only: the sole platform that can run the PowerShell corpus
       # generator. Proves the version-gate failure branch (deferred here
       # explicitly by Plan 04, since the shell variant's equivalent branch
