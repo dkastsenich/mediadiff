@@ -34,14 +34,14 @@ TEST_CASE("version_output - CLI-05 fields present in real binary output", "[inte
 
   // Tool-version line matches a semantic-version shape, independent of the
   // other fields.
-  std::regex tool_version_re(R"(^mediadiff \d+\.\d+\.\d+$)", std::regex::multiline);
+  std::regex tool_version_re(R"(^mediadiff \d+\.\d+\.\d+$)", std::regex_constants::multiline);
   REQUIRE(std::regex_search(result.out, tool_version_re));
 
   // One line per libav library, each matched independently so a single
   // concatenated blob cannot satisfy all three at once.
-  std::regex libavcodec_re(R"(^libavcodec \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex::multiline);
-  std::regex libavformat_re(R"(^libavformat \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex::multiline);
-  std::regex libavutil_re(R"(^libavutil \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex::multiline);
+  std::regex libavcodec_re(R"(^libavcodec \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex_constants::multiline);
+  std::regex libavformat_re(R"(^libavformat \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex_constants::multiline);
+  std::regex libavutil_re(R"(^libavutil \d+\.\d+\.\d+ \(built against \d+\.\d+\.\d+\)$)", std::regex_constants::multiline);
   REQUIRE(std::regex_search(result.out, libavcodec_re));
   REQUIRE(std::regex_search(result.out, libavformat_re));
   REQUIRE(std::regex_search(result.out, libavutil_re));
