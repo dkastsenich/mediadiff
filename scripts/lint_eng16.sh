@@ -46,7 +46,21 @@ done
 # stops an identifier like "myprintf_helper" or "exit_code" from matching,
 # while still catching "std::cout" (preceded by a space or '(' etc.) and
 # "std::printf(" (preceded by ':').
-PATTERN='(^|[^A-Za-z0-9_])(printf|std::cout|std::cerr|exit\()'
+#
+# `stdout` and `stderr` are matched as stream NAMES rather than enumerating
+# every function that can write to them. That is deliberate and closes a real
+# hole: the original pattern listed `printf` but, because of the very
+# word-boundary guard above, could not match `fprintf(stderr, ...)` — the `f`
+# is an identifier character — leaving the most idiomatic C way to violate
+# ENG-16 completely undetected. Naming the streams catches `fprintf`,
+# `fputs`, `fwrite`, `vfprintf` and anything else pointed at them, without
+# false-positiving on a legitimate `fprintf(report_file, ...)`: the engine
+# may write to files it was handed, it may not write to the process's
+# standard streams.
+#
+# `abort` and `_exit` are included alongside `exit`: all three terminate the
+# process, which is the CLI's prerogative and not the library's.
+PATTERN='(^|[^A-Za-z0-9_])(printf|puts\(|putchar\(|std::cout|std::cerr|std::clog|stdout|stderr|exit\(|_exit\(|abort\()'
 
 # Run the scan restricted to actual C++ source/header files. Capture the
 # matcher's own exit status explicitly, before any comment filtering, so a

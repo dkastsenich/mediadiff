@@ -7,7 +7,14 @@
 #include <shellapi.h>
 #include <windows.h>
 
-#include <string>
+// Included explicitly rather than leaned on transitively through util/fs.h.
+// MSVC's standard headers pull in less than libstdc++'s, so a translation
+// unit that compiles on GCC purely by inheritance can fail on MSVC — and the
+// Windows leg is the one that cannot be checked from a POSIX host.
+#include <cstdio>       // std::fputs, stderr
+#include <string>       // std::string, std::to_string
+#include <string_view>  // std::wstring_view
+#include <utility>      // std::move
 #include <vector>
 #endif
 
@@ -57,10 +64,30 @@ int wmain(int /*argc*/, wchar_t** /*argv*/) {
   // Convert every argument to UTF-8 exactly once, here. CLI11 itself is
   // encoding-agnostic — it only needs argv already in UTF-8, which this
   // conversion guarantees.
+  //
+  // wide_to_utf8 returns an empty string for BOTH an empty input and a
+  // conversion failure, and cannot distinguish them on its own. The caller
+  // can: an argument is legitimately empty only when the wide string it came
+  // from was empty. Checking that here is what keeps the fail-loud contract
+  // D-04 requires — ill-formed UTF-16 (an unpaired surrogate, which NTFS
+  // permits in a filename) must not be silently rewritten to "". Feeding a
+  // substituted empty argument to the parser would shift what every
+  // subsequent option means, and the operator would never be told.
   std::vector<std::string> argv_utf8;
   argv_utf8.reserve(static_cast<size_t>(argc_w));
   for (int i = 0; i < argc_w; ++i) {
-    argv_utf8.push_back(mediadiff::wide_to_utf8(argv_w[i]));
+    const std::wstring_view wide_arg{argv_w[i]};
+    std::string utf8_arg = mediadiff::wide_to_utf8(wide_arg);
+    if (utf8_arg.empty() && !wide_arg.empty()) {
+      LocalFree(argv_w);
+      // Reported here rather than from the engine: libmediadiff writes to no
+      // standard stream and never exits the process (ENG-16 / D-07).
+      std::fputs("mediadiff: argument ", stderr);
+      std::fputs(std::to_string(i).c_str(), stderr);
+      std::fputs(" is not valid UTF-16 and cannot be converted to UTF-8.\n", stderr);
+      return 64;  // usage — the argument is malformed, no input was opened
+    }
+    argv_utf8.push_back(std::move(utf8_arg));
   }
   LocalFree(argv_w);
 

@@ -213,7 +213,14 @@ jobs:
       - name: Test
         run: |
           TEST_DIR="build/${{ matrix.preset }}"
-          TOTAL=$(ctest --test-dir "$TEST_DIR" -N | grep -c '^  Test #')
+          # `|| true` is load-bearing. Actions runs bash with `-e -o pipefail`,
+          # and `grep -c` exits 1 when it counts zero matches — so without it
+          # the assignment fails and `set -e` kills the step BEFORE the check
+          # below, meaning the diagnostic never prints in the one scenario it
+          # exists for. grep still writes "0" to stdout on that path, so TOTAL
+          # is correctly 0 and the check runs. (Verified by reproducing the
+          # step under `bash --noprofile --norc -e -o pipefail`.)
+          TOTAL=$(ctest --test-dir "$TEST_DIR" -N | grep -c '^  Test #' || true)
           if [ "$TOTAL" -eq 0 ]; then
             echo "::error::ctest discovered zero tests in $TEST_DIR — a green run that executed nothing is a false pass, not a success."
             exit 1
