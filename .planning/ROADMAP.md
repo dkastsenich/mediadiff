@@ -88,16 +88,48 @@ Plans:
 **Plans**: 11 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 02-01-PLAN.md — Contract freeze checkpoint + tracer: `compare a.snap.json b.snap.json --json` end to end
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-02-PLAN.md — Registry generator completion, glob matcher, aliases, build-enforced check docs
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 02-03-PLAN.md — Fail-first infrastructure: test registry, coverage gate, canary, golden and determinism harnesses
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 02-04-PLAN.md — Tolerance grammar and the seven comparison semantics
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 02-05-PLAN.md — Five profiles, severity resolution with provenance, volatile and transform behaviour
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 02-06-PLAN.md — `mediadiff.toml`, the four-layer precedence merge, and `list-checks --effective`
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 02-07-PLAN.md — Canonical serializer, snapshot envelope, safe write, idempotence harnesses
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 02-08-PLAN.md — Shared report model, JSON plus shipped schema, Markdown budget, JUnit
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
 - [ ] 02-09-PLAN.md — TTY renderer, colour policy, accept/tune/silence triple
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
 - [ ] 02-10-PLAN.md — CLI surface completion: implicit compare, exit-code contract, `explain` and `inspect`
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
 - [ ] 02-11-PLAN.md — `dir` orchestration: pairing, bounded worker pool, corpus rollup
 
 **Source doc**: `claude_docs/01-core-concepts.md` (design-doc phase 1)
