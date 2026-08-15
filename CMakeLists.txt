@@ -129,6 +129,8 @@ add_library(libmediadiff STATIC
   src/core/snapshot.cpp
   src/core/glob.cpp
   src/core/tolerance.cpp
+  src/core/profiles.cpp
+  src/core/policy.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
   src/compare/tol.cpp
@@ -164,6 +166,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/value.h
   src/core/model.h
   src/core/registry.h
+  src/core/profiles.h
   src/core/policy.h
   src/core/serializer.h
   src/core/snapshot.h

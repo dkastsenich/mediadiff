@@ -124,6 +124,26 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
                                                                         const Fingerprint& candidate,
                                                                         const Policy& policy,
                                                                         const CheckRegistry& registry) {
+  // Plan 02-05: every finding's severity comes from a fully-resolved
+  // Policy::per_check, indexed by registry declaration index, rather than
+  // from CheckDef::default_severity directly. A caller that already ran
+  // resolve_policy (and possibly layered config/CLI overrides onto it via
+  // apply_severity_override) passes a Policy with per_check already
+  // populated, which is used as-is so those overrides are never lost. A
+  // caller that hand-built a bare Policy{profile} (the pre-02-06 CLI path,
+  // and every 02-04-era comparator unit test) gets one resolved here, so
+  // every finding this function produces -- including the D-09 mismatch
+  // path below -- is consistent with what resolve_severity itself would
+  // compute for the same check.
+  Policy resolved_policy = policy;
+  if (resolved_policy.per_check.empty()) {
+    auto resolved = resolve_policy(registry, policy.profile);
+    if (!resolved) {
+      return mediadiff::unexpected(resolved.error());
+    }
+    resolved_policy.per_check = std::move(resolved->per_check);
+  }
+
   std::map<PairKey, const Measurement*> baseline_by_key;
   for (const Measurement& m : baseline.measurements) {
     baseline_by_key[key_for(m)] = &m;
@@ -180,7 +200,7 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
       finding.id = check.id;
       finding.scope = candidate_m.scope;
       finding.status = Status::error;
-      finding.severity = resolve_severity(check, policy);
+      finding.severity = resolved_policy.per_check[pair_key.check_index].severity;
       finding.baseline = baseline_m.value;
       finding.candidate = candidate_m.value;
       finding.skip_reason = SkipReason::none;
@@ -191,7 +211,7 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
     }
 
     const Comparator comparator = comparator_for(check.semantic);
-    auto finding = comparator(check, baseline_m, candidate_m, policy);
+    auto finding = comparator(check, baseline_m, candidate_m, resolved_policy);
     if (!finding) {
       return mediadiff::unexpected(finding.error());
     }

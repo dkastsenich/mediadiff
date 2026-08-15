@@ -164,8 +164,9 @@ struct AliasDef {
 // count) into per-check constexpr override tables the generator emits only
 // for checks that declare a `[check.profile_severity]` or
 // `[check.profile_tolerance]` sub-table — a profile with no entry in that
-// span inherits the baseline. core/policy.h's resolve_severity stub
-// already has the signature plan 02-05's full precedence merge will fill.
+// span inherits the baseline. core/policy.h's resolve_severity/resolve_policy
+// (plan 02-05) resolve these against a selected ProfileId; layers three and
+// four of doc 01 section 4's chain (config, CLI) are plan 02-06's job.
 struct CheckDef {
   std::string_view id;
   std::string_view group;
