@@ -16,6 +16,8 @@ add_executable(mediadiff_unit_tests
   # D-14/D-15/D-16 fail-first meta-infrastructure (02-03-PLAN.md Task 2).
   test_fail_first_coverage.cpp
   test_canary.cpp
+  # ENG-05/CLI-10 tolerance grammar (02-04-PLAN.md Task 1).
+  test_tolerance.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp

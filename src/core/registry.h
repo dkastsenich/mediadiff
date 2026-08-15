@@ -85,6 +85,48 @@ enum class ProfileId {
   transform,
 };
 
+// Suffix text a user would type in the tolerance grammar (doc 01 section 3,
+// CLI-10) for `unit` — e.g. Unit::ms -> "ms", Unit::percent -> "%". Lets a
+// tolerance-grammar rejection (src/core/tolerance.cpp) name the check's
+// expected unit using the same spelling a user would type, rather than an
+// enumerator name like "ms_per_min". Unit::count's canonical spelling is
+// "bytes", but tolerance.cpp additionally accepts the bare (no-suffix) form
+// doc 01's grammar also lists ("±8") for that one unit — this function
+// reports only the canonical spelling; the bare-form exception is
+// tolerance.cpp's own concern, not this table's. Unit::none has no
+// tolerance spelling of its own (no check registers semantic=tol with
+// unit=none); it renders as "none" purely so this switch stays exhaustive
+// with no default: arm, matching src/cli/exit_code.h's own pattern.
+inline std::string_view unit_suffix(Unit unit) {
+  switch (unit) {
+    case Unit::none:
+      return "none";
+    case Unit::ms:
+      return "ms";
+    case Unit::ms_per_min:
+      return "ms/min";
+    case Unit::frames:
+      return "frames";
+    case Unit::percent:
+      return "%";
+    case Unit::db:
+      return "dB";
+    case Unit::lu:
+      return "LU";
+    case Unit::samples:
+      return "samples";
+    case Unit::ticks:
+      return "tick";
+    case Unit::count:
+      return "bytes";
+  }
+  // Unreachable for any valid Unit: every enumerator is handled above, with
+  // deliberately no default: arm so -Wswitch (-Werror project-wide) catches
+  // a future enumerator added without a matching case. This return exists
+  // only to satisfy -Wreturn-type.
+  return "none";
+}
+
 // One profile's severity exception (doc 01 section 5, D-04). A check with
 // no entry for a given profile inherits CheckDef::default_severity — a
 // deliberate exception reads as an exception rather than being buried in
