@@ -97,6 +97,25 @@ TEST_CASE("transform: parse_resolution_expectation rejects a malformed string na
   CHECK(expectation.error().message.find("3840x2160") != std::string::npos);
 }
 
+// WR-01 regression: an absurdly long digit run in the scale-factor grammar
+// must be rejected as a usage error, never silently wrapped via signed
+// integer overflow (UB) into an arbitrary scale factor.
+TEST_CASE("transform: parse_resolution_expectation rejects a scale factor too large for int64_t", "[transform]") {
+  auto expectation = parse_resolution_expectation("999999999999999999999999999999x");
+  REQUIRE_FALSE(expectation.has_value());
+  CHECK(expectation.error().kind == ErrorKind::usage);
+}
+
+// WR-01 regression: parse_dimensions (the WIDTHxHEIGHT grammar, shared with
+// compare/exact.cpp's own resolution comparison) has the identical
+// overflow-guard requirement -- proven separately since it has its own
+// digit-accumulation loop (parse_leading_int), not the scale-factor one.
+TEST_CASE("transform: parse_dimensions rejects a width too large for int64_t rather than wrapping",
+          "[transform]") {
+  auto dims = parse_dimensions("999999999999999999999999999999x1080");
+  CHECK_FALSE(dims.has_value());
+}
+
 TEST_CASE("transform: parse_dimensions parses a plain WIDTHxHEIGHT pair", "[transform]") {
   auto dims = parse_dimensions("1920x1080");
   REQUIRE(dims.has_value());

@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include "core/rational.h"
+
 namespace mediadiff {
 
 // Accepted grammar, verbatim from doc 01 section 3:
@@ -122,11 +124,24 @@ mediadiff::expected<Tolerance, Error> parse_tolerance(std::string_view raw, Unit
   const std::string_view fail_text = two_threshold ? text.substr(first_comma + 1) : text;
 
   auto parse_magnitude = [&](std::string_view component) -> mediadiff::expected<ParsedMagnitude, Error> {
+    // WR-01: `int_value * 10 + digit` had no digit-count cap and no
+    // overflow check -- a "--tol"/`mediadiff.toml` value with an absurdly
+    // long digit run silently wrapped (signed overflow, UB) into an
+    // arbitrary tolerance instead of being rejected. Every accumulation
+    // step below is routed through core/rational.h's own
+    // detail::checked_mul/checked_add (the same overflow-checked
+    // primitives CR-03's compare/tol.cpp fix uses), returning a usage
+    // error the instant a digit run cannot be represented exactly, rather
+    // than wrapping.
     std::size_t i = 0;
     std::int64_t int_value = 0;
     std::size_t int_digits = 0;
     while (i < component.size() && component[i] >= '0' && component[i] <= '9') {
-      int_value = int_value * 10 + (component[i] - '0');
+      std::int64_t scaled = 0;
+      if (!detail::checked_mul(int_value, 10, &scaled) ||
+          !detail::checked_add(scaled, component[i] - '0', &int_value)) {
+        return usage_error("tolerance magnitude is too large to represent exactly");
+      }
       ++i;
       ++int_digits;
     }
@@ -135,7 +150,11 @@ mediadiff::expected<Tolerance, Error> parse_tolerance(std::string_view raw, Unit
     if (i < component.size() && component[i] == '.') {
       ++i;
       while (i < component.size() && component[i] >= '0' && component[i] <= '9') {
-        frac_value = frac_value * 10 + (component[i] - '0');
+        std::int64_t scaled = 0;
+        if (!detail::checked_mul(frac_value, 10, &scaled) ||
+            !detail::checked_add(scaled, component[i] - '0', &frac_value)) {
+          return usage_error("tolerance magnitude is too large to represent exactly");
+        }
         ++i;
         ++frac_digits;
       }
@@ -148,9 +167,15 @@ mediadiff::expected<Tolerance, Error> parse_tolerance(std::string_view raw, Unit
     }
     std::int64_t den = 1;
     for (std::size_t k = 0; k < frac_digits; ++k) {
-      den *= 10;
+      if (!detail::checked_mul(den, 10, &den)) {
+        return usage_error("tolerance magnitude is too large to represent exactly");
+      }
     }
-    const std::int64_t num = int_value * den + frac_value;
+    std::int64_t num_product = 0;
+    std::int64_t num = 0;
+    if (!detail::checked_mul(int_value, den, &num_product) || !detail::checked_add(num_product, frac_value, &num)) {
+      return usage_error("tolerance magnitude is too large to represent exactly");
+    }
     return ParsedMagnitude{num, den, component.substr(i)};
   };
 
@@ -185,10 +210,17 @@ mediadiff::expected<Tolerance, Error> parse_tolerance(std::string_view raw, Unit
   if (two_threshold) {
     // Both magnitudes are powers-of-ten denominators, so their common
     // denominator is simply the larger of the two (an exact integer
-    // rescale — no float, no reduction).
+    // rescale — no float, no reduction). WR-01: this rescale multiplies two
+    // values already bounded by the digit-parse above, but the RATIO
+    // (common_den / den) can itself be large, so the rescale multiply is
+    // guarded the same way.
     const std::int64_t common_den = fail_parsed->den >= warn_parsed->den ? fail_parsed->den : warn_parsed->den;
-    const std::int64_t fail_scaled = fail_parsed->num * (common_den / fail_parsed->den);
-    const std::int64_t warn_scaled = warn_parsed->num * (common_den / warn_parsed->den);
+    std::int64_t fail_scaled = 0;
+    std::int64_t warn_scaled = 0;
+    if (!detail::checked_mul(fail_parsed->num, common_den / fail_parsed->den, &fail_scaled) ||
+        !detail::checked_mul(warn_parsed->num, common_den / warn_parsed->den, &warn_scaled)) {
+      return usage_error("tolerance magnitude is too large to represent exactly");
+    }
     if (warn_scaled > fail_scaled) {
       return usage_error("tolerance value's warn threshold must not exceed its fail threshold");
     }

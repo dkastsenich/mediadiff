@@ -128,6 +128,24 @@ TEST_CASE("tolerance: a negative magnitude is rejected", "[tolerance]") {
   CHECK(result.error().kind == ErrorKind::usage);
 }
 
+// WR-01 regression: an absurdly long digit run must be rejected as a usage
+// error, never silently wrapped via signed integer overflow (UB) into an
+// arbitrary tolerance.
+TEST_CASE("tolerance: a magnitude too large for int64_t is rejected, never silently wrapped", "[tolerance]") {
+  auto result = parse_tolerance("99999999999999999999999999999ms", Unit::ms);
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error().kind == ErrorKind::usage);
+}
+
+// WR-01 regression: the same overflow guard applies to the fractional half
+// of the magnitude, not just the integer half.
+TEST_CASE("tolerance: a fractional magnitude too large for int64_t is rejected, never silently wrapped",
+          "[tolerance]") {
+  auto result = parse_tolerance("0.99999999999999999999999999999ms", Unit::ms);
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error().kind == ErrorKind::usage);
+}
+
 TEST_CASE("tolerance: a full-width digit is rejected as non-ASCII rather than normalised", "[tolerance]") {
   // U+FF15 FULLWIDTH DIGIT FIVE, UTF-8 encoded, followed by "ms".
   auto result = parse_tolerance("\xEF\xBC\x95ms", Unit::ms);
