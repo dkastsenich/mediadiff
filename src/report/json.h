@@ -46,4 +46,18 @@ namespace mediadiff {
 // verbose document.
 std::string render_json(const ReportModel& model, const CheckRegistry& registry, const Policy& policy, bool verbose);
 
+// Renders `model` as `dir` mode's own `--json` corpus document (doc 01
+// section 10, DIR-03): the same top-level `schema_version`/`tool_version`/
+// `profile`/`summary`/`diagnostics` keys as the single-file document above
+// (here `summary` carries the corpus TOTALS, CorpusModel::totals), but a
+// top-level `files` array in place of `findings` -- one object per
+// CorpusModel::FileBlock, `{relative_path, summary, findings}`, in
+// `model.files`' own order (already the pairing's byte-wise sorted order
+// by CorpusModel's own contract). Each file's own `findings` array uses
+// the EXACT SAME per-finding schema single-file `render_json` emits (this
+// function shares that renderer's own `finding_to_json`), so a consumer
+// that already parses a single compare's JSON needs no second parser for
+// a corpus document's per-file findings.
+std::string render_json(const CorpusModel& model, const CheckRegistry& registry, const Policy& policy, bool verbose);
+
 }  // namespace mediadiff

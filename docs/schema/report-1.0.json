@@ -2,9 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mediadiff.dev/schema/report-1.0.json",
   "title": "mediadiff compare report",
-  "description": "Schema for the document `mediadiff compare --json` renders (doc 01 section 9, REPORT-01). schema_version's own value is the frozen contract; this filename's '1.0' component tracks that same value and a MAJOR bump requires a new schema file.",
+  "description": "Schema for the document `mediadiff compare --json` and `mediadiff dir --json` render (doc 01 sections 9-10, REPORT-01, DIR-03). schema_version's own value is the frozen contract; this filename's '1.0' component tracks that same value and a MAJOR bump requires a new schema file. Two document shapes share this schema: a single-file compare document carries top-level `findings`; a `dir`-mode corpus document carries top-level `files` (one block per paired file, each with the SAME per-finding shape `findings` uses) instead -- `oneOf` below requires exactly one of the two, never both, never neither.",
   "type": "object",
-  "required": ["schema_version", "tool_version", "profile", "summary", "diagnostics", "findings"],
+  "required": ["schema_version", "tool_version", "profile", "summary", "diagnostics"],
+  "oneOf": [
+    { "required": ["findings"] },
+    { "required": ["files"] }
+  ],
   "additionalProperties": false,
   "properties": {
     "schema_version": { "type": "string" },
@@ -12,6 +16,21 @@
     "profile": {
       "enum": ["strict-bitexact", "sw-encoder", "hw-encoder", "remux", "transform"]
     },
+    "summary": { "$ref": "#/$defs/summary" },
+    "diagnostics": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "files": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/file_block" }
+    }
+  },
+  "$defs": {
     "summary": {
       "type": "object",
       "required": ["pass", "info", "warn", "fail", "skipped", "error", "worst_gating"],
@@ -26,16 +45,19 @@
         "worst_gating": { "enum": ["ignore", "info", "warn", "fail"] }
       }
     },
-    "diagnostics": {
-      "type": "array",
-      "items": { "type": "string" }
+    "file_block": {
+      "type": "object",
+      "required": ["relative_path", "summary", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "relative_path": { "type": "string" },
+        "summary": { "$ref": "#/$defs/summary" },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" }
+        }
+      }
     },
-    "findings": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/finding" }
-    }
-  },
-  "$defs": {
     "scope": {
       "type": "object",
       "required": ["kind", "index"],

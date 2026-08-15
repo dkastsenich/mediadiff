@@ -49,4 +49,18 @@ namespace mediadiff {
 std::string render_tty(const ReportModel& model, const CheckRegistry& registry, const ColorDecision& color,
                         int terminal_width);
 
+// Renders `model` as `dir` mode's own TTY report (doc 01 section 10,
+// DIR-03): a corpus summary line (the SAME shape render_summary_line
+// already produces, over `model.totals`), then a worst-N table listing up
+// to `terminal_height` files (defaulting to 10, doc 01's own "worst-N
+// table" language), worst `worst_gating` severity first, ties broken by
+// relative path -- a TOTAL order, so the table's own row order is
+// deterministic regardless of worker completion order, matching every
+// other corpus-facing guarantee this plan makes. `terminal_height <= 0`
+// falls back to the default of 10 rather than rendering zero -- an
+// unqueryable terminal height (the common case: stdout redirected to a
+// file or a pipe) must not silently make the worst-N table vanish.
+std::string render_tty(const CorpusModel& model, const CheckRegistry& registry, const ColorDecision& color,
+                        int terminal_width, int terminal_height);
+
 }  // namespace mediadiff

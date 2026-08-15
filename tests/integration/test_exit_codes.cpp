@@ -4,6 +4,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -11,11 +16,29 @@
 #include "cli_harness.h"
 
 using mediadiff::test::CliResult;
+using mediadiff::test::EnvVars;
 using mediadiff::test::run_cli;
 
 namespace {
 
 std::string fixture(const std::string& name) { return std::string(MEDIADIFF_FIXTURES_DIR) + "/" + name; }
+
+namespace fs = std::filesystem;
+
+fs::path unique_scratch_dir(const std::string& tag) {
+  static std::atomic<int> counter{0};
+  const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+  const fs::path dir = fs::temp_directory_path() /
+                        ("mediadiff_exit70_" + tag + "_" + std::to_string(now) + "_" + std::to_string(counter++));
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  return dir;
+}
+
+void write_file(const fs::path& path) {
+  std::ofstream out(path, std::ios::binary);
+  out << "x";
+}
 
 }  // namespace
 
@@ -98,7 +121,21 @@ TEST_CASE(
   CHECK(found_partial_marker);
 }
 
-TEST_CASE("exit_codes - 70: the not-yet-implemented `dir` callback exits exactly 70", "[integration]") {
-  CliResult result = run_cli({"dir", "baseline_dir", "candidate_dir"});
+TEST_CASE(
+    "exit_codes - 70: a `dir` invocation whose pairing succeeds but whose per-file work hits an injected internal "
+    "failure exits exactly 70 (02-11-PLAN.md Task 3, re-pointing 02-10's own stub-callback assertion at a real "
+    "internal-error path)",
+    "[integration]") {
+  // Pairing itself must succeed (at least one real pair) for the injected
+  // per-file failure to have a job to act on -- an empty corpus would
+  // never reach the pool at all.
+  const fs::path baseline = unique_scratch_dir("a");
+  const fs::path candidate = unique_scratch_dir("b");
+  write_file(baseline / "one.snap.json");
+  write_file(candidate / "one.snap.json");
+
+  const char* path_env = std::getenv("PATH");
+  EnvVars env = {{"PATH", path_env != nullptr ? path_env : ""}, {"MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR", "1"}};
+  CliResult result = run_cli({"dir", baseline.string(), candidate.string()}, &env);
   CHECK(result.exit_code == 70);
 }

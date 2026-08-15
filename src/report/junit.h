@@ -48,4 +48,17 @@ namespace mediadiff {
 // produce a document a CI server silently discards (T-2-28).
 std::string render_junit(const ReportModel& model, const CheckRegistry& registry, bool strict);
 
+// Renders `model` as `dir` mode's own `--report junit=` corpus body (doc
+// 01 section 10, DIR-03): one `<testsuite>` PER FILE -- `name` is that
+// file's own relative path, in `model.files`' own order -- rather than one
+// per group, so a CI server groups results by file the way a developer
+// reads a corpus diff. Every other rule (gating-capable selection,
+// `classname` = the finding's own group, `name` = `"<check.id>[<scope>]"`,
+// per-Status element shape, `--strict`-sensitive warn handling, XML
+// escaping, honest counts including a well-formed zero-tests document)
+// is identical to the single-file renderer above and lives in the SAME
+// per-testcase helper, so the two document shapes cannot independently
+// drift on how one finding renders.
+std::string render_junit(const CorpusModel& model, const CheckRegistry& registry, bool strict);
+
 }  // namespace mediadiff

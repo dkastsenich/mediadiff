@@ -37,6 +37,10 @@ add_executable(mediadiff_integration_tests
   test_exit_codes.cpp
   # ENG-13/DOC-02/REPORT-07: `explain` and `inspect` (02-10-PLAN.md Task 3).
   test_explain_inspect.cpp
+  # DIR-01..05: dir mode end to end -- pairing, unpaired findings,
+  # thread-count determinism, the corpus files[] JSON layer, and the TTY
+  # worst-N table (02-11-PLAN.md Task 3).
+  test_dir_mode.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"

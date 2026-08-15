@@ -210,4 +210,37 @@ std::string render_json(const ReportModel& model, const CheckRegistry& registry,
   return report.dump(2);
 }
 
+std::string render_json(const CorpusModel& model, const CheckRegistry& registry, const Policy& policy,
+                         bool verbose) {
+  nlohmann::ordered_json report;
+  report["schema_version"] = model.envelope.schema_version;
+  report["tool_version"] = model.envelope.tool_version;
+  report["profile"] = std::string(profile_to_string(policy.profile));
+  report["summary"] = summary_to_json(model.totals);
+
+  nlohmann::ordered_json diagnostics = nlohmann::ordered_json::array();
+  for (const std::string& line : model.diagnostics) {
+    diagnostics.push_back(line);
+  }
+  report["diagnostics"] = diagnostics;
+
+  nlohmann::ordered_json files = nlohmann::ordered_json::array();
+  for (const FileBlock& block : model.files) {
+    nlohmann::ordered_json file_json;
+    file_json["relative_path"] = block.relative_path;
+    file_json["summary"] = summary_to_json(block.summary);
+
+    nlohmann::ordered_json findings = nlohmann::ordered_json::array();
+    for (const Finding& finding : block.findings) {
+      findings.push_back(finding_to_json(finding, group_for(finding.id), registry, policy, verbose));
+    }
+    file_json["findings"] = findings;
+
+    files.push_back(std::move(file_json));
+  }
+  report["files"] = files;
+
+  return report.dump(2);
+}
+
 }  // namespace mediadiff

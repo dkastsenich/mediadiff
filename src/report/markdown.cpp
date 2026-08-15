@@ -93,11 +93,19 @@ std::string render_group_details(const GroupBlock& block) {
 // The document with `excluded` findings omitted from their own group's
 // table (and that group's own <details> block omitted entirely if it
 // becomes empty as a result) -- no fold line included; the caller appends
-// that separately once the withheld count is known.
-std::string render_body(const ReportModel& model, const std::vector<std::vector<bool>>& excluded) {
+// that separately once the withheld count is known. `extra_section`
+// (empty for a single-file document) is inserted immediately after the
+// summary table and before the first group's own `<details>` block --
+// `dir` mode's own per-file summary table (DIR-03) is exactly this: it
+// must never be subject to the fold below, matching the top-level summary
+// table's own "always present, even at zero" contract, so it is written
+// here, ahead of any group content the fold can still drop.
+std::string render_body(const ReportModel& model, const std::vector<std::vector<bool>>& excluded,
+                         std::string_view extra_section = "") {
   std::string out = "# mediadiff report\n\n## Summary\n\n";
   out += render_summary_table(model.summary);
   out += "\n";
+  out += extra_section;
   for (std::size_t g = 0; g < model.groups.size(); ++g) {
     const GroupBlock& block = model.groups[g];
     if (block.findings.empty()) {
@@ -140,9 +148,13 @@ std::string fold_line(std::size_t withheld_count) {
   return fmt::format("_{} more finding{}, see JSON artifact_\n", withheld_count, withheld_count == 1 ? "" : "s");
 }
 
-}  // namespace
-
-std::string render_markdown(const ReportModel& model, const CheckRegistry& /*registry*/, bool strict) {
+// Shared by both render_markdown overloads below: single-file passes an
+// empty `extra_section`, `dir` mode's corpus overload passes its own
+// per-file summary table (report/markdown.h's own render_body doc
+// comment). Every fold candidate here is drawn from `model.groups`, so
+// `extra_section` -- never subject to the fold -- is threaded through
+// every render_body call, including the pathological truncation path.
+std::string render_markdown_impl(const ReportModel& model, bool strict, std::string_view extra_section) {
   // Nothing excluded yet -- the unfolded body is the common case and the
   // only one most reports ever need.
   std::vector<std::vector<bool>> excluded;
@@ -151,7 +163,7 @@ std::string render_markdown(const ReportModel& model, const CheckRegistry& /*reg
     excluded.emplace_back(block.findings.size(), false);
   }
 
-  std::string unfolded = render_body(model, excluded);
+  std::string unfolded = render_body(model, excluded, extra_section);
   if (unfolded.size() <= kMarkdownBudgetBytes) {
     return unfolded;
   }
@@ -196,7 +208,7 @@ std::string render_markdown(const ReportModel& model, const CheckRegistry& /*reg
   for (std::size_t k = 1; k <= candidates.size(); ++k) {
     excluded[candidates[k - 1].group][candidates[k - 1].finding] = true;
     dropped = k;
-    folded = render_body(model, excluded) + fold_line(dropped);
+    folded = render_body(model, excluded, extra_section) + fold_line(dropped);
     if (folded.size() <= kMarkdownBudgetBytes) {
       fits = true;
       break;
@@ -214,7 +226,41 @@ std::string render_markdown(const ReportModel& model, const CheckRegistry& /*reg
   // naming the real count.
   const std::string line = fold_line(dropped);
   const std::size_t body_budget = line.size() < kMarkdownBudgetBytes ? kMarkdownBudgetBytes - line.size() : 0;
-  return truncate_utf8(render_body(model, excluded), body_budget) + line;
+  return truncate_utf8(render_body(model, excluded, extra_section), body_budget) + line;
+}
+
+}  // namespace
+
+std::string render_markdown(const ReportModel& model, const CheckRegistry& /*registry*/, bool strict) {
+  return render_markdown_impl(model, strict, "");
+}
+
+std::string render_markdown(const CorpusModel& model, const CheckRegistry& registry, bool strict) {
+  // A per-file summary table, one row per FileBlock in `model.files`' own
+  // order -- DIR-03's "summary line per file", never subject to the fold
+  // below (render_markdown_impl's own extra_section contract).
+  std::string per_file_table =
+      "## Files\n\n| Relative Path | pass | info | warn | fail | skipped | error | worst |\n"
+      "| --- | --- | --- | --- | --- | --- | --- | --- |\n";
+  for (const FileBlock& block : model.files) {
+    per_file_table += fmt::format("| {} | {} | {} | {} | {} | {} | {} | {} |\n", escape_cell(block.relative_path),
+                                   block.summary.pass, block.summary.info, block.summary.warn, block.summary.fail,
+                                   block.summary.skipped, block.summary.error,
+                                   severity_to_string(block.summary.worst_gating));
+  }
+  per_file_table += "\n";
+
+  // Every file's own findings, concatenated and re-grouped through the
+  // EXACT SAME build_report_model pass the single-file renderer's own
+  // model came from -- reusing render_markdown_impl's fold/budget
+  // machinery unchanged rather than a second, parallel implementation.
+  std::vector<Finding> all_findings;
+  for (const FileBlock& block : model.files) {
+    all_findings.insert(all_findings.end(), block.findings.begin(), block.findings.end());
+  }
+  const ReportModel flattened = build_report_model(model.envelope, all_findings, registry, RenderOptions{});
+
+  return render_markdown_impl(flattened, strict, per_file_table);
 }
 
 }  // namespace mediadiff

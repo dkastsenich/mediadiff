@@ -43,4 +43,19 @@ extern const std::size_t kMarkdownBudgetBytes;
 // boundary, never mid-code-point, and the fold line is still appended.
 std::string render_markdown(const ReportModel& model, const CheckRegistry& registry, bool strict);
 
+// Renders `model` as `dir` mode's own `--report md=` corpus body (doc 01
+// section 10, DIR-03): the same summary-table-plus-budget shape as the
+// single-file renderer above, with a per-file summary table (one row per
+// FileBlock, in `model.files`' own order: relative path, then that file's
+// own pass/info/warn/fail/skipped/error/worst_gating counts) inserted
+// ABOVE the per-group `<details>` blocks -- which here roll up findings
+// from every file, in file order then group order, into the SAME
+// group-keyed detail sections the single-file renderer already produces
+// (a corpus's own `<details>` blocks are not one per file; DIR-03's "per
+// file summary line" contract is satisfied by the per-file table, and the
+// existing group-based fold/budget machinery stays the single mechanism
+// that ever drops a finding, matching the "renderer never re-derives a
+// second grouping/folding pass" requirement this plan is built on).
+std::string render_markdown(const CorpusModel& model, const CheckRegistry& registry, bool strict);
+
 }  // namespace mediadiff

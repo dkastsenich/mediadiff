@@ -181,4 +181,50 @@ std::string render_junit(const ReportModel& model, const CheckRegistry& /*regist
   return out;
 }
 
+std::string render_junit(const CorpusModel& model, const CheckRegistry& /*registry*/, bool strict) {
+  Counts total;
+  std::string suites_body;
+
+  for (const FileBlock& block : model.files) {
+    std::vector<const Finding*> gating;
+    for (const Finding& finding : block.findings) {
+      if (is_gating(finding.severity)) {
+        gating.push_back(&finding);
+      }
+    }
+    if (gating.empty()) {
+      continue;
+    }
+
+    Counts suite;
+    std::string testcases;
+    for (const Finding* finding : gating) {
+      // `classname` stays the finding's own GROUP (container/video/.../meta),
+      // matching the single-file renderer's own rule -- one file's own
+      // findings can span multiple groups, so the file itself is not a
+      // meaningful classname. The file identity lives on the enclosing
+      // `<testsuite name=...>` below instead (this overload's own
+      // "one testsuite per file" contract).
+      const std::string classname = std::string(group_to_string(group_for(finding->id)));
+      testcases += render_testcase(*finding, classname, strict, suite);
+    }
+
+    suites_body += fmt::format(
+        "  <testsuite name=\"{}\" tests=\"{}\" failures=\"{}\" errors=\"{}\" skipped=\"{}\">\n{}  </testsuite>\n",
+        xml_escape(block.relative_path), suite.tests, suite.failures, suite.errors, suite.skipped, testcases);
+
+    total.tests += suite.tests;
+    total.failures += suite.failures;
+    total.errors += suite.errors;
+    total.skipped += suite.skipped;
+  }
+
+  std::string out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+  out += fmt::format("<testsuites tests=\"{}\" failures=\"{}\" errors=\"{}\" skipped=\"{}\">\n", total.tests,
+                      total.failures, total.errors, total.skipped);
+  out += suites_body;
+  out += "</testsuites>\n";
+  return out;
+}
+
 }  // namespace mediadiff

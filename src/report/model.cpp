@@ -215,4 +215,45 @@ ReportModel build_report_model(const Envelope& envelope, std::span<const Finding
   return model;
 }
 
+Summary combine_summary(const Summary& a, const Summary& b) {
+  Summary out;
+  out.pass = a.pass + b.pass;
+  out.info = a.info + b.info;
+  out.warn = a.warn + b.warn;
+  out.fail = a.fail + b.fail;
+  out.skipped = a.skipped + b.skipped;
+  out.error = a.error + b.error;
+  out.worst_gating = static_cast<int>(a.worst_gating) > static_cast<int>(b.worst_gating) ? a.worst_gating
+                                                                                            : b.worst_gating;
+  return out;
+}
+
+CorpusModel build_corpus_model(std::span<const FileResult> results, const CheckRegistry& registry,
+                                const RenderOptions& options) {
+  CorpusModel corpus;
+  corpus.files.reserve(results.size());
+
+  for (const FileResult& result : results) {
+    // Reuses build_report_model's own group/registry-index/scope ordering
+    // and Summary computation verbatim -- the per-file Envelope this call
+    // produces is discarded; only the ordering and the Summary it computed
+    // are kept, flattened into one FileBlock (this plan's own "the same
+    // build_report_model logic" requirement).
+    const Envelope discarded_envelope{};
+    const ReportModel file_model = build_report_model(discarded_envelope, result.findings, registry, options);
+
+    FileBlock block;
+    block.relative_path = result.relative_path;
+    block.summary = file_model.summary;
+    for (const GroupBlock& group_block : file_model.groups) {
+      block.findings.insert(block.findings.end(), group_block.findings.begin(), group_block.findings.end());
+    }
+
+    corpus.totals = combine_summary(corpus.totals, block.summary);
+    corpus.files.push_back(std::move(block));
+  }
+
+  return corpus;
+}
+
 }  // namespace mediadiff

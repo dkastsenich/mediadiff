@@ -277,4 +277,85 @@ std::string render_tty(const ReportModel& model, const CheckRegistry& registry, 
   return out;
 }
 
+namespace {
+
+// One file's own summary line (DIR-03's "summary line per file"), in
+// `files`' own order (the pairing's byte-wise sorted order, unchanged --
+// this is NOT the worst-N ordering below, which is a SEPARATE view over
+// the same data).
+std::string render_file_summary_line(const FileBlock& block, int terminal_width) {
+  const std::string text =
+      fmt::format("{}: pass:{} info:{} warn:{} fail:{} skipped:{} error:{} (worst: {})", block.relative_path,
+                  block.summary.pass, block.summary.info, block.summary.warn, block.summary.fail,
+                  block.summary.skipped, block.summary.error, severity_to_string(block.summary.worst_gating));
+  const std::size_t width = terminal_width > 0 ? static_cast<std::size_t>(terminal_width) : 1;
+  std::string out;
+  for (const std::string& line : wrap_text(text, width)) {
+    out += line + "\n";
+  }
+  return out;
+}
+
+// DIR-03's own worst-N table: the files with the worst `worst_gating`
+// severity first, ties broken by relative path -- a TOTAL order (Severity
+// then a byte-wise string compare), so two runs over the same corpus
+// produce an identical table regardless of which order the worker pool
+// happened to complete each file in. `terminal_height` caps N below the
+// default of 10 when known and smaller; an unknown/non-positive height
+// (stdout redirected to a file or a pipe, the common case for `--json`-free
+// CI logs too) leaves N at the default rather than rendering zero rows.
+std::string render_worst_n_table(const std::vector<FileBlock>& files, int terminal_height) {
+  constexpr int kDefaultWorstN = 10;
+  int n = kDefaultWorstN;
+  if (terminal_height > 0 && terminal_height < n) {
+    n = terminal_height;
+  }
+  if (n <= 0) {
+    n = 1;
+  }
+
+  std::vector<const FileBlock*> ordered;
+  ordered.reserve(files.size());
+  for (const FileBlock& block : files) {
+    ordered.push_back(&block);
+  }
+  std::stable_sort(ordered.begin(), ordered.end(), [](const FileBlock* a, const FileBlock* b) {
+    if (a->summary.worst_gating != b->summary.worst_gating) {
+      return static_cast<int>(a->summary.worst_gating) > static_cast<int>(b->summary.worst_gating);
+    }
+    return a->relative_path < b->relative_path;
+  });
+
+  std::string out = fmt::format("worst {} file{}:\n", std::min<std::size_t>(ordered.size(), static_cast<std::size_t>(n)),
+                                 ordered.size() == 1 ? "" : "s");
+  std::size_t shown = 0;
+  for (const FileBlock* block : ordered) {
+    if (shown >= static_cast<std::size_t>(n)) {
+      break;
+    }
+    out += fmt::format("  {} {} (pass:{} info:{} warn:{} fail:{} skipped:{} error:{})\n",
+                        severity_to_string(block->summary.worst_gating), block->relative_path, block->summary.pass,
+                        block->summary.info, block->summary.warn, block->summary.fail, block->summary.skipped,
+                        block->summary.error);
+    ++shown;
+  }
+  return out;
+}
+
+}  // namespace
+
+std::string render_tty(const CorpusModel& model, const CheckRegistry& /*registry*/, const ColorDecision& /*color*/,
+                        int terminal_width, int terminal_height) {
+  std::string out = render_summary_line(model.totals, terminal_width);
+  out += "\n";
+
+  for (const FileBlock& block : model.files) {
+    out += render_file_summary_line(block, terminal_width);
+  }
+  out += "\n";
+
+  out += render_worst_n_table(model.files, terminal_height);
+  return out;
+}
+
 }  // namespace mediadiff

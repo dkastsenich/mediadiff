@@ -168,4 +168,76 @@ bool is_gating(Severity severity);
 // identically.
 std::string scope_to_text(const Scope& scope);
 
+// Element-wise sum of two Summary values: each Status count added, and
+// `worst_gating` combined as the maximum of the two (Severity's own
+// ignore < info < warn < fail ordering, matching accumulate's own
+// "worst so far" rule inside build_report_model). This is `dir` mode's own
+// corpus-totals accumulation (doc 01 section 10, DIR-03): exposed here
+// rather than kept as a build_corpus_model implementation detail, so a
+// test can assert "totals equal the element-wise sum of the per-file
+// summaries" against the EXACT function the renderer itself uses, and so
+// two runs that process the same files in a different completion order
+// still sum to an identical Summary regardless of which order the
+// worker pool happened to finish them in (addition is commutative;
+// summing element-wise, never re-deriving from a re-ordered finding list,
+// is what makes that true by construction rather than by luck).
+Summary combine_summary(const Summary& a, const Summary& b);
+
+// One file's own result -- however it was produced: a real
+// compare_fingerprints() over a paired snapshot, or the single synthetic
+// meta.missing_candidate/meta.extra_candidate Finding an unpaired entry
+// produces (src/cli/commands/dir.cpp, DIR-01). `relative_path` is the
+// same forward-slash-separated, byte-wise sorted string
+// src/cli/dir_pairing.h's FilePair carries -- build_corpus_model does NOT
+// re-sort `files` itself; the CALLER (dir.cpp) is trusted to pass results
+// in the pairing's own sorted order (index-addressed by the same
+// WorkerPool job index the pairing vector was built in), which is what
+// keeps corpus ordering independent of worker completion order.
+struct FileResult {
+  std::string relative_path;
+  std::vector<Finding> findings;
+};
+
+// One file's own block in the `files[]` JSON layer (doc 01 section 10,
+// DIR-03): the SAME per-finding schema a single compare's own `findings[]`
+// uses, scoped to one file, plus that file's own Summary (computed over
+// ALL of this file's findings, matching GroupBlock::counts' own
+// "counts everything, independent of display filtering" contract).
+struct FileBlock {
+  std::string relative_path;
+  Summary summary;
+  std::vector<Finding> findings;
+};
+
+// The shared corpus-level report model every `dir`-mode renderer (JSON's
+// `files[]` layer, Markdown's per-file summary table, one JUnit
+// `<testsuite>` per file, TTY's worst-N table) builds from -- the
+// corpus-scale sibling of ReportModel above, over the SAME
+// build_report_model grouping/ordering/filtering logic (build_corpus_model
+// calls build_report_model once per file rather than re-deriving its own
+// ordering pass, so the single-file and corpus paths cannot independently
+// drift, this plan's own explicit requirement).
+struct CorpusModel {
+  Envelope envelope;
+  Summary totals;
+  std::vector<FileBlock> files;
+  std::vector<std::string> diagnostics;
+};
+
+// Builds the shared CorpusModel every `dir`-mode renderer consumes: each
+// FileResult's own findings are grouped and ordered EXACTLY as
+// build_report_model would order them for a single-file compare (a
+// per-file build_report_model call, flattened back into one ordered
+// vector -- see report/model.cpp), `files` is emitted in `results`' own
+// order (already the pairing's byte-wise sorted order, by this plan's own
+// contract), and `totals` is combine_summary's element-wise sum of every
+// FileBlock's own Summary -- identical regardless of which order the
+// worker pool actually completed each file in, since summation itself is
+// commutative and `files`' own order is never derived from completion
+// order. `envelope` and `diagnostics` are left default-constructed;
+// dir.cpp sets both directly on the returned CorpusModel (there is no
+// single per-file Envelope for a corpus-level document to inherit).
+CorpusModel build_corpus_model(std::span<const FileResult> results, const CheckRegistry& registry,
+                                const RenderOptions& options);
+
 }  // namespace mediadiff
