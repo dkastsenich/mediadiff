@@ -9,6 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "compare/engine.h"
@@ -95,6 +96,42 @@ TEST_CASE("semantics: dist boundary -- worst-bin delta exactly at tolerance pass
   beyond.bins = {{"a", 56}, {"b", 44}};  // 6%
   const Finding over = single_finding("t.dist_bins", mediadiff::Value{baseline}, mediadiff::Value{beyond});
   CHECK(over.status == Status::warn);
+}
+
+// CR-03 regression: baseline_mag/candidate_mag's num/den are int64
+// magnitudes read straight off an (in principle untrusted) snapshot --
+// CR-01 validates their TYPE at read time, never their MAGNITUDE. A
+// near-INT64_MAX num crossed with a den > 1 must be REJECTED (Status::error,
+// "cannot determine a verdict") rather than silently overflowing into an
+// arbitrary pass/warn/fail via UB.
+TEST_CASE("semantics: CR-03 tol comparator returns Status::error on cross-multiplication overflow, never a "
+          "fabricated verdict",
+          "[semantics]") {
+  constexpr std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
+  // den=2/den=3 guarantees the very first cross-multiplication
+  // (candidate.num * baseline.den) overflows: kMax * 2 cannot fit in
+  // int64_t.
+  const RationalValue baseline{kMax, 2, mediadiff::Rational{1, 1}};
+  const RationalValue candidate{kMax, 3, mediadiff::Rational{1, 1}};
+  const Finding f = single_finding("t.tol_ms", mediadiff::Value{baseline}, mediadiff::Value{candidate});
+  CHECK(f.status == Status::error);
+}
+
+// CR-03 regression: compare_dist's own bin-total accumulation and
+// cross-multiplication are equally reachable from an untrusted histogram's
+// int64 bin counts -- same "reject, never wrap" contract as compare_tol
+// above.
+TEST_CASE("semantics: CR-03 dist comparator returns Status::error on bin-total overflow, never a fabricated "
+          "verdict",
+          "[semantics]") {
+  constexpr std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
+  Histogram baseline;
+  baseline.bins = {{"x", kMax}};
+  Histogram candidate;
+  // (kMax - 1) + 1000 overflows candidate_total's own accumulation.
+  candidate.bins = {{"x", kMax - 1}, {"y", 1000}};
+  const Finding f = single_finding("t.dist_bins", mediadiff::Value{baseline}, mediadiff::Value{candidate});
+  CHECK(f.status == Status::error);
 }
 
 TEST_CASE("semantics: two empty fingerprints yield zero findings and no error", "[semantics]") {

@@ -92,11 +92,52 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
       compare_ticks(Ticks{candidate_mag->num, candidate_mag->tb}, Ticks{baseline_mag->num, baseline_mag->tb});
   const std::string_view sign = order > 0 ? "+" : (order < 0 ? "-" : "");
 
+  // CR-03: baseline_mag/candidate_mag's num/den are int64 magnitudes read
+  // directly from an untrusted snapshot (core/serializer.cpp's
+  // value_from_json validates TYPE, never MAGNITUDE) -- a crafted
+  // near-INT64_MAX num/den previously triggered signed integer overflow
+  // (UB) in a plain `*`/`-`, which can produce an arbitrary pass/warn/fail
+  // verdict depending on optimization. Every cross-multiplication and
+  // subtraction below is routed through core/rational.h's
+  // detail::checked_mul/checked_sub/checked_negate -- the SAME
+  // overflow-checked primitives compare_ticks above already uses -- and on
+  // overflow this comparator returns a real Finding carrying
+  // Status::error, mirroring compare/engine.cpp's value_kind_mismatch
+  // "never a coercion, never a fabricated verdict" contract (D-09) rather
+  // than computing a UB-tainted result.
+  const auto overflow_finding = [&](std::string_view what) {
+    finding.status = Status::error;
+    finding.skip_reason = SkipReason::none;
+    finding.message =
+        fmt::format("tol comparator: {} overflowed int64_t during cross-multiplication; cannot determine a verdict",
+                     what);
+    return finding;
+  };
+
   // delta = candidate - baseline, as an exact rational over
   // baseline_den*candidate_den -- cross-multiplication, never a division.
-  const std::int64_t delta_den = baseline_mag->den * candidate_mag->den;
-  const std::int64_t delta_num = candidate_mag->num * baseline_mag->den - baseline_mag->num * candidate_mag->den;
-  const std::int64_t abs_delta_num = delta_num < 0 ? -delta_num : delta_num;
+  std::int64_t delta_den = 0;
+  if (!detail::checked_mul(baseline_mag->den, candidate_mag->den, &delta_den)) {
+    return overflow_finding("delta_den (baseline_den * candidate_den)");
+  }
+  std::int64_t delta_num_lhs = 0;
+  std::int64_t delta_num_rhs = 0;
+  if (!detail::checked_mul(candidate_mag->num, baseline_mag->den, &delta_num_lhs) ||
+      !detail::checked_mul(baseline_mag->num, candidate_mag->den, &delta_num_rhs)) {
+    return overflow_finding("delta_num (num * den cross-products)");
+  }
+  std::int64_t delta_num = 0;
+  if (!detail::checked_sub(delta_num_lhs, delta_num_rhs, &delta_num)) {
+    return overflow_finding("delta_num (cross-product subtraction)");
+  }
+  std::int64_t abs_delta_num = 0;
+  if (delta_num < 0) {
+    if (!detail::checked_negate(delta_num, &abs_delta_num)) {
+      return overflow_finding("abs_delta_num");
+    }
+  } else {
+    abs_delta_num = delta_num;
+  }
 
   bool within_fail = false;
   bool within_warn = false;
@@ -105,16 +146,49 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     // section 3's own formula), generalized with an extra candidate_den
     // factor so it stays exact even when the two sides' denominators
     // differ -- derivation recorded in 02-04-SUMMARY.md.
-    const std::int64_t abs_baseline_num = baseline_mag->num < 0 ? -baseline_mag->num : baseline_mag->num;
-    within_fail = abs_delta_num * tolerance->den * 100 <= tolerance->num * abs_baseline_num * candidate_mag->den;
+    std::int64_t abs_baseline_num = 0;
+    if (baseline_mag->num < 0) {
+      if (!detail::checked_negate(baseline_mag->num, &abs_baseline_num)) {
+        return overflow_finding("abs_baseline_num");
+      }
+    } else {
+      abs_baseline_num = baseline_mag->num;
+    }
+
+    std::int64_t lhs = 0;
+    if (!detail::checked_mul(abs_delta_num, tolerance->den, &lhs) || !detail::checked_mul(lhs, 100, &lhs)) {
+      return overflow_finding("relative-tolerance lhs (|delta| * tolerance_den * 100)");
+    }
+    std::int64_t rhs = 0;
+    if (!detail::checked_mul(tolerance->num, abs_baseline_num, &rhs) ||
+        !detail::checked_mul(rhs, candidate_mag->den, &rhs)) {
+      return overflow_finding("relative-tolerance rhs (tolerance_num * |baseline| * candidate_den)");
+    }
+    within_fail = lhs <= rhs;
     if (tolerance->warn_num.has_value()) {
-      within_warn =
-          abs_delta_num * tolerance->den * 100 <= *tolerance->warn_num * abs_baseline_num * candidate_mag->den;
+      std::int64_t rhs_warn = 0;
+      if (!detail::checked_mul(*tolerance->warn_num, abs_baseline_num, &rhs_warn) ||
+          !detail::checked_mul(rhs_warn, candidate_mag->den, &rhs_warn)) {
+        return overflow_finding("relative-tolerance warn rhs (warn_num * |baseline| * candidate_den)");
+      }
+      within_warn = lhs <= rhs_warn;
     }
   } else {
-    within_fail = abs_delta_num * tolerance->den <= tolerance->num * delta_den;
+    std::int64_t lhs = 0;
+    if (!detail::checked_mul(abs_delta_num, tolerance->den, &lhs)) {
+      return overflow_finding("absolute-tolerance lhs (|delta| * tolerance_den)");
+    }
+    std::int64_t rhs = 0;
+    if (!detail::checked_mul(tolerance->num, delta_den, &rhs)) {
+      return overflow_finding("absolute-tolerance rhs (tolerance_num * delta_den)");
+    }
+    within_fail = lhs <= rhs;
     if (tolerance->warn_num.has_value()) {
-      within_warn = abs_delta_num * tolerance->den <= *tolerance->warn_num * delta_den;
+      std::int64_t rhs_warn = 0;
+      if (!detail::checked_mul(*tolerance->warn_num, delta_den, &rhs_warn)) {
+        return overflow_finding("absolute-tolerance warn rhs (warn_num * delta_den)");
+      }
+      within_warn = lhs <= rhs_warn;
     }
   }
 
