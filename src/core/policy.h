@@ -85,18 +85,22 @@ struct Policy {
 // (src/cli/commands/compare.cpp) both still do -- this recomputes the
 // builtin and profile layers fresh from `check` and `policy.profile`
 // alone, producing exactly what resolve_policy would have for that check:
+// `Severity::ignore` when `check.is_volatile`, otherwise
 // `check.severity_for(policy.profile)`.
 Severity resolve_severity(const CheckDef& check, const Policy& policy);
 
 // Performs the builtin and profile layers of doc 01 section 4's resolution
 // chain over every check in `registry`, in registry declaration order: each
-// check starts from its checks.def baseline with a `builtin` provenance
-// entry, then (for a check whose profile override actually differs from
-// the baseline) the selected profile's override is applied with a
-// `profile` provenance entry appended. A check's baseline tolerance (or
-// profile override, via CheckDef::tolerance_for) is parsed once here too,
-// when declared. Layers three (config) and four (CLI) are additional
-// overrides a later plan applies to these SAME per_check entries via
+// check starts from its checks.def baseline -- or `Severity::ignore` when
+// `CheckDef::is_volatile`, applied here at this builtin layer rather than
+// as a post-pass, which is what lets a later config/CLI layer still
+// promote it (T-2-19) -- with a `builtin` provenance entry, then (for a
+// non-volatile check whose profile override actually differs from the
+// baseline) the selected profile's override is applied with a `profile`
+// provenance entry appended. A check's baseline tolerance (or profile
+// override, via CheckDef::tolerance_for) is parsed once here too, when
+// declared. Layers three (config) and four (CLI) are additional overrides
+// a later plan applies to these SAME per_check entries via
 // apply_severity_override below.
 mediadiff::expected<Policy, Error> resolve_policy(const CheckRegistry& registry, ProfileId profile);
 

@@ -35,6 +35,9 @@ Severity resolve_severity(const CheckDef& check, const Policy& policy) {
   // No per_check entry for this check -- see this function's header
   // comment: recompute the builtin+profile layers fresh, mirroring
   // resolve_policy's own per-check computation exactly.
+  if (check.is_volatile) {
+    return Severity::ignore;
+  }
   return check.severity_for(policy.profile);
 }
 
@@ -48,15 +51,28 @@ mediadiff::expected<Policy, Error> resolve_policy(const CheckRegistry& registry,
     ResolvedCheck resolved;
     resolved.id = check.id;
 
-    resolved.severity = check.default_severity;
-    resolved.chain.push_back(PolicyProvenance{PolicyProvenance::Layer::builtin, "checks.def default",
-                                               std::string(severity_name(resolved.severity))});
+    if (check.is_volatile) {
+      // The volatile rule is applied at this builtin layer, unconditionally
+      // -- a profile's own [check.profile_severity] entry for a volatile
+      // check (if one is ever declared) is deliberately never reached, so
+      // "resolves to ignore in every one of the five profiles" holds
+      // without an exception. Only a later (config/CLI) layer, appended via
+      // apply_severity_override, can promote it (T-2-19).
+      resolved.severity = Severity::ignore;
+      resolved.chain.push_back(PolicyProvenance{PolicyProvenance::Layer::builtin, "volatile",
+                                                 std::string(severity_name(resolved.severity))});
+    } else {
+      resolved.severity = check.default_severity;
+      resolved.chain.push_back(PolicyProvenance{PolicyProvenance::Layer::builtin, "checks.def default",
+                                                 std::string(severity_name(resolved.severity))});
 
-    const Severity profile_severity = check.severity_for(profile);
-    if (profile_severity != resolved.severity) {
-      resolved.severity = profile_severity;
-      resolved.chain.push_back(PolicyProvenance{
-          PolicyProvenance::Layer::profile, std::string(profile_to_string(profile)), std::string(severity_name(resolved.severity))});
+      const Severity profile_severity = check.severity_for(profile);
+      if (profile_severity != resolved.severity) {
+        resolved.severity = profile_severity;
+        resolved.chain.push_back(PolicyProvenance{PolicyProvenance::Layer::profile,
+                                                    std::string(profile_to_string(profile)),
+                                                    std::string(severity_name(resolved.severity))});
+      }
     }
 
     const std::string_view tolerance_text = check.tolerance_for(profile);

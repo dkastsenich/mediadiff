@@ -25,6 +25,9 @@ add_executable(mediadiff_unit_tests
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp
+  # The volatile rule: computed but non-gating in every profile
+  # (02-05-PLAN.md Task 2).
+  test_volatile.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp
