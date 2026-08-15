@@ -1,6 +1,7 @@
 #include <CLI/CLI.hpp>
 
 #include <cstdio>
+#include <exception>
 #include <memory>
 #include <string>
 
@@ -83,6 +84,20 @@ int run(int argc, char** argv) {
     app.parse(argc, argv);
   } catch (const CLI::ParseError& e) {
     return app.exit(e) == 0 ? kExitClean : kExitUsage;
+  } catch (const std::exception& e) {
+    // CR-01 defense-in-depth backstop: core/config/compare must never throw
+    // across the lib boundary (PROJECT.md's error-handling constraint,
+    // ENG-16) — every fallible path returns mediadiff::expected<T, Error>
+    // instead, and every subcommand callback that reads a snapshot already
+    // maps a read failure to a clean exit via exit_code_for(). This catch
+    // exists only to turn an exception the lib boundary should have
+    // prevented into a diagnosed exit(70) instead of std::terminate() /
+    // SIGABRT, for any future call site that reintroduces the pattern
+    // CR-01 fixed. It deliberately reports internal (a mediadiff bug), not
+    // a user-input problem, since a well-formed lib boundary would never
+    // let an exception reach here.
+    std::fputs(("mediadiff: internal error (uncaught exception): " + std::string(e.what()) + "\n").c_str(), stderr);
+    return kExitInternal;
   }
 
   // A registered subcommand's own callback already ran (and, for every

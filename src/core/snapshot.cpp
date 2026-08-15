@@ -86,6 +86,16 @@ mediadiff::expected<InputIdentity, Error> input_identity_from_json(const nlohman
   if (!j.is_object() || !j.contains("basename") || !j.contains("size_bytes") || !j.contains("xxh3_128")) {
     return mediadiff::unexpected(Error{ErrorKind::input_unsupported, "malformed input_identity"});
   }
+  // CR-01: .contains() alone does not guarantee the node's TYPE. An
+  // untrusted snapshot naming e.g. "size_bytes": "not-a-number" previously
+  // reached .get<std::int64_t>() below unchecked, throwing
+  // nlohmann::json::type_error — uncaught std::terminate() on the
+  // compare/snapshot path, silently swallowed into an empty "clean" result
+  // on the dir path. Symmetric with core/serializer.cpp's own
+  // value_from_json branches.
+  if (!j.at("basename").is_string() || !j.at("size_bytes").is_number_integer() || !j.at("xxh3_128").is_string()) {
+    return mediadiff::unexpected(Error{ErrorKind::input_unsupported, "input_identity has wrong field types"});
+  }
   InputIdentity id;
   id.basename = j.at("basename").get<std::string>();
   id.size_bytes = j.at("size_bytes").get<std::int64_t>();

@@ -173,12 +173,55 @@ void write_node(std::string& out, const nlohmann::ordered_json& node, std::size_
   }
 }
 
+// CR-02's compact counterpart to write_node above: same recursive shape,
+// but always a single line (no depth, no scalar-per-line newlines) --
+// every leaf still goes through write_scalar, the ONE place a double
+// becomes text in this file, so this is a second tree walk over the same
+// node structure, never a second float formatter. See serializer.h's own
+// doc comment on serialize_value_compact for which callers need this
+// instead of write_node/serialize_document.
+void write_node_compact(std::string& out, const nlohmann::ordered_json& node) {
+  if (node.is_object()) {
+    out += "{";
+    bool first = true;
+    for (auto it = node.begin(); it != node.end(); ++it) {
+      if (!first) {
+        out += ",";
+      }
+      first = false;
+      out += escape_json_string(it.key());
+      out += ":";
+      write_node_compact(out, it.value());
+    }
+    out += "}";
+  } else if (node.is_array()) {
+    out += "[";
+    bool first = true;
+    for (const auto& elem : node) {
+      if (!first) {
+        out += ",";
+      }
+      first = false;
+      write_node_compact(out, elem);
+    }
+    out += "]";
+  } else {
+    write_scalar(out, node);
+  }
+}
+
 }  // namespace
 
 std::string serialize_document(const nlohmann::ordered_json& doc) {
   std::string out;
   write_node(out, doc, 0);
   out += "\n";
+  return out;
+}
+
+std::string serialize_value_compact(const nlohmann::ordered_json& node) {
+  std::string out;
+  write_node_compact(out, node);
   return out;
 }
 
@@ -254,6 +297,19 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
         return mediadiff::unexpected(
             Error{ErrorKind::input_unsupported, "expected a rational (time) value's tb object"});
       }
+      // CR-01: the branches above only check .contains(); an untrusted
+      // snapshot can name "num"/"den"/"tb.num"/"tb.den" keys that exist but
+      // hold the wrong JSON type (e.g. a string), which would otherwise
+      // make the .get<std::int64_t>() calls below throw
+      // nlohmann::json::type_error — uncaught on the compare/snapshot path
+      // (std::terminate) and silently swallowed into an empty "clean" file
+      // on the dir path (WorkerPool::run_indexed's catch (...)). Symmetric
+      // with the already-correct int64/real/string/string_set branches.
+      if (!json.at("num").is_number_integer() || !json.at("den").is_number_integer() ||
+          !tb.at("num").is_number_integer() || !tb.at("den").is_number_integer()) {
+        return mediadiff::unexpected(
+            Error{ErrorKind::input_unsupported, "rational value has non-integer num/den/tb"});
+      }
       RationalValue rv{};
       rv.num = json.at("num").get<std::int64_t>();
       rv.den = json.at("den").get<std::int64_t>();
@@ -297,6 +353,11 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
         if (!bin.is_object() || !bin.contains("bin") || !bin.contains("count")) {
           return mediadiff::unexpected(Error{ErrorKind::input_unsupported, "histogram bin missing bin/count"});
         }
+        // CR-01: type-check before .get<>() — see the rational branch's
+        // comment above for why .contains() alone is not sufficient.
+        if (!bin.at("bin").is_string() || !bin.at("count").is_number_integer()) {
+          return mediadiff::unexpected(Error{ErrorKind::input_unsupported, "histogram bin has wrong bin/count type"});
+        }
         hist.bins.emplace_back(bin.at("bin").get<std::string>(), bin.at("count").get<std::int64_t>());
       }
       return Value{std::move(hist)};
@@ -326,6 +387,12 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
       if (!json.is_object() || !json.contains("algorithm") || !json.contains("digest") ||
           !json.contains("element_count")) {
         return mediadiff::unexpected(Error{ErrorKind::input_unsupported, "expected a hash_chain value"});
+      }
+      // CR-01: type-check before .get<>() — see the rational branch's
+      // comment above for why .contains() alone is not sufficient.
+      if (!json.at("algorithm").is_string() || !json.at("digest").is_string() ||
+          !json.at("element_count").is_number_integer()) {
+        return mediadiff::unexpected(Error{ErrorKind::input_unsupported, "hash_chain value has wrong field types"});
       }
       HashChain chain;
       chain.algorithm = json.at("algorithm").get<std::string>();

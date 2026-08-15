@@ -41,6 +41,11 @@ add_executable(mediadiff_integration_tests
   # thread-count determinism, the corpus files[] JSON layer, and the TTY
   # worst-N table (02-11-PLAN.md Task 3).
   test_dir_mode.cpp
+  # CR-01 regression (02-REVIEW.md): a type-poisoned .snap.json must exit a
+  # clean input-error code on `compare` (never crash/SIGABRT) and must never
+  # make `dir` mode report the corrupted pair as an empty-findings clean
+  # pass.
+  test_type_poisoned_snapshot.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
