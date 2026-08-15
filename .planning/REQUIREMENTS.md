@@ -35,9 +35,9 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Core Engine
 
-- [ ] **ENG-01**: A single check registry (`src/core/checks.def`) generates the ID enum, the registry, and the docs manifest — the build fails if `docs/checks/<id>.md` is missing for any registered ID
-- [ ] **ENG-02**: Check IDs match by segment-wise glob (`*` one segment, `**` trailing segments) for `--set` and config, with no regex
-- [ ] **ENG-03**: A renamed check resolves through `deprecated_alias` at config-parse time with a warning, so existing user configs keep working
+- [x] **ENG-01**: A single check registry (`src/core/checks.def`) generates the ID enum, the registry, and the docs manifest — the build fails if `docs/checks/<id>.md` is missing for any registered ID
+- [x] **ENG-02**: Check IDs match by segment-wise glob (`*` one segment, `**` trailing segments) for `--set` and config, with no regex
+- [x] **ENG-03**: A renamed check resolves through `deprecated_alias` at config-parse time with a warning, so existing user configs keep working
 - [ ] **ENG-04**: All seven comparison semantics work per spec: `exact`, `±tol`, `set`, `presence`, `hash`, `dist`, `span`
 - [ ] **ENG-05**: Time-unit tolerances compare in ticks/samples using rational math, never floats
 - [ ] **ENG-06**: Severity resolves through the chain built-in → profile → config globs (file order) → CLI `--set` (argv order), last writer wins, and the resolved chain appears in evidence under `-v`
@@ -177,8 +177,8 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Documentation & Explainability
 
-- [ ] **DOC-01**: Every registered check has a `docs/checks/<id>.md` file, enforced by the build rather than by review discipline
-- [ ] **DOC-02**: Every check's `--explain` text states what the check measures, why it matters, and how to accept, tune, or silence it
+- [x] **DOC-01**: Every registered check has a `docs/checks/<id>.md` file, enforced by the build rather than by review discipline
+- [x] **DOC-02**: Every check's `--explain` text states what the check measures, why it matters, and how to accept, tune, or silence it
 - [ ] **DOC-03**: Every check is demonstrated by at least one fixture pair that triggers it and one that comes back clean
 - [ ] **DOC-04**: Timeline fixtures assert the *no-others* clause — the intended finding fires and nothing else does
 
@@ -264,9 +264,9 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CLI-08 | Phase 2 | Pending |
 | CLI-09 | Phase 1 | Complete |
 | CLI-10 | Phase 2 | Pending |
-| ENG-01 | Phase 2 | Pending |
-| ENG-02 | Phase 2 | Pending |
-| ENG-03 | Phase 2 | Pending |
+| ENG-01 | Phase 2 | Complete |
+| ENG-02 | Phase 2 | Complete |
+| ENG-03 | Phase 2 | Complete |
 | ENG-04 | Phase 2 | Pending |
 | ENG-05 | Phase 2 | Pending |
 | ENG-06 | Phase 2 | Pending |
@@ -373,8 +373,8 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TRUST-07 | Phase 7 | Pending |
 | TRUST-08 | Phase 2 | Pending |
 | TRUST-09 | Phase 3 | Pending |
-| DOC-01 | Phase 2 | Pending |
-| DOC-02 | Phase 2 | Pending |
+| DOC-01 | Phase 2 | Complete |
+| DOC-02 | Phase 2 | Complete |
 | DOC-03 | Phase 3 | Pending |
 | DOC-04 | Phase 5 | Pending |
 | PERF-01 | Phase 5 | Pending |

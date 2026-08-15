@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-08-15T14:50:51.847Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-08-15T15:15:03.847Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 02 (core-engine) — EXECUTING
-Plan: 2 of 11
+Plan: 3 of 11
 Status: Ready to execute
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [████░░░░░░] 38%
+Progress: [████░░░░░░] 44%
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [████░░░░░░] 38%
 | Phase 01 P04 | 30min | 2 tasks | 20 files |
 | Phase 01 P05 | 35min | 2 tasks | 1 files |
 | Phase 02 P01 | 15min | 4 tasks | 30 files |
+| Phase 02 P02 | 24min | 3 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-01: Froze contracts — schema_version="1.0", seed check IDs (meta.tool_version registered; meta.missing_candidate/extra_candidate approved for 02-11), time value {num,den,tb,ms}, ID grammar [a-z0-9_]+(\.[a-z0-9_]+)*
 - [Phase ?]: 02-01: nlohmann_json linked explicitly via find_package/target_link_libraries rather than the FFMPEG-include-dir backdoor Phase 1 used implicitly for tl-expected
 - [Phase ?]: 02-01: compare's exit code is set via std::exit() inside the CLI11 subcommand callback (sanctioned — ENG-16 lint excludes src/cli/ and names exit() the CLI's prerogative)
+- [Phase ?]: 02-02: Aliases declared inline on owning check (checks.def aliases=[...]); meta.tool_version carries demonstrative alias + strict-bitexact severity override so resolve_alias/severity_for are exercised against the real registry
+- [Phase ?]: 02-02: Process-spawn primitive extracted into tests/process_spawn.h (cli_harness.h now a thin wrapper) so the unit test target can spawn the Python interpreter without MEDIADIFF_BINARY
 
 ### Pending Todos
 
@@ -115,6 +118,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T14:50:51.835Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-08-15T15:15:03.831Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
