@@ -5,12 +5,12 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Foundation & Toolchain
 status: executing
-stopped_at: Phase 1 verified and sealed (5/5 criteria after criterion-5 amendment); ready for Phase 2 discussion
-last_updated: "2026-08-15T07:29:07.299Z"
+stopped_at: Phase 2 context gathered — 17 decisions across registry, value model, stub strategy, fail-first discipline
+last_updated: "2026-08-15T10:57:50.045Z"
 last_activity: 2026-08-12
 last_activity_desc: Roadmap created; 138 v1 requirements mapped across 7 phases
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
   total_plans: 5
   completed_plans: 5
@@ -105,6 +105,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T07:29:07.290Z
-Stopped at: Phase 1 verified and sealed (5/5 criteria after criterion-5 amendment); ready for Phase 2 discussion
-Resume file: .planning/ROADMAP.md
+Last session: 2026-08-15T10:57:50.035Z
+Stopped at: Phase 2 context gathered — 17 decisions across registry, value model, stub strategy, fail-first discipline
+Resume file: .planning/phases/02-core-engine/02-CONTEXT.md
