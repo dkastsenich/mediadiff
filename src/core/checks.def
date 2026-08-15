@@ -1,0 +1,35 @@
+# src/core/checks.def
+#
+# TOML-syntax despite the .def extension (D-01) — doc 01 section 2 mandates
+# the filename `checks.def`; the content is TOML 1.0, parsed by
+# tools/gen_registry.py with the Python 3.11+ standard-library `tomllib`
+# module (D-05), never a third-party TOML library. Every entry is a
+# `[[check]]` array-of-tables record.
+#
+# Keys:
+#   id            dotted lowercase grammar [a-z0-9_]+(\.[a-z0-9_]+)*
+#   group         the check's family, e.g. "meta"
+#   semantic      exact | tol | set | presence | hash | dist | span
+#   unit          none | ms | ms_per_min | frames | percent | db | lu |
+#                 samples | ticks | count
+#   value_kind    int64 | rational | real | string | string_set |
+#                 histogram | span_list | hash_chain
+#   severity      ignore | info | warn | fail
+#   tolerance     optional; tolerance grammar text, unparsed at this phase
+#   volatile      optional bool, default false
+#   requires_pass optional bool, default false
+#
+# Registered here: exactly the seed set approved in Task 1 of
+# 02-01-PLAN.md's checkpoint. meta.missing_candidate and meta.extra_candidate
+# are APPROVED but NOT YET REGISTERED — their `presence` semantic has no
+# comparator dispatch until plan 02-11, and every registered ID must have a
+# real, non-empty docs/checks/<id>.md (D-02), which this plan writes only
+# for meta.tool_version.
+
+[[check]]
+id = "meta.tool_version"
+group = "meta"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"

@@ -38,21 +38,79 @@ endforeach()
 find_package(FFMPEG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+
+# --- Check registry generator (D-01, D-05) -----------------------------------
+# tomllib is standard-library only from Python 3.11 onward — enforced here
+# at configure time (not only inside tools/gen_registry.py itself) so a
+# too-old interpreter fails the build immediately with CMake's own
+# diagnostic rather than a cryptic Python ImportError three layers down.
+find_package(Python3 3.11 COMPONENTS Interpreter REQUIRED)
+
+set(MEDIADIFF_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+set(MEDIADIFF_CHECKS_DEF "${CMAKE_SOURCE_DIR}/src/core/checks.def")
+
+# CONFIGURE_DEPENDS so an added/removed docs/checks/<id>.md file triggers a
+# reconfigure on the next build — a plain file(GLOB) result is cached and
+# would NOT notice a new file on its own (a known CMake footgun).
+file(GLOB MEDIADIFF_CHECK_DOCS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/docs/checks/*.md")
+
+add_custom_command(
+  OUTPUT
+    "${MEDIADIFF_GENERATED_DIR}/core/check_id.h"
+    "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
+    "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
+  COMMAND Python3::Interpreter
+          "${CMAKE_SOURCE_DIR}/tools/gen_registry.py"
+          --checks "${MEDIADIFF_CHECKS_DEF}"
+          --docs-dir "${CMAKE_SOURCE_DIR}/docs/checks"
+          --out-dir "${MEDIADIFF_GENERATED_DIR}/core"
+  DEPENDS
+    "${MEDIADIFF_CHECKS_DEF}"
+    "${CMAKE_SOURCE_DIR}/tools/gen_registry.py"
+    ${MEDIADIFF_CHECK_DOCS}
+  COMMENT "Generating check registry from checks.def"
+  VERBATIM
+)
+add_custom_target(generate_registry DEPENDS
+  "${MEDIADIFF_GENERATED_DIR}/core/check_id.h"
+  "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
+  "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
+)
 
 # --- libmediadiff ------------------------------------------------------------
 # No stdout, no exit() — ENG-16 architectural invariant (D-07). Enforced
 # structurally in Plan 04 via a CI lint over this target's sources.
 add_library(libmediadiff STATIC
   src/util/version.cpp
+  "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
+  "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
 set_target_properties(libmediadiff PROPERTIES OUTPUT_NAME mediadiff_core)
+add_dependencies(libmediadiff generate_registry)
 
 target_include_directories(libmediadiff PUBLIC
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
+  $<BUILD_INTERFACE:${MEDIADIFF_GENERATED_DIR}>
 )
 target_include_directories(libmediadiff SYSTEM PUBLIC ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(libmediadiff PUBLIC ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt)
+target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json)
+
+# --- Header compilation gate --------------------------------------------------
+# A header nothing includes is a header nothing type-checks, and Phase 2
+# adds almost entirely headers to core/ — so every new src/core/*.h is
+# declared as a verified header set and compiled standalone under the same
+# warnings-as-errors flags as every .cpp file. Requires CMake 3.24; the
+# project floor is 3.25. Later Phase-2 plans extend this same FILE_SET.
+target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR}/src FILES
+  src/core/error.h
+  src/core/rational.h
+  src/core/value.h
+  src/core/model.h
+  src/core/registry.h
+)
+set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 
 if(APPLE)
   # vcpkg's FindFFMPEG.cmake.in has no Apple-framework pass-through, while the

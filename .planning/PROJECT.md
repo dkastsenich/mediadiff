@@ -115,6 +115,7 @@ Each doc carries its own per-phase acceptance section. Ship gate for v1 is the p
 - **Test data**: no media binaries in git; all fixtures synthesized with `-flags +bitexact -fflags +bitexact`, requiring an ffmpeg CLI ≥ 6.1 at corpus-generation time
 - **CI**: 3-OS matrix, warnings-as-errors (`/W4`, `-Wall -Wextra`), vcpkg binary caching to amortize the 15–40 min uncached FFmpeg build
 - **Check IDs are forever**: additions fine, renames only via alias + deprecation
+- **Build prerequisite: Python >= 3.11**: `tools/gen_registry.py` (the check-registry generator, D-01) parses `src/core/checks.def` with the standard-library `tomllib` module, which is only available from Python 3.11 onward — required on every developer machine and CI leg (D-05)
 
 ## Key Decisions
 
