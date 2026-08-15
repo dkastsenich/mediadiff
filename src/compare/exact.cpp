@@ -43,33 +43,30 @@ mediadiff::expected<Finding, Error> compare_exact(const CheckDef& check, const M
   return finding;
 }
 
-namespace {
-
-// Registered (D-04's severity/tolerance table already accepts these
-// semantics), dispatchable (the Comparator function-pointer type already
-// covers them) — just not implemented yet. Plans 02-02 through 02-04 fill
-// these in; until then a check declaring one of these semantics fails
-// loudly with an internal Error rather than silently mis-comparing.
-mediadiff::expected<Finding, Error> compare_unimplemented(const CheckDef&, const Measurement&, const Measurement&,
-                                                            const Policy&) {
-  return mediadiff::unexpected(Error{ErrorKind::internal, "comparator not yet implemented for this semantic"});
-}
-
-}  // namespace
-
+// comparator_for: all seven Semantic enumerators dispatch to a real
+// comparator as of this plan — a switch with no default: arm, so a future
+// Semantic added without a matching case is a -Wswitch (-Werror
+// project-wide) compile failure, not a silent gap.
 Comparator comparator_for(Semantic semantic) {
   switch (semantic) {
     case Semantic::exact:
       return &compare_exact;
     case Semantic::tol:
+      return &compare_tol;
     case Semantic::set:
+      return &compare_set;
     case Semantic::presence:
+      return &compare_presence;
     case Semantic::hash:
+      return &compare_hash;
     case Semantic::dist:
+      return &compare_dist;
     case Semantic::span:
-      return &compare_unimplemented;
+      return &compare_span;
   }
-  return &compare_unimplemented;
+  // Unreachable for any valid Semantic — see src/cli/exit_code.h's own
+  // no-default:-arm-plus-trailing-return pattern for why this shape.
+  return &compare_exact;
 }
 
 }  // namespace mediadiff

@@ -3,13 +3,100 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <string>
+#include <string_view>
+#include <type_traits>
 #include <utility>
+#include <variant>
+
+#include <fmt/format.h>
 
 #include "compare/semantics.h"
 
 namespace mediadiff {
 
 namespace {
+
+// Maps the alternative Value's std::variant actually holds to the
+// ValueKind vocabulary CheckDef::value_kind declares against (D-09). Never
+// called for the Absent alternative — see value_kind_mismatch below, which
+// exempts it before this function would ever be reached.
+ValueKind value_kind_of(const Value& value) {
+  return std::visit(
+      [](const auto& v) -> ValueKind {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, std::int64_t>) {
+          return ValueKind::int64;
+        } else if constexpr (std::is_same_v<T, RationalValue>) {
+          return ValueKind::rational;
+        } else if constexpr (std::is_same_v<T, double>) {
+          return ValueKind::real;
+        } else if constexpr (std::is_same_v<T, std::string>) {
+          return ValueKind::string;
+        } else if constexpr (std::is_same_v<T, StringSet>) {
+          return ValueKind::string_set;
+        } else if constexpr (std::is_same_v<T, Histogram>) {
+          return ValueKind::histogram;
+        } else if constexpr (std::is_same_v<T, SpanList>) {
+          return ValueKind::span_list;
+        } else if constexpr (std::is_same_v<T, HashChain>) {
+          return ValueKind::hash_chain;
+        } else {
+          // Absent: unreachable — value_kind_mismatch exempts it before
+          // calling this function. static_assert would fire for a value
+          // this branch is never instantiated with as long as that holds.
+          return ValueKind::int64;
+        }
+      },
+      value);
+}
+
+std::string_view value_kind_name(ValueKind kind) {
+  switch (kind) {
+    case ValueKind::int64:
+      return "int64";
+    case ValueKind::rational:
+      return "rational";
+    case ValueKind::real:
+      return "real";
+    case ValueKind::string:
+      return "string";
+    case ValueKind::string_set:
+      return "string_set";
+    case ValueKind::histogram:
+      return "histogram";
+    case ValueKind::span_list:
+      return "span_list";
+    case ValueKind::hash_chain:
+      return "hash_chain";
+  }
+  // Unreachable for any valid ValueKind — see src/cli/exit_code.h's own
+  // no-default:-arm-plus-trailing-return pattern for why this shape.
+  return "unknown";
+}
+
+// D-09: the registry's declared value_kind is authoritative; a mismatch
+// between what a Measurement's Value variant actually holds and what the
+// check declares is an error, never a coercion. Absent is exempt — "a
+// check that ran but had nothing to measure" is valid regardless of the
+// declared kind (core/value.h's own Absent comment). This is the runtime
+// backstop for measurements that never passed through
+// core/serializer.cpp's value_from_json (which already enforces this at
+// JSON-parse time) — a live analyzer constructing a Measurement in-process
+// (Phase 3 onward) has no such gate of its own.
+bool value_kind_mismatch(const Value& value, ValueKind expected, std::string* observed_name) {
+  if (std::holds_alternative<Absent>(value)) {
+    return false;
+  }
+  const ValueKind actual = value_kind_of(value);
+  if (actual == expected) {
+    return false;
+  }
+  if (observed_name != nullptr) {
+    *observed_name = std::string(value_kind_name(actual));
+  }
+  return true;
+}
 
 // Pairing key: (check_index, scope). Ordered lexicographically by
 // check_index first — that is what makes "registry declaration order" the
@@ -79,9 +166,32 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
       return mediadiff::unexpected(Error{ErrorKind::internal, "measurement check_index out of registry range"});
     }
     const CheckDef& check = registry.at(pair_key.check_index);
+    const Measurement& baseline_m = *baseline_it->second;
+    const Measurement& candidate_m = *candidate_it->second;
+
+    std::string observed_kind;
+    const bool mismatch = value_kind_mismatch(baseline_m.value, check.value_kind, &observed_kind) ||
+                           value_kind_mismatch(candidate_m.value, check.value_kind, &observed_kind);
+    if (mismatch) {
+      // D-09: never a coercion — a Finding is still emitted (so the report
+      // stays complete) but it carries Status::error, not a fabricated
+      // verdict. No comparator ever sees this pair.
+      Finding finding;
+      finding.id = check.id;
+      finding.scope = candidate_m.scope;
+      finding.status = Status::error;
+      finding.severity = resolve_severity(check, policy);
+      finding.baseline = baseline_m.value;
+      finding.candidate = candidate_m.value;
+      finding.skip_reason = SkipReason::none;
+      finding.message = fmt::format("value_kind mismatch: check '{}' declares {}, measurement holds {}", check.id,
+                                     value_kind_name(check.value_kind), observed_kind);
+      findings.push_back(std::move(finding));
+      continue;
+    }
 
     const Comparator comparator = comparator_for(check.semantic);
-    auto finding = comparator(check, *baseline_it->second, *candidate_it->second, policy);
+    auto finding = comparator(check, baseline_m, candidate_m, policy);
     if (!finding) {
       return mediadiff::unexpected(finding.error());
     }

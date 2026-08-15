@@ -18,11 +18,33 @@ namespace mediadiff {
 using Comparator = mediadiff::expected<Finding, Error> (*)(const CheckDef& check, const Measurement& baseline,
                                                             const Measurement& candidate, const Policy& policy);
 
-// Looks up the comparator for `semantic`. This plan implements only
-// Semantic::exact (compare/exact.cpp); every other semantic's entry
-// currently returns a comparator that reports ErrorKind::internal — a
-// functionality gap plans 02-02 through 02-04 close, not a type-level one
-// this plan leaves open.
+// Looks up the comparator for `semantic`. All seven Semantic enumerators
+// dispatch to a real comparator as of plan 02-04 — one function per .cpp
+// file under src/compare/, matching this declaration's signature exactly
+// so comparator_for (compare/exact.cpp) can return each one as a plain
+// function pointer with no adapter.
 Comparator comparator_for(Semantic semantic);
+
+// One comparator per doc 01 section 3 semantic. Declared here (rather than
+// only forward-declared where comparator_for needs them) so every
+// comparator is independently discoverable and independently testable —
+// tests/unit/test_compare_semantics.cpp exercises several of these
+// directly via comparator_for(Semantic::...) rather than by name, matching
+// the fail-first coverage gate's own pattern, but nothing stops a future
+// caller from naming one directly.
+mediadiff::expected<Finding, Error> compare_exact(const CheckDef& check, const Measurement& baseline,
+                                                    const Measurement& candidate, const Policy& policy);
+mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Measurement& baseline,
+                                                  const Measurement& candidate, const Policy& policy);
+mediadiff::expected<Finding, Error> compare_set(const CheckDef& check, const Measurement& baseline,
+                                                  const Measurement& candidate, const Policy& policy);
+mediadiff::expected<Finding, Error> compare_presence(const CheckDef& check, const Measurement& baseline,
+                                                       const Measurement& candidate, const Policy& policy);
+mediadiff::expected<Finding, Error> compare_hash(const CheckDef& check, const Measurement& baseline,
+                                                   const Measurement& candidate, const Policy& policy);
+mediadiff::expected<Finding, Error> compare_dist(const CheckDef& check, const Measurement& baseline,
+                                                   const Measurement& candidate, const Policy& policy);
+mediadiff::expected<Finding, Error> compare_span(const CheckDef& check, const Measurement& baseline,
+                                                   const Measurement& candidate, const Policy& policy);
 
 }  // namespace mediadiff

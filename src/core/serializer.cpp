@@ -92,6 +92,18 @@ nlohmann::ordered_json value_to_json(const Value& value) {
 }
 
 mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& json, ValueKind expected_kind) {
+  // Symmetric with value_to_json's Absent -> JSON null encoding above: a
+  // measurement that ran and found nothing to measure round-trips as
+  // `null` regardless of the check's declared value_kind (D-09 exempts
+  // Absent from the kind check for exactly this reason — see
+  // compare/engine.cpp's value_kind_mismatch). Before this fix, a
+  // snapshot written by mediadiff itself could not be read back if it
+  // contained an Absent measurement: `mediadiff snapshot f && mediadiff
+  // compare f f.snap.json` is a permanent CI self-check (doc 01 section 8)
+  // that this asymmetry would have silently broken.
+  if (json.is_null()) {
+    return Value{Absent{}};
+  }
   switch (expected_kind) {
     case ValueKind::int64: {
       if (!json.is_number_integer()) {

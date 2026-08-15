@@ -131,6 +131,12 @@ add_library(libmediadiff STATIC
   src/core/tolerance.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
+  src/compare/tol.cpp
+  src/compare/set.cpp
+  src/compare/presence.cpp
+  src/compare/hash.cpp
+  src/compare/dist.cpp
+  src/compare/span.cpp
   src/report/json.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
