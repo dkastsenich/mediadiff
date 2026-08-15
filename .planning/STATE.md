@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-08-15T15:40:18.756Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-08-15T16:14:44.693Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 02 (core-engine) — EXECUTING
-Plan: 4 of 11
+Plan: 5 of 11
 Status: Ready to execute
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 56%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████░░░░░] 50%
 | Phase 02 P01 | 15min | 4 tasks | 30 files |
 | Phase 02 P02 | 24min | 3 tasks | 29 files |
 | Phase 02 P03 | 22min | 3 tasks | 38 files |
+| Phase 02 P04 | 90min | 3 tasks | 71 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-03: D-14/D-15/D-16 fail-first coverage gate and permanent canary built as Wave-0-style infrastructure before any real comparison semantic beyond exact exists; six not-yet-implemented semantics tracked in a self-verifying allow list in test_fail_first_coverage.cpp
 - [Phase ?]: 02-03: the cli_harness.h EINTR-as-EOF/pipe-leak/waitpid fix actually landed in tests/process_spawn.h -- 02-02 already extracted the POSIX spawn loop there, so cli_harness.h itself needed no change
 - [Phase ?]: 02-03: D-17 fail-first discipline (fixture-pair-per-semantic, semantic-crossed-with-status, permanent canary) recorded in .planning/PROJECT.md's new Conventions section as a binding project rule for Phases 3-7
+- [Phase ?]: 02-04: Two-threshold tolerance grammar accepts an optional matching warn-side suffix (both 3,5ms and 3ms,5ms parse identically); Unit::count's suffix is bytes plus the bare no-suffix form
+- [Phase ?]: 02-04: D-09 value_kind guard lives in compare/engine.cpp itself (compare_fingerprints), not only in core/serializer.cpp's value_from_json -- covers in-process Measurements a future analyzer constructs with no snapshot round-trip
+- [Phase ?]: 02-04: tests/support/test_checks.def extended with t.tol_info/t.dist_bins_fail/t.int64_count (plus tolerance/severity edits to t.tol_ms/t.dist_bins/t.span_runs) so every (semantic, status) coverage cell has a real fixture despite one severity per check
 
 ### Pending Todos
 
@@ -123,6 +127,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T15:40:18.744Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-08-15T16:14:44.681Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None

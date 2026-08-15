@@ -31,15 +31,15 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **CLI-07**: On exit code `66`, partial JSON is still emitted so CI can see what was measured before the failure
 - [ ] **CLI-08**: Color output auto-disables on `NO_COLOR`, non-TTY stdout, and `CI=true`, but stays enabled when `GITHUB_ACTIONS=true`; `--no-color` and `--ascii` force it manually
 - [x] **CLI-09**: **[R]** Windows non-ASCII paths work end to end — UTF-16 args via `CommandLineToArgvW` converted once to UTF-8, all file I/O through a `util/fs.h` shim, VT sequences enabled via `SetConsoleMode` (research: PITFALLS — must be phase 0, not retrofitted)
-- [ ] **CLI-10**: A tolerance given in the wrong unit for a check is a usage error (exit `64`) that names the expected unit
+- [x] **CLI-10**: A tolerance given in the wrong unit for a check is a usage error (exit `64`) that names the expected unit
 
 ### Core Engine
 
 - [x] **ENG-01**: A single check registry (`src/core/checks.def`) generates the ID enum, the registry, and the docs manifest — the build fails if `docs/checks/<id>.md` is missing for any registered ID
 - [x] **ENG-02**: Check IDs match by segment-wise glob (`*` one segment, `**` trailing segments) for `--set` and config, with no regex
 - [x] **ENG-03**: A renamed check resolves through `deprecated_alias` at config-parse time with a warning, so existing user configs keep working
-- [ ] **ENG-04**: All seven comparison semantics work per spec: `exact`, `±tol`, `set`, `presence`, `hash`, `dist`, `span`
-- [ ] **ENG-05**: Time-unit tolerances compare in ticks/samples using rational math, never floats
+- [x] **ENG-04**: All seven comparison semantics work per spec: `exact`, `±tol`, `set`, `presence`, `hash`, `dist`, `span`
+- [x] **ENG-05**: Time-unit tolerances compare in ticks/samples using rational math, never floats
 - [ ] **ENG-06**: Severity resolves through the chain built-in → profile → config globs (file order) → CLI `--set` (argv order), last writer wins, and the resolved chain appears in evidence under `-v`
 - [ ] **ENG-07**: `volatile`-flagged checks default to `ignore` in every profile, but their differing values are still computed and shown under `-v`
 - [ ] **ENG-08**: All five profiles ship and behave per the normative matrix: `strict-bitexact`, `sw-encoder`, `hw-encoder`, `remux`, `transform`
@@ -263,12 +263,12 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CLI-07 | Phase 2 | Pending |
 | CLI-08 | Phase 2 | Pending |
 | CLI-09 | Phase 1 | Complete |
-| CLI-10 | Phase 2 | Pending |
+| CLI-10 | Phase 2 | Complete |
 | ENG-01 | Phase 2 | Complete |
 | ENG-02 | Phase 2 | Complete |
 | ENG-03 | Phase 2 | Complete |
-| ENG-04 | Phase 2 | Pending |
-| ENG-05 | Phase 2 | Pending |
+| ENG-04 | Phase 2 | Complete |
+| ENG-05 | Phase 2 | Complete |
 | ENG-06 | Phase 2 | Pending |
 | ENG-07 | Phase 2 | Pending |
 | ENG-08 | Phase 2 | Pending |
