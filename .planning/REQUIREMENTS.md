@@ -24,7 +24,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 - [ ] **CLI-01**: User can run `mediadiff <BASELINE> <CANDIDATE>` with two bare positionals and get an implicit compare
 - [ ] **CLI-02**: User can invoke the `compare`, `snapshot`, `dir`, `inspect`, `list-checks`, and `explain` subcommands
-- [ ] **CLI-03**: User can repeat `--set <glob>=<severity>` and `--tol <check>=<value>`, and later flags override earlier ones in argv order
+- [x] **CLI-03**: User can repeat `--set <glob>=<severity>` and `--tol <check>=<value>`, and later flags override earlier ones in argv order
 - [ ] **CLI-04**: User can request reports with `--json[=path]` and repeatable `--report kind=path` for `md` and `junit`
 - [x] **CLI-05**: `mediadiff --version` prints the tool version, linked FFmpeg library versions, and enabled features (`vmaf`, `cuda`)
 - [ ] **CLI-06**: Exit codes follow the contract: `0` clean, `1` fail findings, `2` warn under `--strict`, `64` usage, `65` unreadable input, `66` decode failure mid-analysis, `70` internal
@@ -40,13 +40,13 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **ENG-03**: A renamed check resolves through `deprecated_alias` at config-parse time with a warning, so existing user configs keep working
 - [x] **ENG-04**: All seven comparison semantics work per spec: `exact`, `±tol`, `set`, `presence`, `hash`, `dist`, `span`
 - [x] **ENG-05**: Time-unit tolerances compare in ticks/samples using rational math, never floats
-- [ ] **ENG-06**: Severity resolves through the chain built-in → profile → config globs (file order) → CLI `--set` (argv order), last writer wins, and the resolved chain appears in evidence under `-v`
+- [x] **ENG-06**: Severity resolves through the chain built-in → profile → config globs (file order) → CLI `--set` (argv order), last writer wins, and the resolved chain appears in evidence under `-v`
 - [x] **ENG-07**: `volatile`-flagged checks default to `ignore` in every profile, but their differing values are still computed and shown under `-v`
 - [x] **ENG-08**: All five profiles ship and behave per the normative matrix: `strict-bitexact`, `sw-encoder`, `hw-encoder`, `remux`, `transform`
 - [x] **ENG-09**: Default profile is `sw-encoder` when neither `--profile` nor a TOML `profile=` is given
 - [x] **ENG-10**: The `transform` profile converts affected identity checks into checks against a declared expectation block (`expect.resolution`) instead of baseline equality
-- [ ] **ENG-11**: Config merges in precedence order profile → `[severity]`/`[tolerance]` → matching `[override.*]` blocks in file order → CLI
-- [ ] **ENG-12**: `mediadiff list-checks --effective` dumps the merged effective policy so a user can debug config surprises
+- [x] **ENG-11**: Config merges in precedence order profile → `[severity]`/`[tolerance]` → matching `[override.*]` blocks in file order → CLI
+- [x] **ENG-12**: `mediadiff list-checks --effective` dumps the merged effective policy so a user can debug config surprises
 - [ ] **ENG-13**: `mediadiff explain <check.id>` prints that check's documentation, compiled into the binary at build time
 - [x] **ENG-14**: `skipped` is a first-class status carrying a machine-readable reason, always present in JSON, and never rendered as or conflated with `pass`
 - [x] **ENG-15**: Errors map by kind to exit codes (`usage`→64, `input_open`/`input_unsupported`→65, `decode`→66, `internal`→70) with no exceptions crossing the `libmediadiff` boundary
@@ -256,7 +256,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | BUILD-10 | Phase 1 | Complete |
 | CLI-01 | Phase 2 | Pending |
 | CLI-02 | Phase 2 | Pending |
-| CLI-03 | Phase 2 | Pending |
+| CLI-03 | Phase 2 | Complete |
 | CLI-04 | Phase 2 | Pending |
 | CLI-05 | Phase 1 | Complete |
 | CLI-06 | Phase 2 | Pending |
@@ -269,13 +269,13 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | ENG-03 | Phase 2 | Complete |
 | ENG-04 | Phase 2 | Complete |
 | ENG-05 | Phase 2 | Complete |
-| ENG-06 | Phase 2 | Pending |
+| ENG-06 | Phase 2 | Complete |
 | ENG-07 | Phase 2 | Complete |
 | ENG-08 | Phase 2 | Complete |
 | ENG-09 | Phase 2 | Complete |
 | ENG-10 | Phase 2 | Complete |
-| ENG-11 | Phase 2 | Pending |
-| ENG-12 | Phase 2 | Pending |
+| ENG-11 | Phase 2 | Complete |
+| ENG-12 | Phase 2 | Complete |
 | ENG-13 | Phase 2 | Pending |
 | ENG-14 | Phase 2 | Complete |
 | ENG-15 | Phase 2 | Complete |

@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
 status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-08-15T16:44:17.315Z"
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-08-15T17:16:46.541Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 02 (core-engine) — EXECUTING
-Plan: 6 of 11
+Plan: 7 of 11
 Status: Ready to execute
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [██████░░░░] 63%
+Progress: [███████░░░] 69%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [██████░░░░] 63%
 | Phase 02 P03 | 22min | 3 tasks | 38 files |
 | Phase 02 P04 | 90min | 3 tasks | 71 files |
 | Phase 02 P05 | 55min | 3 tasks | 16 files |
+| Phase 02 P06 | 70min | 3 tasks | 31 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-05: resolve_severity is dual-mode (per_check-authoritative when populated, fresh builtin+profile recompute when empty) so every 02-04-era comparator and the pre-02-06 CLI path stayed untouched while a later-layer override still gates
 - [Phase ?]: 02-05: the volatile rule is applied at resolve_policy's builtin layer (unconditional ignore in all five profiles) rather than a post-pass, so only an explicit later apply_severity_override can promote it
 - [Phase ?]: 02-05: transform_affected added to registry.h/gen_registry.py beyond the plan's files_modified list (Rule 2) since Task 3's action text required generator support; no shipped check declares it until Phase 4
+- [Phase ?]: 02-06: resolve_policy's config/cli_overrides parameters default to nullopt/{} so every pre-existing two-argument call site (engine.cpp, 02-04/02-05-era comparator tests) kept compiling unchanged
+- [Phase ?]: 02-06: PolicyProvenance chain stays severity-only; tolerance overrides (config/override/--tol) replace ResolvedCheck::tolerance directly via new apply_tolerance_override with no chain entry, matching the original builtin/profile-layer tolerance write's own no-chain precedent
+- [Phase ?]: 02-06: [override.*] blocks apply unconditionally inside resolve_policy (no file-path parameter to filter by); dir-mode path-glob filtering is deferred to plan 02-11
 
 ### Pending Todos
 
@@ -131,6 +135,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T16:44:17.303Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-08-15T17:16:46.527Z
+Stopped at: Completed 02-06-PLAN.md
 Resume file: None
