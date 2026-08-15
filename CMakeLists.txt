@@ -87,6 +87,7 @@ add_library(libmediadiff STATIC
   src/core/snapshot.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
+  src/report/json.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -118,6 +119,8 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/snapshot.h
   src/compare/semantics.h
   src/compare/engine.h
+  src/report/json.h
+  src/cli/exit_code.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 
@@ -155,7 +158,7 @@ endfunction()
 mediadiff_apply_warnings(libmediadiff)
 
 # --- mediadiff executable ----------------------------------------------------
-add_executable(mediadiff src/cli/main.cpp)
+add_executable(mediadiff src/cli/main.cpp src/cli/commands/compare.cpp)
 target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11)
 mediadiff_apply_warnings(mediadiff)
 

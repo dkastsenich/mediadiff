@@ -1,5 +1,7 @@
 #include <CLI/CLI.hpp>
 
+#include "cli/commands/compare.h"
+#include "cli/exit_code.h"
 #include "util/fs.h"
 #include "util/version.h"
 
@@ -33,8 +35,28 @@ int run(int argc, char** argv) {
   // version APIs when --version is actually passed.
   app.set_version_flag("--version", []() { return mediadiff::compose_version_string(); });
 
-  CLI11_PARSE(app, argc, argv);
-  return 0;
+  register_compare_command(app);
+
+  // CLI11_PARSE's own catch block returns app.exit(e) unmodified, which
+  // lands in CLI::ExitCodes' 100-127 range (Success=0, then
+  // IncorrectConstruction=100 through ArgumentMismatch=115) — none of
+  // which match mediadiff's exit-code contract (doc 00 section 3.1). Every
+  // CLI11-level parse failure is definitionally a usage error (kExitUsage),
+  // except a clean --help/--version exit, which app.exit(e) already
+  // reports as 0.
+  try {
+    app.parse(argc, argv);
+  } catch (const CLI::ParseError& e) {
+    return app.exit(e) == 0 ? kExitClean : kExitUsage;
+  }
+
+  // Reached only when app.parse() completed with no exception: no
+  // subcommand fired (e.g. bare `mediadiff` with no args) or a flag like
+  // --version already produced its output via the ParseError path above.
+  // The `compare` subcommand's own callback determines its exit code and
+  // calls std::exit() directly (src/cli/commands/compare.cpp) — it never
+  // returns here.
+  return kExitClean;
 }
 
 }  // namespace mediadiff
