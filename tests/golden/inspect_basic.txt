@@ -1,0 +1,14 @@
+container:
+  (no measurements)
+video:
+  (no measurements)
+timeline:
+  (no measurements)
+audio:
+  (no measurements)
+content:
+  (no measurements)
+size:
+  (no measurements)
+meta:
+  meta.tool_version global: "1.2.3"

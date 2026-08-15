@@ -178,6 +178,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/snapshot.h
   src/core/glob.h
   src/core/tolerance.h
+  src/core/check_explain.h
   src/config/toml_load.h
   src/compare/semantics.h
   src/compare/engine.h
