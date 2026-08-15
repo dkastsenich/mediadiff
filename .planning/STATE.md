@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v0.6.1
 milestone_name: milestone
-current_phase: 1
-current_phase_name: Foundation & Toolchain
+current_phase: 02
+current_phase_name: core-engine
 status: executing
-stopped_at: Phase 2 context gathered — 17 decisions across registry, value model, stub strategy, fail-first discipline
-last_updated: "2026-08-15T12:26:42.263Z"
-last_activity: 2026-08-12
-last_activity_desc: Roadmap created; 138 v1 requirements mapped across 7 phases
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-08-15T14:50:51.847Z"
+last_activity: 2026-08-15
+last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 1 — Foundation & Toolchain
+**Current focus:** Phase 02 — core-engine
 
 ## Current Position
 
-Phase: 1 (Foundation & Toolchain) — EXECUTING
-Plan: 5 of 5
+Phase: 02 (core-engine) — EXECUTING
+Plan: 2 of 11
 Status: Ready to execute
-Last activity: 2026-08-15 — Phase 2 planned (11 plans); quick task 260815-m5g pinned Python 3.11 in CI
+Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [████████░░] 80%
+Progress: [████░░░░░░] 38%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 80%
 | Phase 01 P02 | ~25min | 2 tasks | 5 files |
 | Phase 01 P04 | 30min | 2 tasks | 20 files |
 | Phase 01 P05 | 35min | 2 tasks | 1 files |
+| Phase 02 P01 | 15min | 4 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase ?]: ENG-16 lint's SCAN_DIRS list drawn from CMakeLists.txt's actual add_library(libmediadiff ...) membership (includes src/util, excludes src/cli), not an assumed directory convention
 - [Phase ?]: 01-05: CI matrix authored (5 legs, NuGet/GitHub-Packages vcpkg cache); windows-2022 pinned explicitly (not windows-latest, which now resolves to VS2026); nasm/mono installed explicitly on every non-Windows leg after runner-image READMEs showed neither confirmed present
 - [Phase ?]: 01-05: fork-PR cache reads use github.token (read-only, auto-downgraded); write path exclusively uses VCPKG_PAT_TOKEN, structurally unavailable to fork-triggered pull_request runs
+- [Phase ?]: 02-01: Froze contracts — schema_version="1.0", seed check IDs (meta.tool_version registered; meta.missing_candidate/extra_candidate approved for 02-11), time value {num,den,tb,ms}, ID grammar [a-z0-9_]+(\.[a-z0-9_]+)*
+- [Phase ?]: 02-01: nlohmann_json linked explicitly via find_package/target_link_libraries rather than the FFMPEG-include-dir backdoor Phase 1 used implicitly for tl-expected
+- [Phase ?]: 02-01: compare's exit code is set via std::exit() inside the CLI11 subcommand callback (sanctioned — ENG-16 lint excludes src/cli/ and names exit() the CLI's prerogative)
 
 ### Pending Todos
 
@@ -111,6 +115,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T10:57:50.035Z
-Stopped at: Phase 2 context gathered — 17 decisions across registry, value model, stub strategy, fail-first discipline
-Resume file: .planning/phases/02-core-engine/02-CONTEXT.md
+Last session: 2026-08-15T14:50:51.835Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None

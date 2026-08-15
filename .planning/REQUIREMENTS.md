@@ -49,13 +49,13 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **ENG-12**: `mediadiff list-checks --effective` dumps the merged effective policy so a user can debug config surprises
 - [ ] **ENG-13**: `mediadiff explain <check.id>` prints that check's documentation, compiled into the binary at build time
 - [ ] **ENG-14**: `skipped` is a first-class status carrying a machine-readable reason, always present in JSON, and never rendered as or conflated with `pass`
-- [ ] **ENG-15**: Errors map by kind to exit codes (`usage`→64, `input_open`/`input_unsupported`→65, `decode`→66, `internal`→70) with no exceptions crossing the `libmediadiff` boundary
-- [ ] **ENG-16**: `libmediadiff` writes nothing to stdout and never calls `exit()` — all rendering and process control lives in `cli/`
+- [x] **ENG-15**: Errors map by kind to exit codes (`usage`→64, `input_open`/`input_unsupported`→65, `decode`→66, `internal`→70) with no exceptions crossing the `libmediadiff` boundary
+- [x] **ENG-16**: `libmediadiff` writes nothing to stdout and never calls `exit()` — all rendering and process control lives in `cli/`
 
 ### Fingerprints & Snapshots
 
 - [ ] **SNAP-01**: `mediadiff snapshot <file>` writes a `*.snap.json` fingerprint containing all measurements plus the envelope (schema/tool versions, decode path, sampling state, input identity with XXH3-128)
-- [ ] **SNAP-02**: `mediadiff compare <file> <file>.snap.json` accepts a snapshot in place of live media and produces the same findings a live compare would
+- [x] **SNAP-02**: `mediadiff compare <file> <file>.snap.json` accepts a snapshot in place of live media and produces the same findings a live compare would
 - [ ] **SNAP-03**: Snapshot output is canonical and git-diffable — registry field order, sorted scopes, one value per line, shortest round-trip float formatting
 - [ ] **SNAP-04**: Times are stored as `{num, den, tb}` rationals with the float form as a derived convenience field
 - [ ] **SNAP-05**: `compare` warns on tool-version skew and refuses with exit `65` on an incompatible `schema_version` major
@@ -169,7 +169,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
 - [ ] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
 - [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
-- [ ] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
+- [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
 - [ ] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
 - [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains
 - [ ] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
@@ -278,10 +278,10 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | ENG-12 | Phase 2 | Pending |
 | ENG-13 | Phase 2 | Pending |
 | ENG-14 | Phase 2 | Pending |
-| ENG-15 | Phase 2 | Pending |
-| ENG-16 | Phase 2 | Pending |
+| ENG-15 | Phase 2 | Complete |
+| ENG-16 | Phase 2 | Complete |
 | SNAP-01 | Phase 2 | Pending |
-| SNAP-02 | Phase 2 | Pending |
+| SNAP-02 | Phase 2 | Complete |
 | SNAP-03 | Phase 2 | Pending |
 | SNAP-04 | Phase 2 | Pending |
 | SNAP-05 | Phase 2 | Pending |
@@ -368,7 +368,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TRUST-02 | Phase 6 | Pending |
 | TRUST-03 | Phase 2 | Pending |
 | TRUST-04 | Phase 7 | Pending |
-| TRUST-05 | Phase 2 | Pending |
+| TRUST-05 | Phase 2 | Complete |
 | TRUST-06 | Phase 3 | Pending |
 | TRUST-07 | Phase 7 | Pending |
 | TRUST-08 | Phase 2 | Pending |
