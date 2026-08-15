@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "cli/color_policy.h"
 #include "config/toml_load.h"
 #include "core/error.h"
 #include "core/policy.h"
@@ -113,5 +114,28 @@ struct ReportDestination {
 // and this function's return value at once).
 mediadiff::expected<std::vector<ReportDestination>, Error> parse_report_destinations(
     const std::vector<std::string>& report_flags);
+
+// Shared option storage for CLI-08's two colour-affecting flags. Mirrors
+// PolicyArgs/ReportArgs's own shared_ptr-per-flag shape so a callback
+// lambda captures this struct by value and reads through each pointer once
+// CLI11 has parsed argv.
+struct ColorArgs {
+  std::shared_ptr<bool> no_color;
+  std::shared_ptr<bool> ascii;
+};
+
+// Registers `--no-color` and `--ascii` on `cmd`.
+ColorArgs add_color_flags(CLI::App& cmd);
+
+// Reads every signal `decide_color` (src/cli/color_policy.h) needs into a
+// ColorInputs value: `args`' two CLI11-parsed flags, plus `NO_COLOR`/`CI`/
+// `GITHUB_ACTIONS` from the process environment and whether stdout is a
+// TTY -- this function, and the platform-specific isatty check it calls,
+// are the ONLY place in mediadiff that reads those three environment
+// variables or performs that TTY test (src/cli/color_policy.h's own header
+// comment: decide_color itself never touches getenv/isatty, which is what
+// keeps it table-testable). Called exactly once per compare invocation,
+// after CLI11 has finished parsing.
+ColorInputs read_color_inputs(const ColorArgs& args);
 
 }  // namespace mediadiff
