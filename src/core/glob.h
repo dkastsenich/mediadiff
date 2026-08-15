@@ -45,4 +45,18 @@ bool glob_matches(std::string_view pattern, std::string_view check_id);
 // deterministic.
 std::vector<std::uint32_t> glob_select(std::string_view pattern, const CheckRegistry& registry);
 
+// The same no-regex, segment-wise grammar as validate_glob/glob_matches
+// above, applied to `[override."<glob-on-relative-path>"]` blocks (doc 01
+// section 6, dir mode only) instead of dotted check ids: pattern and
+// relative path are both split on '/' rather than '.', a `*` segment
+// matches exactly one whole path segment, and a trailing `**` segment
+// matches one or more remaining segments. This is a DIFFERENT grammar
+// instance from the check-id one above (different delimiter, matched
+// against a corpus-relative file path rather than a check id) — kept as
+// its own pair of functions rather than parameterizing glob_matches/
+// validate_glob by delimiter, so neither the check-id matcher's own tests
+// nor its callers are put at any risk by this addition (plan 02-11).
+mediadiff::expected<void, Error> validate_path_glob(std::string_view pattern);
+bool glob_matches_path(std::string_view pattern, std::string_view relative_path);
+
 }  // namespace mediadiff

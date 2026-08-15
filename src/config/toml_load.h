@@ -44,14 +44,20 @@ struct TransformBlock {
   std::optional<std::string> resolution;
 };
 
-// Placeholder for the `[dir]` block's future fields (dir-mode worker count,
-// include/exclude patterns, ...). Doc 01 section 10 does not define this
-// section's keys yet -- inventing a shape here risks plan 02-11 having to
-// walk it back. Declaring `[dir]` in mediadiff.toml is captured structurally
-// (DirBlock's mere presence in ConfigFile::dir records that the section was
-// declared and is syntactically a table) without extracting fields that do
-// not exist yet.
-struct DirBlock {};
+// The `[dir]` block (doc 01 section 10, plan 02-11): today, just the
+// worker-pool default thread count. `threads` is std::nullopt when the key
+// was absent from an otherwise-present `[dir]` table -- `[dir] threads`'s
+// own resolution precedence (below `--threads`, above hardware-concurrency
+// autodetection) is `src/cli/commands/dir.cpp`'s job, not this parser's;
+// this struct only carries what the table said, validated for shape (a
+// positive integer) at load time so a malformed value is reported the
+// moment the config is read rather than on the first `dir` invocation that
+// happens to fall through to it. Other `[dir]` fields (include/exclude
+// patterns, ...) remain unspecified by doc 01 section 10 and are left for
+// a future plan to add without walking this one back.
+struct DirBlock {
+  std::optional<int> threads;
+};
 
 // One `[override."<glob-on-relative-path>"]` block (doc 01 section 6, dir
 // mode only): the path glob naming which files it applies to, plus its own

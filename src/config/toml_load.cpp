@@ -241,7 +241,20 @@ mediadiff::expected<std::optional<ConfigFile>, Error> discover_and_load(std::opt
     if (!dir_node->is_table()) {
       return usage_error("config file '" + path + "': '[dir]' must be a table" + position_suffix(dir_node->source()));
     }
-    cfg.dir = DirBlock{};
+    DirBlock block;
+    if (const toml::node* threads_node = dir_node->as_table()->get("threads")) {
+      if (!threads_node->is_integer()) {
+        return usage_error("config file '" + path + "': '[dir] threads' must be an integer" +
+                            position_suffix(threads_node->source()));
+      }
+      const std::int64_t threads_value = *threads_node->value<std::int64_t>();
+      if (threads_value <= 0) {
+        return usage_error("config file '" + path + "': '[dir] threads' must be a positive integer" +
+                            position_suffix(threads_node->source()));
+      }
+      block.threads = static_cast<int>(threads_value);
+    }
+    cfg.dir = block;
   }
 
   if (const toml::node* override_node = tbl.get("override")) {

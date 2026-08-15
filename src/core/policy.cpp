@@ -76,6 +76,37 @@ mediadiff::expected<void, Error> apply_tolerance_rules(Policy& policy, const Che
   return {};
 }
 
+// Layer 4 (CLI), applied in span order -- the exact tail resolve_policy
+// itself runs, extracted so resolve_policy_for_file (plan 02-11) can apply
+// the SAME layer, in the SAME order, without a second copy that could
+// drift from resolve_policy's own.
+mediadiff::expected<void, Error> apply_cli_overrides(Policy& policy, const CheckRegistry& registry,
+                                                        std::span<const CliOverride> cli_overrides) {
+  for (const CliOverride& cli_override : cli_overrides) {
+    for (std::uint32_t idx : glob_select(cli_override.glob, registry)) {
+      if (cli_override.dimension == CliOverride::Dimension::severity) {
+        // options.cpp already rejects a severity word outside the closed
+        // four-word set before ever constructing a CliOverride -- this is
+        // trusted, not re-validated, matching apply_severity_rules' own
+        // "already validated upstream" contract for the config layer.
+        const std::optional<Severity> severity = severity_from_string(cli_override.value);
+        if (severity) {
+          apply_severity_override(policy, idx, *severity, PolicyProvenance::Layer::cli,
+                                   cli_detail("set", cli_override.glob, cli_override.value, cli_override.argv_index));
+        }
+      } else {
+        const CheckDef& check = registry.at(idx);
+        auto parsed = parse_tolerance(cli_override.value, check.unit);
+        if (!parsed) {
+          return mediadiff::unexpected(parsed.error());
+        }
+        apply_tolerance_override(policy, idx, *parsed);
+      }
+    }
+  }
+  return {};
+}
+
 }  // namespace
 
 Severity resolve_severity(const CheckDef& check, const Policy& policy) {
@@ -179,27 +210,45 @@ mediadiff::expected<Policy, Error> resolve_policy(const CheckRegistry& registry,
 
   // Layer 4: CLI, applied in span order (argv order, by CliOverride
   // construction in src/cli/options.cpp).
-  for (const CliOverride& cli_override : cli_overrides) {
-    for (std::uint32_t idx : glob_select(cli_override.glob, registry)) {
-      if (cli_override.dimension == CliOverride::Dimension::severity) {
-        // options.cpp already rejects a severity word outside the closed
-        // four-word set before ever constructing a CliOverride -- this is
-        // trusted, not re-validated, matching apply_severity_rules' own
-        // "already validated upstream" contract for the config layer.
-        const std::optional<Severity> severity = severity_from_string(cli_override.value);
-        if (severity) {
-          apply_severity_override(policy, idx, *severity, PolicyProvenance::Layer::cli,
-                                   cli_detail("set", cli_override.glob, cli_override.value, cli_override.argv_index));
-        }
-      } else {
-        const CheckDef& check = registry.at(idx);
-        auto parsed = parse_tolerance(cli_override.value, check.unit);
-        if (!parsed) {
-          return mediadiff::unexpected(parsed.error());
-        }
-        apply_tolerance_override(policy, idx, *parsed);
+  auto cli_result = apply_cli_overrides(policy, registry, cli_overrides);
+  if (!cli_result) {
+    return mediadiff::unexpected(cli_result.error());
+  }
+
+  return policy;
+}
+
+mediadiff::expected<Policy, Error> resolve_policy_for_file(const Policy& base, const CheckRegistry& registry,
+                                                              const std::optional<ConfigFile>& config,
+                                                              std::string_view relative_path,
+                                                              std::span<const CliOverride> cli_overrides) {
+  Policy policy = base;
+
+  if (config.has_value()) {
+    std::vector<const OverrideBlock*> matching;
+    for (const OverrideBlock& block : config->overrides) {
+      if (glob_matches_path(block.path_glob, relative_path)) {
+        matching.push_back(&block);
       }
     }
+    std::sort(matching.begin(), matching.end(),
+              [](const OverrideBlock* a, const OverrideBlock* b) { return a->file_order < b->file_order; });
+
+    for (const OverrideBlock* block : matching) {
+      apply_severity_rules(policy, registry, block->severity, PolicyProvenance::Layer::config,
+                            [block](const GlobRule& rule) {
+                              return config_override_glob_detail(block->path_glob, "[severity]", rule.glob, rule.file_order);
+                            });
+      auto tol_result = apply_tolerance_rules(policy, registry, block->tolerance);
+      if (!tol_result) {
+        return mediadiff::unexpected(tol_result.error());
+      }
+    }
+  }
+
+  auto cli_result = apply_cli_overrides(policy, registry, cli_overrides);
+  if (!cli_result) {
+    return mediadiff::unexpected(cli_result.error());
   }
 
   return policy;

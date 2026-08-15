@@ -169,6 +169,29 @@ mediadiff::expected<Policy, Error> resolve_policy(const CheckRegistry& registry,
                                                     const std::optional<ConfigFile>& config = std::nullopt,
                                                     std::span<const CliOverride> cli_overrides = {});
 
+// Derives one file's own Policy for `dir` mode (doc 01 section 6, plan
+// 02-11) from `base` -- the shared, path-INdependent result of calling
+// resolve_policy with `cli_overrides` omitted -- plus every
+// `[override."<glob-on-relative-path>"]` block in `config` whose
+// `path_glob` matches `relative_path` (core/glob.h's glob_matches_path,
+// walked in ascending OverrideBlock::file_order, the same rule
+// resolve_policy's own layer three already applies unconditionally to
+// every block), then `cli_overrides` in argv order (layer four, always
+// last). `base` is read, never mutated -- every worker in the bounded pool
+// holds the SAME `base` by const reference and calls this function to get
+// its own independent Policy copy, so no synchronization is needed across
+// files (this plan's own "Policy is immutable after resolution" premise).
+// Config validation already happened once, at discover_and_load time
+// (a malformed severity/tolerance value in ANY override block, matching
+// or not, was already rejected then) -- this function's own tolerance
+// parse can still fail here for a value that is syntactically fine but
+// targets a check whose Unit disagrees, exactly like resolve_policy's own
+// layer three.
+mediadiff::expected<Policy, Error> resolve_policy_for_file(const Policy& base, const CheckRegistry& registry,
+                                                              const std::optional<ConfigFile>& config,
+                                                              std::string_view relative_path,
+                                                              std::span<const CliOverride> cli_overrides);
+
 // Appends one later-layer provenance entry to `policy`'s entry for
 // `check_index` and makes `severity` that check's new resolved severity --
 // last writer wins (doc 01 section 4), and the chain keeps every prior
