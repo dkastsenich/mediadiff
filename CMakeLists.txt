@@ -87,6 +87,7 @@ add_library(libmediadiff STATIC
   src/util/version.cpp
   src/core/serializer.cpp
   src/core/snapshot.cpp
+  src/core/glob.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
   src/report/json.cpp
@@ -119,6 +120,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/policy.h
   src/core/serializer.h
   src/core/snapshot.h
+  src/core/glob.h
   src/compare/semantics.h
   src/compare/engine.h
   src/report/json.h
