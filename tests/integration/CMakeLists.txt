@@ -7,6 +7,10 @@ add_executable(mediadiff_integration_tests
   test_determinism.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp
+  # Schema-version major-mismatch refusal, tool_version skew diagnostic,
+  # TRUST-03 decode-path signature and T-2-07 input-identity privacy
+  # (02-07-PLAN.md Task 2).
+  test_schema_version.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"

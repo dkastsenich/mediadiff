@@ -137,6 +137,39 @@ inline FILE* fopen_utf8(std::string_view path, std::string_view mode) {
 
 #endif  // _WIN32
 
+// Atomically replaces `to` with `from` (or plainly renames `from` to `to`
+// when `to` doesn't exist yet) — the temp-file-then-rename primitive every
+// mediadiff writer that must never leave a reader observing a partially-
+// written file (SNAP-07's own "leave the existing file byte-identical on
+// refusal" contract, and write_snapshot's "no torn file" guarantee) builds
+// on.
+//
+// On POSIX, std::rename() already atomically replaces an existing `to`.
+// On Windows, the MSVC CRT's rename() does NOT replace an existing
+// destination — it fails with EEXIST-equivalent behavior — so this wraps
+// MoveFileExW with MOVEFILE_REPLACE_EXISTING instead, reusing this
+// header's own utf8_to_wide conversion rather than asking a caller
+// outside fs.h to construct a wide path itself (this header and
+// src/cli/main.cpp are the only two places permitted to name
+// wide-character types).
+//
+// Returns false on any failure, including an empty `from`/`to`.
+inline bool rename_replace_utf8(std::string_view from, std::string_view to) {
+  if (from.empty() || to.empty()) {
+    return false;
+  }
+#ifdef _WIN32
+  const std::wstring wide_from = utf8_to_wide(from);
+  const std::wstring wide_to = utf8_to_wide(to);
+  if (wide_from.empty() || wide_to.empty()) {
+    return false;
+  }
+  return MoveFileExW(wide_from.c_str(), wide_to.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+  return std::rename(std::string(from).c_str(), std::string(to).c_str()) == 0;
+#endif
+}
+
 // Enables virtual-terminal (ANSI escape sequence) output processing on the
 // standard output handle. Must be the first statement of the process entry
 // point, before the CLI parser is constructed and before any output is

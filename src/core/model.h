@@ -7,6 +7,7 @@
 // registry.h and value.h never include model.h back.
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -77,13 +78,44 @@ struct Measurement {
   nlohmann::ordered_json evidence;
 };
 
-// Per-fingerprint metadata. This plan needs only schema_version and
-// tool_version — TRUST-05's byte-identity claim in 02-01-PLAN.md's Flagged
-// Assumptions covers exactly these two fields. The full envelope (decode
-// path table, sampling state, input identity) is plan 02-07's job.
+// The envelope's privacy-safe identity of the fingerprinted input file
+// (T-2-07, this plan's own prohibitions): the file's basename only — never
+// an absolute path, a hostname, a username or an environment variable,
+// since a *.snap.json is committed to a user's repository. size_bytes and
+// xxh3_128 let two runs notice "this is (probably) the same file" without
+// leaking where it lives.
+struct InputIdentity {
+  std::string basename;
+  std::int64_t size_bytes = 0;
+  std::string xxh3_128;  // lowercase hex, 32 chars
+
+  bool operator==(const InputIdentity&) const = default;
+};
+
+// Per-fingerprint metadata (doc 01 sections 1, 7, 8): schema/tool
+// versions, the decode path used, sampling state, per-pass diagnostics
+// and the input's privacy-safe identity.
+//
+// decode_path and sampling stay raw nlohmann::ordered_json rather than
+// typed structs: no analyzer populates either until Phase 3's probe layer
+// exists, and no acceptance criterion in this phase tests their internal
+// shape — a typed struct now would just be a guess Phase 3 might have to
+// migrate away from. compose_decode_path_signature() (src/util/version.h)
+// is the function a later phase's decode_path entries embed; this plan
+// only proves that function exists and composes correctly (TRUST-03).
 struct Envelope {
   std::string schema_version;
   std::string tool_version;
+  nlohmann::ordered_json decode_path = nlohmann::ordered_json::array();
+  nlohmann::ordered_json sampling = nlohmann::ordered_json::object();
+  std::optional<InputIdentity> input_identity;
+  // Per-pass diagnostics (e.g. meta.decode_errors counts, doc 01 section
+  // 1) plus SNAP-05's tool-version-skew warning, added by read_snapshot
+  // when a snapshot's tool_version differs from the running build's at an
+  // equal schema_version major — kept on the Fingerprint rather than
+  // turned into a meta.tool_version finding so the warning stays visible
+  // even when the registry has no measurement for that check.
+  nlohmann::ordered_json diagnostics = nlohmann::ordered_json::object();
 };
 
 // All measurements plus the envelope describing how they were produced

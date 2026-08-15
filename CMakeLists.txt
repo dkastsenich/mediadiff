@@ -40,6 +40,7 @@ find_package(CLI11 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
+find_package(xxHash CONFIG REQUIRED)
 
 # --- Check registry generator (D-01, D-05) -----------------------------------
 # tomllib is standard-library only from Python 3.11 onward — enforced here
@@ -154,7 +155,7 @@ target_include_directories(libmediadiff PUBLIC
 )
 target_include_directories(libmediadiff SYSTEM PUBLIC ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(libmediadiff PUBLIC ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus)
+target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash)
 
 # --- Header compilation gate --------------------------------------------------
 # A header nothing includes is a header nothing type-checks, and Phase 2
