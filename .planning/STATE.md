@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 Phase: 1 (Foundation & Toolchain) — EXECUTING
 Plan: 5 of 5
 Status: Ready to execute
-Last activity: 2026-08-12 — Phase 1 execution started
+Last activity: 2026-08-15 — Phase 2 planned (11 plans); quick task 260815-m5g pinned Python 3.11 in CI
 
 Progress: [████████░░] 80%
 
@@ -94,6 +94,12 @@ None yet.
 - **Priming extraction spike is open.** Research flagged (v2 EXT-05) whether lightweight audio-priming extraction from container metadata is feasible ahead of the Phase 6 decode path. Until answered, Phase 5's `timeline.av_offset`/`av_drift` ship with `priming: unknown` on the common case — covered by TIME-10 fixtures, not closed.
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260815-m5g | Pin Python to 3.11+ in CI so the Phase 2 registry generator can rely on stdlib tomllib | 2026-08-15 | 2a628fd | [260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-](./quick/260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-/) |
 
 ## Deferred Items
 
