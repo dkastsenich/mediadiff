@@ -66,6 +66,14 @@ add_executable(mediadiff_unit_tests
   # as sources here rather than only through libmediadiff.
   "${CMAKE_SOURCE_DIR}/src/cli/color_policy.cpp"
   "${CMAKE_SOURCE_DIR}/src/cli/tty_render.cpp"
+  # dir_pairing.cpp/worker_pool.cpp live under src/cli/ too, for the same
+  # reason -- linked directly here so test_dir_pairing.cpp/test_worker_pool.cpp
+  # (02-11-PLAN.md Tasks 1/2) can call pair_directories()/WorkerPool
+  # without spawning the built binary.
+  "${CMAKE_SOURCE_DIR}/src/cli/dir_pairing.cpp"
+  "${CMAKE_SOURCE_DIR}/src/cli/worker_pool.cpp"
+  test_dir_pairing.cpp
+  test_worker_pool.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp
@@ -80,7 +88,7 @@ add_executable(mediadiff_unit_tests
   "${MEDIADIFF_TEST_GENERATED_DIR}/test_check_registry.cpp"
   "${MEDIADIFF_TEST_GENERATED_DIR}/test_check_explain.cpp"
 )
-target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain)
+target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain Threads::Threads)
 mediadiff_apply_warnings(mediadiff_unit_tests)
 add_dependencies(mediadiff_unit_tests generate_test_registry)
 

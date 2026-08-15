@@ -41,6 +41,11 @@ find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 find_package(xxHash CONFIG REQUIRED)
+# src/cli/worker_pool.cpp (DIR-05, plan 02-11): plain std::thread, which on
+# some libstdc++ configurations needs an explicit pthread link even though
+# no code here names pthread_* directly.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 # --- Check registry generator (D-01, D-05) -----------------------------------
 # tomllib is standard-library only from Python 3.11 onward — enforced here
@@ -189,6 +194,8 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/cli/exit_code.h
   src/cli/color_policy.h
   src/cli/tty_render.h
+  src/cli/dir_pairing.h
+  src/cli/worker_pool.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 
@@ -239,8 +246,10 @@ add_executable(mediadiff
   src/cli/commands/dir.cpp
   src/cli/commands/inspect.cpp
   src/cli/commands/explain.cpp
+  src/cli/dir_pairing.cpp
+  src/cli/worker_pool.cpp
 )
-target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11)
+target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11 Threads::Threads)
 mediadiff_apply_warnings(mediadiff)
 
 if(WIN32)
