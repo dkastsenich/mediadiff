@@ -97,6 +97,15 @@ jobs:
         with:
           arch: x64
 
+      # Pins the interpreter for Phase 2's tools/gen_registry.py, which parses
+      # src/core/checks.def via stdlib tomllib (Python >= 3.11 only). Runs at
+      # build time via CMake on every leg, so this step is deliberately
+      # unguarded rather than OS-scoped like its neighbours.
+      - name: Set up Python (tomllib floor for Phase 2 registry generator)
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
       - name: Install nasm (Linux)
         if: runner.os == 'Linux'
         run: |
