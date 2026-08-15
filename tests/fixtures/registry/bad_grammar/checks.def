@@ -1,0 +1,12 @@
+# Known-bad registry fixture (02-02-PLAN.md Task 3): a check id violating
+# the dotted-lowercase grammar [a-z0-9_]+(\.[a-z0-9_]+)* (an uppercase
+# letter). tools/gen_registry.py must exit non-zero naming "Bad.Grammar"
+# specifically.
+
+[[check]]
+id = "Bad.Grammar"
+group = "bad"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"

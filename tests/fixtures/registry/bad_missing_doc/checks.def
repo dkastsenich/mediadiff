@@ -1,0 +1,11 @@
+# Known-bad registry fixture (02-02-PLAN.md Task 3): a registered check
+# with no matching docs/checks/<id>.md file at all. tools/gen_registry.py
+# must exit non-zero naming "bad.missing_doc" specifically.
+
+[[check]]
+id = "bad.missing_doc"
+group = "bad"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"

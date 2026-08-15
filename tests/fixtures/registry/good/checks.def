@@ -1,0 +1,12 @@
+# Known-good registry fixture (02-02-PLAN.md Task 3): a single, fully
+# documented check. tools/gen_registry.py must exit 0 against this tree —
+# the positive control that proves the four bad_* fixtures fail for the
+# reason they claim, not because the generator rejects everything.
+
+[[check]]
+id = "good.sample"
+group = "good"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"

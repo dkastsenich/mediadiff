@@ -22,3 +22,10 @@ tests/fixtures/*
 # git-diffable, so they are tracked despite the tests/fixtures/* ignore above.
 !tests/fixtures/snapshots/
 !tests/fixtures/snapshots/**
+
+# Hand-authored registry-generator fixtures (02-02-PLAN.md Task 3) are also
+# text, not media — known-good/known-bad checks.def + docs/ trees proving
+# the ENG-01/DOC-01 documentation gate can actually fail, tracked for the
+# same reason snapshots/ is above.
+!tests/fixtures/registry/
+!tests/fixtures/registry/**

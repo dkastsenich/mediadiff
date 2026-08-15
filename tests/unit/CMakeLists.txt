@@ -1,4 +1,5 @@
 find_package(Catch2 3 REQUIRED)
+find_package(Python3 3.11 COMPONENTS Interpreter REQUIRED)
 
 add_executable(mediadiff_unit_tests
   test_license.cpp
@@ -10,9 +11,26 @@ add_executable(mediadiff_unit_tests
   test_console_vt.cpp
   test_registry.cpp
   test_glob.cpp
+  test_registry_generator.cpp
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain)
 mediadiff_apply_warnings(mediadiff_unit_tests)
+
+# tests/process_spawn.h is shared with mediadiff_integration_tests (see that
+# target's own comment) — test_registry_generator.cpp spawns the real
+# Python interpreter through it, not the mediadiff binary.
+target_include_directories(mediadiff_unit_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
+# ENG-01/DOC-01 fail-first proof (02-02-PLAN.md Task 3): test_registry_generator.cpp
+# spawns the real generator script against fixture checks.def trees rather
+# than the project's own — the real src/core/checks.def grows through
+# Phases 3-7 and must never gate this test. Absolute paths resolved at
+# configure time so the test never has to guess a working directory.
+target_compile_definitions(mediadiff_unit_tests PRIVATE
+  MEDIADIFF_PYTHON="${Python3_EXECUTABLE}"
+  MEDIADIFF_GEN_REGISTRY="${CMAKE_SOURCE_DIR}/tools/gen_registry.py"
+  MEDIADIFF_REGISTRY_FIXTURES="${CMAKE_SOURCE_DIR}/tests/fixtures/registry"
+)
 
 include(CTest)
 include(Catch)

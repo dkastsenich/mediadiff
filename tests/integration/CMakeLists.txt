@@ -7,6 +7,11 @@ add_executable(mediadiff_integration_tests
 )
 target_link_libraries(mediadiff_integration_tests PRIVATE Catch2::Catch2WithMain nlohmann_json::nlohmann_json)
 
+# tests/process_spawn.h is shared between this target and mediadiff_unit_tests
+# (tests/unit/test_registry_generator.cpp) — both need tests/ on the quoted-
+# include search path, since neither test file lives directly alongside it.
+target_include_directories(mediadiff_integration_tests PRIVATE "${CMAKE_SOURCE_DIR}/tests")
+
 # Absolute paths, resolved at configure time rather than assumed relative to
 # whatever working directory ctest happens to run tests from (which
 # defaults to the build tree, not the source tree, per Catch.cmake's own

@@ -1,0 +1,21 @@
+# Known-bad registry fixture (02-02-PLAN.md Task 3): "bad.alias_owner"
+# declares an alias, "bad.alias_target", that collides with another
+# registered check's own id. tools/gen_registry.py must exit non-zero
+# naming "bad.alias_target" specifically.
+
+[[check]]
+id = "bad.alias_target"
+group = "bad"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+[[check]]
+id = "bad.alias_owner"
+group = "bad"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+aliases = ["bad.alias_target"]
