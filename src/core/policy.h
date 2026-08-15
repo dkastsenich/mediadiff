@@ -57,19 +57,22 @@ struct ResolvedCheck {
   bool operator==(const ResolvedCheck&) const = default;
 };
 
-// The resolved policy for one compare run: which profile, and the
-// per-check resolution table.
+// The resolved policy for one compare run: which profile, the per-check
+// resolution table, and the `transform` profile's declared expectation
+// (ENG-10) -- carried here rather than as a fifth comparator parameter so
+// every Comparator signature (compare/semantics.h) stays unchanged.
 struct Policy {
   ProfileId profile;
-  // A default member initializer on this trailing field (rather than
-  // leaving it bare) is what lets every pre-existing call site across the
-  // codebase that still aggregate-initializes a bare `Policy{profile}`
+  // Default member initializers on these two trailing fields (rather than
+  // leaving them bare) are what let every pre-existing call site across
+  // the codebase that still aggregate-initializes a bare `Policy{profile}`
   // (src/cli/commands/compare.cpp's pre-02-06 CLI path, and the 02-04-era
   // comparator unit tests) keep compiling without triggering
   // -Wmissing-field-initializers (-Werror project-wide) — not merely a
-  // cosmetic default, since std::vector already default-constructs empty
-  // regardless.
+  // cosmetic default, since std::vector/std::optional already
+  // default-construct to empty/nullopt regardless.
   std::vector<ResolvedCheck> per_check{};
+  TransformExpectation transform_expectation{};
 };
 
 // Resolves the severity a Finding for `check` should carry under `policy`

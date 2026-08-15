@@ -181,6 +181,15 @@ struct CheckDef {
   std::string_view default_tolerance;
   bool is_volatile;
   bool requires_pass;
+  // Plan 02-05 / ENG-10: true only for a check the `transform` profile's
+  // declared expectation (doc 01 section 5, `[transform] expect.resolution`)
+  // converts into a comparison against that expectation rather than against
+  // baseline equality. False for every check by default, including every
+  // shipped check in Phase 2 — the resolution identity check that would
+  // actually carry this flag in production lands in Phase 4; a test-only
+  // check exercises it here so the mechanism is proven ahead of that check
+  // existing (checks.def's own comment on this key explains the deferral).
+  bool transform_affected = false;
   const ProfileSeverityOverride* profile_severity_overrides;
   std::size_t profile_severity_override_count;
   const ProfileToleranceOverride* profile_tolerance_overrides;

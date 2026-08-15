@@ -18,6 +18,14 @@
 #   tolerance     optional; baseline tolerance grammar text, unparsed
 #   volatile      optional bool, default false
 #   requires_pass optional bool, default false
+#   transform_affected  optional bool, default false -- true only for a
+#                 check the `transform` profile's declared expectation
+#                 converts into a comparison against that expectation
+#                 rather than baseline equality (doc 01 section 5, ENG-10).
+#                 The key exists as of 02-05-PLAN.md but no check below
+#                 declares it yet: the resolution identity check that would
+#                 carry it in production lands in Phase 4. Proven against a
+#                 test-only check in tests/support/test_checks.def instead.
 #   aliases       optional array of deprecated-alias id strings that now
 #                 resolve to this check (doc 01 section 2)
 #

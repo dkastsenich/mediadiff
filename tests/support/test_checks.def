@@ -148,3 +148,18 @@ unit = "none"
 value_kind = "string"
 severity = "fail"
 aliases = ["t.aliased_old"]
+
+[[check]]
+id = "t.transform_resolution"
+group = "t"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+# 02-05-PLAN.md Task 3: the one check in either registry that carries
+# transform_affected -- no shipped check does yet (the real resolution
+# identity check lands in Phase 4). Values are "WIDTHxHEIGHT" strings;
+# compare/exact.cpp's transform-profile path parses them, never the
+# ordinary baseline-equality path when this flag and the `transform`
+# profile are both active.
+transform_affected = true

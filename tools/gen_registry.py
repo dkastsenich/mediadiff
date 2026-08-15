@@ -18,6 +18,10 @@ library, so this generator has zero non-stdlib dependencies.
   tolerance      optional; baseline tolerance grammar text, unparsed
   volatile       optional bool, default false
   requires_pass  optional bool, default false
+  transform_affected  optional bool, default false -- true only for a check
+                 the `transform` profile's declared expectation converts
+                 into a comparison against that expectation rather than
+                 baseline equality (doc 01 section 5, ENG-10, 02-05-PLAN.md)
   aliases        optional array of deprecated-alias id strings that now
                  resolve to this check (doc 01 section 2)
 
@@ -417,6 +421,7 @@ def render_check_registry_cpp(checks, aliases, names, include_dir):
         tolerance = c.get("tolerance", "")
         is_volatile = "true" if c.get("volatile", False) else "false"
         requires_pass = "true" if c.get("requires_pass", False) else "false"
+        transform_affected = "true" if c.get("transform_affected", False) else "false"
         severity_overrides = c.get("profile_severity", {})
         tolerance_overrides = c.get("profile_tolerance", {})
         severity_ptr = f"kProfileSeverity_{name}" if severity_overrides else "nullptr"
@@ -433,6 +438,7 @@ def render_check_registry_cpp(checks, aliases, names, include_dir):
         lines.append(f"        .default_tolerance = {cpp_string_literal(tolerance)},")
         lines.append(f"        .is_volatile = {is_volatile},")
         lines.append(f"        .requires_pass = {requires_pass},")
+        lines.append(f"        .transform_affected = {transform_affected},")
         lines.append(f"        .profile_severity_overrides = {severity_ptr},")
         lines.append(f"        .profile_severity_override_count = {severity_count},")
         lines.append(f"        .profile_tolerance_overrides = {tolerance_ptr},")
