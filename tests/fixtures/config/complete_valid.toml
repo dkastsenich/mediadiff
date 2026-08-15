@@ -5,6 +5,14 @@
 # deliberately, proving a forward-referencing glob is accepted (it is only
 # validated syntactically, since it resolves to no check yet to unit-check
 # against), while the severity entries target real production checks.
+#
+# The override block deliberately targets a DIFFERENT check
+# (meta.missing_candidate) than the top-level [severity] section's
+# meta.tool_version entry: 02-06-PLAN.md Task 3's own worked scenario reuses
+# this exact fixture and asserts meta.tool_version's resolved chain is
+# EXACTLY three entries (builtin, config, cli) -- a second config-layer
+# write from an override block also matching meta.tool_version would add a
+# fourth entry and break that assertion.
 
 profile = "sw-encoder"
 
@@ -21,7 +29,7 @@ expect.resolution = "2x"
 [dir]
 
 [override."fixtures/**".severity]
-"meta.tool_version" = "warn"
+"meta.missing_candidate" = "ignore"
 
 [override."fixtures/**".tolerance]
 "video.color_range" = "1%"

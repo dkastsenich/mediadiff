@@ -5,6 +5,8 @@ add_executable(mediadiff_integration_tests
   test_version_output.cpp
   test_compare_tracer.cpp
   test_determinism.cpp
+  # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
+  test_list_checks.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"

@@ -52,8 +52,8 @@ TEST_CASE("config: a complete valid config populates every section", "[config]")
   REQUIRE(cfg.overrides.size() == 1);
   CHECK(cfg.overrides[0].path_glob == "fixtures/**");
   REQUIRE(cfg.overrides[0].severity.size() == 1);
-  CHECK(cfg.overrides[0].severity[0].glob == "meta.tool_version");
-  CHECK(cfg.overrides[0].severity[0].value == "warn");
+  CHECK(cfg.overrides[0].severity[0].glob == "meta.missing_candidate");
+  CHECK(cfg.overrides[0].severity[0].value == "ignore");
   REQUIRE(cfg.overrides[0].tolerance.size() == 1);
   CHECK(cfg.overrides[0].tolerance[0].value == "1%");
 }

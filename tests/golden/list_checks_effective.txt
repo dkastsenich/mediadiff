@@ -1,0 +1,3 @@
+meta.tool_version  severity=warn  tolerance=<none>
+meta.missing_candidate  severity=fail  tolerance=<none>
+meta.extra_candidate  severity=warn  tolerance=<none>
