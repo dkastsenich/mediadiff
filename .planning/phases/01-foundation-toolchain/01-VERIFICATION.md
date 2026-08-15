@@ -1,8 +1,9 @@
 ---
 phase: 01-foundation-toolchain
 verified: 2026-08-15T00:00:00Z
-status: human_needed
-score: 4/5 criteria fully verified (1 partially satisfied — well-posed concern)
+status: passed
+resolved: 2026-08-15 — criterion 5 amended in ROADMAP.md; see "Resolution" at the end of this report
+score: 5/5 criteria verified after amendment (1 outstanding evidence gap tracked, non-blocking)
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
@@ -18,7 +19,7 @@ human_verification:
 
 **Phase Goal:** A single static `mediadiff` binary builds reproducibly and runs on Linux, macOS and Windows, with every toolchain decision the later phases depend on already made and recorded.
 **Verified:** 2026-08-15
-**Status:** human_needed
+**Status:** passed (after the criterion-5 amendment recorded at the end of this report)
 **Re-verification:** No — initial verification
 
 ## Summary
@@ -231,3 +232,72 @@ The one criterion not cleanly VERIFIED (criterion 5) fails to verify not because
 ---
 _Verified: 2026-08-15_
 _Verifier: Claude (gsd-verifier)_
+
+
+---
+
+## Resolution (2026-08-15)
+
+Both `human_verification` items above were adjudicated by the project owner after this report was
+written. The report's findings are unchanged; this section records what was decided about them.
+
+### 1. Criterion 5's colour-rendering clause — criterion amended, not waived
+
+**Decision:** the criterion was mis-scoped when written, and has been amended in `ROADMAP.md`
+rather than held open or passed generously.
+
+The verifier was correct that the clause could not be judged in Phase 1, and correct not to pass
+it. The reason it could not be judged is the important part: mediadiff emits no styled output at
+this stage at all, and `NO_COLOR` is unread, because colour handling is **CLI-08 — which this same
+roadmap maps to Phase 2**. The criterion bundled a Phase 1 capability (the Windows VT plumbing)
+with a Phase 2 one (the styled output that plumbing carries). Holding Phase 1 open pending a
+Phase 2 deliverable would have been an artefact of the wording, not a real gap.
+
+What changed:
+
+- **Phase 1 criterion 5** now reads: non-ASCII path opens correctly on Windows, *with
+  virtual-terminal processing confirmed enabled on a real console handle*, plus the `gen_corpus`
+  determinism clause. Both halves are verified — the VT half on real hardware (`conhost.exe`,
+  `GetConsoleMode` reports `ENABLE_VIRTUAL_TERMINAL_PROCESSING` set with no pre-existing flags
+  disturbed, 3 assertions).
+- **Phase 2 criterion 3** now carries the rendering clause, alongside the TTY-format requirements
+  it already owned, with a note that the plumbing landed in Phase 1 and this is the first phase
+  emitting anything for it to carry.
+
+The amendment note in `ROADMAP.md` records the same reasoning inline, so a future reader sees why
+the wording changed rather than finding a silently weakened criterion.
+
+**No verification was waived.** Nothing that was checkable went unchecked; a clause that was never
+checkable in this phase was moved to the phase where it becomes checkable.
+
+### 2. BUILD-06 fork-PR cache path — accepted as an open evidence gap
+
+**Decision:** accepted as-is, non-blocking, and carried forward.
+
+The verifier's characterisation is right: the guard logic is present and statically correct, but
+the branch has never executed because no fork-originated PR has ever been opened against this
+repository. That is a gap in *evidence*, not in code, and it cannot be closed by any action inside
+this repository — it requires a fork PR to exist.
+
+It does not block Phase 1: the cache's read-write path is proven (all four non-Windows-excluded
+legs of run 31849289102 printed vcpkg's own `Restored 18 package(s) from NuGet`), and the fork
+path's failure mode is degraded caching for external contributors, not a correctness or security
+regression — the write credential is structurally unavailable to fork runs regardless, since
+GitHub does not expose repository secrets to them.
+
+Revisit when the repository first receives an external contribution.
+
+### Post-verification fix
+
+One finding from this report (F-01, the CI test-count guard undercounting via a misaligned grep)
+was **fixed rather than accepted** — see commit `e684579`. Investigation while fixing it showed the
+defect was worse than reported: `grep -c '^  Test #'` matched only double-digit test numbers
+because CTest right-aligns them, so it reported 2 against an 11-test suite — and with **9 or fewer
+tests it would have counted 0 and failed the build claiming zero tests were discovered.** A guard
+built to prevent a false pass would have manufactured a false fail. It now parses CTest's own
+`Total Tests:` line, verified against the real suite (11), an empty suite, and the 9-test case.
+
+That makes six checks in this phase found to be structurally incapable of observing their own
+subject. Five are fixed; the sixth (`lint_eng16.sh` false-positiving on banned tokens inside string
+literals) is tracked separately. This is the phase's most transferable finding and is carried into
+Phase 2, whose deliverable is the machinery that decides whether checks pass.
