@@ -144,6 +144,7 @@ add_library(libmediadiff STATIC
   src/compare/span.cpp
   src/report/model.cpp
   src/report/json.cpp
+  src/report/markdown.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -181,6 +182,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/compare/engine.h
   src/report/model.h
   src/report/json.h
+  src/report/markdown.h
   src/cli/exit_code.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)

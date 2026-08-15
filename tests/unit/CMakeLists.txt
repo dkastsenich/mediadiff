@@ -45,6 +45,8 @@ add_executable(mediadiff_unit_tests
   # The shared ReportModel: grouping, ordering, filtering and
   # summarisation every renderer consumes (02-08-PLAN.md Task 1).
   test_report_model.cpp
+  # Markdown's byte budget and honest overflow fold (02-08-PLAN.md Task 2).
+  test_markdown_budget.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp
