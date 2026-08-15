@@ -227,6 +227,16 @@ inline ProcessResult spawn_and_capture(const std::string& executable, const std:
       if (errno == EINTR) {
         continue;
       }
+      // A genuine select() error (not a signal interruption): close
+      // whichever descriptors are still open before giving up, so a
+      // select() failure never leaks a pipe descriptor per spawn
+      // (02-03-PLAN.md Task 3, T-2-12).
+      if (out_open) {
+        close(out_pipe[0]);
+      }
+      if (err_open) {
+        close(err_pipe[0]);
+      }
       break;
     }
 
@@ -234,6 +244,11 @@ inline ProcessResult spawn_and_capture(const std::string& executable, const std:
       ssize_t n = read(out_pipe[0], buf.data(), buf.size());
       if (n > 0) {
         result.out.append(buf.data(), static_cast<std::size_t>(n));
+      } else if (n < 0 && errno == EINTR) {
+        // EINTR is a signal interruption, not end-of-stream. Treating it as
+        // EOF (the pre-Task-3 bug) closed the pipe and silently truncated
+        // whatever the child had not yet finished writing, letting a later
+        // assertion pass against incomplete captured data (T-2-12).
       } else {
         close(out_pipe[0]);
         out_open = false;
@@ -243,6 +258,8 @@ inline ProcessResult spawn_and_capture(const std::string& executable, const std:
       ssize_t n = read(err_pipe[0], buf.data(), buf.size());
       if (n > 0) {
         result.err.append(buf.data(), static_cast<std::size_t>(n));
+      } else if (n < 0 && errno == EINTR) {
+        // See the stdout branch above.
       } else {
         close(err_pipe[0]);
         err_open = false;
@@ -251,8 +268,14 @@ inline ProcessResult spawn_and_capture(const std::string& executable, const std:
   }
 
   int status = 0;
-  waitpid(pid, &status, 0);
-  result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+  pid_t wait_rc = -1;
+  do {
+    wait_rc = waitpid(pid, &status, 0);
+  } while (wait_rc == -1 && errno == EINTR);
+  // A genuine waitpid() failure (not a signal interruption) must not be
+  // read as a successful exit -- record it as -1 rather than trusting
+  // `status`, which was never populated.
+  result.exit_code = (wait_rc != -1 && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
   return result;
 }
 
