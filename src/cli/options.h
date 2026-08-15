@@ -127,6 +127,19 @@ struct ColorArgs {
 // Registers `--no-color` and `--ascii` on `cmd`.
 ColorArgs add_color_flags(CLI::App& cmd);
 
+// Default-valued PolicyArgs/ReportArgs/ColorArgs, with no CLI11 flags
+// registered on any App -- used by main.cpp's implicit two-positional
+// dispatch (CLI-01), which intentionally carries none of `compare`'s own
+// optional flags: "mediadiff a b" behaves exactly like
+// "mediadiff compare a b" with none of them given, dispatched through the
+// SAME run_compare (src/cli/commands/compare.h) rather than a parallel
+// code path. `ReportArgs::json_option` stays nullptr here (there is no
+// CLI::Option to point at); a caller reading it must check for null before
+// dereferencing, which src/cli/commands/compare.cpp's run_compare does.
+PolicyArgs default_policy_args();
+ReportArgs default_report_args();
+ColorArgs default_color_args();
+
 // Reads every signal `decide_color` (src/cli/color_policy.h) needs into a
 // ColorInputs value: `args`' two CLI11-parsed flags, plus `NO_COLOR`/`CI`/
 // `GITHUB_ACTIONS` from the process environment and whether stdout is a
@@ -137,5 +150,26 @@ ColorArgs add_color_flags(CLI::App& cmd);
 // keeps it table-testable). Called exactly once per compare invocation,
 // after CLI11 has finished parsing.
 ColorInputs read_color_inputs(const ColorArgs& args);
+
+// The shared bundle of every flag more than one subcommand needs
+// (`--profile`, `--config`, `--set`, `--tol`, `--json`, `--report`,
+// `--strict`, `-q`, `-v`, `--no-color`, `--ascii` -- 02-10-PLAN.md Task 1)
+// so the spellings cannot drift between commands. `-q` suppresses
+// non-error output; `-v` sets both the show-pass and show-chain render
+// options. Used by `dir` and `inspect` (this plan); `compare` predates
+// this bundle and keeps its own equivalent flags (02-08/02-09), and
+// `list-checks`/`snapshot`/`explain` need a different or narrower set of
+// their own.
+struct CliOptions {
+  PolicyArgs policy;
+  ReportArgs report;
+  ColorArgs color;
+  std::shared_ptr<bool> strict;
+  std::shared_ptr<bool> quiet;
+  std::shared_ptr<bool> verbose;
+};
+
+// Registers every flag CliOptions bundles onto `cmd`.
+CliOptions add_common_options(CLI::App& cmd);
 
 }  // namespace mediadiff

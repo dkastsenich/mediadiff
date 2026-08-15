@@ -200,6 +200,47 @@ ColorArgs add_color_flags(CLI::App& cmd) {
   return args;
 }
 
+PolicyArgs default_policy_args() {
+  PolicyArgs args;
+  args.profile = std::make_shared<std::string>();
+  args.config_path = std::make_shared<std::string>();
+  args.set_flags = std::make_shared<std::vector<std::string>>();
+  args.tol_flags = std::make_shared<std::vector<std::string>>();
+  return args;
+}
+
+ReportArgs default_report_args() {
+  ReportArgs args;
+  args.json_path = std::make_shared<std::string>();
+  args.json_option = nullptr;
+  args.report_flags = std::make_shared<std::vector<std::string>>();
+  return args;
+}
+
+ColorArgs default_color_args() {
+  ColorArgs args;
+  args.no_color = std::make_shared<bool>(false);
+  args.ascii = std::make_shared<bool>(false);
+  return args;
+}
+
+CliOptions add_common_options(CLI::App& cmd) {
+  CliOptions options;
+  options.policy = add_policy_flags(cmd);
+  options.report = add_report_flags(cmd);
+  options.color = add_color_flags(cmd);
+  options.strict = std::make_shared<bool>(false);
+  options.quiet = std::make_shared<bool>(false);
+  options.verbose = std::make_shared<bool>(false);
+
+  cmd.add_flag("--strict", *options.strict, "A worst-warn finding also fails the run (exit 2)");
+  cmd.add_flag("-q,--quiet", *options.quiet, "Suppress non-error output");
+  cmd.add_flag("-v,--verbose", *options.verbose,
+               "Also render each finding's severity_chain / resolution chain");
+
+  return options;
+}
+
 namespace {
 
 // Reads one environment variable, distinguishing "unset" (nullopt) from

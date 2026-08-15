@@ -29,6 +29,9 @@ add_executable(mediadiff_integration_tests
   # --json[=path] and repeatable --report kind=path write independent
   # files; usage-error paths (02-08-PLAN.md Task 3).
   test_report_flags.cpp
+  # CLI-01: the implicit two-positional compare dispatch and the full
+  # six-subcommand surface (02-10-PLAN.md Task 1).
+  test_implicit_compare.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"

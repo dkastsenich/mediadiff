@@ -234,6 +234,9 @@ add_executable(mediadiff
   src/cli/commands/compare.cpp
   src/cli/commands/list_checks.cpp
   src/cli/commands/snapshot.cpp
+  src/cli/commands/dir.cpp
+  src/cli/commands/inspect.cpp
+  src/cli/commands/explain.cpp
 )
 target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11)
 mediadiff_apply_warnings(mediadiff)

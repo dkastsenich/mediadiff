@@ -1,9 +1,17 @@
 #include <CLI/CLI.hpp>
 
+#include <cstdio>
+#include <memory>
+#include <string>
+
 #include "cli/commands/compare.h"
+#include "cli/commands/dir.h"
+#include "cli/commands/explain.h"
+#include "cli/commands/inspect.h"
 #include "cli/commands/list_checks.h"
 #include "cli/commands/snapshot.h"
 #include "cli/exit_code.h"
+#include "cli/options.h"
 #include "util/fs.h"
 #include "util/version.h"
 
@@ -27,19 +35,42 @@ namespace mediadiff {
 int run(int argc, char** argv) {
   CLI::App app{"media-aware regression diff", "mediadiff"};
 
-  // Phase 2 adds compare/snapshot/dir/inspect/list-checks/explain subcommands
-  // and the implicit-compare positional trick (CLI-01), which tolerates "0
-  // subcommands fired" — set this now so Phase 2 doesn't have to touch this
-  // line.
+  // Tolerates "0 subcommands fired" -- the implicit-compare route below.
   app.require_subcommand(0, 1);
+
+  // T-2-36 (CLI-01): prefix matching must be disabled BEFORE any
+  // subcommand is added -- a child App copies this flag from its parent
+  // at construction (CLI 2.6.2's App_inl.hpp:61), so setting it here and
+  // only here is what makes it apply to every subcommand this build
+  // registers. The member already defaults to false in 2.6.2; this call
+  // makes the requirement explicit rather than accidental, so a future
+  // CLI11 bump that flips the default cannot silently re-enable it.
+  app.allow_subcommand_prefix_matching(false);
 
   // Lazily computed: only touches the libavutil/libavcodec/libavformat
   // version APIs when --version is actually passed.
   app.set_version_flag("--version", []() { return mediadiff::compose_version_string(); });
 
+  // CLI-01: two optional bare positionals on the ROOT app -- the
+  // implicit-compare trick. A token equal to a registered subcommand name
+  // is always classified SUBCOMMAND before a bare positional is ever
+  // considered (CLI11's own App::_recognize), so these two options can
+  // never "steal" a real subcommand invocation; see register_compare_command's
+  // own footer text for the one edge case this implies (a file literally
+  // named "compare").
+  auto implicit_baseline = std::make_shared<std::string>();
+  auto implicit_candidate = std::make_shared<std::string>();
+  CLI::Option* implicit_baseline_opt =
+      app.add_option("baseline", *implicit_baseline, "Baseline artifact or *.snap.json (implicit compare)");
+  CLI::Option* implicit_candidate_opt =
+      app.add_option("candidate", *implicit_candidate, "Candidate artifact or *.snap.json (implicit compare)");
+
   register_compare_command(app);
-  register_list_checks_command(app);
   register_snapshot_command(app);
+  register_dir_command(app);
+  register_inspect_command(app);
+  register_list_checks_command(app);
+  register_explain_command(app);
 
   // CLI11_PARSE's own catch block returns app.exit(e) unmodified, which
   // lands in CLI::ExitCodes' 100-127 range (Success=0, then
@@ -54,13 +85,50 @@ int run(int argc, char** argv) {
     return app.exit(e) == 0 ? kExitClean : kExitUsage;
   }
 
-  // Reached only when app.parse() completed with no exception: no
-  // subcommand fired (e.g. bare `mediadiff` with no args) or a flag like
-  // --version already produced its output via the ParseError path above.
-  // The `compare` subcommand's own callback determines its exit code and
-  // calls std::exit() directly (src/cli/commands/compare.cpp) — it never
-  // returns here.
-  return kExitClean;
+  // A registered subcommand's own callback already ran (and, for every
+  // subcommand this build registers, already called std::exit() itself --
+  // src/cli/commands/*.cpp's own ENG-16 rationale) by the time app.parse()
+  // returns with no exception. get_subcommands() (parsed_subcommands_)
+  // reports which subcommand(s), if any, actually fired.
+  const bool subcommand_fired = !app.get_subcommands().empty();
+
+  if (subcommand_fired) {
+    // Guard the subcommand-fallthrough leak: subcommand_fallthrough_
+    // defaults to true, so a token a subcommand cannot place falls
+    // through to the PARENT's own positionals -- which are these two
+    // implicit ones. Without this guard, "mediadiff compare a b c" would
+    // silently deposit 'c' into implicit_baseline instead of failing; a
+    // bare positional is only ever meaningful when no subcommand fired.
+    if (implicit_baseline_opt->count() > 0 || implicit_candidate_opt->count() > 0) {
+      std::fputs("mediadiff: unexpected extra argument after a subcommand\n", stderr);
+      return kExitUsage;
+    }
+    // Unreachable in practice (every registered subcommand's callback
+    // exits directly); kept as a defined return for a future subcommand
+    // whose callback might not.
+    return kExitClean;
+  }
+
+  // No subcommand fired: the implicit-compare route (both positionals
+  // set), or bare `mediadiff`/a single operand (fewer than two).
+  if (implicit_baseline_opt->count() > 0 && implicit_candidate_opt->count() > 0) {
+    // Dispatches through the SAME compare execution the `compare`
+    // subcommand's own callback calls -- never a parallel copy (this
+    // plan's own Task 1 requirement). run_compare is [[noreturn]]: it
+    // always calls std::exit(), carrying none of `compare`'s own optional
+    // flags (--profile/--json/--strict/...), matching "mediadiff a b"
+    // behaving exactly like "mediadiff compare a b" with none of them
+    // given.
+    run_compare(*implicit_baseline, *implicit_candidate, /*strict=*/false, /*verbose=*/false, /*quiet=*/false,
+                default_report_args(), default_policy_args(), default_color_args());
+  }
+
+  // Fewer than two positionals (including bare `mediadiff` with none):
+  // CLI-01's own contract is "print help and exit 64", never 0 -- a CI
+  // script that invoked the tool with nothing to compare has not
+  // succeeded.
+  std::fputs(app.help().c_str(), stdout);
+  return kExitUsage;
 }
 
 }  // namespace mediadiff
