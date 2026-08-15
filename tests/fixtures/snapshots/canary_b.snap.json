@@ -1,0 +1,8 @@
+{
+  "_comment": "D-16 PERMANENT CANARY -- this pair is DELIBERATELY divergent from canary_a.snap.json and must NEVER be edited to match it. tests/unit/test_canary.cpp asserts this pair always reports exactly one fail finding on t.aliased_new; if it ever comes back clean, the test harness itself is broken, not this fixture.",
+  "schema_version": "1.0",
+  "tool_version": "test",
+  "measurements": [
+    { "id": "t.aliased_new", "scope": { "kind": "global", "index": 0 }, "value": "canary-candidate-NEVER-MATCH" }
+  ]
+}

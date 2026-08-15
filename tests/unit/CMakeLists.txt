@@ -13,6 +13,9 @@ add_executable(mediadiff_unit_tests
   test_glob.cpp
   test_registry_generator.cpp
   test_support_registry.cpp
+  # D-14/D-15/D-16 fail-first meta-infrastructure (02-03-PLAN.md Task 2).
+  test_fail_first_coverage.cpp
+  test_canary.cpp
   # tests/support/ (02-03-PLAN.md Task 1): the test-only registry's own
   # consumer, linked into both test executables, never into
   # libmediadiff/mediadiff.
