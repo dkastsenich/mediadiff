@@ -4,8 +4,14 @@
 // regression finding, ">=64" means the run could not produce a verdict at
 // all — a CI script can branch on that split alone without knowing
 // anything else about mediadiff.
+//
+// Split into this header plus exit_code.cpp (02-10-PLAN.md Task 2) so a
+// second function (exit_code_for_findings, below) can share the same
+// translation unit without becoming a second `inline` definition repeated
+// into every TU that includes this header.
 
 #include "core/error.h"
+#include "report/model.h"
 
 namespace mediadiff {
 
@@ -22,26 +28,19 @@ constexpr int kExitInternal = 70;     // a mediadiff bug, not a problem with the
 // ErrorKind enumerator without extending this mapping is a -Werror
 // (-Wswitch) compile failure, not a silent fallthrough to some arbitrary
 // code.
-inline int exit_code_for(ErrorKind kind) {
-  switch (kind) {
-    case ErrorKind::usage:
-      return kExitUsage;
-    case ErrorKind::input_open:
-      return kExitInput;
-    case ErrorKind::input_unsupported:
-      return kExitInput;
-    case ErrorKind::decode:
-      return kExitDecode;
-    case ErrorKind::internal:
-      return kExitInternal;
-  }
-  // Unreachable for any valid ErrorKind: every enumerator is handled above,
-  // and -Wswitch (part of -Wall, promoted to -Werror project-wide) already
-  // turns a future enumerator added without a matching case into a build
-  // failure at the switch itself — deliberately with NO default: arm, so
-  // that failure happens there rather than silently falling through to
-  // this line. This return exists only to satisfy -Wreturn-type.
-  return kExitInternal;
-}
+int exit_code_for(ErrorKind kind);
+
+// The second half of the exit-code contract (doc 00 section 3.1, CLI-06):
+// derives the process exit code from a compare run's worst resolved
+// GATING severity (Summary::worst_gating -- an axis independent of any
+// individual finding's Status, src/report/model.h's own comment on why)
+// and whether --strict was given. `kExitFail` when the worst gating
+// severity is `Severity::fail` (unconditional -- --strict never changes
+// whether `fail` fails); `kExitWarnStrict` when the worst is
+// `Severity::warn` and `strict` is true; `kExitClean` otherwise (including
+// a worst of `Severity::warn` without --strict, and `Severity::info`/
+// `Severity::ignore`). Also a switch with no default: arm, same rationale
+// as exit_code_for above.
+int exit_code_for_findings(const Summary& summary, bool strict);
 
 }  // namespace mediadiff

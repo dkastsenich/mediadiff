@@ -231,6 +231,7 @@ add_executable(mediadiff
   src/cli/provenance_render.cpp
   src/cli/color_policy.cpp
   src/cli/tty_render.cpp
+  src/cli/exit_code.cpp
   src/cli/commands/compare.cpp
   src/cli/commands/list_checks.cpp
   src/cli/commands/snapshot.cpp

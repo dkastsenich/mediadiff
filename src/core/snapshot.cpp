@@ -166,7 +166,12 @@ mediadiff::expected<Fingerprint, Error> read_snapshot(const std::string& utf8_pa
   Fingerprint fp;
   fp.envelope.schema_version = file_schema_version;
   fp.envelope.tool_version = doc.at("tool_version").get<std::string>();
-  fp.partial = false;
+  // 02-10-PLAN.md Task 2 (CLI-07): a top-level boolean `partial` key,
+  // sibling to schema_version/tool_version/measurements -- absent or any
+  // non-bool value defaults to false. This is the fixture-based route the
+  // exit-66 contract is proven through until a real probe/decode layer
+  // (Phase 3+) can produce a genuine mid-analysis partial fingerprint.
+  fp.partial = doc.contains("partial") && doc.at("partial").is_boolean() && doc.at("partial").get<bool>();
 
   if (doc.contains("decode_path") && doc.at("decode_path").is_array()) {
     fp.envelope.decode_path = doc.at("decode_path");

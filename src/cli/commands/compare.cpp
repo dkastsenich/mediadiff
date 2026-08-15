@@ -63,25 +63,6 @@ int query_terminal_width() {
 #endif
 }
 
-// The single worst Status across all findings, used to pick the exit code
-// (doc 00 section 3.1's "<3 vs >=64" contract). `fail` outranks everything
-// else this plan can produce — the tracer's `exact` semantic only ever
-// emits pass/info/warn/fail, but the ordering already accounts for
-// info/skipped/error so a later plan adding a semantic that can emit them
-// does not have to touch this function.
-Status worst_status(const std::vector<Finding>& findings) {
-  Status worst = Status::pass;
-  for (const Finding& f : findings) {
-    if (f.status == Status::fail) {
-      return Status::fail;  // nothing outranks fail; short-circuit
-    }
-    if (f.status == Status::warn) {
-      worst = Status::warn;
-    }
-  }
-  return worst;
-}
-
 // Opens `path` through util/fs.h's fopen_utf8 — the only permitted
 // file-open path (ENG-16, this file's own boundary comment), writes
 // `content` in full and closes it. Every report destination gets its own
@@ -227,13 +208,40 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     }
   }
 
+  // 02-10-PLAN.md Task 2 (CLI-07): a mid-analysis failure still finishes
+  // the run -- build a ReportModel from whatever was computed, write every
+  // requested destination, and only THEN return 66 -- rather than
+  // aborting mid-pipeline the way every other error path above does.
+  // Reached today only via the fixture-based route: a snapshot whose own
+  // envelope declares `partial: true` (no probe layer exists yet to
+  // produce a real mid-decode failure). A `decode`-kind Error from
+  // compare_fingerprints itself is handled the same way, for when a real
+  // decode path exists.
+  bool partial = baseline->partial || candidate->partial;
+
+  std::vector<Finding> findings;
   auto compare_result = compare_fingerprints(*baseline, *candidate, policy, registry);
   if (!compare_result) {
     const Error& err = compare_result.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
-    std::exit(exit_code_for(err.kind));
+    if (err.kind == ErrorKind::decode) {
+      partial = true;
+    } else {
+      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      std::exit(exit_code_for(err.kind));
+    }
+  } else {
+    findings = std::move(*compare_result);
   }
-  const std::vector<Finding>& findings = *compare_result;
+
+  if (partial) {
+    // Carried on the candidate envelope (the one every renderer below
+    // actually reads) so the marker survives into every report format's
+    // own diagnostics -- report/model.cpp's flatten_diagnostics turns
+    // this into a "partial: true" line in the JSON report's own
+    // diagnostics array, alongside whatever this snapshot's own
+    // diagnostics already name (e.g. a "decode_error" entry).
+    candidate->envelope.diagnostics["partial"] = true;
+  }
 
   // One ReportModel, shared by every renderer this run needs (D-08's
   // write-side principle applied to the read side, this plan's own
@@ -296,14 +304,10 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     }
   }
 
-  const Status worst = worst_status(findings);
-  if (worst == Status::fail) {
-    std::exit(kExitFail);
+  if (partial) {
+    std::exit(kExitDecode);
   }
-  if (worst == Status::warn && strict) {
-    std::exit(kExitWarnStrict);
-  }
-  std::exit(kExitClean);
+  std::exit(exit_code_for_findings(model.summary, strict));
 }
 
 }  // namespace mediadiff
