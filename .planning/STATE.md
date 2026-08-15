@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-08-15T16:14:44.693Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-08-15T16:44:17.315Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 02 (core-engine) — EXECUTING
-Plan: 5 of 11
+Plan: 6 of 11
 Status: Ready to execute
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [██████░░░░] 56%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [██████░░░░] 56%
 | Phase 02 P02 | 24min | 3 tasks | 29 files |
 | Phase 02 P03 | 22min | 3 tasks | 38 files |
 | Phase 02 P04 | 90min | 3 tasks | 71 files |
+| Phase 02 P05 | 55min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-04: Two-threshold tolerance grammar accepts an optional matching warn-side suffix (both 3,5ms and 3ms,5ms parse identically); Unit::count's suffix is bytes plus the bare no-suffix form
 - [Phase ?]: 02-04: D-09 value_kind guard lives in compare/engine.cpp itself (compare_fingerprints), not only in core/serializer.cpp's value_from_json -- covers in-process Measurements a future analyzer constructs with no snapshot round-trip
 - [Phase ?]: 02-04: tests/support/test_checks.def extended with t.tol_info/t.dist_bins_fail/t.int64_count (plus tolerance/severity edits to t.tol_ms/t.dist_bins/t.span_runs) so every (semantic, status) coverage cell has a real fixture despite one severity per check
+- [Phase ?]: 02-05: resolve_severity is dual-mode (per_check-authoritative when populated, fresh builtin+profile recompute when empty) so every 02-04-era comparator and the pre-02-06 CLI path stayed untouched while a later-layer override still gates
+- [Phase ?]: 02-05: the volatile rule is applied at resolve_policy's builtin layer (unconditional ignore in all five profiles) rather than a post-pass, so only an explicit later apply_severity_override can promote it
+- [Phase ?]: 02-05: transform_affected added to registry.h/gen_registry.py beyond the plan's files_modified list (Rule 2) since Task 3's action text required generator support; no shipped check declares it until Phase 4
 
 ### Pending Todos
 
@@ -127,6 +131,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T16:14:44.681Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-08-15T16:44:17.303Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None

@@ -41,10 +41,10 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **ENG-04**: All seven comparison semantics work per spec: `exact`, `±tol`, `set`, `presence`, `hash`, `dist`, `span`
 - [x] **ENG-05**: Time-unit tolerances compare in ticks/samples using rational math, never floats
 - [ ] **ENG-06**: Severity resolves through the chain built-in → profile → config globs (file order) → CLI `--set` (argv order), last writer wins, and the resolved chain appears in evidence under `-v`
-- [ ] **ENG-07**: `volatile`-flagged checks default to `ignore` in every profile, but their differing values are still computed and shown under `-v`
-- [ ] **ENG-08**: All five profiles ship and behave per the normative matrix: `strict-bitexact`, `sw-encoder`, `hw-encoder`, `remux`, `transform`
-- [ ] **ENG-09**: Default profile is `sw-encoder` when neither `--profile` nor a TOML `profile=` is given
-- [ ] **ENG-10**: The `transform` profile converts affected identity checks into checks against a declared expectation block (`expect.resolution`) instead of baseline equality
+- [x] **ENG-07**: `volatile`-flagged checks default to `ignore` in every profile, but their differing values are still computed and shown under `-v`
+- [x] **ENG-08**: All five profiles ship and behave per the normative matrix: `strict-bitexact`, `sw-encoder`, `hw-encoder`, `remux`, `transform`
+- [x] **ENG-09**: Default profile is `sw-encoder` when neither `--profile` nor a TOML `profile=` is given
+- [x] **ENG-10**: The `transform` profile converts affected identity checks into checks against a declared expectation block (`expect.resolution`) instead of baseline equality
 - [ ] **ENG-11**: Config merges in precedence order profile → `[severity]`/`[tolerance]` → matching `[override.*]` blocks in file order → CLI
 - [ ] **ENG-12**: `mediadiff list-checks --effective` dumps the merged effective policy so a user can debug config surprises
 - [ ] **ENG-13**: `mediadiff explain <check.id>` prints that check's documentation, compiled into the binary at build time
@@ -270,10 +270,10 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | ENG-04 | Phase 2 | Complete |
 | ENG-05 | Phase 2 | Complete |
 | ENG-06 | Phase 2 | Pending |
-| ENG-07 | Phase 2 | Pending |
-| ENG-08 | Phase 2 | Pending |
-| ENG-09 | Phase 2 | Pending |
-| ENG-10 | Phase 2 | Pending |
+| ENG-07 | Phase 2 | Complete |
+| ENG-08 | Phase 2 | Complete |
+| ENG-09 | Phase 2 | Complete |
+| ENG-10 | Phase 2 | Complete |
 | ENG-11 | Phase 2 | Pending |
 | ENG-12 | Phase 2 | Pending |
 | ENG-13 | Phase 2 | Pending |
