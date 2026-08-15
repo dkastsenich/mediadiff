@@ -134,6 +134,32 @@ TEST_CASE("semantics: CR-03 dist comparator returns Status::error on bin-total o
   CHECK(f.status == Status::error);
 }
 
+// WR-03 regression: compare_ticks' own overflow fallback (sign-only) is
+// safe ONLY for compare/tol.cpp's cosmetic "+"/"-" glyph -- a real decision
+// (span overlap, here) must never silently treat an unresolvable
+// comparison as a tie. Before WR-03, this exact shape (a candidate span
+// whose start ticks overflow against a baseline span) could report a
+// fabricated overlap/no-overlap verdict instead of admitting "cannot
+// determine".
+TEST_CASE("semantics: WR-03 span comparator returns Status::error on tick-comparison overflow, never a fabricated "
+          "verdict",
+          "[semantics]") {
+  constexpr std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
+  SpanList baseline_list;
+  baseline_list.spans.push_back(
+      Span{RationalValue{0, 1, mediadiff::Rational{1, 1}}, RationalValue{10, 1, mediadiff::Rational{1, 1}}});
+
+  SpanList candidate_list;
+  // tb.num=2 guarantees compare_ticks_checked's first cross-multiplication
+  // (kMax * 2) overflows when this span's start/end is compared against
+  // the baseline span above.
+  candidate_list.spans.push_back(Span{RationalValue{kMax, 1, mediadiff::Rational{2, 1}},
+                                       RationalValue{kMax, 1, mediadiff::Rational{2, 1}}});
+
+  const Finding f = single_finding("t.span_runs", mediadiff::Value{baseline_list}, mediadiff::Value{candidate_list});
+  CHECK(f.status == Status::error);
+}
+
 TEST_CASE("semantics: two empty fingerprints yield zero findings and no error", "[semantics]") {
   const CheckRegistry& registry = test_registry();
   const Fingerprint baseline = make_stub_fingerprint(registry, std::vector<StubMeasurement>{});

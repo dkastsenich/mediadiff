@@ -28,10 +28,33 @@ Status escalate(Severity severity) {
 
 Ticks to_ticks(const RationalValue& v) { return Ticks{v.num, v.tb}; }
 
-bool ticks_less(const RationalValue& a, const RationalValue& b) { return compare_ticks(to_ticks(a), to_ticks(b)) < 0; }
+// WR-03: every real-decision comparison in this file (sort order,
+// merge-adjacency, overlap) routes through core/rational.h's
+// compare_ticks_checked, NOT compare_ticks' own sign-only overflow
+// fallback -- that fallback silently treats two different same-signed
+// values as equal, which is only safe for compare/tol.cpp's cosmetic
+// "+"/"-" delta glyph, never for deciding whether two spans merge or
+// overlap. `overflowed` is set (never cleared) the first time any
+// comparison below cannot be determined without int64 overflow;
+// compare_span checks it once, after every helper here has run, and
+// degrades the whole comparison to Status::error instead of trusting a
+// result overflow may have silently corrupted.
+bool ticks_less(const RationalValue& a, const RationalValue& b, bool& overflowed) {
+  const TickOrder result = compare_ticks_checked(to_ticks(a), to_ticks(b));
+  if (result.overflowed) {
+    overflowed = true;
+    return false;
+  }
+  return result.order < 0;
+}
 
-bool ticks_less_equal(const RationalValue& a, const RationalValue& b) {
-  return compare_ticks(to_ticks(a), to_ticks(b)) <= 0;
+bool ticks_less_equal(const RationalValue& a, const RationalValue& b, bool& overflowed) {
+  const TickOrder result = compare_ticks_checked(to_ticks(a), to_ticks(b));
+  if (result.overflowed) {
+    overflowed = true;
+    return false;
+  }
+  return result.order <= 0;
 }
 
 // Merges adjacent spans separated by no more than one tick, sorted by
@@ -47,17 +70,31 @@ bool ticks_less_equal(const RationalValue& a, const RationalValue& b) {
 // across one measurement's own span list (adjacent spans compare `tb` for
 // equality before applying the one-tick rule; a `tb` mismatch falls back
 // to the always-correct, timebase-agnostic overlap-or-earlier check).
-std::vector<Span> merge_spans(std::vector<Span> spans) {
-  std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return ticks_less(a.start, b.start); });
+std::vector<Span> merge_spans(std::vector<Span> spans, bool& overflowed) {
+  std::sort(spans.begin(), spans.end(),
+            [&overflowed](const Span& a, const Span& b) { return ticks_less(a.start, b.start, overflowed); });
   std::vector<Span> merged;
   for (const Span& span : spans) {
     if (!merged.empty()) {
       Span& last = merged.back();
       const bool same_tb = last.end.tb == span.start.tb;
-      const bool adjacent_or_overlapping =
-          same_tb ? span.start.num <= last.end.num + 1 : ticks_less_equal(span.start, last.end);
+      bool adjacent_or_overlapping = false;
+      if (same_tb) {
+        // WR-03: `last.end.num + 1` is itself an unchecked int64 add on a
+        // value read straight from an untrusted snapshot -- guarded the
+        // same way as every other real-decision arithmetic in this fix
+        // rather than left as the one bare `+1` in the file.
+        std::int64_t threshold = 0;
+        if (!detail::checked_add(last.end.num, 1, &threshold)) {
+          overflowed = true;
+        } else {
+          adjacent_or_overlapping = span.start.num <= threshold;
+        }
+      } else {
+        adjacent_or_overlapping = ticks_less_equal(span.start, last.end, overflowed);
+      }
       if (adjacent_or_overlapping) {
-        if (ticks_less(last.end, span.end)) {
+        if (ticks_less(last.end, span.end, overflowed)) {
           last.end = span.end;
         }
         continue;
@@ -68,11 +105,13 @@ std::vector<Span> merge_spans(std::vector<Span> spans) {
   return merged;
 }
 
-bool overlaps(const Span& a, const Span& b) { return ticks_less(a.start, b.end) && ticks_less(b.start, a.end); }
+bool overlaps(const Span& a, const Span& b, bool& overflowed) {
+  return ticks_less(a.start, b.end, overflowed) && ticks_less(b.start, a.end, overflowed);
+}
 
-bool overlaps_any(const Span& s, const std::vector<Span>& others) {
+bool overlaps_any(const Span& s, const std::vector<Span>& others, bool& overflowed) {
   for (const Span& o : others) {
-    if (overlaps(s, o)) return true;
+    if (overlaps(s, o, overflowed)) return true;
   }
   return false;
 }
@@ -101,16 +140,32 @@ mediadiff::expected<Finding, Error> compare_span(const CheckDef& check, const Me
   const SpanList& baseline_list = baseline_list_ptr != nullptr ? *baseline_list_ptr : kEmptyList;
   const SpanList& candidate_list = candidate_list_ptr != nullptr ? *candidate_list_ptr : kEmptyList;
 
-  const std::vector<Span> baseline_merged = merge_spans(baseline_list.spans);
-  const std::vector<Span> candidate_merged = merge_spans(candidate_list.spans);
+  bool overflowed = false;
+  const std::vector<Span> baseline_merged = merge_spans(baseline_list.spans, overflowed);
+  const std::vector<Span> candidate_merged = merge_spans(candidate_list.spans, overflowed);
 
   std::vector<Span> introduced;
   for (const Span& c : candidate_merged) {
-    if (!overlaps_any(c, baseline_merged)) introduced.push_back(c);
+    if (!overlaps_any(c, baseline_merged, overflowed)) introduced.push_back(c);
   }
   std::vector<Span> removed;
   for (const Span& b : baseline_merged) {
-    if (!overlaps_any(b, candidate_merged)) removed.push_back(b);
+    if (!overlaps_any(b, candidate_merged, overflowed)) removed.push_back(b);
+  }
+
+  // WR-03: compare_ticks_checked reported at least one comparison above
+  // that could not be determined without int64 overflow -- every
+  // introduced/removed/pass verdict computed from baseline_merged/
+  // candidate_merged above may be silently wrong (a fabricated tie can
+  // merge spans that should not merge, or hide/invent an overlap), so this
+  // comparator returns Status::error (D-09's "never a fabricated verdict"
+  // contract, mirrored from compare/engine.cpp's value_kind_mismatch and
+  // CR-03's compare/tol.cpp & compare/dist.cpp fixes) rather than trusting
+  // any of it.
+  if (overflowed) {
+    finding.status = Status::error;
+    finding.message = "span comparator: a tick comparison overflowed int64_t; cannot determine a verdict";
+    return finding;
   }
 
   if (introduced.empty() && removed.empty()) {
