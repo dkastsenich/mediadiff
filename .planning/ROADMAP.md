@@ -85,7 +85,21 @@ Plans:
   4. `mediadiff dir a b` pairs a corpus by relative path in deterministic order under a `--threads`-bounded pool, reports unpaired files, and honours the exit-code contract (0/1/2 for regression signals, 64/65/66/70 for could-not-run) with partial JSON still emitted on 66 — all process control living in `cli/`, with the library writing nothing to stdout and never calling `exit()`.
   5. Every registered check ID resolves to documentation the build enforces: `mediadiff explain <check.id>` prints what it measures, why it matters and how to accept/tune/silence it; `mediadiff inspect` renders every implemented check family; `skipped` carries a machine-readable reason and is never conflated with `pass`; and all seven comparison semantics behave per spec with time tolerances compared in ticks rather than floats.
 
-**Plans**: TBD
+**Plans**: 11 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Contract freeze checkpoint + tracer: `compare a.snap.json b.snap.json --json` end to end
+- [ ] 02-02-PLAN.md — Registry generator completion, glob matcher, aliases, build-enforced check docs
+- [ ] 02-03-PLAN.md — Fail-first infrastructure: test registry, coverage gate, canary, golden and determinism harnesses
+- [ ] 02-04-PLAN.md — Tolerance grammar and the seven comparison semantics
+- [ ] 02-05-PLAN.md — Five profiles, severity resolution with provenance, volatile and transform behaviour
+- [ ] 02-06-PLAN.md — `mediadiff.toml`, the four-layer precedence merge, and `list-checks --effective`
+- [ ] 02-07-PLAN.md — Canonical serializer, snapshot envelope, safe write, idempotence harnesses
+- [ ] 02-08-PLAN.md — Shared report model, JSON plus shipped schema, Markdown budget, JUnit
+- [ ] 02-09-PLAN.md — TTY renderer, colour policy, accept/tune/silence triple
+- [ ] 02-10-PLAN.md — CLI surface completion: implicit compare, exit-code contract, `explain` and `inspect`
+- [ ] 02-11-PLAN.md — `dir` orchestration: pairing, bounded worker pool, corpus rollup
+
 **Source doc**: `claude_docs/01-core-concepts.md` (design-doc phase 1)
 
 ### Phase 3: Probe Layer, Container & Size
