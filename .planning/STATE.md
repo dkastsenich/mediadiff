@@ -4,16 +4,16 @@ milestone: v0.6.1
 milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
-status: executing
-stopped_at: Completed 02-10-PLAN.md
-last_updated: "2026-08-15T19:39:22.346Z"
+status: verifying
+stopped_at: Completed 02-11-PLAN.md (final plan of phase 02-core-engine)
+last_updated: "2026-08-15T20:23:07.067Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 
 Phase: 02 (core-engine) — EXECUTING
 Plan: 11 of 11
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -72,6 +72,7 @@ Progress: [█████████░] 94%
 | Phase 02 P08 | 95min | 3 tasks | 27 files |
 | Phase 02 P09 | 30min | 2 tasks | 34 files |
 | Phase 02-core-engine P10 | 35min | 3 tasks | 24 files |
+| Phase 02 P11 | 3h10min | 3 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,10 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-10: run_compare() extracted from compare.cpp's callback and exported so the implicit two-positional route (mediadiff a b) and the compare subcommand dispatch through the exact same function, never a parallel copy
 - [Phase ?]: 02-10: exit_code_for_findings derives the exit code from Summary::worst_gating (severity), replacing the prior per-Status worst_status helper -- matches report/model.h's own documented axis distinction
 - [Phase ?]: 02-10: core/snapshot.cpp's read_snapshot now reads a top-level partial boolean from snapshot JSON (previously hard-coded false) -- makes CLI-07's exit-66 fixture route testable ahead of a real probe/decode layer
+- [Phase ?]: dir mode's per-pair compare pipeline calls read_snapshot/resolve_policy_for_file/compare_fingerprints directly rather than run_compare() (which is [[noreturn]], structurally incompatible with aggregating N files into one corpus report)
+- [Phase ?]: Per-file policy resolution splits into a shared base Policy (builtin/profile/config-top-level, no path overrides, no CLI) plus resolve_policy_for_file applying path-matching config overrides then CLI overrides onto a copy per file, so no worker-pool job mutates shared state
+- [Phase ?]: A hard per-file error or partial-decode marker never aborts the corpus run mid-flight; exit-code escalation (hard error > any-partial > findings-based) is decided only after every requested report destination has been written
+- [Phase ?]: docs/schema/report-1.0.json extended with top-level oneOf(findings, files) and a shared $defs/summary, keeping the single-file document shape byte-for-byte unchanged while a corpus document validates under the same schema file
 
 ### Pending Todos
 
@@ -153,6 +158,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T19:39:22.296Z
-Stopped at: Completed 02-10-PLAN.md
+Last session: 2026-08-15T20:23:07.053Z
+Stopped at: Completed 02-11-PLAN.md (final plan of phase 02-core-engine)
 Resume file: None

@@ -74,11 +74,11 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 
 ### Directory Mode
 
-- [ ] **DIR-01**: `mediadiff dir <a> <b>` pairs files by relative path and reports unpaired files as `meta.missing_candidate` (fail) / `meta.extra_candidate` (warn)
-- [ ] **DIR-02**: `dir` defaults to header + packet passes and only decodes when `--content` is passed
-- [ ] **DIR-03**: `dir` output rolls up per-file summaries, corpus totals, and a worst-N table in TTY, with a `files[]` layer in JSON using the same finding schema
-- [ ] **DIR-04**: File processing order is deterministic (sorted relative paths) so reports diff cleanly across runs
-- [ ] **DIR-05**: `--threads N` bounds a worker pool across files while analyzer code stays single-file-synchronous
+- [x] **DIR-01**: `mediadiff dir <a> <b>` pairs files by relative path and reports unpaired files as `meta.missing_candidate` (fail) / `meta.extra_candidate` (warn)
+- [x] **DIR-02**: `dir` defaults to header + packet passes and only decodes when `--content` is passed
+- [x] **DIR-03**: `dir` output rolls up per-file summaries, corpus totals, and a worst-N table in TTY, with a `files[]` layer in JSON using the same finding schema
+- [x] **DIR-04**: File processing order is deterministic (sorted relative paths) so reports diff cleanly across runs
+- [x] **DIR-05**: `--threads N` bounds a worker pool across files while analyzer code stays single-file-synchronous
 - [ ] **DIR-06**: **[R]** Peak memory per in-flight file is bounded and asserted, since `--threads` is simultaneously the concurrency and the memory knob (research: ARCHITECTURE)
 
 ### Probe Layer
@@ -294,11 +294,11 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | REPORT-05 | Phase 2 | Complete |
 | REPORT-06 | Phase 2 | Complete |
 | REPORT-07 | Phase 2 | Complete |
-| DIR-01 | Phase 2 | Pending |
-| DIR-02 | Phase 2 | Pending |
-| DIR-03 | Phase 2 | Pending |
-| DIR-04 | Phase 2 | Pending |
-| DIR-05 | Phase 2 | Pending |
+| DIR-01 | Phase 2 | Complete |
+| DIR-02 | Phase 2 | Complete |
+| DIR-03 | Phase 2 | Complete |
+| DIR-04 | Phase 2 | Complete |
+| DIR-05 | Phase 2 | Complete |
 | DIR-06 | Phase 3 | Pending |
 | PROBE-01 | Phase 3 | Pending |
 | PROBE-02 | Phase 3 | Pending |
