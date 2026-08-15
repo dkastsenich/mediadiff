@@ -46,6 +46,25 @@ struct PolicyArgs {
 // completes, before parse_cli_overrides ever runs.
 PolicyArgs add_policy_flags(CLI::App& cmd);
 
+// Shared option storage for CLI-04's report-destination flags: `--json`
+// (optionally `=path`) and repeatable `--report`. `json_option` is the raw
+// CLI11 Option*, kept alongside the bound string so a caller can
+// distinguish "the flag was never given" (json_option->count() == 0) from
+// "the flag was given with no path, meaning stdout" (count() > 0,
+// *json_path empty) -- a shared_ptr<std::string> alone cannot make that
+// distinction, since both cases leave the string empty.
+struct ReportArgs {
+  std::shared_ptr<std::string> json_path;
+  CLI::Option* json_option = nullptr;
+  std::shared_ptr<std::vector<std::string>> report_flags;
+};
+
+// Registers `--json` (an optionally-valued flag: `--json` alone means
+// stdout, `--json=path` writes to that file, `->expected(0, 1)` is CLI11's
+// own idiom for a flag that MAY take one value) and `--report` (repeatable,
+// `<kind>=<path>`) on `cmd`.
+ReportArgs add_report_flags(CLI::App& cmd);
+
 // Converts every accumulated `--set`/`--tol` argument into one argv-ordered
 // CliOverride list -- severity and tolerance counted as independent
 // `argv_index` sequences (CliOverride::Dimension), so interleaving `--set`
@@ -71,5 +90,28 @@ mediadiff::expected<std::vector<CliOverride>, Error> parse_cli_overrides(const s
 // convert text back to the enum, not to re-reject it).
 mediadiff::expected<ProfileId, Error> resolve_profile_selection(const std::string& profile_flag,
                                                                     const std::optional<ConfigFile>& config);
+
+// One `--report kind=path` destination (CLI-04): `kind` is one of the two
+// file-bound report formats this plan wires (`md`, `junit` -- TTY has no
+// `--report` spelling since it is compare's own stdout default, and JSON's
+// own `--json[=path]` flag is handled separately, not through this type),
+// `path` is the text after the first `=`.
+struct ReportDestination {
+  enum class Kind { md, junit };
+  Kind kind;
+  std::string path;
+};
+
+// Parses every accumulated `--report` argument into an argv-ordered
+// ReportDestination list. Each argument is split on its FIRST `=`;
+// malformed text (no `=`, an empty kind, an empty path), a kind outside
+// {md, junit}, or two `--report` destinations naming the same path is
+// `ErrorKind::usage` naming the offending argument text verbatim -- the
+// same rejection shape parse_cli_overrides already uses for `--set`/`--tol`.
+// Does NOT know about `--json`'s own path (src/cli/commands/compare.cpp
+// checks that collision itself, since only it holds both `--json`'s path
+// and this function's return value at once).
+mediadiff::expected<std::vector<ReportDestination>, Error> parse_report_destinations(
+    const std::vector<std::string>& report_flags);
 
 }  // namespace mediadiff

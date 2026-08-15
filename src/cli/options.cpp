@@ -107,6 +107,79 @@ mediadiff::expected<std::vector<CliOverride>, Error> parse_cli_overrides(const s
   return overrides;
 }
 
+ReportArgs add_report_flags(CLI::App& cmd) {
+  ReportArgs args;
+  args.json_path = std::make_shared<std::string>();
+  args.report_flags = std::make_shared<std::vector<std::string>>();
+
+  args.json_option = cmd.add_option("--json", *args.json_path,
+                                     "Render the report as JSON: bare '--json' writes stdout, "
+                                     "'--json=PATH' writes PATH")
+                          ->expected(0, 1);
+  cmd.add_option("--report", *args.report_flags,
+                  "Write a file-bound report: '--report md=PATH' or '--report junit=PATH' (repeatable)");
+
+  return args;
+}
+
+namespace {
+
+// Same first-`=` split shape as options.cpp's own split_override, applied
+// to `--report`'s `<kind>=<path>` grammar instead of `--set`/`--tol`'s
+// `<glob>=<value>`.
+std::optional<std::pair<std::string, std::string>> split_report_flag(std::string_view raw) {
+  const std::size_t eq = raw.find('=');
+  if (eq == std::string_view::npos) {
+    return std::nullopt;
+  }
+  const std::string_view kind = raw.substr(0, eq);
+  const std::string_view path = raw.substr(eq + 1);
+  if (kind.empty() || path.empty()) {
+    return std::nullopt;
+  }
+  return std::make_pair(std::string(kind), std::string(path));
+}
+
+}  // namespace
+
+mediadiff::expected<std::vector<ReportDestination>, Error> parse_report_destinations(
+    const std::vector<std::string>& report_flags) {
+  std::vector<ReportDestination> destinations;
+  destinations.reserve(report_flags.size());
+
+  for (const std::string& raw : report_flags) {
+    auto split = split_report_flag(raw);
+    if (!split) {
+      return mediadiff::unexpected(Error{
+          ErrorKind::usage,
+          "malformed --report argument '" + raw + "' (expected <kind>=<path>, with both sides non-empty)"});
+    }
+    auto& [kind_text, path] = *split;
+
+    ReportDestination::Kind kind;
+    if (kind_text == "md") {
+      kind = ReportDestination::Kind::md;
+    } else if (kind_text == "junit") {
+      kind = ReportDestination::Kind::junit;
+    } else {
+      return mediadiff::unexpected(Error{ErrorKind::usage, "--report '" + raw + "': unrecognized report kind '" +
+                                                                 kind_text + "' (expected md or junit)"});
+    }
+    destinations.push_back(ReportDestination{kind, std::move(path)});
+  }
+
+  for (std::size_t i = 0; i < destinations.size(); ++i) {
+    for (std::size_t j = i + 1; j < destinations.size(); ++j) {
+      if (destinations[i].path == destinations[j].path) {
+        return mediadiff::unexpected(
+            Error{ErrorKind::usage, "two --report flags name the same path '" + destinations[i].path + "'"});
+      }
+    }
+  }
+
+  return destinations;
+}
+
 mediadiff::expected<ProfileId, Error> resolve_profile_selection(const std::string& profile_flag,
                                                                     const std::optional<ConfigFile>& config) {
   if (!profile_flag.empty()) {

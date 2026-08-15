@@ -26,6 +26,9 @@ add_executable(mediadiff_integration_tests
   # The shipped JSON schema actually rejects a malformed document, and a
   # real compare/compare -v run validates against it (02-08-PLAN.md Task 1).
   test_json_schema.cpp
+  # --json[=path] and repeatable --report kind=path write independent
+  # files; usage-error paths (02-08-PLAN.md Task 3).
+  test_report_flags.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
