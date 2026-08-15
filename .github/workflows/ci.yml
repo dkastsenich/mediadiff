@@ -101,7 +101,10 @@ jobs:
       # src/core/checks.def via stdlib tomllib (Python >= 3.11 only). Runs at
       # build time via CMake on every leg, so this step is deliberately
       # unguarded rather than OS-scoped like its neighbours.
-      - name: Set up Python (tomllib floor for Phase 2 registry generator)
+      # '3.11' resolves to the latest 3.11.x — a series pin, not a >=3.11 range.
+      # Deterministic by choice, matching how windows-2022 is pinned over
+      # windows-latest; bump deliberately when a newer minor is wanted.
+      - name: Set up Python (3.11 series, for the Phase 2 registry generator)
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
