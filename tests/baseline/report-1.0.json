@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "tool_version": "0.1.0",
+  "summary": {
+    "total": 1,
+    "fail": 0,
+    "warn": 0
+  },
+  "findings": [
+    {
+      "id": "meta.tool_version",
+      "scope": {
+        "kind": "global",
+        "index": 0
+      },
+      "status": "pass",
+      "severity": "warn",
+      "baseline": "1.2.3",
+      "candidate": "1.2.3",
+      "message": "values match",
+      "skip_reason": "none"
+    }
+  ]
+}

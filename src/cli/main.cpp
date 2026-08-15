@@ -2,6 +2,7 @@
 
 #include "cli/commands/compare.h"
 #include "cli/commands/list_checks.h"
+#include "cli/commands/snapshot.h"
 #include "cli/exit_code.h"
 #include "util/fs.h"
 #include "util/version.h"
@@ -38,6 +39,7 @@ int run(int argc, char** argv) {
 
   register_compare_command(app);
   register_list_checks_command(app);
+  register_snapshot_command(app);
 
   // CLI11_PARSE's own catch block returns app.exit(e) unmodified, which
   // lands in CLI::ExitCodes' 100-127 range (Success=0, then

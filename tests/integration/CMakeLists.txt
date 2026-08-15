@@ -11,6 +11,12 @@ add_executable(mediadiff_integration_tests
   # TRUST-03 decode-path signature and T-2-07 input-identity privacy
   # (02-07-PLAN.md Task 2).
   test_schema_version.cpp
+  # SNAP-07's CI-safe write gate, driven through the real `snapshot`
+  # subcommand against a scratch git repository (02-07-PLAN.md Task 3).
+  test_snapshot_safe_write.cpp
+  # SNAP-06's permanent self-check CI test and TRUST-08's cross-release
+  # idempotence bootstrap (02-07-PLAN.md Task 3).
+  test_idempotence.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
@@ -50,6 +56,8 @@ target_compile_definitions(mediadiff_integration_tests PRIVATE
   MEDIADIFF_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/snapshots"
   MEDIADIFF_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
   MEDIADIFF_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden"
+  # TRUST-08's frozen cross-release baseline (02-07-PLAN.md Task 3).
+  MEDIADIFF_BASELINE_DIR="${CMAKE_SOURCE_DIR}/tests/baseline"
 )
 # Explicit dependency so the integration target is never built (or run)
 # before the executable it spawns exists.
