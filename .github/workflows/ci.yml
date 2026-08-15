@@ -361,3 +361,6 @@ jobs:
 
       - name: Run ENG-16 boundary lint
         run: bash scripts/lint_eng16.sh
+
+      - name: Run D-03 check-id string-literal lint
+        run: bash scripts/lint_check_id_strings.sh

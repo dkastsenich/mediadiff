@@ -8,6 +8,7 @@ add_executable(mediadiff_unit_tests
   # CI records it as skipped and a developer running it from a console window
   # exercises it for real — CLI-09's manual checkpoint, made mechanical.
   test_console_vt.cpp
+  test_registry.cpp
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain)
 mediadiff_apply_warnings(mediadiff_unit_tests)

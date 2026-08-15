@@ -85,13 +85,45 @@ enum class ProfileId {
   transform,
 };
 
+// One profile's severity exception (doc 01 section 5, D-04). A check with
+// no entry for a given profile inherits CheckDef::default_severity — a
+// deliberate exception reads as an exception rather than being buried in
+// one cell of a five-column row.
+struct ProfileSeverityOverride {
+  ProfileId profile;
+  Severity severity;
+};
+
+// One profile's tolerance exception, same rationale as
+// ProfileSeverityOverride but for CheckDef::default_tolerance.
+struct ProfileToleranceOverride {
+  ProfileId profile;
+  std::string_view tolerance;
+};
+
+// One entry in the deprecated-alias table (doc 01 section 2: "Renames
+// without alias are forbidden post-v1"). Carries structure, not a bare
+// string pair, so resolution stays unambiguous when a future rename
+// crosses namespaces: `new_check_index` is validated at generation time to
+// resolve into the CheckDef table, and `new_group` is carried alongside it
+// so a caller never has to re-derive the new check's group from the index
+// alone.
+struct AliasDef {
+  std::string_view old_id;
+  std::uint32_t new_check_index;
+  std::string_view new_group;
+};
+
 // One registry entry — the shape tools/gen_registry.py's generated
 // check_registry.cpp instantiates via C++20 designated initializers, in
 // exactly this field declaration order (designated initializers must
-// follow declaration order). `default_severity` is the single built-in
-// default this plan needs; the per-profile override matrix doc 01 section
-// 5 describes is plan 02-05's job — core/policy.h's resolve_severity stub
-// already has the signature that later body will fill.
+// follow declaration order). `default_severity`/`default_tolerance` are
+// the built-in baseline (D-04); `profile_*_overrides` are spans (pointer +
+// count) into per-check constexpr override tables the generator emits only
+// for checks that declare a `[check.profile_severity]` or
+// `[check.profile_tolerance]` sub-table — a profile with no entry in that
+// span inherits the baseline. core/policy.h's resolve_severity stub
+// already has the signature plan 02-05's full precedence merge will fill.
 struct CheckDef {
   std::string_view id;
   std::string_view group;
@@ -99,23 +131,52 @@ struct CheckDef {
   Unit unit;
   ValueKind value_kind;
   Severity default_severity;
-  bool is_volatile;
-  bool requires_pass;
   // Tolerance grammar text ("5ms", "3%", ...), unparsed — the grammar
   // parser is a later plan's job (ENG-05, CLI-10). Empty for semantics
   // that don't consume a tolerance, including every check this plan
   // registers.
-  std::string_view tolerance;
+  std::string_view default_tolerance;
+  bool is_volatile;
+  bool requires_pass;
+  const ProfileSeverityOverride* profile_severity_overrides;
+  std::size_t profile_severity_override_count;
+  const ProfileToleranceOverride* profile_tolerance_overrides;
+  std::size_t profile_tolerance_override_count;
+
+  // Resolves this check's severity for `profile`: the profile's override if
+  // one was declared, otherwise `default_severity`. A linear scan over a
+  // handful of entries — the override span is per-check and short by
+  // construction (at most one entry per profile, five profiles total).
+  Severity severity_for(ProfileId profile) const {
+    for (std::size_t i = 0; i < profile_severity_override_count; ++i) {
+      if (profile_severity_overrides[i].profile == profile) {
+        return profile_severity_overrides[i].severity;
+      }
+    }
+    return default_severity;
+  }
+
+  // Same resolution as severity_for, for tolerance.
+  std::string_view tolerance_for(ProfileId profile) const {
+    for (std::size_t i = 0; i < profile_tolerance_override_count; ++i) {
+      if (profile_tolerance_overrides[i].profile == profile) {
+        return profile_tolerance_overrides[i].tolerance;
+      }
+    }
+    return default_tolerance;
+  }
 };
 
 // A read-only view over a contiguous CheckDef table, in registry
 // declaration order — the order tools/gen_registry.py wrote checks.def's
 // entries in, which compare/engine.cpp also emits findings in, so report
 // output never depends on either fingerprint's measurement read order
-// (TRUST-05).
+// (TRUST-05) — plus the flat alias table generated alongside it.
 class CheckRegistry {
  public:
-  constexpr CheckRegistry(const CheckDef* defs, std::size_t count) : defs_(defs), count_(count) {}
+  constexpr CheckRegistry(const CheckDef* defs, std::size_t count, const AliasDef* aliases,
+                           std::size_t alias_count)
+      : defs_(defs), count_(count), aliases_(aliases), alias_count_(alias_count) {}
 
   constexpr std::size_t size() const noexcept { return count_; }
 
@@ -133,12 +194,37 @@ class CheckRegistry {
     return std::nullopt;
   }
 
+  // Resolves `id` against registered check ids first, then the alias
+  // table. When `was_aliased` is non-null, reports whether the match came
+  // through an alias — the config parser (plan 02-06) uses that to decide
+  // whether ENG-03's deprecation warning is warranted. Returns nullopt only
+  // when `id` is neither a registered id nor a declared alias.
+  std::optional<std::uint32_t> resolve_alias(std::string_view id, bool* was_aliased = nullptr) const {
+    if (auto idx = find(id)) {
+      if (was_aliased != nullptr) {
+        *was_aliased = false;
+      }
+      return idx;
+    }
+    for (std::size_t i = 0; i < alias_count_; ++i) {
+      if (aliases_[i].old_id == id) {
+        if (was_aliased != nullptr) {
+          *was_aliased = true;
+        }
+        return aliases_[i].new_check_index;
+      }
+    }
+    return std::nullopt;
+  }
+
   const CheckDef* begin() const noexcept { return defs_; }
   const CheckDef* end() const noexcept { return defs_ + count_; }
 
  private:
   const CheckDef* defs_;
   std::size_t count_;
+  const AliasDef* aliases_;
+  std::size_t alias_count_;
 };
 
 // Accessor for the built-in registry table generated from checks.def by

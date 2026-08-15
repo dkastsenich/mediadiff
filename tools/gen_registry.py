@@ -6,22 +6,59 @@ the filename `checks.def`; the content is parsed with the Python 3.11+
 standard-library `tomllib` module (D-05), never a third-party TOML
 library, so this generator has zero non-stdlib dependencies.
 
-Emits three generated files into --out-dir:
-  check_id.h          CheckId enum + kCheckIdStrings string table (D-03)
-  check_registry.cpp  the CheckDef table + builtin_registry() accessor (D-01)
-  check_explain.cpp   docs/checks/<id>.md bodies embedded for --explain (D-02)
+`checks.def` record keys, all read from the `[[check]]` array-of-tables:
+  id             dotted lowercase grammar [a-z0-9_]+(\\.[a-z0-9_]+)*
+  group          the check's family, e.g. "meta"
+  semantic       exact | tol | set | presence | hash | dist | span
+  unit           none | ms | ms_per_min | frames | percent | db | lu |
+                 samples | ticks | count
+  value_kind     int64 | rational | real | string | string_set |
+                 histogram | span_list | hash_chain
+  severity       ignore | info | warn | fail   (the baseline, D-04)
+  tolerance      optional; baseline tolerance grammar text, unparsed
+  volatile       optional bool, default false
+  requires_pass  optional bool, default false
+  aliases        optional array of deprecated-alias id strings that now
+                 resolve to this check (doc 01 section 2)
 
-Fails the build (non-zero exit, message on stderr) when:
+Per-profile exceptions are the only per-profile data present, declared as
+TOML sub-tables on the check's own array element:
+  [check.profile_severity]    profile name -> severity override
+  [check.profile_tolerance]   profile name -> tolerance override
+A profile with no entry inherits the baseline -- a deliberate exception
+reads as an exception (D-04).
+
+Emits four generated files into --out-dir, all four via temp-file-plus-
+os.replace so a concurrent build never observes a half-written file:
+  check_id.h          CheckId enum + kCheckIdStrings string table (D-03)
+  check_registry.cpp  the CheckDef table (with profile-override spans and
+                       the alias table) + builtin_registry() (D-01)
+  check_explain.cpp   docs/checks/<id>.md bodies embedded for --explain,
+                       reordered into the three fixed sections regardless
+                       of source order (D-02)
+  checks_manifest.json  sorted {id, doc, group, semantic, value_kind}
+                         records -- the docs manifest ENG-01 names
+
+Fails the build (non-zero exit, message on stderr naming every offending
+item, sorted, in one run rather than aborting on the first) when:
   - the interpreter is older than 3.11 (tomllib does not exist before it)
   - a check id does not match the dotted-lowercase grammar
-  - a registered id has no readable, non-empty docs/checks/<id>.md (D-02)
+  - a check id is declared more than once
+  - a registered id has no readable, non-empty docs/checks/<id>.md
+  - a docs/checks/<id>.md is missing any of its three required headings
+  - an alias string collides with a registered check id
+  - a docs/checks/*.md file on disk has a stem that is not a registered id
+    (an orphan doc -- a rename that silently kept serving the old file)
+  - a doc's content would terminate its own generated raw string literal
 
-Each generated file is written to a sibling temporary file and then
-os.replace()'d into position, so a concurrent build never observes a
-half-written generated header.
+("An alias whose owning check no longer exists" is the eighth declared
+condition; it is structurally unreachable under this generator's design,
+since every alias is declared inline on the very check record that owns
+it -- there is no separate alias table in checks.def to fall out of sync.)
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -49,6 +86,16 @@ SEMANTICS = {"exact", "tol", "set", "presence", "hash", "dist", "span"}
 VALUE_KINDS = {"int64", "rational", "real", "string", "string_set", "histogram", "span_list", "hash_chain"}
 SEVERITIES = {"ignore", "info", "warn", "fail"}
 UNITS = {"none", "ms", "ms_per_min", "frames", "percent", "db", "lu", "samples", "ticks", "count"}
+PROFILES = {"strict_bitexact", "sw_encoder", "hw_encoder", "remux", "transform"}
+
+# The three level-2 headings every docs/checks/<id>.md must contain (D-02).
+# check_explain.cpp emits their bodies in exactly this order regardless of
+# the order they appear in the source Markdown.
+REQUIRED_DOC_HEADINGS = (
+    "## What it measures",
+    "## Why it matters",
+    "## Accept / Tune / Silence",
+)
 
 
 def write_atomic(path, content):
@@ -73,8 +120,9 @@ def load_checks(checks_path):
 
 def validate_fields(checks):
     """Validates required-key presence and known-spelling enums for every
-    entry, failing loudly and naming the offending id rather than letting a
-    typo surface as a confusing KeyError deep in code generation."""
+    entry -- including the per-profile override sub-tables -- failing
+    loudly and naming the offending id rather than letting a typo surface
+    as a confusing KeyError deep in code generation."""
     errors = []
     for c in checks:
         cid = c.get("id", "<missing id>")
@@ -89,6 +137,22 @@ def validate_fields(checks):
             errors.append(f"{cid}: unknown severity '{c['severity']}' (expected one of {sorted(SEVERITIES)})")
         if "unit" in c and c["unit"] not in UNITS:
             errors.append(f"{cid}: unknown unit '{c['unit']}' (expected one of {sorted(UNITS)})")
+        if "aliases" in c and not isinstance(c["aliases"], list):
+            errors.append(f"{cid}: 'aliases' must be an array of strings")
+        for profile, severity in c.get("profile_severity", {}).items():
+            if profile not in PROFILES:
+                errors.append(
+                    f"{cid}: unknown profile '{profile}' in [check.profile_severity] (expected one of {sorted(PROFILES)})"
+                )
+            if severity not in SEVERITIES:
+                errors.append(
+                    f"{cid}: unknown severity '{severity}' for profile '{profile}' in [check.profile_severity]"
+                )
+        for profile in c.get("profile_tolerance", {}):
+            if profile not in PROFILES:
+                errors.append(
+                    f"{cid}: unknown profile '{profile}' in [check.profile_tolerance] (expected one of {sorted(PROFILES)})"
+                )
     if errors:
         sys.stderr.write("gen_registry.py: invalid checks.def entries:\n")
         for e in sorted(errors):
@@ -118,16 +182,107 @@ def validate_ids_unique(checks):
         sys.exit(1)
 
 
+def collect_aliases(checks):
+    """Builds the flat alias table -- one {old_id, new_check_index,
+    new_group} record per alias string declared on a check -- and fails
+    the build when an alias string collides with a registered check id or
+    is declared more than once. Every offending item is reported, sorted,
+    in one run."""
+    id_to_index = {c["id"]: i for i, c in enumerate(checks)}
+    errors = []
+    seen = {}
+    records = []
+    for i, c in enumerate(checks):
+        for old_id in c.get("aliases", []):
+            if old_id in id_to_index:
+                errors.append(f"alias '{old_id}' (declared on '{c['id']}') collides with a registered check id")
+                continue
+            if old_id in seen:
+                errors.append(f"alias '{old_id}' is declared more than once (on '{seen[old_id]}' and '{c['id']}')")
+                continue
+            seen[old_id] = c["id"]
+            records.append({"old_id": old_id, "new_check_index": i, "new_group": c["group"]})
+    if errors:
+        sys.stderr.write("gen_registry.py: invalid alias declarations:\n")
+        for e in sorted(errors):
+            sys.stderr.write(f"  {e}\n")
+        sys.exit(1)
+    return records
+
+
+def extract_sections(body):
+    """Splits `body` on level-2 ('## ') headings, returning
+    {heading_text: section_body}. Tolerant of whichever order the headings
+    appear in the source file -- callers that need the three fixed
+    headings look them up by key rather than relying on source position."""
+    sections = {}
+    current_heading = None
+    current_lines = []
+    for line in body.splitlines():
+        if line.startswith("## "):
+            if current_heading is not None:
+                sections[current_heading] = "\n".join(current_lines).strip("\n")
+            current_heading = line.rstrip()
+            current_lines = []
+        elif current_heading is not None:
+            current_lines.append(line)
+    if current_heading is not None:
+        sections[current_heading] = "\n".join(current_lines).strip("\n")
+    return sections
+
+
 def validate_docs(checks, docs_dir):
+    """Validates, in one pass, every documentation-related build-failure
+    condition D-02/DOC-01/DOC-02 requires: a registered id with no doc
+    file, a doc file that is missing/zero-byte/whitespace-only, a doc
+    missing any of the three required headings, and an orphan doc whose
+    stem is not a registered id. Every offending item across every
+    category is reported, sorted, in one run rather than aborting on the
+    first."""
     missing = []
+    empty = []
+    missing_headings = {}
+    registered_ids = {c["id"] for c in checks}
+
     for c in checks:
         doc_path = os.path.join(docs_dir, f"{c['id']}.md")
-        if not os.path.isfile(doc_path) or os.path.getsize(doc_path) == 0:
+        if not os.path.isfile(doc_path):
             missing.append(c["id"])
-    if missing:
-        sys.stderr.write(
-            "gen_registry.py: missing or empty docs/checks/<id>.md for: " f"{', '.join(sorted(missing))}\n"
-        )
+            continue
+        with open(doc_path, "r", encoding="utf-8") as f:
+            body = f.read()
+        if body.strip() == "":
+            empty.append(c["id"])
+            continue
+        sections = extract_sections(body)
+        missing_heads = [h for h in REQUIRED_DOC_HEADINGS if h not in sections]
+        if missing_heads:
+            missing_headings[c["id"]] = missing_heads
+
+    orphans = []
+    if os.path.isdir(docs_dir):
+        for name in os.listdir(docs_dir):
+            if not name.endswith(".md"):
+                continue
+            stem = name[: -len(".md")]
+            if stem not in registered_ids:
+                orphans.append(stem)
+
+    if missing or empty or missing_headings or orphans:
+        sys.stderr.write("gen_registry.py: documentation gate failed:\n")
+        if missing:
+            sys.stderr.write(f"  missing docs/checks/<id>.md for: {', '.join(sorted(missing))}\n")
+        if empty:
+            sys.stderr.write(
+                f"  empty (zero-byte or whitespace-only) docs/checks/<id>.md for: {', '.join(sorted(empty))}\n"
+            )
+        if missing_headings:
+            for cid in sorted(missing_headings):
+                sys.stderr.write(f"  {cid}: missing required heading(s): {', '.join(missing_headings[cid])}\n")
+        if orphans:
+            sys.stderr.write(
+                f"  orphan docs/checks/*.md with no matching registered id: {', '.join(sorted(orphans))}\n"
+            )
         sys.exit(1)
 
 
@@ -166,7 +321,37 @@ def cpp_string_literal(value):
     return f'"{escaped}"'
 
 
-def render_check_registry_cpp(checks):
+def render_profile_overrides_block(checks):
+    """Emits, for every check that declares a [check.profile_severity]
+    and/or [check.profile_tolerance] sub-table, a small constexpr array
+    named after the check's enum identifier. CheckDef then points at these
+    arrays via pointer+count spans -- a profile with no entry inherits the
+    baseline (D-04). Sorted by profile name so regenerating from the same
+    checks.def always produces byte-identical output."""
+    lines = []
+    for c in checks:
+        name = enum_name(c["id"])
+        severity_overrides = c.get("profile_severity", {})
+        if severity_overrides:
+            lines.append(f"constexpr ProfileSeverityOverride kProfileSeverity_{name}[] = {{")
+            for profile in sorted(severity_overrides):
+                lines.append(
+                    f"    ProfileSeverityOverride{{ProfileId::{profile}, Severity::{severity_overrides[profile]}}},"
+                )
+            lines.append("};")
+        tolerance_overrides = c.get("profile_tolerance", {})
+        if tolerance_overrides:
+            lines.append(f"constexpr ProfileToleranceOverride kProfileTolerance_{name}[] = {{")
+            for profile in sorted(tolerance_overrides):
+                lines.append(
+                    f"    ProfileToleranceOverride{{ProfileId::{profile}, "
+                    f"{cpp_string_literal(tolerance_overrides[profile])}}},"
+                )
+            lines.append("};")
+    return lines
+
+
+def render_check_registry_cpp(checks, aliases):
     lines = [
         "// GENERATED by tools/gen_registry.py from src/core/checks.def -- do not",
         "// hand-edit.",
@@ -178,12 +363,24 @@ def render_check_registry_cpp(checks):
         "",
         "namespace {",
         "",
-        "constexpr CheckDef kCheckDefs[] = {",
     ]
+    overrides_block = render_profile_overrides_block(checks)
+    if overrides_block:
+        lines.extend(overrides_block)
+        lines.append("")
+
+    lines.append("constexpr CheckDef kCheckDefs[] = {")
     for c in checks:
+        name = enum_name(c["id"])
         tolerance = c.get("tolerance", "")
         is_volatile = "true" if c.get("volatile", False) else "false"
         requires_pass = "true" if c.get("requires_pass", False) else "false"
+        severity_overrides = c.get("profile_severity", {})
+        tolerance_overrides = c.get("profile_tolerance", {})
+        severity_ptr = f"kProfileSeverity_{name}" if severity_overrides else "nullptr"
+        severity_count = str(len(severity_overrides)) if severity_overrides else "0"
+        tolerance_ptr = f"kProfileTolerance_{name}" if tolerance_overrides else "nullptr"
+        tolerance_count = str(len(tolerance_overrides)) if tolerance_overrides else "0"
         lines.append("    CheckDef{")
         lines.append(f'        .id = {cpp_string_literal(c["id"])},')
         lines.append(f'        .group = {cpp_string_literal(c["group"])},')
@@ -191,13 +388,40 @@ def render_check_registry_cpp(checks):
         lines.append(f"        .unit = Unit::{c['unit']},")
         lines.append(f"        .value_kind = ValueKind::{c['value_kind']},")
         lines.append(f"        .default_severity = Severity::{c['severity']},")
+        lines.append(f"        .default_tolerance = {cpp_string_literal(tolerance)},")
         lines.append(f"        .is_volatile = {is_volatile},")
         lines.append(f"        .requires_pass = {requires_pass},")
-        lines.append(f"        .tolerance = {cpp_string_literal(tolerance)},")
+        lines.append(f"        .profile_severity_overrides = {severity_ptr},")
+        lines.append(f"        .profile_severity_override_count = {severity_count},")
+        lines.append(f"        .profile_tolerance_overrides = {tolerance_ptr},")
+        lines.append(f"        .profile_tolerance_override_count = {tolerance_count},")
         lines.append("    },")
     lines.append("};")
     lines.append("")
-    lines.append("constexpr CheckRegistry kBuiltinRegistry{kCheckDefs, sizeof(kCheckDefs) / sizeof(kCheckDefs[0])};")
+
+    if aliases:
+        lines.append("constexpr AliasDef kAliasDefs[] = {")
+        for a in aliases:
+            lines.append("    AliasDef{")
+            lines.append(f'        .old_id = {cpp_string_literal(a["old_id"])},')
+            lines.append(f'        .new_check_index = {a["new_check_index"]},')
+            lines.append(f'        .new_group = {cpp_string_literal(a["new_group"])},')
+            lines.append("    },")
+        lines.append("};")
+        lines.append("")
+        alias_ptr = "kAliasDefs"
+        alias_count = "sizeof(kAliasDefs) / sizeof(kAliasDefs[0])"
+    else:
+        # A zero-length C array is not standard C++ (MSVC rejects it
+        # outright); pass nullptr/0 directly instead of declaring an empty
+        # constexpr array when checks.def has no aliases at all.
+        alias_ptr = "nullptr"
+        alias_count = "0"
+
+    lines.append(
+        "constexpr CheckRegistry kBuiltinRegistry{kCheckDefs, sizeof(kCheckDefs) / sizeof(kCheckDefs[0]), "
+        f"{alias_ptr}, {alias_count}}};"
+    )
     lines.append("")
     lines.append("}  // namespace")
     lines.append("")
@@ -231,13 +455,28 @@ def render_check_explain_cpp(checks, docs_dir):
         doc_path = os.path.join(docs_dir, f"{c['id']}.md")
         with open(doc_path, "r", encoding="utf-8") as f:
             body = f.read()
+        sections = extract_sections(body)
+        # Emit the three required sections in this fixed canonical order,
+        # regardless of the order they appeared in the source Markdown, so
+        # --explain output never varies with how a doc happened to be
+        # written (validate_docs already guaranteed all three are present).
+        ordered_body = "\n\n".join(f"{heading}\n{sections[heading]}" for heading in REQUIRED_DOC_HEADINGS)
+
         # Short, index-based delimiter: a raw-string d-char-sequence must be
         # <= 16 characters (and contain no parentheses/backslash/whitespace)
         # -- a dotted check id like "meta.tool_version" is already too long
         # once prefixed, so the delimiter is derived from position, not id.
         delimiter = f"EXPLAIN{i}"
+        terminator = f'){delimiter}"'
+        if terminator in ordered_body:
+            sys.stderr.write(
+                f"gen_registry.py: {c['id']}'s doc content contains the sequence '{terminator}', which would "
+                "terminate its own generated raw string literal -- refusing to embed it unchanged (T-2-08).\n"
+            )
+            sys.exit(1)
+
         lines.append(f'    R"{delimiter}(')
-        lines.append(body)
+        lines.append(ordered_body)
         lines.append(f'){delimiter}",')
     lines.append("};")
     lines.append("")
@@ -255,6 +494,28 @@ def render_check_explain_cpp(checks, docs_dir):
     return "\n".join(lines)
 
 
+def render_checks_manifest(checks):
+    """The docs manifest ENG-01 names: a sorted array of
+    {id, doc, group, semantic, value_kind} records, one per registered
+    check. A build artifact today (Flagged Assumption in 02-02-PLAN.md);
+    embed rather than read-from-disk if a later phase needs it at runtime,
+    since runtime file lookup breaks the single-static-binary contract."""
+    records = sorted(
+        (
+            {
+                "id": c["id"],
+                "doc": f"docs/checks/{c['id']}.md",
+                "group": c["group"],
+                "semantic": c["semantic"],
+                "value_kind": c["value_kind"],
+            }
+            for c in checks
+        ),
+        key=lambda r: r["id"],
+    )
+    return json.dumps(records, indent=2) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checks", required=True, help="path to src/core/checks.def")
@@ -266,13 +527,15 @@ def main():
     validate_fields(checks)
     validate_grammar(checks)
     validate_ids_unique(checks)
+    aliases = collect_aliases(checks)
     validate_docs(checks, args.docs_dir)
 
     os.makedirs(args.out_dir, exist_ok=True)
 
     write_atomic(os.path.join(args.out_dir, "check_id.h"), render_check_id_h(checks))
-    write_atomic(os.path.join(args.out_dir, "check_registry.cpp"), render_check_registry_cpp(checks))
+    write_atomic(os.path.join(args.out_dir, "check_registry.cpp"), render_check_registry_cpp(checks, aliases))
     write_atomic(os.path.join(args.out_dir, "check_explain.cpp"), render_check_explain_cpp(checks, args.docs_dir))
+    write_atomic(os.path.join(args.out_dir, "checks_manifest.json"), render_checks_manifest(checks))
 
 
 if __name__ == "__main__":

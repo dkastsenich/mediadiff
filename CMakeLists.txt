@@ -60,6 +60,7 @@ add_custom_command(
     "${MEDIADIFF_GENERATED_DIR}/core/check_id.h"
     "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
     "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
+    "${MEDIADIFF_GENERATED_DIR}/core/checks_manifest.json"
   COMMAND Python3::Interpreter
           "${CMAKE_SOURCE_DIR}/tools/gen_registry.py"
           --checks "${MEDIADIFF_CHECKS_DEF}"
@@ -76,6 +77,7 @@ add_custom_target(generate_registry DEPENDS
   "${MEDIADIFF_GENERATED_DIR}/core/check_id.h"
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
+  "${MEDIADIFF_GENERATED_DIR}/core/checks_manifest.json"
 )
 
 # --- libmediadiff ------------------------------------------------------------
