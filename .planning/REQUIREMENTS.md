@@ -54,13 +54,13 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Fingerprints & Snapshots
 
-- [ ] **SNAP-01**: `mediadiff snapshot <file>` writes a `*.snap.json` fingerprint containing all measurements plus the envelope (schema/tool versions, decode path, sampling state, input identity with XXH3-128)
+- [x] **SNAP-01**: `mediadiff snapshot <file>` writes a `*.snap.json` fingerprint containing all measurements plus the envelope (schema/tool versions, decode path, sampling state, input identity with XXH3-128)
 - [x] **SNAP-02**: `mediadiff compare <file> <file>.snap.json` accepts a snapshot in place of live media and produces the same findings a live compare would
-- [ ] **SNAP-03**: Snapshot output is canonical and git-diffable — registry field order, sorted scopes, one value per line, shortest round-trip float formatting
-- [ ] **SNAP-04**: Times are stored as `{num, den, tb}` rationals with the float form as a derived convenience field
-- [ ] **SNAP-05**: `compare` warns on tool-version skew and refuses with exit `65` on an incompatible `schema_version` major
-- [ ] **SNAP-06**: `mediadiff snapshot f && mediadiff compare f f.snap.json` is clean — enforced as a permanent CI test
-- [ ] **SNAP-07**: **[R]** `snapshot` refuses to silently overwrite an existing tracked snapshot in CI (`CI=true` / non-TTY) without an explicit `--force`/`--update` flag, so a misinvoked job cannot launder a regression into the committed baseline (research: FEATURES gap 1 — the convention every comparable snapshot tool enforces)
+- [x] **SNAP-03**: Snapshot output is canonical and git-diffable — registry field order, sorted scopes, one value per line, shortest round-trip float formatting
+- [x] **SNAP-04**: Times are stored as `{num, den, tb}` rationals with the float form as a derived convenience field
+- [x] **SNAP-05**: `compare` warns on tool-version skew and refuses with exit `65` on an incompatible `schema_version` major
+- [x] **SNAP-06**: `mediadiff snapshot f && mediadiff compare f f.snap.json` is clean — enforced as a permanent CI test
+- [x] **SNAP-07**: **[R]** `snapshot` refuses to silently overwrite an existing tracked snapshot in CI (`CI=true` / non-TTY) without an explicit `--force`/`--update` flag, so a misinvoked job cannot launder a regression into the committed baseline (research: FEATURES gap 1 — the convention every comparable snapshot tool enforces)
 
 ### Reporting
 
@@ -167,12 +167,12 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 - [ ] **TRUST-01**: Every fingerprint records, per hashed stream, the decoder name, determinism class, flags, and (class 2) a path signature
 - [ ] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
-- [ ] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
+- [x] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
 - [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
 - [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
 - [ ] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
 - [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains
-- [ ] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
+- [x] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
 - [ ] **TRUST-09**: `ts_scan` output is cross-checked against TSDuck's analysis of the same fixtures via a manual test jig, without linking TSDuck
 
 ### Documentation & Explainability
@@ -280,13 +280,13 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | ENG-14 | Phase 2 | Complete |
 | ENG-15 | Phase 2 | Complete |
 | ENG-16 | Phase 2 | Complete |
-| SNAP-01 | Phase 2 | Pending |
+| SNAP-01 | Phase 2 | Complete |
 | SNAP-02 | Phase 2 | Complete |
-| SNAP-03 | Phase 2 | Pending |
-| SNAP-04 | Phase 2 | Pending |
-| SNAP-05 | Phase 2 | Pending |
-| SNAP-06 | Phase 2 | Pending |
-| SNAP-07 | Phase 2 | Pending |
+| SNAP-03 | Phase 2 | Complete |
+| SNAP-04 | Phase 2 | Complete |
+| SNAP-05 | Phase 2 | Complete |
+| SNAP-06 | Phase 2 | Complete |
+| SNAP-07 | Phase 2 | Complete |
 | REPORT-01 | Phase 2 | Pending |
 | REPORT-02 | Phase 2 | Pending |
 | REPORT-03 | Phase 2 | Pending |
@@ -366,12 +366,12 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONTENT-11 | Phase 7 | Pending |
 | TRUST-01 | Phase 6 | Pending |
 | TRUST-02 | Phase 6 | Pending |
-| TRUST-03 | Phase 2 | Pending |
+| TRUST-03 | Phase 2 | Complete |
 | TRUST-04 | Phase 7 | Pending |
 | TRUST-05 | Phase 2 | Complete |
 | TRUST-06 | Phase 3 | Pending |
 | TRUST-07 | Phase 7 | Pending |
-| TRUST-08 | Phase 2 | Pending |
+| TRUST-08 | Phase 2 | Complete |
 | TRUST-09 | Phase 3 | Pending |
 | DOC-01 | Phase 2 | Complete |
 | DOC-02 | Phase 2 | Complete |

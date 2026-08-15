@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
 status: executing
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-08-15T17:16:46.541Z"
+stopped_at: Completed 02-07-PLAN.md
+last_updated: "2026-08-15T17:52:30.381Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 02 (core-engine) — EXECUTING
-Plan: 7 of 11
+Plan: 8 of 11
 Status: Ready to execute
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [███████░░░] 69%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [███████░░░] 69%
 | Phase 02 P04 | 90min | 3 tasks | 71 files |
 | Phase 02 P05 | 55min | 3 tasks | 16 files |
 | Phase 02 P06 | 70min | 3 tasks | 31 files |
+| Phase 02 P07 | 65min | 3 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,12 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-06: resolve_policy's config/cli_overrides parameters default to nullopt/{} so every pre-existing two-argument call site (engine.cpp, 02-04/02-05-era comparator tests) kept compiling unchanged
 - [Phase ?]: 02-06: PolicyProvenance chain stays severity-only; tolerance overrides (config/override/--tol) replace ResolvedCheck::tolerance directly via new apply_tolerance_override with no chain entry, matching the original builtin/profile-layer tolerance write's own no-chain precedent
 - [Phase ?]: 02-06: [override.*] blocks apply unconditionally inside resolve_policy (no file-path parameter to filter by); dir-mode path-glob filtering is deferred to plan 02-11
+- [Phase ?]: 02-07: serialize_document's newline rule keyed on 'has any earlier sibling placed a scalar', not 'not first child' -- a leading empty-container sibling would otherwise produce a phantom blank line, breaking lines(doc)==scalars(doc)
+- [Phase ?]: 02-07: double_to_json stores a native double; std::to_chars formatting happens exactly once, inside serialize_document -- the one and only place a float becomes text
+- [Phase ?]: 02-07: decode_path/sampling stay raw nlohmann::ordered_json on Envelope (no typed struct) since no analyzer populates either until Phase 3
+- [Phase ?]: 02-07: mediadiff snapshot dispatches on whether <file> reads as a valid *.snap.json (re-materialize) vs anything else (honest probe-layer-not-yet-present refusal) -- makes SNAP-07's gate CLI-testable this phase with no stub analyzer in the shipped binary
+- [Phase ?]: 02-07: added util/fs.h::rename_replace_utf8 (Rule 3) -- MSVC CRT rename() does not replace an existing destination the way POSIX rename() does, which would have silently broken --force's overwrite semantics on Windows
+- [Phase ?]: 02-07: added t.real_ratio (value_kind=real) to tests/support/test_checks.def (Rule 2) -- no check previously exercised Value's double alternative through the registry-dispatched read/write path this plan's own must_haves require covering
 
 ### Pending Todos
 
@@ -135,6 +142,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T17:16:46.527Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-08-15T17:52:30.370Z
+Stopped at: Completed 02-07-PLAN.md
 Resume file: None
