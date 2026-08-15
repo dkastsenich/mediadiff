@@ -84,6 +84,32 @@ TEST_CASE("color - --no-color beats GITHUB_ACTIONS=true", "[color]") {
   CHECK_FALSE(decision.color_enabled);
 }
 
+TEST_CASE("color - WR-02: NO_COLOR (environment) beats GITHUB_ACTIONS=true", "[color]") {
+  // A GitHub Actions runner sets GITHUB_ACTIONS=true automatically,
+  // regardless of operator intent; NO_COLOR is always a deliberate,
+  // explicit request and must win even though github_actions is also
+  // "true" in the same run.
+  ColorInputs inputs;
+  inputs.stdout_is_tty = true;
+  inputs.github_actions = std::string("true");
+  inputs.no_color = std::string("1");
+  const ColorDecision decision = decide_color(inputs);
+  CHECK_FALSE(decision.color_enabled);
+}
+
+TEST_CASE("color - WR-02: NO_COLOR set to the empty string still beats GITHUB_ACTIONS=true", "[color]") {
+  // NO_COLOR's own convention: presence is the signal, not the value --
+  // exercised here specifically against the github_actions precedence
+  // rule, not just in isolation (the "NO_COLOR set to the empty string
+  // disables colour" case above doesn't set github_actions at all).
+  ColorInputs inputs;
+  inputs.stdout_is_tty = true;
+  inputs.github_actions = std::string("true");
+  inputs.no_color = std::string("");
+  const ColorDecision decision = decide_color(inputs);
+  CHECK_FALSE(decision.color_enabled);
+}
+
 TEST_CASE("color - --ascii sets ascii_glyphs in both colour-enabled and colour-disabled rows", "[color]") {
   ColorInputs enabled_inputs;
   enabled_inputs.stdout_is_tty = true;

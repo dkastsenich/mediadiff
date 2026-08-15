@@ -43,21 +43,25 @@ struct ColorDecision {
 };
 
 // Resolves `inputs` into a ColorDecision, in this precedence order (doc 00
-// section 3.2, CLI-08):
+// section 3.2, CLI-08; corrected by WR-02 -- flag_no_color/no_color now
+// beat github_actions, not the reverse):
 //
-//   1. `flag_no_color` (the `--no-color` CLI flag) disables colour
-//      unconditionally -- it beats every environment signal below,
-//      including GITHUB_ACTIONS=true.
+//   1. `flag_no_color` (the `--no-color` CLI flag) OR `no_color.has_value()`
+//      (NO_COLOR present in the environment, ANY value including the empty
+//      string -- the NO_COLOR convention's own rule is that presence is the
+//      signal, not the value) disables colour unconditionally -- an
+//      explicit "no colour" request beats every OTHER signal below,
+//      including GITHUB_ACTIONS=true. GITHUB_ACTIONS=true is set
+//      automatically by every GitHub Actions runner regardless of operator
+//      intent, so it must never override a deliberate NO_COLOR/--no-color
+//      request; the reverse ordering was WR-02's bug.
 //   2. Otherwise, `github_actions == "true"` keeps colour ENABLED even
 //      though `ci` may also be "true" at the same time -- GitHub's own log
 //      viewer renders ANSI, so the ordinary CI=true suppression below would
 //      otherwise wrongly strip colour from exactly the CI system that can
 //      display it.
-//   3. Otherwise, `no_color.has_value()` (present, ANY value, including the
-//      empty string) disables colour -- the NO_COLOR convention's own rule
-//      is that presence is the signal, not the value.
-//   4. Otherwise, `ci == "true"` disables colour.
-//   5. Otherwise, colour follows `stdout_is_tty`.
+//   3. Otherwise, `ci == "true"` disables colour.
+//   4. Otherwise, colour follows `stdout_is_tty`.
 //
 // `ascii_glyphs` is simply `inputs.flag_ascii`, independent of every rule
 // above: a terminal that cannot render the glyphs is a different problem
