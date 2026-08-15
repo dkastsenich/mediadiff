@@ -71,8 +71,16 @@ std::string xml_escape(std::string_view text) {
 }
 
 std::string baseline_candidate_detail(const Finding& finding) {
-  return fmt::format("baseline: {} | candidate: {}", value_to_json(finding.baseline).dump(),
-                      value_to_json(finding.candidate).dump());
+  // CR-02: serialize_value_compact, not nlohmann's own .dump() -- a
+  // rational/real-valued finding's embedded double must be formatted by
+  // the same canonical std::to_chars writer core/serializer.cpp owns
+  // (D-08), not a second independent formatter. Compact (single-line)
+  // rather than serialize_document because this text is embedded inline in
+  // an XML <failure>/<error> element body alongside "baseline: "/" |
+  // candidate: " -- serialize_document's own one-scalar-per-line layout
+  // would splice a literal newline into that line.
+  return fmt::format("baseline: {} | candidate: {}", serialize_value_compact(value_to_json(finding.baseline)),
+                      serialize_value_compact(value_to_json(finding.candidate)));
 }
 
 enum class ElementShape { pass, failure, error, skipped };

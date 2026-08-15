@@ -50,4 +50,18 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
 // (null/bool/number/string) in `doc`, for any non-empty document.
 std::string serialize_document(const nlohmann::ordered_json& doc);
 
+// CR-02: the compact counterpart to serialize_document, for callers that
+// need a Value's JSON representation embedded INLINE in already-linear
+// text (a JUnit failure attribute, a single tty finding row, an `inspect`
+// per-measurement line) -- serialize_document's one-scalar-per-line layout
+// would splice a literal newline into that surrounding line and corrupt
+// it. Renders the same node tree as a single line with no indentation,
+// reusing serialize_document's own scalar formatter for every leaf (the
+// ONE std::to_chars call site in serializer.cpp) -- this is a second TREE
+// WALK over the same node, never a second FLOAT FORMATTER, so it does not
+// reintroduce the "second float formatter" D-08 forbids: a double embedded
+// via this function and one embedded via serialize_document always render
+// byte-identical digits.
+std::string serialize_value_compact(const nlohmann::ordered_json& node);
+
 }  // namespace mediadiff

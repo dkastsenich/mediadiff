@@ -242,9 +242,13 @@ std::string render_finding_row(const Finding& finding, const ColorDecision& colo
   const std::string plain_prefix = fmt::format("  {} {} {}  ", glyph.plain, finding.id, scope_text);
   const std::string rendered_prefix = fmt::format("  {} {} {}  ", glyph.rendered, finding.id, scope_text);
 
+  // CR-02: serialize_value_compact, not nlohmann's own .dump() -- see
+  // report/junit.cpp's baseline_candidate_detail for the identical
+  // rationale (same canonical std::to_chars float formatter, single line
+  // because this text is embedded inline in one wrap_text/elide_value row).
   const std::string value_text = fmt::format("{} (baseline={}, candidate={})", finding.message,
-                                              value_to_json(finding.baseline).dump(),
-                                              value_to_json(finding.candidate).dump());
+                                              serialize_value_compact(value_to_json(finding.baseline)),
+                                              serialize_value_compact(value_to_json(finding.candidate)));
 
   const std::size_t prefix_len = plain_prefix.size();
   const std::size_t width_budget = terminal_width > 0 ? static_cast<std::size_t>(terminal_width) : 0;

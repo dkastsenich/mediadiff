@@ -65,8 +65,11 @@ std::vector<GroupEntry> entries_for_group(const Fingerprint& fp, const CheckRegi
 // A Value's canonical text form -- reuses core/serializer.h's value_to_json
 // (D-08's "one canonical place a Value becomes text") rather than a second
 // stringification this file would have to keep in sync with the report
-// renderers' own.
-std::string value_to_text(const Value& value) { return value_to_json(value).dump(); }
+// renderers' own. CR-02: serialize_value_compact, not nlohmann's own
+// .dump() -- routes any embedded double through the same std::to_chars
+// writer core/serializer.cpp owns, and stays single-line since this text
+// is embedded inline in one "  {id} {scope}: {value}\n" row.
+std::string value_to_text(const Value& value) { return serialize_value_compact(value_to_json(value)); }
 
 // Renders every Group in kGroupOrder order: a heading, then either an
 // explicit no-measurements line or one line per measurement (check id,
@@ -123,7 +126,10 @@ std::string render_inspect_json(const Fingerprint& fp, const CheckRegistry& regi
   }
   doc["groups"] = groups;
 
-  return doc.dump(2);
+  // CR-02: top-level document -- routed through the same canonical
+  // std::to_chars writer report/json.cpp's render_json now uses, not
+  // nlohmann's own doc.dump(2).
+  return serialize_document(doc);
 }
 
 }  // namespace

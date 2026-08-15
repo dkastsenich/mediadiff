@@ -1,36 +1,25 @@
-{
-  "schema_version": "1.0",
-  "tool_version": "0.1.0",
-  "profile": "sw-encoder",
-  "summary": {
-    "pass": 1,
-    "info": 0,
-    "warn": 0,
-    "fail": 0,
-    "skipped": 0,
-    "error": 0,
-    "worst_gating": "warn"
-  },
-  "diagnostics": [],
-  "findings": [
-    {
-      "id": "meta.tool_version",
-      "scope": {
-        "kind": "global",
-        "index": 0
-      },
-      "group": "meta",
-      "status": "pass",
-      "severity": "warn",
-      "gating": true,
-      "baseline": "1.2.3",
-      "candidate": "1.2.3",
-      "delta": null,
-      "tolerance": null,
-      "unit": "none",
-      "message": "values match",
-      "skip_reason": "none",
-      "evidence": null
-    }
-  ]
-}
+{"schema_version": "1.0",
+ "tool_version": "0.1.0",
+ "profile": "sw-encoder",
+ "summary": {"pass": 1,
+  "info": 0,
+  "warn": 0,
+  "fail": 0,
+  "skipped": 0,
+  "error": 0,
+  "worst_gating": "warn"}, "diagnostics": [],
+ "findings": [{"id": "meta.tool_version",
+   "scope": {"kind": "global",
+    "index": 0},
+   "group": "meta",
+   "status": "pass",
+   "severity": "warn",
+   "gating": true,
+   "baseline": "1.2.3",
+   "candidate": "1.2.3",
+   "delta": null,
+   "tolerance": null,
+   "unit": "none",
+   "message": "values match",
+   "skip_reason": "none",
+   "evidence": null}]}

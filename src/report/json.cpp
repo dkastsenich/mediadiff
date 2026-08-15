@@ -205,9 +205,13 @@ std::string render_json(const ReportModel& model, const CheckRegistry& registry,
   }
   report["findings"] = findings;
 
-  // Explicit indent so the text is stable and readable; ordered_json
-  // already preserves the insertion order set above regardless of indent.
-  return report.dump(2);
+  // CR-02: routed through core/serializer.cpp's own std::to_chars-based
+  // writer -- NOT nlohmann's report.dump(2) -- so a rational/real-valued
+  // finding's embedded double is formatted by the ONE canonical float
+  // formatter D-08 designates, not a second, independent one. Determinism
+  // (byte-identical --json across identical runs/machines) depends on
+  // every double in this document going through that single call site.
+  return serialize_document(report);
 }
 
 std::string render_json(const CorpusModel& model, const CheckRegistry& registry, const Policy& policy,
@@ -240,7 +244,9 @@ std::string render_json(const CorpusModel& model, const CheckRegistry& registry,
   }
   report["files"] = files;
 
-  return report.dump(2);
+  // CR-02: see the ReportModel overload's own comment above -- the same
+  // canonical std::to_chars writer, not nlohmann's report.dump(2).
+  return serialize_document(report);
 }
 
 }  // namespace mediadiff
