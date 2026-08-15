@@ -35,6 +35,13 @@ add_executable(mediadiff_unit_tests
   # The four-layer precedence merge and argv-order CLI overrides
   # (02-06-PLAN.md Task 2).
   test_policy_merge.cpp
+  # D-08 serializer coverage: serialize_document's line-count/scalar-count
+  # invariant, std::to_chars-only float formatting, all nine Value
+  # alternatives (02-07-PLAN.md Task 1).
+  test_serializer.cpp
+  # Write-read-write byte-identity across all nine Value alternatives via
+  # write_snapshot/read_snapshot (02-07-PLAN.md Task 1).
+  test_snapshot_roundtrip.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp

@@ -8,6 +8,8 @@
 // guarantee a property of one function instead of an invariant nine
 // independent call sites would each have to preserve.
 
+#include <string>
+
 #include <nlohmann/json.hpp>
 
 #include "core/error.h"
@@ -30,5 +32,22 @@ nlohmann::ordered_json value_to_json(const Value& value);
 // a bug that must surface loudly, not a value quietly turned into whatever
 // this function felt like producing.
 mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& json, ValueKind expected_kind);
+
+// Renders `doc` as mediadiff's canonical, git-diffable text (doc 01 section
+// 8, SNAP-03): indent one space per level, every scalar on its own line,
+// arrays of scalars one element per line too — a changed value is exactly
+// one changed line in `git diff`. Every `double` node is formatted via
+// `std::to_chars`' shortest round-trip text at THIS pass, not at
+// `value_to_json` construction time — this is the one and only place a
+// float becomes text, so nothing downstream (nlohmann's own `dump()`,
+// reached from any other call site) can silently reintroduce a second
+// float formatter that produces different-but-equivalent text (D-08).
+//
+// Braces/brackets attach to the adjacent scalar's line rather than owning a
+// line of their own — this is what makes "one value per line" precise
+// enough to be a property a test can assert numerically: the number of
+// lines in the returned text always equals the number of scalar leaves
+// (null/bool/number/string) in `doc`, for any non-empty document.
+std::string serialize_document(const nlohmann::ordered_json& doc);
 
 }  // namespace mediadiff

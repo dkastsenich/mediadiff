@@ -1,6 +1,7 @@
 #include "core/serializer.h"
 
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <type_traits>
@@ -30,23 +31,156 @@ nlohmann::ordered_json rational_value_to_json(const RationalValue& rv) {
   return j;
 }
 
-// std::to_chars shortest-round-trip formatting into a JSON number token
-// (D-08, SNAP-03, TRUST-05). NOTE: lowering CMAKE_OSX_DEPLOYMENT_TARGET
-// below 13.3 breaks the floating-point std::to_chars overloads on Apple
-// platforms (02-RESEARCH.md Pitfall 2) — do not add that cache variable
-// without re-checking this call site first.
-nlohmann::ordered_json double_to_json(double value) {
-  char buf[64];
-  const auto result = std::to_chars(buf, buf + sizeof(buf), value);
-  const std::string token(buf, result.ptr);
-  // Round-trip the formatted text back through nlohmann's own number
-  // parser rather than assigning `value` directly, so the stored JSON
-  // token is exactly the shortest-round-trip text std::to_chars produced,
-  // not whatever nlohmann's internal double formatter would have chosen.
-  return nlohmann::ordered_json::parse(token);
+// Stores `value` as a native JSON float node (D-08). The exact on-disk
+// TEXT is produced later, by serialize_document's own std::to_chars pass
+// below — NOT here — so there is exactly one place a double becomes text,
+// regardless of which document this node eventually gets embedded into.
+// (An earlier revision round-tripped through std::to_chars-then-reparse
+// here, which achieved nothing: the parsed result is still just a native
+// double, and any later call to nlohmann's own `dump()` on the containing
+// document would have reformatted it via nlohmann's own algorithm anyway —
+// reintroducing exactly the "second float formatter" D-08 forbids. Only
+// serialize_document is ever allowed to turn this node into text.)
+nlohmann::ordered_json double_to_json(double value) { return nlohmann::ordered_json(value); }
+
+// nlohmann's own string escaping (UTF-8 validation, control-character and
+// quote escaping) is correct and is NOT the float-formatting concern D-08
+// exists to guard against — reused here via a throwaway single-value `dump()`
+// rather than hand-rolled, so serialize_document never touches a number.
+std::string escape_json_string(const std::string& s) { return nlohmann::ordered_json(s).dump(); }
+
+// Formats a single scalar JSON node (null, bool, number or string) as its
+// canonical text. Every `double` node goes through std::to_chars here —
+// the ONE call site in this file, and the reason
+// `grep -c "std::to_chars" src/core/serializer.cpp` in this plan's own
+// acceptance criteria expects at least one match. NOTE: lowering
+// CMAKE_OSX_DEPLOYMENT_TARGET below 13.3 breaks the floating-point
+// std::to_chars overloads on Apple platforms (02-RESEARCH.md Pitfall 2) —
+// do not add that cache variable without re-checking this call site first.
+void write_scalar(std::string& out, const nlohmann::ordered_json& node) {
+  if (node.is_null()) {
+    out += "null";
+  } else if (node.is_boolean()) {
+    out += node.get<bool>() ? "true" : "false";
+  } else if (node.is_number_float()) {
+    char buf[64];
+    const auto result = std::to_chars(buf, buf + sizeof(buf), node.get<double>());
+    std::string token(buf, result.ptr);
+    // std::to_chars' shortest-round-trip text omits the decimal point for
+    // a whole-number double (1.0 -> "1", -0.0 -> "-0") — indistinguishable
+    // from an int64 token by TEXT alone. Every reader here always knows
+    // the expected ValueKind from context (the registry), so that
+    // ambiguity is harmless for value_from_json's own dispatch — but
+    // nlohmann's JSON LEXER does not know that context: it lexes a
+    // token with no '.'/'e'/'E' as an INTEGER, which silently loses the
+    // sign of -0.0 (integers have no signed zero) and would break this
+    // plan's own round-trip requirement. Appending ".0" forces the lexer
+    // to treat it as a float token, preserving the sign — deterministic
+    // and idempotent: reformatting the resulting double reproduces the
+    // identical text every time.
+    if (token.find_first_of(".eE") == std::string::npos) {
+      token += ".0";
+    }
+    out += token;
+  } else if (node.is_number_integer() || node.is_number_unsigned()) {
+    // Integers have no shortest-round-trip ambiguity — nlohmann's own
+    // integer formatter is exact and this is not the "second float
+    // formatter" D-08 forbids.
+    out += node.dump();
+  } else if (node.is_string()) {
+    out += escape_json_string(node.get<std::string>());
+  }
+}
+
+// Recursive scalar-leaf count: how many null/bool/number/string leaves
+// `node` contains. write_node uses this to decide, per child, whether that
+// child deserves a newline of its own — see write_node's own comment for
+// why a plain "is this the first child" check is not sufficient.
+std::size_t count_scalars(const nlohmann::ordered_json& node) {
+  if (node.is_object()) {
+    std::size_t total = 0;
+    for (auto it = node.begin(); it != node.end(); ++it) {
+      total += count_scalars(it.value());
+    }
+    return total;
+  }
+  if (node.is_array()) {
+    std::size_t total = 0;
+    for (const auto& elem : node) {
+      total += count_scalars(elem);
+    }
+    return total;
+  }
+  return 1;
+}
+
+// Recursively renders `node` at `depth`. See serializer.h's own doc
+// comment for the "braces attach to the adjacent line" layout rule and why
+// it makes total-line-count == total-scalar-count an exact property.
+//
+// A child gets a newline of its own only once SOME earlier sibling has
+// already placed a scalar on the current line (`started_content` below) —
+// not merely "this isn't the first child". A naive "not first" rule would
+// insert a newline before the first scalar-bearing child even when every
+// preceding sibling was an empty container ({}/[]), producing a phantom
+// blank line with zero scalars and breaking the
+// lines(document) == scalars(document) property this layout exists to
+// guarantee. Leading empty siblings instead stay attached to the same line
+// as whatever follows them.
+void write_node(std::string& out, const nlohmann::ordered_json& node, std::size_t depth) {
+  if (node.is_object()) {
+    if (node.empty()) {
+      out += "{}";
+      return;
+    }
+    out += "{";
+    bool first = true;
+    bool started_content = false;
+    for (auto it = node.begin(); it != node.end(); ++it) {
+      const std::size_t child_scalars = count_scalars(it.value());
+      if (!first) {
+        out += ",";
+        out += (child_scalars > 0 && started_content) ? "\n" + std::string(depth + 1, ' ') : " ";
+      }
+      first = false;
+      out += escape_json_string(it.key());
+      out += ": ";
+      write_node(out, it.value(), depth + 1);
+      started_content = started_content || child_scalars > 0;
+    }
+    out += "}";
+  } else if (node.is_array()) {
+    if (node.empty()) {
+      out += "[]";
+      return;
+    }
+    out += "[";
+    bool first = true;
+    bool started_content = false;
+    for (const auto& elem : node) {
+      const std::size_t child_scalars = count_scalars(elem);
+      if (!first) {
+        out += ",";
+        out += (child_scalars > 0 && started_content) ? "\n" + std::string(depth + 1, ' ') : " ";
+      }
+      first = false;
+      write_node(out, elem, depth + 1);
+      started_content = started_content || child_scalars > 0;
+    }
+    out += "]";
+  } else {
+    write_scalar(out, node);
+  }
 }
 
 }  // namespace
+
+std::string serialize_document(const nlohmann::ordered_json& doc) {
+  std::string out;
+  write_node(out, doc, 0);
+  out += "\n";
+  return out;
+}
 
 nlohmann::ordered_json value_to_json(const Value& value) {
   return std::visit(

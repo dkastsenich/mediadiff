@@ -141,6 +141,22 @@ value_kind = "int64"
 severity = "fail"
 
 [[check]]
+# Added 02-07-PLAN.md Task 1: no other check (production or test-only) ever
+# declared value_kind = "real" before this plan, which left Value's `double`
+# alternative structurally untestable through read_snapshot/write_snapshot
+# (both dispatch on a CheckDef's declared value_kind) even though this
+# plan's own must_haves require exactly that coverage. Rule 2 addition
+# (missing test infrastructure the plan's own acceptance criteria depend
+# on), not a shipped-check addition.
+id = "t.real_ratio"
+group = "t"
+semantic = "tol"
+unit = "percent"
+value_kind = "real"
+severity = "warn"
+tolerance = "5%"
+
+[[check]]
 id = "t.aliased_new"
 group = "t"
 semantic = "exact"
