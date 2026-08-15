@@ -1,0 +1,9 @@
+# Two [severity] entries whose recorded file_order must come back ascending
+# in the order they were WRITTEN here -- meta.tool_version first,
+# meta.missing_candidate second -- proving GlobRule::file_order is derived
+# from source position, not from toml++'s internal (alphabetically ordered)
+# std::map iteration order.
+
+[severity]
+"meta.tool_version" = "fail"
+"meta.missing_candidate" = "warn"

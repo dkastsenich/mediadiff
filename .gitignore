@@ -29,3 +29,10 @@ tests/fixtures/*
 # same reason snapshots/ is above.
 !tests/fixtures/registry/
 !tests/fixtures/registry/**
+
+# Hand-authored mediadiff.toml fixtures (02-06-PLAN.md Task 1) are also
+# text, not media — known-good/known-bad configs proving the ENG-11 shape
+# validator can actually fail, tracked for the same reason snapshots/ is
+# above.
+!tests/fixtures/config/
+!tests/fixtures/config/**

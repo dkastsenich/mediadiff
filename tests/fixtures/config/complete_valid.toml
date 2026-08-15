@@ -1,0 +1,27 @@
+# Complete, well-formed mediadiff.toml exercising every recognized
+# top-level section (doc 01 section 6). Referenced by
+# tests/unit/test_toml_load.cpp -- the tolerance entry targets a check id
+# ("video.color_range") not yet registered in src/core/checks.def
+# deliberately, proving a forward-referencing glob is accepted (it is only
+# validated syntactically, since it resolves to no check yet to unit-check
+# against), while the severity entries target real production checks.
+
+profile = "sw-encoder"
+
+[severity]
+"meta.tool_version" = "fail"
+"meta.missing_candidate" = "warn"
+
+[tolerance]
+"video.color_range" = "3%"
+
+[transform]
+expect.resolution = "2x"
+
+[dir]
+
+[override."fixtures/**".severity]
+"meta.tool_version" = "warn"
+
+[override."fixtures/**".tolerance]
+"video.color_range" = "1%"

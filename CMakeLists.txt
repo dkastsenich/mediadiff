@@ -39,6 +39,7 @@ find_package(FFMPEG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(tomlplusplus CONFIG REQUIRED)
 
 # --- Check registry generator (D-01, D-05) -----------------------------------
 # tomllib is standard-library only from Python 3.11 onward — enforced here
@@ -131,6 +132,7 @@ add_library(libmediadiff STATIC
   src/core/tolerance.cpp
   src/core/profiles.cpp
   src/core/policy.cpp
+  src/config/toml_load.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
   src/compare/tol.cpp
@@ -152,7 +154,7 @@ target_include_directories(libmediadiff PUBLIC
 )
 target_include_directories(libmediadiff SYSTEM PUBLIC ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(libmediadiff PUBLIC ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json)
+target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus)
 
 # --- Header compilation gate --------------------------------------------------
 # A header nothing includes is a header nothing type-checks, and Phase 2
@@ -172,6 +174,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/snapshot.h
   src/core/glob.h
   src/core/tolerance.h
+  src/config/toml_load.h
   src/compare/semantics.h
   src/compare/engine.h
   src/report/json.h
