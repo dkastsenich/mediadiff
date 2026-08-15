@@ -83,6 +83,10 @@ add_custom_target(generate_registry DEPENDS
 # structurally in Plan 04 via a CI lint over this target's sources.
 add_library(libmediadiff STATIC
   src/util/version.cpp
+  src/core/serializer.cpp
+  src/core/snapshot.cpp
+  src/compare/engine.cpp
+  src/compare/exact.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -109,6 +113,11 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/value.h
   src/core/model.h
   src/core/registry.h
+  src/core/policy.h
+  src/core/serializer.h
+  src/core/snapshot.h
+  src/compare/semantics.h
+  src/compare/engine.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 

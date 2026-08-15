@@ -49,6 +49,8 @@ using StringSet = std::set<std::string>;
 
 struct Histogram {
   std::vector<std::pair<std::string, std::int64_t>> bins;
+
+  bool operator==(const Histogram&) const = default;
 };
 
 struct Span {
@@ -60,6 +62,8 @@ struct Span {
 
 struct SpanList {
   std::vector<Span> spans;
+
+  bool operator==(const SpanList&) const = default;
 };
 
 struct HashChain {
@@ -73,8 +77,8 @@ struct HashChain {
 // All nine alternatives doc 01 section 1 names, in the order 02-01-PLAN.md
 // Task 2 specifies. compare/exact.cpp's `exact` semantic compares Values
 // directly via std::variant's own operator==, which is why every
-// alternative above defines (or, for Histogram/SpanList/StringSet, already
-// inherits from std::vector/std::set) a structural operator==.
+// alternative above defines a structural operator== (StringSet is a bare
+// std::set alias and already has one via the standard library).
 using Value = std::variant<Absent, std::int64_t, RationalValue, double, std::string, StringSet, Histogram, SpanList,
                             HashChain>;
 

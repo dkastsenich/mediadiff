@@ -16,3 +16,9 @@
 # stays tracked; the media it describes is never committed.
 tests/fixtures/*
 !tests/fixtures/GENERATOR_MANIFEST.json
+
+# Hand-authored snapshot fixtures (D-10, 02-01-PLAN.md) are text, not media —
+# they ARE the primary compare-engine integration harness and must be
+# git-diffable, so they are tracked despite the tests/fixtures/* ignore above.
+!tests/fixtures/snapshots/
+!tests/fixtures/snapshots/**
