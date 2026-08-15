@@ -21,6 +21,14 @@ other profile -- keeps comparing by ordinary baseline equality.
 
 ## Accept / Tune / Silence
 
-- **Accept**: not applicable -- this check never observes real media.
-- **Tune**: not applicable -- `exact` has no tolerance.
-- **Silence**: not applicable -- test-only fixture.
+### Accept
+
+Not applicable -- this check never observes real media.
+
+### Tune
+
+Not applicable -- `exact` has no tolerance.
+
+### Silence
+
+Not applicable -- test-only fixture.

@@ -18,13 +18,19 @@ own unless something explicitly says so (doc 01 section 10).
 
 ## Accept / Tune / Silence
 
-- **Accept**: confirm the removal was intentional (a deprecated variant
-  dropped from the pipeline, for example), then update the baseline corpus
-  so the next run no longer reports it.
-- **Tune**: none — this check has no tolerance; a file is either paired or
-  it isn't.
-- **Silence**: set `meta.missing_candidate` to `ignore` in `[severity]`
-  only for a corpus that is known to shrink between runs by design (e.g. a
-  rolling retention window) — leave it enabled everywhere else, since a
-  missing file is exactly the kind of regression `dir` mode exists to
-  catch.
+### Accept
+
+Confirm the removal was intentional (a deprecated variant dropped from
+the pipeline, for example), then update the baseline corpus so the next
+run no longer reports it.
+
+### Tune
+
+None — this check has no tolerance; a file is either paired or it isn't.
+
+### Silence
+
+Set `meta.missing_candidate` to `ignore` in `[severity]` only for a corpus
+that is known to shrink between runs by design (e.g. a rolling retention
+window) — leave it enabled everywhere else, since a missing file is
+exactly the kind of regression `dir` mode exists to catch.

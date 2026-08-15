@@ -19,11 +19,18 @@ the corpus by accident (doc 01 section 10).
 
 ## Accept / Tune / Silence
 
-- **Accept**: confirm the addition was intentional, then update the
-  baseline corpus so the next run treats the new file as expected.
-- **Tune**: none — this check has no tolerance; a file is either paired or
-  it isn't.
-- **Silence**: set `meta.extra_candidate` to `ignore` in `[severity]` for a
-  corpus that is known to grow between runs by design (e.g. an
-  append-only archive) — leave it enabled everywhere else, since an
-  unexpected extra file is still worth a human noticing at least once.
+### Accept
+
+Confirm the addition was intentional, then update the baseline corpus so
+the next run treats the new file as expected.
+
+### Tune
+
+None — this check has no tolerance; a file is either paired or it isn't.
+
+### Silence
+
+Set `meta.extra_candidate` to `ignore` in `[severity]` for a corpus that
+is known to grow between runs by design (e.g. an append-only archive) —
+leave it enabled everywhere else, since an unexpected extra file is still
+worth a human noticing at least once.

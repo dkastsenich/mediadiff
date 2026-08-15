@@ -62,6 +62,10 @@ item, sorted, in one run rather than aborting on the first) when:
   - a check id is declared more than once
   - a registered id has no readable, non-empty docs/checks/<id>.md
   - a docs/checks/<id>.md is missing any of its three required headings
+  - a docs/checks/<id>.md's own "## Accept / Tune / Silence" section is
+    missing any of its three required level-3 sub-headings (### Accept,
+    ### Tune, ### Silence -- REPORT-03, 02-09-PLAN.md Task 2), whose bodies
+    are what CheckDef::explain_accept/explain_tune/explain_silence carry
   - an alias string collides with a registered check id
   - a docs/checks/*.md file on disk has a stem that is not a registered id
     (an orphan doc -- a rename that silently kept serving the old file)
@@ -111,6 +115,23 @@ REQUIRED_DOC_HEADINGS = (
     "## What it measures",
     "## Why it matters",
     "## Accept / Tune / Silence",
+)
+
+# The three level-3 sub-headings that must appear WITHIN the "## Accept /
+# Tune / Silence" section (REPORT-03, 02-09-PLAN.md Task 2) -- what makes
+# that section machine-usable rather than free prose: src/cli/tty_render.cpp
+# reads these three bodies straight off the generated CheckDef (see
+# CheckDef::explain_accept/explain_tune/explain_silence in
+# src/core/registry.h) to print the accept/tune/silence triple under every
+# gating finding, rather than re-parsing Markdown at render time. A check
+# with no meaningful tune knob still writes a `### Tune` heading whose body
+# states none applies -- the structure (heading present) is what this
+# generator enforces; the convention (non-empty, honest body text) is a doc
+# authoring discipline this generator cannot verify from the heading alone.
+REQUIRED_ATS_SUBHEADINGS = (
+    "### Accept",
+    "### Tune",
+    "### Silence",
 )
 
 
@@ -268,6 +289,30 @@ def extract_sections(body):
     return sections
 
 
+def extract_subsections(body):
+    """Same splitting shape as extract_sections, one heading level deeper
+    ('### ' rather than '## '). `body` is expected to already be the
+    extracted content of ONE level-2 section (the "## Accept / Tune /
+    Silence" section's own body, in this generator's only caller) -- a
+    line starting with '### ' never matches extract_sections' own '## '
+    prefix test (the third character differs: '#' vs ' '), so the two
+    functions never see each other's headings."""
+    sections = {}
+    current_heading = None
+    current_lines = []
+    for line in body.splitlines():
+        if line.startswith("### "):
+            if current_heading is not None:
+                sections[current_heading] = "\n".join(current_lines).strip("\n")
+            current_heading = line.rstrip()
+            current_lines = []
+        elif current_heading is not None:
+            current_lines.append(line)
+    if current_heading is not None:
+        sections[current_heading] = "\n".join(current_lines).strip("\n")
+    return sections
+
+
 def validate_docs(checks, docs_dir):
     """Validates, in one pass, every documentation-related build-failure
     condition D-02/DOC-01/DOC-02 requires: a registered id with no doc
@@ -279,6 +324,7 @@ def validate_docs(checks, docs_dir):
     missing = []
     empty = []
     missing_headings = {}
+    missing_subheadings = {}
     registered_ids = {c["id"] for c in checks}
 
     for c in checks:
@@ -295,6 +341,17 @@ def validate_docs(checks, docs_dir):
         missing_heads = [h for h in REQUIRED_DOC_HEADINGS if h not in sections]
         if missing_heads:
             missing_headings[c["id"]] = missing_heads
+        # The three level-3 sub-headings are only checkable when the
+        # owning level-2 section itself is present -- a doc already missing
+        # "## Accept / Tune / Silence" is reported above via missing_heads,
+        # and reporting "missing ### Accept" on top of that would be a
+        # confusing duplicate diagnostic for the same root cause.
+        ats_body = sections.get("## Accept / Tune / Silence")
+        if ats_body is not None:
+            subsections = extract_subsections(ats_body)
+            missing_subs = [h for h in REQUIRED_ATS_SUBHEADINGS if h not in subsections]
+            if missing_subs:
+                missing_subheadings[c["id"]] = missing_subs
 
     orphans = []
     if os.path.isdir(docs_dir):
@@ -305,7 +362,7 @@ def validate_docs(checks, docs_dir):
             if stem not in registered_ids:
                 orphans.append(stem)
 
-    if missing or empty or missing_headings or orphans:
+    if missing or empty or missing_headings or missing_subheadings or orphans:
         sys.stderr.write("gen_registry.py: documentation gate failed:\n")
         if missing:
             sys.stderr.write(f"  missing docs/checks/<id>.md for: {', '.join(sorted(missing))}\n")
@@ -316,6 +373,12 @@ def validate_docs(checks, docs_dir):
         if missing_headings:
             for cid in sorted(missing_headings):
                 sys.stderr.write(f"  {cid}: missing required heading(s): {', '.join(missing_headings[cid])}\n")
+        if missing_subheadings:
+            for cid in sorted(missing_subheadings):
+                sys.stderr.write(
+                    f"  {cid}: missing required sub-heading(s) inside '## Accept / Tune / Silence': "
+                    f"{', '.join(missing_subheadings[cid])}\n"
+                )
         if orphans:
             sys.stderr.write(
                 f"  orphan docs/checks/*.md with no matching registered id: {', '.join(sorted(orphans))}\n"
@@ -364,8 +427,45 @@ def render_check_id_h(checks, names):
 
 
 def cpp_string_literal(value):
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    """Escapes `value` into a single-line C++ string literal. Every prior
+    caller of this function (id/group/tolerance text) was already
+    single-line; the explain_accept/explain_tune/explain_silence fields
+    (02-09-PLAN.md Task 2) are the first callers whose source text is
+    genuine multi-line prose, so an embedded newline is escaped to the
+    two-character sequence `\\n` (a literal newline byte inside an
+    unescaped, non-raw C++ string literal would not compile) and a stray
+    carriage return is dropped outright -- this generator's own source
+    docs are read in text mode and never contain one, but a
+    platform-checked-out CRLF doc must not silently become an embedded
+    literal `\\r` byte in the compiled binary."""
+    escaped = (
+        value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "").replace("\n", "\\n")
+    )
     return f'"{escaped}"'
+
+
+def load_ats_sections(checks, docs_dir):
+    """Reads each check's own docs/checks/<id>.md a second time (render time,
+    distinct from validate_docs' own read) and returns
+    {id: (accept_text, tune_text, silence_text)} -- the three CheckDef
+    fields render_check_registry_cpp embeds. validate_docs has already
+    guaranteed, by the time this runs, that every one of the three level-3
+    sub-headings exists for every check; .get(..., "") here is defensive
+    rather than load-bearing."""
+    result = {}
+    for c in checks:
+        doc_path = os.path.join(docs_dir, f"{c['id']}.md")
+        with open(doc_path, "r", encoding="utf-8") as f:
+            body = f.read()
+        sections = extract_sections(body)
+        ats_body = sections.get("## Accept / Tune / Silence", "")
+        subsections = extract_subsections(ats_body)
+        result[c["id"]] = (
+            subsections.get("### Accept", ""),
+            subsections.get("### Tune", ""),
+            subsections.get("### Silence", ""),
+        )
+    return result
 
 
 def render_profile_overrides_block(checks):
@@ -398,7 +498,8 @@ def render_profile_overrides_block(checks):
     return lines
 
 
-def render_check_registry_cpp(checks, aliases, names, include_dir):
+def render_check_registry_cpp(checks, aliases, names, include_dir, docs_dir):
+    ats = load_ats_sections(checks, docs_dir)
     lines = [
         "// GENERATED by tools/gen_registry.py -- do not hand-edit.",
         "",
@@ -428,6 +529,7 @@ def render_check_registry_cpp(checks, aliases, names, include_dir):
         severity_count = str(len(severity_overrides)) if severity_overrides else "0"
         tolerance_ptr = f"kProfileTolerance_{name}" if tolerance_overrides else "nullptr"
         tolerance_count = str(len(tolerance_overrides)) if tolerance_overrides else "0"
+        accept_text, tune_text, silence_text = ats[c["id"]]
         lines.append("    CheckDef{")
         lines.append(f'        .id = {cpp_string_literal(c["id"])},')
         lines.append(f'        .group = {cpp_string_literal(c["group"])},')
@@ -443,6 +545,9 @@ def render_check_registry_cpp(checks, aliases, names, include_dir):
         lines.append(f"        .profile_severity_override_count = {severity_count},")
         lines.append(f"        .profile_tolerance_overrides = {tolerance_ptr},")
         lines.append(f"        .profile_tolerance_override_count = {tolerance_count},")
+        lines.append(f"        .explain_accept = {cpp_string_literal(accept_text)},")
+        lines.append(f"        .explain_tune = {cpp_string_literal(tune_text)},")
+        lines.append(f"        .explain_silence = {cpp_string_literal(silence_text)},")
         lines.append("    },")
     lines.append("};")
     lines.append("")
@@ -593,7 +698,7 @@ def main():
     write_atomic(os.path.join(args.out_dir, names["header_filename"]), render_check_id_h(checks, names))
     write_atomic(
         os.path.join(args.out_dir, names["registry_cpp_filename"]),
-        render_check_registry_cpp(checks, aliases, names, include_dir),
+        render_check_registry_cpp(checks, aliases, names, include_dir, args.docs_dir),
     )
     write_atomic(
         os.path.join(args.out_dir, names["explain_cpp_filename"]),

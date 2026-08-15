@@ -21,6 +21,14 @@ coverage of `Value`'s `double` alternative.
 
 ## Accept / Tune / Silence
 
-- **Accept**: not applicable -- this check never observes real media.
-- **Tune**: not applicable -- test-only fixture, not a shipped tolerance.
-- **Silence**: not applicable -- test-only fixture.
+### Accept
+
+Not applicable -- this check never observes real media.
+
+### Tune
+
+Not applicable -- test-only fixture, not a shipped tolerance.
+
+### Silence
+
+Not applicable -- test-only fixture.

@@ -17,6 +17,14 @@ this plan's allow list as expected-uncovered until then (D-14/D-15).
 
 ## Accept / Tune / Silence
 
-- **Accept**: not applicable -- this check never observes real media.
-- **Tune**: not applicable -- `presence` carries no tolerance.
-- **Silence**: not applicable -- test-only fixture.
+### Accept
+
+Not applicable -- this check never observes real media.
+
+### Tune
+
+Not applicable -- `presence` carries no tolerance.
+
+### Silence
+
+Not applicable -- test-only fixture.

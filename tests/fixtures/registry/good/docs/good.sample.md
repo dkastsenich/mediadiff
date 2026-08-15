@@ -14,7 +14,15 @@ trivially true for the wrong reason.
 
 ## Accept / Tune / Silence
 
-- **Accept**: not applicable — this check is never registered outside the
-  test fixture tree.
-- **Tune**: not applicable.
-- **Silence**: not applicable.
+### Accept
+
+Not applicable — this check is never registered outside the test fixture
+tree.
+
+### Tune
+
+Not applicable.
+
+### Silence
+
+Not applicable.

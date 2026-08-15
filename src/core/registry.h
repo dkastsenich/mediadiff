@@ -224,6 +224,35 @@ struct CheckDef {
   std::size_t profile_severity_override_count;
   const ProfileToleranceOverride* profile_tolerance_overrides;
   std::size_t profile_tolerance_override_count;
+  // The three labelled sub-parts of docs/checks/<id>.md's own
+  // "## Accept / Tune / Silence" section (REPORT-03, 02-09-PLAN.md Task 2)
+  // -- split at generation time from the `### Accept` / `### Tune` /
+  // `### Silence` level-3 headings tools/gen_registry.py now requires every
+  // registered check's doc to carry, alongside the existing three level-2
+  // headings. Carried here, on CheckDef itself, rather than looked up
+  // through check_explain.cpp's `explain_doc(CheckId)` accessor, because a
+  // renderer holding only a Finding::id and a CheckRegistry reference (the
+  // TTY renderer's own situation -- it must work identically against the
+  // unprefixed production registry AND the `--symbol-prefix test_` test
+  // registry, neither of which it can name by generated enum type) can
+  // reach these three fields via registry.find(id) + registry.at(index)
+  // alone, with no dependency on either generated CheckId enum. A check
+  // with no meaningful tune knob still carries non-empty text in
+  // `explain_tune` stating none applies (the generator's own structure
+  // check requires the heading to be present; it does not require the body
+  // to be non-empty, but every shipped doc supplies one) -- see this
+  // file's `unit_suffix`-style "no default: arm" comment for the sibling
+  // convention this exhaustiveness discipline follows elsewhere in this
+  // header.
+  // Default member initializers (mirroring `transform_affected`'s own
+  // `= false` above) so every pre-existing hand-built CheckDef aggregate
+  // in this codebase (tests/unit/test_glob.cpp's synthetic registry, which
+  // predates this plan and has no doc-derived explain text of its own)
+  // keeps compiling under -Wmissing-field-initializers (-Werror
+  // project-wide) without listing these three fields explicitly.
+  std::string_view explain_accept = "";
+  std::string_view explain_tune = "";
+  std::string_view explain_silence = "";
 
   // Resolves this check's severity for `profile`: the profile's override if
   // one was declared, otherwise `default_severity`. A linear scan over a

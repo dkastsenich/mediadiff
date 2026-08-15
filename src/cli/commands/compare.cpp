@@ -8,8 +8,10 @@
 #include <string>
 #include <vector>
 
+#include "cli/color_policy.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
+#include "cli/tty_render.h"
 #include "compare/engine.h"
 #include "config/toml_load.h"
 #include "core/error.h"
@@ -24,9 +26,41 @@
 #include "report/model.h"
 #include "util/fs.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
+
 namespace mediadiff {
 
 namespace {
+
+// The one place a terminal width is ever queried for this run (this
+// plan's own Flagged Assumption: "queried once in compare.cpp and
+// defaulting to 100 columns when the terminal cannot be interrogated").
+// src/cli/tty_render.h's render_tty itself takes the result as a plain
+// int parameter and never queries a terminal on its own, which is what
+// keeps it callable at any width a unit test chooses.
+int query_terminal_width() {
+  constexpr int kDefaultWidth = 100;
+#ifdef _WIN32
+  const HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+  CONSOLE_SCREEN_BUFFER_INFO info;
+  if (handle != INVALID_HANDLE_VALUE && handle != nullptr && GetConsoleScreenBufferInfo(handle, &info)) {
+    const int width = info.srWindow.Right - info.srWindow.Left + 1;
+    return width > 0 ? width : kDefaultWidth;
+  }
+  return kDefaultWidth;
+#else
+  struct winsize ws {};
+  if (isatty(fileno(stdout)) != 0 && ioctl(fileno(stdout), TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
+    return ws.ws_col;
+  }
+  return kDefaultWidth;
+#endif
+}
 
 // The single worst Status across all findings, used to pick the exit code
 // (doc 00 section 3.1's "<3 vs >=64" contract). `fail` outranks everything
@@ -81,12 +115,13 @@ void register_compare_command(CLI::App& app) {
 
   ReportArgs report_args = add_report_flags(*cmp);
   PolicyArgs policy_args = add_policy_flags(*cmp);
+  ColorArgs color_args = add_color_flags(*cmp);
 
   // ENG-16 explicitly reserves exit()/stdout/stderr as "the CLI's
   // prerogative" — this callback is the one place in the compare path
   // permitted to call std::exit() directly, since it lives under src/cli/
   // (outside scripts/lint_eng16.sh's scanned subtrees).
-  cmp->callback([baseline_path, candidate_path, strict_flag, verbose_flag, report_args, policy_args]() {
+  cmp->callback([baseline_path, candidate_path, strict_flag, verbose_flag, report_args, policy_args, color_args]() {
     const CheckRegistry& registry = builtin_registry();
 
     auto baseline = read_snapshot(*baseline_path, registry);
@@ -180,6 +215,26 @@ void register_compare_command(CLI::App& app) {
     const RenderOptions render_options{
         /*show_pass=*/true, /*show_ignored=*/true, /*ascii=*/false, /*strict=*/*strict_flag};
     const ReportModel model = build_report_model(candidate->envelope, findings, registry, render_options);
+
+    // TTY (REPORT-02) is the one renderer that filters: only non-pass and
+    // non-ignored findings show by default, with -v revealing both -- a
+    // SEPARATE ReportModel from `model` above, built with its own
+    // RenderOptions, since JSON/Markdown/JUnit must never hide a pass or
+    // ignored finding from their own output (02-08-SUMMARY.md's own
+    // "deliberately scoped boundary"). Printed to stdout only when --json
+    // was not requested in any form -- a caller asking for machine-
+    // readable output on stdout does not also want human-readable text
+    // interleaved into the same stream.
+    if (!json_requested) {
+      const ColorInputs color_inputs = read_color_inputs(color_args);
+      const ColorDecision color = decide_color(color_inputs);
+      const RenderOptions tty_options{
+          /*show_pass=*/*verbose_flag, /*show_ignored=*/*verbose_flag, /*ascii=*/color.ascii_glyphs,
+          /*strict=*/*strict_flag};
+      const ReportModel tty_model = build_report_model(candidate->envelope, findings, registry, tty_options);
+      const std::string tty_report = render_tty(tty_model, registry, color, query_terminal_width());
+      std::fputs(tty_report.c_str(), stdout);
+    }
 
     if (json_requested) {
       const std::string report = render_json(model, registry, policy, *verbose_flag);

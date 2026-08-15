@@ -54,13 +54,18 @@ add_executable(mediadiff_unit_tests
   # ColorInputs, table-driven over the full precedence matrix
   # (02-09-PLAN.md Task 1).
   test_color_policy.cpp
-  # color_policy.cpp lives under src/cli/ (CLI-layer, not part of
-  # libmediadiff -- ENG-16's own boundary) and is otherwise only ever
-  # exercised by spawning the built `mediadiff` binary from an
-  # integration test. This plan's own unit tests need `decide_color`
-  # linked directly into this executable, so it is added as a source
-  # here rather than only through libmediadiff.
+  # The TTY renderer: fixed group order, only non-pass by default, the
+  # accept/tune/silence triple under every gating finding, colour/ascii
+  # gating and no wrapped value column (02-09-PLAN.md Task 2).
+  test_tty_render.cpp
+  # color_policy.cpp/tty_render.cpp live under src/cli/ (CLI-layer, not
+  # part of libmediadiff -- ENG-16's own boundary) and are otherwise only
+  # ever exercised by spawning the built `mediadiff` binary from an
+  # integration test. This plan's own unit tests need `decide_color`/
+  # `render_tty` linked directly into this executable, so both are added
+  # as sources here rather than only through libmediadiff.
   "${CMAKE_SOURCE_DIR}/src/cli/color_policy.cpp"
+  "${CMAKE_SOURCE_DIR}/src/cli/tty_render.cpp"
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp

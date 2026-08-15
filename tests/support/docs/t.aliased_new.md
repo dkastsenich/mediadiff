@@ -18,7 +18,15 @@ and the D-16 canary a `fail`-severity `exact` check to drive a genuine
 
 ## Accept / Tune / Silence
 
-- **Accept**: not applicable -- this check never observes real media.
-- **Tune**: not applicable -- `exact` has no tolerance.
-- **Silence**: not applicable -- test-only fixture; the canary pair using
-  this id must never be silenced or "fixed" (D-16).
+### Accept
+
+Not applicable -- this check never observes real media.
+
+### Tune
+
+Not applicable -- `exact` has no tolerance.
+
+### Silence
+
+Not applicable -- test-only fixture; the canary pair using this id must
+never be silenced or "fixed" (D-16).
