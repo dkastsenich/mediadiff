@@ -25,7 +25,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **CLI-01**: User can run `mediadiff <BASELINE> <CANDIDATE>` with two bare positionals and get an implicit compare
 - [ ] **CLI-02**: User can invoke the `compare`, `snapshot`, `dir`, `inspect`, `list-checks`, and `explain` subcommands
 - [x] **CLI-03**: User can repeat `--set <glob>=<severity>` and `--tol <check>=<value>`, and later flags override earlier ones in argv order
-- [ ] **CLI-04**: User can request reports with `--json[=path]` and repeatable `--report kind=path` for `md` and `junit`
+- [x] **CLI-04**: User can request reports with `--json[=path]` and repeatable `--report kind=path` for `md` and `junit`
 - [x] **CLI-05**: `mediadiff --version` prints the tool version, linked FFmpeg library versions, and enabled features (`vmaf`, `cuda`)
 - [ ] **CLI-06**: Exit codes follow the contract: `0` clean, `1` fail findings, `2` warn under `--strict`, `64` usage, `65` unreadable input, `66` decode failure mid-analysis, `70` internal
 - [ ] **CLI-07**: On exit code `66`, partial JSON is still emitted so CI can see what was measured before the failure
@@ -64,12 +64,12 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Reporting
 
-- [ ] **REPORT-01**: JSON output is schema-validated against `docs/schema/report-1.0.json` in CI and byte-identical across identical runs (timing fields excluded)
+- [x] **REPORT-01**: JSON output is schema-validated against `docs/schema/report-1.0.json` in CI and byte-identical across identical runs (timing fields excluded)
 - [ ] **REPORT-02**: TTY output groups findings in fixed order (container → video → timeline → audio → content → size → meta), shows only non-pass by default, and is width-aware without wrapping value columns
 - [ ] **REPORT-03**: Every gating finding prints the accept / tune / silence triple in TTY output
-- [ ] **REPORT-04**: Markdown output renders a summary table plus per-group `<details>`, and folds overflow into "N more findings, see JSON artifact"
-- [ ] **REPORT-05**: **[R]** The Markdown cap is enforced as a character budget under GitHub's real 65,536-character comment limit, not an ambiguous "60 KB" byte figure (research: PITFALLS — corrects doc 01 §9)
-- [ ] **REPORT-06**: JUnit output emits one `<testcase>` per gating-capable finding, one suite per group, so Jenkins/GitLab show results with zero integration work
+- [x] **REPORT-04**: Markdown output renders a summary table plus per-group `<details>`, and folds overflow into "N more findings, see JSON artifact"
+- [x] **REPORT-05**: **[R]** The Markdown cap is enforced as a character budget under GitHub's real 65,536-character comment limit, not an ambiguous "60 KB" byte figure (research: PITFALLS — corrects doc 01 §9)
+- [x] **REPORT-06**: JUnit output emits one `<testcase>` per gating-capable finding, one suite per group, so Jenkins/GitLab show results with zero integration work
 - [ ] **REPORT-07**: `mediadiff inspect <file>` renders the complete analysis of a single file across every implemented check family
 
 ### Directory Mode
@@ -257,7 +257,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CLI-01 | Phase 2 | Pending |
 | CLI-02 | Phase 2 | Pending |
 | CLI-03 | Phase 2 | Complete |
-| CLI-04 | Phase 2 | Pending |
+| CLI-04 | Phase 2 | Complete |
 | CLI-05 | Phase 1 | Complete |
 | CLI-06 | Phase 2 | Pending |
 | CLI-07 | Phase 2 | Pending |
@@ -287,12 +287,12 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | SNAP-05 | Phase 2 | Complete |
 | SNAP-06 | Phase 2 | Complete |
 | SNAP-07 | Phase 2 | Complete |
-| REPORT-01 | Phase 2 | Pending |
+| REPORT-01 | Phase 2 | Complete |
 | REPORT-02 | Phase 2 | Pending |
 | REPORT-03 | Phase 2 | Pending |
-| REPORT-04 | Phase 2 | Pending |
-| REPORT-05 | Phase 2 | Pending |
-| REPORT-06 | Phase 2 | Pending |
+| REPORT-04 | Phase 2 | Complete |
+| REPORT-05 | Phase 2 | Complete |
+| REPORT-06 | Phase 2 | Complete |
 | REPORT-07 | Phase 2 | Pending |
 | DIR-01 | Phase 2 | Pending |
 | DIR-02 | Phase 2 | Pending |

@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
 status: executing
-stopped_at: Completed 02-07-PLAN.md
-last_updated: "2026-08-15T17:52:30.381Z"
+stopped_at: Completed 02-08-PLAN.md
+last_updated: "2026-08-15T18:34:38.889Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 02 (core-engine) — EXECUTING
-Plan: 8 of 11
+Plan: 9 of 11
 Status: Ready to execute
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [████████░░] 75%
 | Phase 02 P05 | 55min | 3 tasks | 16 files |
 | Phase 02 P06 | 70min | 3 tasks | 31 files |
 | Phase 02 P07 | 65min | 3 tasks | 26 files |
+| Phase 02 P08 | 95min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-07: mediadiff snapshot dispatches on whether <file> reads as a valid *.snap.json (re-materialize) vs anything else (honest probe-layer-not-yet-present refusal) -- makes SNAP-07's gate CLI-testable this phase with no stub analyzer in the shipped binary
 - [Phase ?]: 02-07: added util/fs.h::rename_replace_utf8 (Rule 3) -- MSVC CRT rename() does not replace an existing destination the way POSIX rename() does, which would have silently broken --force's overwrite semantics on Windows
 - [Phase ?]: 02-07: added t.real_ratio (value_kind=real) to tests/support/test_checks.def (Rule 2) -- no check previously exercised Value's double alternative through the registry-dispatched read/write path this plan's own must_haves require covering
+- [Phase ?]: 02-08: ReportModel derives Group from a check id's own first dot-segment, deliberately distinct from CheckDef::group; render_json takes the fully-resolved Policy (not just CheckRegistry) so tolerance/severity_chain reflect config/CLI overrides actually applied this run
+- [Phase ?]: 02-08: Markdown's fold is two-tier (non-gating findings dropped from the canonical end first, warn-under-strict second); Severity::fail is never dropped under any circumstance
+- [Phase ?]: 02-08: tests/baseline/report-1.0.json (TRUST-08 frozen oracle) regenerated against this plan's own new report shape via the exact command its file header prescribes -- the schema itself is this task's deliverable
 
 ### Pending Todos
 
@@ -142,6 +146,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T17:52:30.370Z
-Stopped at: Completed 02-07-PLAN.md
+Last session: 2026-08-15T18:34:38.877Z
+Stopped at: Completed 02-08-PLAN.md
 Resume file: None
