@@ -1,5 +1,11 @@
 find_package(Catch2 3 REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+# 02-08-PLAN.md Task 1 / T-2-SC: linked into THIS test target only, never
+# into libmediadiff or mediadiff (verified by an acceptance criterion
+# grepping the shipped binary for the validator's own symbols) -- schema
+# validation is a test-time proof that the shipped JSON matches
+# docs/schema/report-1.0.json, not a runtime feature of the tool itself.
+find_package(nlohmann_json_schema_validator CONFIG REQUIRED)
 
 add_executable(mediadiff_integration_tests
   test_version_output.cpp
@@ -17,6 +23,9 @@ add_executable(mediadiff_integration_tests
   # SNAP-06's permanent self-check CI test and TRUST-08's cross-release
   # idempotence bootstrap (02-07-PLAN.md Task 3).
   test_idempotence.cpp
+  # The shipped JSON schema actually rejects a malformed document, and a
+  # real compare/compare -v run validates against it (02-08-PLAN.md Task 1).
+  test_json_schema.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
@@ -32,7 +41,8 @@ add_executable(mediadiff_integration_tests
 # compare_fingerprints/read_snapshot/render_json directly rather than only
 # spawning the mediadiff binary through cli_harness.h.
 target_link_libraries(mediadiff_integration_tests PRIVATE libmediadiff Catch2::Catch2WithMain
-                                                            nlohmann_json::nlohmann_json)
+                                                            nlohmann_json::nlohmann_json
+                                                            nlohmann_json_schema_validator::validator)
 add_dependencies(mediadiff_integration_tests generate_test_registry)
 
 # tests/process_spawn.h is shared between this target and mediadiff_unit_tests
@@ -58,6 +68,10 @@ target_compile_definitions(mediadiff_integration_tests PRIVATE
   MEDIADIFF_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden"
   # TRUST-08's frozen cross-release baseline (02-07-PLAN.md Task 3).
   MEDIADIFF_BASELINE_DIR="${CMAKE_SOURCE_DIR}/tests/baseline"
+  # The shipped JSON schema itself (02-08-PLAN.md Task 1) -- resolved at
+  # configure time rather than assumed relative to ctest's working
+  # directory, matching every other *_DIR/*_PATH definition in this file.
+  MEDIADIFF_REPORT_SCHEMA="${CMAKE_SOURCE_DIR}/docs/schema/report-1.0.json"
 )
 # Explicit dependency so the integration target is never built (or run)
 # before the executable it spawns exists.

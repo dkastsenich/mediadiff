@@ -27,6 +27,7 @@
 #include "core/policy.h"
 #include "core/snapshot.h"
 #include "report/json.h"
+#include "report/model.h"
 #include "support/fixture_paths.h"
 #include "support/stub_analyzer.h"
 #include "test/test_check_id.h"
@@ -35,12 +36,22 @@ namespace {
 
 std::string snap_path(const std::string& name) { return mediadiff::test::snapshot_dir() + "/" + name; }
 
+// 02-08-PLAN.md Task 1: render_json now renders the shared ReportModel
+// against a fully-resolved Policy (for each finding's accurate tolerance)
+// rather than a raw finding span -- resolve_policy here mirrors what
+// src/cli/commands/compare.cpp itself does before calling
+// compare_fingerprints, so this determinism check exercises the same
+// per_check-populated Policy shape the real CLI path uses.
 std::string render_compare(const mediadiff::CheckRegistry& registry, const mediadiff::Fingerprint& baseline,
                             const mediadiff::Fingerprint& candidate) {
-  const mediadiff::Policy policy{mediadiff::ProfileId::sw_encoder};
-  auto findings = mediadiff::compare_fingerprints(baseline, candidate, policy, registry);
+  auto policy = mediadiff::resolve_policy(registry, mediadiff::ProfileId::sw_encoder);
+  REQUIRE(policy.has_value());
+  auto findings = mediadiff::compare_fingerprints(baseline, candidate, *policy, registry);
   REQUIRE(findings.has_value());
-  return mediadiff::render_json(*findings, baseline.envelope, registry);
+  const mediadiff::RenderOptions options{};
+  const mediadiff::ReportModel model =
+      mediadiff::build_report_model(candidate.envelope, *findings, registry, options);
+  return mediadiff::render_json(model, registry, *policy, /*verbose=*/false);
 }
 
 }  // namespace

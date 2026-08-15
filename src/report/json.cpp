@@ -6,6 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "core/profiles.h"
 #include "core/serializer.h"
 
 namespace mediadiff {
@@ -76,46 +77,133 @@ std::string_view scope_kind_to_string(Scope::Kind kind) {
   return "global";
 }
 
+std::string_view layer_to_string(PolicyProvenance::Layer layer) {
+  switch (layer) {
+    case PolicyProvenance::Layer::builtin:
+      return "builtin";
+    case PolicyProvenance::Layer::profile:
+      return "profile";
+    case PolicyProvenance::Layer::config:
+      return "config";
+    case PolicyProvenance::Layer::cli:
+      return "cli";
+  }
+  return "builtin";
+}
+
 nlohmann::ordered_json scope_to_json(const Scope& scope) {
   return nlohmann::ordered_json{{"kind", std::string(scope_kind_to_string(scope.kind))}, {"index", scope.index}};
 }
 
-nlohmann::ordered_json finding_to_json(const Finding& finding) {
+nlohmann::ordered_json tolerance_to_json(const Tolerance& tolerance) {
+  nlohmann::ordered_json j;
+  j["num"] = tolerance.num;
+  j["den"] = tolerance.den;
+  j["unit"] = std::string(unit_suffix(tolerance.unit));
+  j["is_relative"] = tolerance.is_relative;
+  j["warn_num"] = tolerance.warn_num.has_value() ? nlohmann::ordered_json(*tolerance.warn_num)
+                                                  : nlohmann::ordered_json(nullptr);
+  return j;
+}
+
+// The same id-matched linear scan resolve_severity itself performs
+// (core/policy.h's own doc comment on that function) -- a comparator, and
+// this renderer, only ever has a Finding::id (a CheckDef::id string_view),
+// never a registry index, to look a ResolvedCheck up by.
+const ResolvedCheck* find_resolved(const Policy& policy, std::string_view id) {
+  for (const ResolvedCheck& resolved : policy.per_check) {
+    if (resolved.id == id) {
+      return &resolved;
+    }
+  }
+  return nullptr;
+}
+
+nlohmann::ordered_json finding_to_json(const Finding& finding, Group group, const CheckRegistry& registry,
+                                        const Policy& policy, bool verbose) {
   nlohmann::ordered_json j;
   j["id"] = std::string(finding.id);
   j["scope"] = scope_to_json(finding.scope);
+  j["group"] = std::string(group_to_string(group));
   j["status"] = std::string(status_to_string(finding.status));
   j["severity"] = std::string(severity_to_string(finding.severity));
+  j["gating"] = is_gating(finding.severity);
   j["baseline"] = value_to_json(finding.baseline);
   j["candidate"] = value_to_json(finding.candidate);
+  // core/model.h's Finding carries no structured per-comparator delta (the
+  // tol comparator folds its computed delta into Finding::message's
+  // human-readable text only, compare/tol.cpp) -- rendering `null` here is
+  // honest about that rather than re-deriving a second delta computation
+  // in this renderer, which would risk drifting from compare/tol.cpp's own
+  // exact cross-multiplication (D-08's "one canonical place" principle).
+  // The key stays present and nullable so a future plan can populate it
+  // from a real structured field without a schema change.
+  j["delta"] = nullptr;
+
+  const ResolvedCheck* resolved = find_resolved(policy, finding.id);
+  std::string_view unit_text = "none";
+  if (auto idx = registry.find(finding.id)) {
+    unit_text = unit_suffix(registry.at(*idx).unit);
+  }
+  j["tolerance"] = (resolved != nullptr && resolved->tolerance.has_value()) ? tolerance_to_json(*resolved->tolerance)
+                                                                             : nlohmann::ordered_json(nullptr);
+  j["unit"] = std::string(unit_text);
   j["message"] = finding.message;
-  // Always present, even "none" — a skipped finding can never be misread
+  // Always present, even "none" -- a skipped finding can never be misread
   // as pass from the JSON body alone (ENG-14).
   j["skip_reason"] = std::string(skip_reason_to_string(finding.skip_reason));
+  // core/model.h's Finding carries no evidence field of its own (only
+  // Measurement does, and compare_fingerprints does not thread it
+  // through) -- see `delta`'s own comment above for the same rationale.
+  j["evidence"] = nullptr;
+
+  if (verbose && resolved != nullptr) {
+    nlohmann::ordered_json chain = nlohmann::ordered_json::array();
+    for (const PolicyProvenance& entry : resolved->chain) {
+      chain.push_back(nlohmann::ordered_json{
+          {"layer", std::string(layer_to_string(entry.layer))},
+          {"detail", entry.detail},
+          {"value", entry.value},
+      });
+    }
+    j["severity_chain"] = chain;
+  }
+
   return j;
+}
+
+nlohmann::ordered_json summary_to_json(const Summary& summary) {
+  return nlohmann::ordered_json{
+      {"pass", summary.pass},         {"info", summary.info},
+      {"warn", summary.warn},         {"fail", summary.fail},
+      {"skipped", summary.skipped},   {"error", summary.error},
+      {"worst_gating", std::string(severity_to_string(summary.worst_gating))},
+  };
 }
 
 }  // namespace
 
-std::string render_json(std::span<const Finding> findings, const Envelope& envelope,
-                         const CheckRegistry& /*registry*/) {
+std::string render_json(const ReportModel& model, const CheckRegistry& registry, const Policy& policy,
+                         bool verbose) {
   nlohmann::ordered_json report;
-  report["schema_version"] = envelope.schema_version;
-  report["tool_version"] = envelope.tool_version;
+  report["schema_version"] = model.envelope.schema_version;
+  report["tool_version"] = model.envelope.tool_version;
+  report["profile"] = std::string(profile_to_string(policy.profile));
+  report["summary"] = summary_to_json(model.summary);
 
-  std::size_t fail_count = 0;
-  std::size_t warn_count = 0;
-  for (const Finding& f : findings) {
-    if (f.status == Status::fail) ++fail_count;
-    if (f.status == Status::warn) ++warn_count;
+  nlohmann::ordered_json diagnostics = nlohmann::ordered_json::array();
+  for (const std::string& line : model.diagnostics) {
+    diagnostics.push_back(line);
   }
-  report["summary"] = nlohmann::ordered_json{{"total", findings.size()}, {"fail", fail_count}, {"warn", warn_count}};
+  report["diagnostics"] = diagnostics;
 
-  nlohmann::ordered_json findings_json = nlohmann::ordered_json::array();
-  for (const Finding& f : findings) {
-    findings_json.push_back(finding_to_json(f));
+  nlohmann::ordered_json findings = nlohmann::ordered_json::array();
+  for (const GroupBlock& block : model.groups) {
+    for (const Finding& finding : block.findings) {
+      findings.push_back(finding_to_json(finding, block.group, registry, policy, verbose));
+    }
   }
-  report["findings"] = findings_json;
+  report["findings"] = findings;
 
   // Explicit indent so the text is stable and readable; ordered_json
   // already preserves the insertion order set above regardless of indent.

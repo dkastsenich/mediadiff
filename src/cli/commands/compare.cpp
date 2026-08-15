@@ -18,6 +18,7 @@
 #include "core/registry.h"
 #include "core/snapshot.h"
 #include "report/json.h"
+#include "report/model.h"
 
 namespace mediadiff {
 
@@ -54,8 +55,14 @@ void register_compare_command(CLI::App& app) {
 
   auto json_flag = std::make_shared<bool>(false);
   auto strict_flag = std::make_shared<bool>(false);
+  auto verbose_flag = std::make_shared<bool>(false);
   cmp->add_flag("--json", *json_flag, "Render the report as JSON on stdout");
   cmp->add_flag("--strict", *strict_flag, "A worst-warn finding also fails the run (exit 2)");
+  // 02-08-PLAN.md Task 1: -v renders each finding's severity_chain under
+  // --json (report/json.cpp's `verbose` parameter) -- full --json[=path]
+  // and --report kind=path file-destination wiring is Task 3's own job,
+  // landing in this same file's later commit.
+  cmp->add_flag("-v,--verbose", *verbose_flag, "Under --json, also render each finding's severity_chain");
 
   PolicyArgs policy_args = add_policy_flags(*cmp);
 
@@ -63,7 +70,7 @@ void register_compare_command(CLI::App& app) {
   // prerogative" — this callback is the one place in the compare path
   // permitted to call std::exit() directly, since it lives under src/cli/
   // (outside scripts/lint_eng16.sh's scanned subtrees).
-  cmp->callback([baseline_path, candidate_path, json_flag, strict_flag, policy_args]() {
+  cmp->callback([baseline_path, candidate_path, json_flag, strict_flag, verbose_flag, policy_args]() {
     const CheckRegistry& registry = builtin_registry();
 
     auto baseline = read_snapshot(*baseline_path, registry);
@@ -129,7 +136,10 @@ void register_compare_command(CLI::App& app) {
     const std::vector<Finding>& findings = *compare_result;
 
     if (*json_flag) {
-      const std::string report = render_json(findings, candidate->envelope, registry);
+      const RenderOptions render_options{
+          /*show_pass=*/true, /*show_ignored=*/true, /*ascii=*/false, /*strict=*/*strict_flag};
+      const ReportModel model = build_report_model(candidate->envelope, findings, registry, render_options);
+      const std::string report = render_json(model, registry, policy, *verbose_flag);
       std::fputs(report.c_str(), stdout);
     }
 

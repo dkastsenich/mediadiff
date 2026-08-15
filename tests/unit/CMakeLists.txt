@@ -42,6 +42,9 @@ add_executable(mediadiff_unit_tests
   # Write-read-write byte-identity across all nine Value alternatives via
   # write_snapshot/read_snapshot (02-07-PLAN.md Task 1).
   test_snapshot_roundtrip.cpp
+  # The shared ReportModel: grouping, ordering, filtering and
+  # summarisation every renderer consumes (02-08-PLAN.md Task 1).
+  test_report_model.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp

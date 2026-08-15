@@ -142,6 +142,7 @@ add_library(libmediadiff STATIC
   src/compare/hash.cpp
   src/compare/dist.cpp
   src/compare/span.cpp
+  src/report/model.cpp
   src/report/json.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
@@ -178,6 +179,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/config/toml_load.h
   src/compare/semantics.h
   src/compare/engine.h
+  src/report/model.h
   src/report/json.h
   src/cli/exit_code.h
 )
