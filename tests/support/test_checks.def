@@ -44,6 +44,21 @@ semantic = "tol"
 unit = "ms"
 value_kind = "rational"
 severity = "fail"
+# Two-threshold form (02-04-PLAN.md Task 1's grammar extension): a delta
+# inside 3ms is pass, between 3ms and 5ms is warn, beyond 5ms is fail --
+# the zone decides the status, independent of `severity` above (doc 01
+# section 3). Backs the fail-first coverage gate's tol pass/warn/fail
+# cells; t.tol_info (below) backs the info cell, which the two-threshold
+# form cannot produce on its own.
+tolerance = "3ms,5ms"
+
+[[check]]
+id = "t.tol_info"
+group = "t"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "info"
 tolerance = "5ms"
 
 [[check]]
@@ -77,6 +92,16 @@ semantic = "dist"
 unit = "percent"
 value_kind = "histogram"
 severity = "warn"
+tolerance = "5%"
+
+[[check]]
+id = "t.dist_bins_fail"
+group = "t"
+semantic = "dist"
+unit = "percent"
+value_kind = "histogram"
+severity = "fail"
+tolerance = "5%"
 
 [[check]]
 id = "t.span_runs"
@@ -84,7 +109,10 @@ group = "t"
 semantic = "span"
 unit = "ms"
 value_kind = "span_list"
-severity = "info"
+# fail (not info): an introduced span escalates via this severity, and a
+# removed-span-only case is always info regardless of severity (doc 01
+# section 3) -- one check now backs all three of pass/info/fail.
+severity = "fail"
 
 [[check]]
 id = "t.volatile_tag"
@@ -103,6 +131,14 @@ unit = "none"
 value_kind = "string"
 severity = "warn"
 requires_pass = true
+
+[[check]]
+id = "t.int64_count"
+group = "t"
+semantic = "exact"
+unit = "none"
+value_kind = "int64"
+severity = "fail"
 
 [[check]]
 id = "t.aliased_new"

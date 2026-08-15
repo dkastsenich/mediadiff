@@ -18,6 +18,10 @@ add_executable(mediadiff_unit_tests
   test_canary.cpp
   # ENG-05/CLI-10 tolerance grammar (02-04-PLAN.md Task 1).
   test_tolerance.cpp
+  # Table-driven edge-value coverage for all seven semantics (02-04-PLAN.md
+  # Task 3), distinct from test_fail_first_coverage.cpp's (semantic,
+  # status) gate.
+  test_compare_semantics.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp

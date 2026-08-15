@@ -106,14 +106,13 @@ const std::map<Semantic, std::vector<Status>>& coverage_table() {
   return table;
 }
 
-// Semantics plans 02-02/02-03 leave dispatching to compare_unimplemented
-// (compare/exact.cpp) -- their coverage cells are expected-uncovered until
-// plan 02-04 implements each one and removes it from this set. A semantic
-// that becomes implemented while still listed here is itself a failure
-// (asserted below), so this allow list cannot rot silently.
+// Plan 02-04 implemented the six remaining semantics and removed every
+// entry that used to live here -- kept as an empty set (rather than
+// deleted outright) so the allow-list mechanism and its own integrity
+// check (below) stay in place for any semantic added post-v1, per D-14's
+// "the allow list cannot rot silently" contract.
 const std::set<Semantic>& not_yet_implemented_semantics() {
-  static const std::set<Semantic> semantics = {Semantic::tol,  Semantic::set,  Semantic::presence,
-                                                Semantic::hash, Semantic::dist, Semantic::span};
+  static const std::set<Semantic> semantics = {};
   return semantics;
 }
 
@@ -208,11 +207,12 @@ TEST_CASE("fail_first coverage: every implemented semantic has a fixture for eve
 TEST_CASE("fail_first coverage: the not-yet-implemented allow list cannot rot silently", "[failfirst]") {
   const CheckRegistry& registry = test_registry();
 
-  // Exactly the six semantics doc 01 defines minus `exact` -- if this
-  // changes, either a semantic was implemented (remove it here and add its
-  // fixture coverage above) or the coverage table above was edited without
-  // updating this set; both are failures this assertion catches.
-  REQUIRE(not_yet_implemented_semantics().size() == 6);
+  // Empty as of plan 02-04 -- all seven semantics now dispatch to a real
+  // comparator (src/compare/*.cpp), so the allow list has nothing left to
+  // hold. This assertion (and the now-vacuous loop below, kept rather than
+  // deleted) is what would catch the allow list quietly regaining an entry
+  // without matching fixture coverage being removed above.
+  REQUIRE(not_yet_implemented_semantics().empty());
   REQUIRE(not_yet_implemented_semantics().count(Semantic::exact) == 0);
 
   for (Semantic semantic : not_yet_implemented_semantics()) {

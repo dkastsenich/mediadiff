@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "tool_version": "test",
+  "measurements": [
+    { "id": "t.tol_ms", "scope": { "kind": "global", "index": 0 },
+      "value": { "num": 7, "den": 1, "tb": { "num": 1, "den": 1 } } }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "tool_version": "test",
+  "measurements": [
+    { "id": "t.hash_chain", "scope": { "kind": "global", "index": 0 },
+      "value": { "algorithm": "xxh3-128", "digest": "abc123", "element_count": 10 } }
+  ]
+}
