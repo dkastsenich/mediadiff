@@ -48,7 +48,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **ENG-11**: Config merges in precedence order profile → `[severity]`/`[tolerance]` → matching `[override.*]` blocks in file order → CLI
 - [ ] **ENG-12**: `mediadiff list-checks --effective` dumps the merged effective policy so a user can debug config surprises
 - [ ] **ENG-13**: `mediadiff explain <check.id>` prints that check's documentation, compiled into the binary at build time
-- [ ] **ENG-14**: `skipped` is a first-class status carrying a machine-readable reason, always present in JSON, and never rendered as or conflated with `pass`
+- [x] **ENG-14**: `skipped` is a first-class status carrying a machine-readable reason, always present in JSON, and never rendered as or conflated with `pass`
 - [x] **ENG-15**: Errors map by kind to exit codes (`usage`→64, `input_open`/`input_unsupported`→65, `decode`→66, `internal`→70) with no exceptions crossing the `libmediadiff` boundary
 - [x] **ENG-16**: `libmediadiff` writes nothing to stdout and never calls `exit()` — all rendering and process control lives in `cli/`
 
@@ -277,7 +277,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | ENG-11 | Phase 2 | Pending |
 | ENG-12 | Phase 2 | Pending |
 | ENG-13 | Phase 2 | Pending |
-| ENG-14 | Phase 2 | Pending |
+| ENG-14 | Phase 2 | Complete |
 | ENG-15 | Phase 2 | Complete |
 | ENG-16 | Phase 2 | Complete |
 | SNAP-01 | Phase 2 | Pending |

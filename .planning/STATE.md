@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
 status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-08-15T15:15:03.847Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-08-15T15:40:18.756Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 02 (core-engine) — EXECUTING
-Plan: 3 of 11
+Plan: 4 of 11
 Status: Ready to execute
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [████░░░░░░] 44%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [████░░░░░░] 44%
 | Phase 01 P05 | 35min | 2 tasks | 1 files |
 | Phase 02 P01 | 15min | 4 tasks | 30 files |
 | Phase 02 P02 | 24min | 3 tasks | 29 files |
+| Phase 02 P03 | 22min | 3 tasks | 38 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,10 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-01: compare's exit code is set via std::exit() inside the CLI11 subcommand callback (sanctioned — ENG-16 lint excludes src/cli/ and names exit() the CLI's prerogative)
 - [Phase ?]: 02-02: Aliases declared inline on owning check (checks.def aliases=[...]); meta.tool_version carries demonstrative alias + strict-bitexact severity override so resolve_alias/severity_for are exercised against the real registry
 - [Phase ?]: 02-02: Process-spawn primitive extracted into tests/process_spawn.h (cli_harness.h now a thin wrapper) so the unit test target can spawn the Python interpreter without MEDIADIFF_BINARY
+- [Phase ?]: 02-03: tools/gen_registry.py gained --symbol-prefix so the same generator produces a second, independent registry (TestCheckId/test_registry()); its --out-dir basename now derives each generated .cpp's include path instead of a hard-coded 'core/' literal
+- [Phase ?]: 02-03: D-14/D-15/D-16 fail-first coverage gate and permanent canary built as Wave-0-style infrastructure before any real comparison semantic beyond exact exists; six not-yet-implemented semantics tracked in a self-verifying allow list in test_fail_first_coverage.cpp
+- [Phase ?]: 02-03: the cli_harness.h EINTR-as-EOF/pipe-leak/waitpid fix actually landed in tests/process_spawn.h -- 02-02 already extracted the POSIX spawn loop there, so cli_harness.h itself needed no change
+- [Phase ?]: 02-03: D-17 fail-first discipline (fixture-pair-per-semantic, semantic-crossed-with-status, permanent canary) recorded in .planning/PROJECT.md's new Conventions section as a binding project rule for Phases 3-7
 
 ### Pending Todos
 
@@ -118,6 +123,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T15:15:03.831Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-08-15T15:40:18.744Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None
