@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: core-engine
 status: executing
-stopped_at: Completed 02-09-PLAN.md
-last_updated: "2026-08-15T19:04:06.685Z"
+stopped_at: Completed 02-10-PLAN.md
+last_updated: "2026-08-15T19:39:22.346Z"
 last_activity: 2026-08-15
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 02 (core-engine) — EXECUTING
-Plan: 10 of 11
+Plan: 11 of 11
 Status: Ready to execute
 Last activity: 2026-08-15 — Phase 02 execution started
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [█████████░] 88%
 | Phase 02 P07 | 65min | 3 tasks | 26 files |
 | Phase 02 P08 | 95min | 3 tasks | 27 files |
 | Phase 02 P09 | 30min | 2 tasks | 34 files |
+| Phase 02-core-engine P10 | 35min | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-08: tests/baseline/report-1.0.json (TRUST-08 frozen oracle) regenerated against this plan's own new report shape via the exact command its file header prescribes -- the schema itself is this task's deliverable
 - [Phase ?]: 02-09: CheckDef::explain_accept/explain_tune/explain_silence carried directly on CheckDef (not through the enum-typed explain_doc(CheckId) accessor) so render_tty works unchanged against both builtin_registry() and test_registry()
 - [Phase ?]: 02-09: TTY prints to stdout only when --json was not requested in any form; the summary line and accept/tune/silence hint text are word-wrapped to terminal_width while a finding row's value column is elided instead
+- [Phase ?]: 02-10: run_compare() extracted from compare.cpp's callback and exported so the implicit two-positional route (mediadiff a b) and the compare subcommand dispatch through the exact same function, never a parallel copy
+- [Phase ?]: 02-10: exit_code_for_findings derives the exit code from Summary::worst_gating (severity), replacing the prior per-Status worst_status helper -- matches report/model.h's own documented axis distinction
+- [Phase ?]: 02-10: core/snapshot.cpp's read_snapshot now reads a top-level partial boolean from snapshot JSON (previously hard-coded false) -- makes CLI-07's exit-66 fixture route testable ahead of a real probe/decode layer
 
 ### Pending Todos
 
@@ -149,6 +153,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T19:04:06.671Z
-Stopped at: Completed 02-09-PLAN.md
+Last session: 2026-08-15T19:39:22.296Z
+Stopped at: Completed 02-10-PLAN.md
 Resume file: None

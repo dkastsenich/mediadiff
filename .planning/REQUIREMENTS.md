@@ -22,13 +22,13 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### CLI Surface
 
-- [ ] **CLI-01**: User can run `mediadiff <BASELINE> <CANDIDATE>` with two bare positionals and get an implicit compare
-- [ ] **CLI-02**: User can invoke the `compare`, `snapshot`, `dir`, `inspect`, `list-checks`, and `explain` subcommands
+- [x] **CLI-01**: User can run `mediadiff <BASELINE> <CANDIDATE>` with two bare positionals and get an implicit compare
+- [x] **CLI-02**: User can invoke the `compare`, `snapshot`, `dir`, `inspect`, `list-checks`, and `explain` subcommands
 - [x] **CLI-03**: User can repeat `--set <glob>=<severity>` and `--tol <check>=<value>`, and later flags override earlier ones in argv order
 - [x] **CLI-04**: User can request reports with `--json[=path]` and repeatable `--report kind=path` for `md` and `junit`
 - [x] **CLI-05**: `mediadiff --version` prints the tool version, linked FFmpeg library versions, and enabled features (`vmaf`, `cuda`)
-- [ ] **CLI-06**: Exit codes follow the contract: `0` clean, `1` fail findings, `2` warn under `--strict`, `64` usage, `65` unreadable input, `66` decode failure mid-analysis, `70` internal
-- [ ] **CLI-07**: On exit code `66`, partial JSON is still emitted so CI can see what was measured before the failure
+- [x] **CLI-06**: Exit codes follow the contract: `0` clean, `1` fail findings, `2` warn under `--strict`, `64` usage, `65` unreadable input, `66` decode failure mid-analysis, `70` internal
+- [x] **CLI-07**: On exit code `66`, partial JSON is still emitted so CI can see what was measured before the failure
 - [x] **CLI-08**: Color output auto-disables on `NO_COLOR`, non-TTY stdout, and `CI=true`, but stays enabled when `GITHUB_ACTIONS=true`; `--no-color` and `--ascii` force it manually
 - [x] **CLI-09**: **[R]** Windows non-ASCII paths work end to end — UTF-16 args via `CommandLineToArgvW` converted once to UTF-8, all file I/O through a `util/fs.h` shim, VT sequences enabled via `SetConsoleMode` (research: PITFALLS — must be phase 0, not retrofitted)
 - [x] **CLI-10**: A tolerance given in the wrong unit for a check is a usage error (exit `64`) that names the expected unit
@@ -47,7 +47,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **ENG-10**: The `transform` profile converts affected identity checks into checks against a declared expectation block (`expect.resolution`) instead of baseline equality
 - [x] **ENG-11**: Config merges in precedence order profile → `[severity]`/`[tolerance]` → matching `[override.*]` blocks in file order → CLI
 - [x] **ENG-12**: `mediadiff list-checks --effective` dumps the merged effective policy so a user can debug config surprises
-- [ ] **ENG-13**: `mediadiff explain <check.id>` prints that check's documentation, compiled into the binary at build time
+- [x] **ENG-13**: `mediadiff explain <check.id>` prints that check's documentation, compiled into the binary at build time
 - [x] **ENG-14**: `skipped` is a first-class status carrying a machine-readable reason, always present in JSON, and never rendered as or conflated with `pass`
 - [x] **ENG-15**: Errors map by kind to exit codes (`usage`→64, `input_open`/`input_unsupported`→65, `decode`→66, `internal`→70) with no exceptions crossing the `libmediadiff` boundary
 - [x] **ENG-16**: `libmediadiff` writes nothing to stdout and never calls `exit()` — all rendering and process control lives in `cli/`
@@ -70,7 +70,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **REPORT-04**: Markdown output renders a summary table plus per-group `<details>`, and folds overflow into "N more findings, see JSON artifact"
 - [x] **REPORT-05**: **[R]** The Markdown cap is enforced as a character budget under GitHub's real 65,536-character comment limit, not an ambiguous "60 KB" byte figure (research: PITFALLS — corrects doc 01 §9)
 - [x] **REPORT-06**: JUnit output emits one `<testcase>` per gating-capable finding, one suite per group, so Jenkins/GitLab show results with zero integration work
-- [ ] **REPORT-07**: `mediadiff inspect <file>` renders the complete analysis of a single file across every implemented check family
+- [x] **REPORT-07**: `mediadiff inspect <file>` renders the complete analysis of a single file across every implemented check family
 
 ### Directory Mode
 
@@ -254,13 +254,13 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | BUILD-08 | Phase 1 | Complete |
 | BUILD-09 | Phase 1 | Complete |
 | BUILD-10 | Phase 1 | Complete |
-| CLI-01 | Phase 2 | Pending |
-| CLI-02 | Phase 2 | Pending |
+| CLI-01 | Phase 2 | Complete |
+| CLI-02 | Phase 2 | Complete |
 | CLI-03 | Phase 2 | Complete |
 | CLI-04 | Phase 2 | Complete |
 | CLI-05 | Phase 1 | Complete |
-| CLI-06 | Phase 2 | Pending |
-| CLI-07 | Phase 2 | Pending |
+| CLI-06 | Phase 2 | Complete |
+| CLI-07 | Phase 2 | Complete |
 | CLI-08 | Phase 2 | Complete |
 | CLI-09 | Phase 1 | Complete |
 | CLI-10 | Phase 2 | Complete |
@@ -276,7 +276,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | ENG-10 | Phase 2 | Complete |
 | ENG-11 | Phase 2 | Complete |
 | ENG-12 | Phase 2 | Complete |
-| ENG-13 | Phase 2 | Pending |
+| ENG-13 | Phase 2 | Complete |
 | ENG-14 | Phase 2 | Complete |
 | ENG-15 | Phase 2 | Complete |
 | ENG-16 | Phase 2 | Complete |
@@ -293,7 +293,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | REPORT-04 | Phase 2 | Complete |
 | REPORT-05 | Phase 2 | Complete |
 | REPORT-06 | Phase 2 | Complete |
-| REPORT-07 | Phase 2 | Pending |
+| REPORT-07 | Phase 2 | Complete |
 | DIR-01 | Phase 2 | Pending |
 | DIR-02 | Phase 2 | Pending |
 | DIR-03 | Phase 2 | Pending |
