@@ -127,6 +127,36 @@ inline std::string_view unit_suffix(Unit unit) {
   return "none";
 }
 
+// Textual severity spelling, in both directions -- the vocabulary a user
+// types in `mediadiff.toml`'s `[severity]` table or a `--set` argument
+// (plan 02-06), and the inverse used for `-v` provenance rendering and
+// diagnostics. Exact spelling only, no case folding: a mistyped severity
+// word is a usage error, matching profile_from_string's own exact-match
+// discipline (T-2-18).
+inline std::optional<Severity> severity_from_string(std::string_view text) {
+  if (text == "ignore") return Severity::ignore;
+  if (text == "info") return Severity::info;
+  if (text == "warn") return Severity::warn;
+  if (text == "fail") return Severity::fail;
+  return std::nullopt;
+}
+
+inline std::string_view severity_to_string(Severity severity) {
+  switch (severity) {
+    case Severity::ignore:
+      return "ignore";
+    case Severity::info:
+      return "info";
+    case Severity::warn:
+      return "warn";
+    case Severity::fail:
+      return "fail";
+  }
+  // Unreachable for any valid Severity -- see unit_suffix's own
+  // no-default:-arm-plus-trailing-return pattern for why this shape.
+  return "ignore";
+}
+
 // One profile's severity exception (doc 01 section 5, D-04). A check with
 // no entry for a given profile inherits CheckDef::default_severity — a
 // deliberate exception reads as an exception rather than being buried in

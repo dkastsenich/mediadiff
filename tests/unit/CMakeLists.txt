@@ -32,6 +32,9 @@ add_executable(mediadiff_unit_tests
   test_transform_profile.cpp
   # mediadiff.toml discovery/parse/shape-validation (02-06-PLAN.md Task 1).
   test_toml_load.cpp
+  # The four-layer precedence merge and argv-order CLI overrides
+  # (02-06-PLAN.md Task 2).
+  test_policy_merge.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
   # golden harness (02-03-PLAN.md Task 3).
   test_process_spawn.cpp

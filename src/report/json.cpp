@@ -30,20 +30,6 @@ std::string_view status_to_string(Status status) {
   return "error";
 }
 
-std::string_view severity_to_string(Severity severity) {
-  switch (severity) {
-    case Severity::ignore:
-      return "ignore";
-    case Severity::info:
-      return "info";
-    case Severity::warn:
-      return "warn";
-    case Severity::fail:
-      return "fail";
-  }
-  return "ignore";
-}
-
 std::string_view skip_reason_to_string(SkipReason reason) {
   switch (reason) {
     case SkipReason::none:

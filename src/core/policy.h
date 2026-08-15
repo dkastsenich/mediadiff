@@ -2,19 +2,31 @@
 
 // Severity/tolerance resolution through the profile chain (doc 01 sections
 // 4-6): built-in default -> profile default -> config [severity]/[tolerance]
-// -> CLI --set/--tol, last writer wins. This plan (02-05) builds the
-// builtin and profile layers, plus the data structure and override
-// mechanism layers three and four (config, CLI) plug into. Layers three and
-// four are added by plan 02-06 as additional resolve_policy-style passes /
-// apply_severity_override calls over the SAME Policy/ResolvedCheck
-// structure; nothing here is a placeholder for them.
+// -> CLI --set/--tol, last writer wins. Plan 02-05 built the builtin and
+// profile layers, plus the data structure and override mechanism (the
+// PolicyProvenance chain, apply_severity_override) layers three and four
+// plug into. Plan 02-06 (this file) adds those layers three and four as
+// additional passes inside the SAME resolve_policy, over the SAME
+// Policy/ResolvedCheck structure.
+//
+// Tolerance overrides (config's [tolerance], an override block's own
+// [tolerance], CLI --tol) are last-writer-wins the same way severity is, but
+// carry NO provenance chain entry of their own -- consistent with how the
+// very first (builtin/profile) tolerance write never did either, since
+// plan 02-05. ENG-06's `-v` display and doc 01 section 4's "resolved chain"
+// are scoped to SEVERITY resolution throughout this project; a tolerance
+// override is last-write-wins-and-forget, auditable only in the sense that
+// CLI-10/ENG-05's grammar rejection still names the offending value.
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "config/toml_load.h"
 #include "core/error.h"
 #include "core/profiles.h"
 #include "core/registry.h"
@@ -75,6 +87,28 @@ struct Policy {
   TransformExpectation transform_expectation{};
 };
 
+// One `--set`/`--tol` argv accumulation -- doc 01 section 6's CLI layer
+// (layer four). `dimension` selects which of a check's two resolved values
+// this entry writes; `glob` and `value` are the text either side of the
+// argument's first `=`, already syntax-checked (a well-formed check-id glob,
+// a non-empty value) by src/cli/options.cpp before construction -- a
+// severity `value` outside the closed four-word set is ALSO rejected there,
+// since that check needs no registry lookup. A tolerance `value` is
+// grammar-checked here, in resolve_policy, because doing so requires
+// knowing which check(s) the glob resolves to and each one's declared Unit.
+// `argv_index` is a counter that increments once per entry WITHIN its own
+// dimension (severity and tolerance count separately), assigned by
+// options.cpp as it walks CLI11's two accumulated vectors in encounter
+// order -- this is what lets --set and --tol interleave freely in argv
+// without changing either dimension's own relative order.
+struct CliOverride {
+  enum class Dimension { severity, tolerance };
+  Dimension dimension;
+  std::string glob;
+  std::string value;
+  std::size_t argv_index;
+};
+
 // Resolves the severity a Finding for `check` should carry under `policy`
 // (doc 01 section 4). When `policy.per_check` already holds an entry for
 // `check` -- the normal case: a Policy built by resolve_policy below,
@@ -92,29 +126,66 @@ struct Policy {
 // `check.severity_for(policy.profile)`.
 Severity resolve_severity(const CheckDef& check, const Policy& policy);
 
-// Performs the builtin and profile layers of doc 01 section 4's resolution
-// chain over every check in `registry`, in registry declaration order: each
-// check starts from its checks.def baseline -- or `Severity::ignore` when
-// `CheckDef::is_volatile`, applied here at this builtin layer rather than
-// as a post-pass, which is what lets a later config/CLI layer still
-// promote it (T-2-19) -- with a `builtin` provenance entry, then (for a
-// non-volatile check whose profile override actually differs from the
-// baseline) the selected profile's override is applied with a `profile`
-// provenance entry appended. A check's baseline tolerance (or profile
-// override, via CheckDef::tolerance_for) is parsed once here too, when
-// declared. Layers three (config) and four (CLI) are additional overrides
-// a later plan applies to these SAME per_check entries via
-// apply_severity_override below.
-mediadiff::expected<Policy, Error> resolve_policy(const CheckRegistry& registry, ProfileId profile);
+// Performs all four layers of doc 01 section 4's resolution chain over
+// every check in `registry`, in registry declaration order:
+//
+//   1. builtin -- each check starts from its checks.def baseline, or
+//      `Severity::ignore` when `CheckDef::is_volatile` (applied at this
+//      layer rather than as a post-pass, so a later layer can still
+//      promote it, T-2-19), with a `builtin` provenance entry. A check's
+//      baseline tolerance (or profile override) is parsed once here too.
+//   2. profile -- for a non-volatile check whose selected profile's
+//      override actually differs from the baseline, the override is
+//      applied with a `profile` provenance entry appended.
+//   3. config -- when `config` holds a value: its top-level `[severity]`
+//      and `[tolerance]` entries, each expanded through glob_select in
+//      ascending GlobRule::file_order and written to every matched index;
+//      then every `[override.*]` block's own `[severity]`/`[tolerance]`
+//      entries, walked block-by-block in ascending OverrideBlock::file_order
+//      and, within each block, entry-by-entry in ascending GlobRule::file_order
+//      (this ordering is doc 01 section 6's own resolution rule for this
+//      layer). Every severity write appends a `config`-layer provenance
+//      entry naming the glob and its file position; every tolerance write
+//      replaces `ResolvedCheck::tolerance` directly (no chain entry -- see
+//      this header's own top comment for why).
+//   4. cli -- `cli_overrides` applied in span order (which is argv order,
+//      by `CliOverride::argv_index` construction in src/cli/options.cpp).
+//      Same write shape as layer three: a severity write appends a
+//      `cli`-layer provenance entry naming the argv text and position; a
+//      tolerance write replaces `ResolvedCheck::tolerance` with no chain
+//      entry. A tolerance value `parse_tolerance` rejects for a check its
+//      glob resolves to is `ErrorKind::usage` naming the expected unit
+//      (CLI-10) -- this is the one layer able to fail after layers one and
+//      two have already succeeded, since resolving a CLI glob against the
+//      registry to discover each matched check's declared Unit can only
+//      happen here.
+//
+// `config` and `cli_overrides` both default to "layer absent" (nullopt,
+// empty span) so every pre-existing two-argument call site -- every
+// 02-04/02-05-era comparator unit test, compare/engine.cpp's own internal
+// resolve_policy call when a caller passes a bare `Policy{profile}` -- keeps
+// compiling and behaving exactly as it did before this plan, unchanged.
+mediadiff::expected<Policy, Error> resolve_policy(const CheckRegistry& registry, ProfileId profile,
+                                                    const std::optional<ConfigFile>& config = std::nullopt,
+                                                    std::span<const CliOverride> cli_overrides = {});
 
 // Appends one later-layer provenance entry to `policy`'s entry for
 // `check_index` and makes `severity` that check's new resolved severity --
 // last writer wins (doc 01 section 4), and the chain keeps every prior
 // entry rather than overwriting it. `check_index` is trusted to be a valid
 // index into `policy.per_check`, matching CheckRegistry::at's own trusted-
-// index convention. This is the "policy API" plan 02-06's config/CLI passes
-// call once per override they apply.
+// index convention. This is the "policy API" every later-layer severity
+// write (plan 02-06's own config/CLI passes inside resolve_policy, plus any
+// caller building overrides by hand, as plan 02-05's own tests already do)
+// goes through.
 void apply_severity_override(Policy& policy, std::uint32_t check_index, Severity severity,
                               PolicyProvenance::Layer layer, std::string detail);
+
+// Replaces `policy`'s entry for `check_index` with `tolerance` -- last
+// writer wins, mirroring apply_severity_override's index-trust contract,
+// but appends no provenance entry (see this header's own top comment: no
+// layer's tolerance write, including the very first one resolve_policy
+// itself performs, has ever carried a chain entry).
+void apply_tolerance_override(Policy& policy, std::uint32_t check_index, Tolerance tolerance);
 
 }  // namespace mediadiff

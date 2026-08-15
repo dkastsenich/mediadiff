@@ -216,7 +216,11 @@ endfunction()
 mediadiff_apply_warnings(libmediadiff)
 
 # --- mediadiff executable ----------------------------------------------------
-add_executable(mediadiff src/cli/main.cpp src/cli/commands/compare.cpp)
+add_executable(mediadiff
+  src/cli/main.cpp
+  src/cli/options.cpp
+  src/cli/commands/compare.cpp
+)
 target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11)
 mediadiff_apply_warnings(mediadiff)
 
