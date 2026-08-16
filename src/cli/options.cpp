@@ -18,6 +18,7 @@
 
 #include "core/glob.h"
 #include "core/registry.h"
+#include "util/fs.h"
 
 namespace mediadiff {
 
@@ -243,18 +244,6 @@ CliOptions add_common_options(CLI::App& cmd) {
 
 namespace {
 
-// Reads one environment variable, distinguishing "unset" (nullopt) from
-// "set to the empty string" (a value holding "") -- std::getenv already
-// makes that distinction (nullptr vs a pointer to ""), this just carries
-// it into ColorInputs's own optional-string shape.
-std::optional<std::string> read_env(const char* name) {
-  const char* value = std::getenv(name);
-  if (value == nullptr) {
-    return std::nullopt;
-  }
-  return std::string(value);
-}
-
 // The one place mediadiff calls isatty (POSIX) / _isatty (MSVC) -- neither
 // name is permitted outside this function, matching src/util/fs.h's own
 // "confine platform-specific I/O primitives to one file" convention for a
@@ -272,9 +261,9 @@ bool stdout_is_tty() {
 ColorInputs read_color_inputs(const ColorArgs& args) {
   ColorInputs inputs;
   inputs.stdout_is_tty = stdout_is_tty();
-  inputs.no_color = read_env("NO_COLOR");
-  inputs.ci = read_env("CI");
-  inputs.github_actions = read_env("GITHUB_ACTIONS");
+  inputs.no_color = getenv_utf8("NO_COLOR");
+  inputs.ci = getenv_utf8("CI");
+  inputs.github_actions = getenv_utf8("GITHUB_ACTIONS");
   inputs.flag_no_color = *args.no_color;
   inputs.flag_ascii = *args.ascii;
   return inputs;
