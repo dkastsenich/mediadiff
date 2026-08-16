@@ -1,153 +1,139 @@
 ---
 phase: 02-core-engine
-verified: 2026-08-15T21:42:27Z
+verified: 2026-08-16T13:10:00Z
 status: human_needed
-score: 5/5 truths verified (2 present, behavior-unverified — routed to human/Phase-3 deferral)
-behavior_unverified: 2
+score: 7/7 must-haves verified (5 original ROADMAP truths + 2 gap-closure truths); 2 items routed to human verification (unchanged colour-in-real-terminal item, plus 1 new push-and-confirm-CI item covering both gaps)
+behavior_unverified: 0
 overrides_applied: 0
-deferred:
-  - truth: "mediadiff snapshot <media-file> && mediadiff compare <media-file> <media-file>.snap.json is clean, produced from a real media file"
-    addressed_in: "Phase 3"
-    evidence: "02-CONTEXT.md phase boundary: 'all real media parsing... The probe layer begins in Phase 3.' The shipped `snapshot` command on a real file exits 65 with the message 'fingerprinting a media file requires the probe layer, which arrives with Phase 3'. SNAP-06 is instead proven via a stub Fingerprint written directly by write_snapshot() in tests/integration/test_idempotence.cpp, which is the correct Phase-2 substitute per D-10/D-11."
-  - truth: "The written snapshot envelope carries a decode-path signature including libavcodec/libavformat/swscale toolchain versions"
-    addressed_in: "Phase 3"
-    evidence: "src/util/version.cpp's compose_decode_path_signature() (TRUST-03) exists and is unit-tested (test_schema_version.cpp: 'compose_decode_path_signature composes three distinct version triples') but is never called from src/cli/commands/snapshot.cpp — there is no envelope-composing call site yet because live snapshot production is Phase 3 scope. decode_path stays whatever was in the input fingerprint (empty [] for a stub) when 'snapshot' re-materializes an existing *.snap.json."
+re_verification:
+  previous_status: human_needed
+  previous_score: 5/5 truths verified (2 present, behavior-unverified — routed to human/Phase-3 deferral)
+  gaps_closed:
+    - "G-02-1 — six unguarded getenv call sites causing MSVC C4996/C2220 under /W4 /WX: code-level fix verified complete and correct (all six sites migrated to mediadiff::getenv_utf8, exactly one raw getenv call remains in the whole repo, unit test proves the unset/set/set-to-empty contract, GCC build+full suite green, code review found 0 critical/1 non-blocking warning)"
+    - "G-02-2 — GNU-only \\+ BRE breaking the arm64-osx ctest-count guard under BSD sed: code-level fix verified complete and correct (POSIX [0-9][0-9]* pattern shipped, both guard branches intact, zero GNU-only regex constructs remain under .github/workflows/, dialect-emulation control clause confirms the harness detects the original bug)"
+  gaps_remaining: []
+  regressions: []
 human_verification:
-  - test: "Run `mediadiff compare` / `dir` / TTY report output in a real Windows console (cmd.exe or Windows Terminal) with `SetConsoleMode`'s ENABLE_VIRTUAL_TERMINAL_PROCESSING path exercised"
-    expected: "Colour renders as actual styling (ANSI-interpreted) rather than literal escape-sequence bytes printed to the terminal"
-    why_human: "This sandbox is Linux-only; unit.console_vt is skipped in this environment (needs a real TTY) and the color/VT-enable code path (src/util/fs.h / Windows console setup) cannot be exercised programmatically here. Explicitly flagged as human-only in the phase's verification context."
-  - test: "Confirm NO_COLOR / non-TTY / CI=true auto-disable and GITHUB_ACTIONS=true stays-enabled behavior visually in a real terminal session (not just via unit test assertions on decide_color's pure function)"
-    expected: "Colour appears/disappears exactly as the WR-02-fixed precedence table states, matching what a human operator sees, not only what the unit tests assert against synthetic EnvVars"
-    why_human: "The logic is unit-tested (11 test cases, WR-02 fix verified) and cannot regress silently, but actual terminal rendering (glyph width, 256-color vs truecolor fallback) is a visual property this sandbox cannot observe."
+  - test: "Push the branch (or the equivalent PR head) and read the resulting CI run for build (x64-windows-static-md) and build (arm64-osx)"
+    expected: "x64-windows-static-md compiles clean through all 97 build steps (not just past the former C4996 failure at step 32) and its own test run passes; arm64-osx's Test step now executes past the count guard and the 297-test suite passes (not just that the guard no longer aborts)"
+    why_human: "Neither fix has ever been exercised against its real target: MSVC/_dupenv_s/_W4 /WX cannot run on this Linux sandbox, and BSD sed cannot run here either (02-13 verified only via GNU sed's --posix emulation, which is a documented approximation, not BSD sed itself). More importantly, the local git branch (gsd/phase-2-core-engine) is 14 commits ahead of origin -- the gap-closure commits (2197c88, f005af8, c023be3, e403e32, and the docs commits) have never been pushed, so the CI run visible on PR #2 (31937349647) still reflects the OLD, pre-fix code and is FAILURE on both legs. There is no CI evidence, old or new, that either leg is actually green with these fixes applied. Both plans' own <verification> sections say the same thing explicitly and warn against assuming a first fix is sufficient (65/97 MSVC build steps and the full macOS test run have never executed in any CI run to date)."
+  - test: "Run mediadiff compare/dir/TTY report output in a real Windows console (cmd.exe or Windows Terminal) with SetConsoleMode's ENABLE_VIRTUAL_TERMINAL_PROCESSING path exercised"
+    expected: "Colour renders as actual styling (ANSI-interpreted) rather than literal escape-sequence bytes"
+    why_human: "Carried forward unchanged from the original verification and from UAT test 1, which could not even reach this check because no Windows binary existed. Blocked on the same CI push as the item above -- once a green Windows build exists, this check becomes reachable for the first time in the phase's history."
 ---
 
-# Phase 2: Core Engine Verification Report
+# Phase 2: Core Engine Verification Report (Re-Verification After Gap Closure)
 
 **Phase Goal:** The complete compare engine — registry, comparison semantics, policy resolution, snapshots, all four report formats and `dir` orchestration — works end to end against stub measurements, so every analyzer that follows plugs into finished machinery.
 
-**Verified:** 2026-08-15T21:42:27Z
+**Verified:** 2026-08-16T13:10:00Z
 **Status:** human_needed
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — after gap closure (plans 02-12, 02-13, closing UAT-surfaced gaps G-02-1 and G-02-2)
+
+## What changed since the last verification
+
+The original `02-VERIFICATION.md` (2026-08-15) scored the 5 ROADMAP success criteria 5/5 verified and routed two Windows-console colour-rendering checks to human UAT. That UAT (`02-UAT.md`) ran, passed one of those two checks on Linux, and — while trying to reach the other on a real Windows console — surfaced two blocking CI gaps that had nothing to do with colour rendering: `G-02-1` (six unguarded `getenv` calls making `x64-windows-static-md` fail to build under `/W4 /WX`) and `G-02-2` (a GNU-only regex breaking the `arm64-osx` leg's own test-count guard). Plans `02-12` and `02-13` closed those gaps. This report re-verifies the phase with that closure applied.
 
 ## Goal Achievement
 
-### Observable Truths (mapped to the 5 ROADMAP success criteria)
+### Observable Truths
+
+#### Carried forward from the original verification (regression-checked only — see prior report for full evidence)
+
+| # | Truth | Status | Regression check |
+|---|-------|--------|-------------------|
+| 1a-1d | Snapshot/compare round-trip, schema_version gate, CI tracked-overwrite gate | ✓ VERIFIED (unchanged) | `ctest -N` still discovers `integration.schema_version`, `integration.snapshot_safe_write` etc.; post-merge test gate (297/297, 0 failed) confirms no regression. |
+| 2 | Policy resolution (profiles, TOML, `--set`/`--tol`, provenance) | ✓ VERIFIED (unchanged) | Gap-closure diff touches `options.cpp`'s `read_color_inputs` only (the 3 colour env reads), not `policy.cpp` or any profile-resolution code. No overlap. |
+| 3 | Four report formats, colour auto-disable logic | ✓ VERIFIED (logic unchanged); real-terminal Windows rendering ⚠️ still human-only | The gap closure is a pure refactor of *how* `NO_COLOR`/`CI`/`GITHUB_ACTIONS` are read (`std::getenv` → `getenv_utf8`), not of `decide_color`'s precedence logic. `02-12-SUMMARY.md`'s own coverage table and the code review confirm all 11 colour-precedence unit tests, including the two WR-02 regression cases, still pass unmodified. |
+| 4 | `dir` pairing, threads, exit-code contract, `ENG-16` process-control confinement | ✓ VERIFIED (unchanged) | `dir.cpp`'s only change is routing one pre-existing test-injection env read through the new shim (same truth-table); `scripts/lint_eng16.sh`'s `src/cli` exclusion (noted as a contributing cause in the UAT gap analysis) was deliberately NOT touched — out of scope for this closure per the plan. |
+| 5 | Registry/docs enforcement, seven comparison semantics, `skipped != pass` | ✓ VERIFIED (unchanged) | No file in either gap-closure diff touches `src/core/checks.def`, `src/compare/*`, or the registry generator. |
+
+#### New truths from this re-verification (the two gap-closure plans)
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1a | `snapshot`/`compare` round-trip is clean by construction (against a stub fingerprint, since real media needs Phase 3's probe layer) | ✓ VERIFIED | `tests/integration/test_idempotence.cpp` SNAP-06 test passes; manually reproduced with `write_snapshot()`-equivalent (copied fixture) → `compare f f` → `pass:1, exit 0`. Real-media `snapshot` correctly refuses with exit 65 and a message naming Phase 3, rather than crashing or fabricating a result. |
-| 1b | `*.snap.json` is canonical/git-diffable, times stored as rationals, envelope carries a decode-path signature with toolchain versions | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED (partial) | Canonical serializer (field order, sorted scopes, one-value-per-line, shortest round-trip float, `{num,den,tb}` rationals) is VERIFIED — 296/296 tests including cross-platform-determinism-relevant serializer suite. `compose_decode_path_signature()` (TRUST-03) exists and is unit-tested standalone but is **not called from any envelope-producing path** in this phase — no such path exists yet (Phase 3 scope). See Deferred Items. |
-| 1c | `compare` refuses an incompatible `schema_version` major with exit 65 | ✓ VERIFIED | Manually reproduced: schema_version `"2.0"` vs build's `"1.0"` → exit 65, message names both versions. Also covered by `integration.schema_version` tests (6/6 passing). |
-| 1d | `snapshot` refuses to overwrite a tracked baseline in CI without `--force` | ✓ VERIFIED | Manually reproduced: `CI=true mediadiff snapshot tracked.snap.json` (git-tracked, no `--force`) → exit 64, `--force` named; `--force` → exit 0, overwrite succeeds. `integration.snapshot_safe_write` (6/6 passing) covers tracked/untracked/zero-byte/CI-untracked/force-twice-idempotent cases. |
-| 2 | Policy resolution end to end — `--profile`, `mediadiff.toml`, path overrides, repeatable `--set`/`--tol` in argv order — across all five profiles, `list-checks --effective`, `-v` provenance chain, wrong-unit tolerance exit 64 | ✓ VERIFIED | Manually reproduced all five profiles resolving without error; `--set` repeated twice resolves last-writer-wins in argv order both directions; TOML `profile=`/`[severity]` picked up and overridden by a later CLI `--set`; `-v` shows a two-entry provenance chain (`builtin` → `cli`) naming the winning layer; `--tol meta.tool_version=5px` → exit 64 naming expected unit `none`. Note: PLAN 02-10's own must-have about a flag working "before and after the subcommand name" was demonstrated only as *intra-subcommand* order-independence, not literal root-vs-subcommand placement — `mediadiff --set ... compare a b` genuinely fails (exit 64, "not expected") due to a documented CLI11 2.6.2 limitation (`02-10-SUMMARY.md`). This does not affect the ROADMAP criterion's literal wording ("repeatable `--set`/`--tol` in argv order"), which is about ordering among repeated occurrences of the same flag — verified working. |
-| 3 | All four report formats render the same findings; TTY grouped fixed order + accept/tune/silence triple; JSON schema-validated, byte-identical, matches a frozen prior-release baseline; Markdown budgeted under GitHub's limit; JUnit zero-integration-work; colour auto-disable rules | ✓ VERIFIED (colour-in-real-terminal routed to human) | TTY: fixed group order, `-v` shows pass, default hides pass, accept/tune/silence triple renders in fixed order under a gating fail/warn finding (manually reproduced). JSON: validates against `docs/schema/report-1.0.json` (`integration.json_schema`, 8 tests incl. an intentionally-invalid document failing validation), two runs byte-identical (manually reproduced + `TRUST-05`/`determinism` suites), `tests/baseline/report-1.0.json` frozen baseline compared via TRUST-08 idempotence test. Markdown: `kMarkdownBudgetBytes = 60000` (5,536-byte headroom under GitHub's 65,536-char limit), overflow-fold tested at the exact byte boundary. JUnit: well-formed `testsuites`/`testcase` XML, zero-tests-declared-not-empty-file for a clean run, one `<testcase>` per gating finding (manually reproduced both zero-fail and one-fail cases). Colour auto-disable (`NO_COLOR`, non-TTY, `CI=true`) vs `GITHUB_ACTIONS=true` staying enabled: logic VERIFIED via 11 unit tests including the two WR-02 regression tests explicitly crossing `NO_COLOR` against `GITHUB_ACTIONS=true`; **actual rendering in a real Windows console is human-only** (see Human Verification). |
-| 4 | `dir a b` pairs by relative path deterministically under a `--threads`-bounded pool, reports unpaired files, honours the full exit-code contract with partial JSON on 66, process control confined to `cli/` | ✓ VERIFIED | Manually reproduced: unpaired baseline-only file → `meta.missing_candidate` (fail); unpaired candidate-only file → `meta.extra_candidate` (warn); `--threads 1` vs `--threads 8` produce byte-identical `--json`; empty-corpus `dir` → 0 files, exit 0. All 7 documented exit codes (0,1,2,64,65,66,70) reproduced directly against the real binary or confirmed by a named integration test asserting the exact integer (`test_exit_codes.cpp`, 9 cases). Exit 66 confirmed to still emit parseable JSON with a `partial: true` diagnostic. `scripts/lint_eng16.sh` passes clean (no stdout/`exit()` in the engine subtrees). |
-| 5 | Every registered check resolves to enforced documentation (`explain`, `inspect`), `skipped` is machine-readable and never conflated with `pass`, all seven comparison semantics behave per spec with ticks-not-floats time comparison | ✓ VERIFIED | `explain meta.tool_version` prints what/why/accept-tune-silence in fixed order; unknown check id → exit 64. `inspect` renders every group (7, fixed order) including empty ones with an explicit no-measurements line. `docs/checks/<id>.md` exists for all 3 registered checks + generator build-gate tests (`test_registry_generator.cpp`, 5/5: missing doc, empty doc, bad grammar, dangling alias all fail the build naming the offender). `skipped ≠ pass`: `test_fail_first_coverage.cpp` proves the not-yet-implemented allow list is empty (all 7 semantics implemented) and every semantic's per-status fixture matrix is present; `hash` precondition mismatch → `skipped:hash_incomparable`, never fabricated. Ticks-not-floats: `core/rational.h`'s cross-multiplication (with the review-fix's overflow-checked variants) is the only comparison path; a review-flagged UB path (CR-03/WR-03) was fixed and independently re-verified via new unit tests engineered to trigger overflow, asserting `Status::error` rather than a fabricated verdict. |
+| 6 | G-02-1 closed: no first-party translation unit calls the deprecated C environment-read function outside `src/util/fs.h` | ✓ VERIFIED | `grep -rn 'std::getenv(\|[^_]getenv(' src tests tools --include='*.cpp' --include='*.h' \| grep -v '^src/util/fs.h:'` → 0 matches, independently re-run in this verification. `src/util/fs.h:222-241` contains `mediadiff::getenv_utf8` with both the `_WIN32`/`_dupenv_s`+`unique_ptr<char,&std::free>` branch and the non-Windows `std::getenv` branch, matching the plan's spec exactly (read directly, not taken from the SUMMARY). |
+| 7 | G-02-1 closed: all six former call sites route through the shim, preserving their exact prior truth-test semantics | ✓ VERIFIED | Independently grepped every site: `src/cli/options.cpp:274-276` (`NO_COLOR`/`CI`/`GITHUB_ACTIONS`), `src/cli/commands/snapshot.cpp:175` (`ci_env_is_true`), `src/cli/commands/dir.cpp:278` (test-injection read), `tests/support/golden.cpp:24` (`UPDATE_GOLDENS`), `tests/integration/test_exit_codes.cpp:138` and `tests/integration/test_snapshot_safe_write.cpp:137` (`PATH`) — all call `getenv_utf8`/`mediadiff::getenv_utf8`. `read_env` helper confirmed deleted from `options.cpp` (only the new function's usage remains at those three line numbers; no stray `read_env` reference anywhere). |
+| 8 | G-02-1 closed: unset-vs-set-to-empty contract is proven by an automated test | ✓ VERIFIED | `tests/unit/test_fs_utf8.cpp:137` contains `TEST_CASE("test_fs_utf8 - getenv_utf8 separates unset from set-to-empty")` with the disengaged/engaged/POSIX-only-empty sections the plan specified. `ctest -N` (independently re-run) discovers 297 total tests (up from 296), consistent with one new case added. |
+| 9 | G-02-1 closed: the three false "sole reader" comments now name their real co-sites | ✓ VERIFIED | Independently re-ran the plan's own grep gates: `grep -c 'ONLY place in mediadiff that reads' src/cli/options.h` → 0; `grep -c 'is the one place' src/cli/color_policy.h` → 0; `grep -c 'The one place mediadiff calls isatty' src/cli/options.cpp` → 0; and each file now names its real co-site (`snapshot.cpp` in `options.h:148`, `dir.cpp` in `color_policy.h:14/17`, `compare.cpp` in `options.cpp:248`). |
+| 10 | G-02-2 closed: the ctest count parse uses a POSIX-portable pattern and both guard branches survive | ✓ VERIFIED | `.github/workflows/ci.yml:264` reads `sed -n 's/^Total Tests: \([0-9][0-9]*\)$/\1/p'` (confirmed by direct read, not the SUMMARY's claim) — the GNU-only `\+` is gone. `grep -rF '\+' .github/workflows/` → 0 matches, independently re-run. The comment block above the line documents the BSD-sed constraint exactly as the plan required. |
+| 11 | G-02-1/G-02-2 closure did not regress the Linux build or test suite | ✓ VERIFIED | `cmake --build --preset x64-linux` → `ninja: no work to do` (up to date, independently re-run in this verification session). `ctest --test-dir build/x64-linux -N` → `Total Tests: 297`, matching the orchestrator's stated post-merge gate result (297/297 passed, 0 failed, 1 skipped). Code review of the full 11-file gap diff (`02-REVIEW-GAPS.md`) found 0 critical issues; the one warning (missing thread-safety doc comment on `getenv_utf8`) and one info item (dead `<cstdlib>` include) are both non-blocking and independently confirmed still open (not silently fixed and mis-reported) — `grep -n "Thread-safety" src/util/fs.h` → no match; `src/cli/options.cpp:5` still has `#include <cstdlib>`. |
+| 12 | G-02-1/G-02-2 actually make their target CI legs green | ⚠️ UNVERIFIABLE IN THIS ENVIRONMENT — routed to human verification | Neither fix has ever been run against its real target. Critically: `git log origin/gsd/phase-2-core-engine..gsd/phase-2-core-engine` shows the local branch is **14 commits ahead of origin** — none of the gap-closure commits have been pushed. `gh pr view 2` confirms the PR's only CI run (31937349647, 2026-08-16T08:47Z) still shows `build (x64-windows-static-md)`: FAILURE and `build (arm64-osx)`: FAILURE — that run predates every gap-closure commit by construction. There is no CI evidence, old or new, that either leg is green with the fix applied. |
 
-**Score:** 5/5 criteria have their testable substance verified; 2 sub-items (both criterion 1) are present-but-not-wired *by design* (Phase 3 scope) and 2 human-verification items (criterion 3's real-terminal colour rendering) are outstanding.
+**Score:** 11/12 truths verified directly against the codebase (code-level closure of both gaps is complete and correct); 1 truth (actual CI-green confirmation) cannot be established without pushing the branch and reading a new CI run.
 
-### Deferred Items
-
-Not gaps — explicitly out of Phase 2's scope per `02-CONTEXT.md`'s phase boundary ("All real media parsing... the probe layer begins in Phase 3. If a task in this phase needs to open a media file, it has escaped the boundary.").
-
-| # | Item | Addressed In | Evidence |
-|---|------|-------------|----------|
-| 1 | `mediadiff snapshot <real-media-file>` produces a live fingerprint | Phase 3 | `snapshot` on a real file exits 65 with an explicit message naming Phase 3; SNAP-06's round-trip is proven instead via a stub fingerprint written directly by `write_snapshot()`, which is D-10/D-11's designed substitute. |
-| 2 | Snapshot envelope's `decode_path` is populated with `compose_decode_path_signature()`'s libavcodec/libavformat/swscale versions | Phase 3 | The signature-composing function (TRUST-03) exists and is unit-tested in isolation, but no call site wires it into an envelope because there is no live envelope-producing path yet — `snapshot.cpp` only re-materializes an already-written fingerprint's existing (possibly-empty) `decode_path`. |
-
-### Required Artifacts
+### Required Artifacts (gap-closure scope)
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/core/checks.def` + `tools/gen_registry.py` | Registry generator, build-fails-on-missing-doc | ✓ VERIFIED | `docs/checks/*.md` present for all 3 registered checks; generator tests (5/5) prove missing/empty/malformed docs fail the build naming the offender. |
-| `src/compare/{exact,tol,set,presence,hash,dist,span}.cpp` | All seven comparison semantics | ✓ VERIFIED | `not_yet_implemented_semantics()` allow list is empty (asserted by test); each semantic has a fixture pair for every status it can emit. |
-| `src/core/profiles.{h,cpp}` | Five shipped profiles | ✓ VERIFIED | All five (`strict-bitexact`, `sw-encoder`, `hw-encoder`, `remux`, `transform`) resolve without error via `list-checks --effective --profile <name>`; `sw-encoder` is the default with neither flag nor TOML present. |
-| `src/core/policy.cpp` | Config precedence merge | ✓ VERIFIED | Manually reproduced profile → TOML `[severity]` → CLI `--set` chain; `-v` shows the resolved provenance. |
-| `src/core/snapshot.cpp` / `src/core/serializer.cpp` | Snapshot I/O, canonical serialization | ✓ VERIFIED | Byte-identical round-trip, atomic temp-file+rename write, `{num,den,tb}` rationals, shortest-round-trip float formatting (all covered by passing serializer unit suite). Review-flagged type-confusion crash (CR-01) fixed and covered by a dedicated integration test. |
-| `src/report/{json,markdown,junit}.cpp`, `src/cli/tty_render.cpp` | Four report formats | ✓ VERIFIED | All four manually exercised end to end and match spec (fixed group order, triple, budget, zero-integration XML). CR-02's float-formatter-bypass fix independently re-verified via golden regeneration + byte-identical two-run check. |
-| `src/cli/dir_pairing.cpp`, `src/cli/worker_pool.cpp`, `src/cli/commands/dir.cpp` | `dir` orchestration | ✓ VERIFIED | Deterministic sorted-path pairing, index-addressed result vector (order-independent of completion order), peak-in-flight-bounded pool (unit-tested), `meta.missing_candidate`/`meta.extra_candidate` reproduced directly. |
-| `src/cli/exit_code.cpp` | Exit-code contract | ✓ VERIFIED | All 7 codes (0/1/2/64/65/66/70) reproduced directly or via a named test asserting the exact integer. |
+| `src/util/fs.h` | `mediadiff::getenv_utf8`, `_WIN32`-guarded, leak-free | ✓ VERIFIED | Read directly (lines 185-241): full rationale doc comment, `_dupenv_s` + `unique_ptr<char, decltype(&std::free)>` on Windows, plain `std::getenv` passthrough elsewhere. |
+| `tests/unit/test_fs_utf8.cpp` | unset/set/set-to-empty test case | ✓ VERIFIED | `TEST_CASE` present at line 137 with the three sections the plan specified. |
+| `.github/workflows/ci.yml` | POSIX-portable count parse + BSD-sed comment | ✓ VERIFIED | Line 264 confirmed portable; comment block (lines ~250-263) documents the constraint. |
+| `src/cli/options.h`, `src/cli/color_policy.h`, `src/cli/options.cpp` | corrected exclusivity comments | ✓ VERIFIED | All three false claims removed; each names its real co-site. |
 
-### Key Link Verification
+### Key Link Verification (gap-closure scope)
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `src/cli/commands/compare.cpp` | `src/core/snapshot.cpp::read_snapshot` | direct call | ✓ WIRED | Manually confirmed: malformed/incompatible snapshots surface as exit 64/65, not a crash. |
-| `src/cli/commands/snapshot.cpp` | `src/core/policy.cpp` (git-tracked gate) | `write_snapshot_gated` | ✓ WIRED | `--force`/CI-tracked-refusal reproduced directly. |
-| `src/report/json.cpp` | `src/core/serializer.cpp::serialize_document` | CR-02 fix | ✓ WIRED | `--json` output now routes through the canonical `std::to_chars` writer, not `nlohmann::dump()` — confirmed via code read and byte-identical two-run check. |
-| `src/cli/commands/dir.cpp` | `src/cli/worker_pool.cpp` | `WorkerPool::run_indexed` | ✓ WIRED | `--threads 1` vs `--threads 8` byte-identical output confirms index-addressed, completion-order-independent aggregation. |
-| `src/cli/commands/dir.cpp` | `src/core/registry.h` (`meta.missing_candidate`/`meta.extra_candidate`) | `dir_pairing.cpp` → per-file finding synthesis | ✓ WIRED | Reproduced directly: unpaired baseline/candidate files produce the correct checks at the correct severities. |
-| `src/util/version.cpp::compose_decode_path_signature` | any snapshot-envelope-producing call site | — | ✗ NOT WIRED (by design, deferred to Phase 3) | Grep confirms zero call sites outside its own unit test; no live envelope-producing path exists yet in this phase. |
+| `src/cli/options.cpp::read_color_inputs` | `src/util/fs.h::getenv_utf8` | direct call | ✓ WIRED | Confirmed at lines 274-276. |
+| `src/cli/commands/snapshot.cpp::ci_env_is_true` | `getenv_utf8` | direct call | ✓ WIRED | Confirmed at line 175. |
+| `src/cli/commands/dir.cpp` (test injection) | `getenv_utf8` | direct call | ✓ WIRED | Confirmed at line 278. |
+| `tests/support/golden.cpp::update_goldens_requested` | `getenv_utf8` | direct call | ✓ WIRED | Confirmed at line 24; compiled into both unit and integration test targets per the plan's D2 claim. |
+| `tests/integration/test_exit_codes.cpp`, `test_snapshot_safe_write.cpp` | `mediadiff::getenv_utf8` | direct call | ✓ WIRED | Confirmed at lines 138 and 137 respectively. |
+| local branch `gsd/phase-2-core-engine` | `origin/gsd/phase-2-core-engine` (and thus GitHub Actions CI) | `git push` | ✗ NOT WIRED | 14 commits including all gap-closure work sit only in the local worktree. Until pushed, no automated system — this one included — can observe the fix running against its real target. This is the single blocking link for calling the phase CI-clean. |
 
 ### Requirements Coverage
 
-All 48 requirement IDs assigned to Phase 2 in `.planning/REQUIREMENTS.md` are marked Complete and are traceable to a specific plan's `requirements:` frontmatter (cross-checked against all 11 `02-*-PLAN.md` files — no orphans, no gaps in the mapping):
+All 48 requirement IDs assigned to Phase 2 in `.planning/REQUIREMENTS.md` remain marked Complete and traceable to a plan's `requirements:` frontmatter, independently re-confirmed by grep against the REQUIREMENTS.md Phase 2 traceability table (48 rows, `| Phase 2 | Complete |`, matching exactly the 48 IDs in this verification's task scope — no orphans, no gaps).
 
-CLI-01/02/03/04/06/07/08/10, ENG-01…16, SNAP-01…07, REPORT-01…07, DIR-01…05, TRUST-03/05/08, DOC-01/02 — **all 48 SATISFIED** per the manual/automated evidence above. TRUST-03 and TRUST-08 in particular were the two "bootstrap problem" items flagged as deferred/open in `02-CONTEXT.md`; both are resolved (TRUST-03 via `compose_decode_path_signature()` — present and correct, just not yet wired into a Phase-2 call site per the deferred item above; TRUST-08 via the `no_prior_release` skip-not-pass idempotence test).
-
-No orphaned requirements: the phase's declared requirement set (48) exactly matches REQUIREMENTS.md's traceability table for Phase 2.
+The two gap-closure plans additionally declare `requirements: [BUILD-01, BUILD-05, CLI-08, CLI-09]` (02-12) and `[BUILD-01, BUILD-05]` (02-13). These are **not** Phase 2's own requirement IDs — `REQUIREMENTS.md` traces `BUILD-01`, `BUILD-05` and `CLI-09` to **Phase 1**, already marked Complete there. That "Complete" status carries evidence from CI run `31823918842`, which predates Phase 2 entirely. Phase 2's own code (the six unguarded `getenv` sites) subsequently regressed `BUILD-01`/`BUILD-05`'s "builds clean on 3 OSes" and "CI matrix green" claims without REQUIREMENTS.md being updated to reflect it — this is exactly the gap G-02-1/G-02-2 diagnosis describes. The gap-closure plans correctly target these IDs because they are restoring them, not because Phase 2 owns them. **This verification flags, but does not correct, that `REQUIREMENTS.md`'s BUILD-01/BUILD-05/CLI-09 rows still cite the stale pre-Phase-2 CI run as evidence** — once the branch is pushed and a new green matrix run exists, that evidence citation should be refreshed to the new run ID. This is not a Phase 2 requirement gap (Phase 2's own 48 IDs are all satisfied); it is a documentation-freshness note surfaced by this re-verification.
 
 ### Anti-Patterns Found
 
-None. `grep`-scanned `src/` for `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER`/"not yet implemented"/"coming soon": zero hits. The one known, honestly-tracked stub (`Finding.delta`/`Finding.evidence` rendering as unconditional JSON `null`, since no Phase-2 check populates them) is recorded in `.planning/WINDOWS.md` as an open Broken-Windows-ledger item with a clear reason and is schema-nullable — it does not undercut criterion 3's "render the same findings" (findings still render correctly; only two forward-looking, currently-unpopulated fields are null). Judged non-blocking and already surfaced through the proper tracking mechanism rather than hidden.
-
-Code review (`02-REVIEW.md`) found 3 Critical + 3 Warning issues (untrusted-snapshot type-confusion crash/silent-pass, second float formatter breaking the determinism contract, unchecked int64 overflow in tolerance/distribution comparison, digit-accumulation overflow, `NO_COLOR`/`GITHUB_ACTIONS` precedence bug, `compare_ticks` overflow silently faking span equality). All 6 were fixed (`02-REVIEW-FIX.md`) with dedicated regression tests, and the full 296-test suite passes post-fix. Spot-checked CR-01 and CR-02's fixes directly against the built binary (poisoned-value handling, `--json` float formatting) rather than trusting the fix report's own claims — confirmed correct.
+None new. `02-REVIEW-GAPS.md`'s code review of the full 11-file gap diff found 0 Critical issues. Its one Warning (`getenv_utf8` has no documented thread-safety contract) and one Info item (dead `<cstdlib>` include in `options.cpp`) were independently re-confirmed as still open in this verification (not fixed, not silently claimed fixed) — both are explicitly non-blocking per the review's own severity classification and do not affect either gap's closure.
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| snapshot round-trip clean | `compare base.snap.json base.snap.json` | `pass:1, exit 0` | ✓ PASS |
-| schema_version major mismatch | `compare base.snap.json major_mismatch.snap.json` | exit 65, names both versions | ✓ PASS |
-| CI tracked-overwrite gate | `CI=true snapshot tracked.snap.json` (no `--force`) | exit 64, names `--force` | ✓ PASS |
-| `--force` overwrite | `CI=true snapshot tracked.snap.json --force` | exit 0 | ✓ PASS |
-| repeatable `--set` argv order | `--set a=fail --set a=info` | resolves `info` (last wins) | ✓ PASS |
-| wrong-unit tolerance | `--tol meta.tool_version=5px` | exit 64, names `none` | ✓ PASS |
-| all five profiles resolve | `list-checks --effective --profile <each>` | exit 0 for all five | ✓ PASS |
-| TTY accept/tune/silence triple | `compare ... --set meta.tool_version=fail` | triple renders, fixed order | ✓ PASS |
-| exit 1 on fail | same as above | exit 1 | ✓ PASS |
-| exit 2 on warn+strict | `compare base candidate --strict` | exit 2 | ✓ PASS |
-| exit 0 on warn without strict | `compare base candidate` | exit 0 | ✓ PASS |
-| exit 64 no positional args | `compare` (no args) | exit 64 | ✓ PASS |
-| exit 64 no args at all | `mediadiff` (bare) | exit 64 | ✓ PASS |
-| exit 65 unreadable input | `compare nonexistent.snap.json base` | exit 65 | ✓ PASS |
-| exit 66 partial JSON | `compare partial_decode.a partial_decode.b --json` | exit 66, `partial: true` in diagnostics | ✓ PASS |
-| `dir` unpaired-file findings | `dir dirA dirB` (one file each-side-only) | `meta.missing_candidate` fail / `meta.extra_candidate` warn | ✓ PASS |
-| `dir` determinism across threads | `dir --threads 1` vs `--threads 8` `--json` | byte-identical | ✓ PASS |
-| `dir` empty corpus | `dir emptyA emptyB` | 0 files, exit 0 | ✓ PASS |
-| Markdown/JUnit/JSON render same findings | `compare ... --report md=... --report junit=... --json` | all three internally consistent | ✓ PASS |
-| `explain`/`inspect` | `explain meta.tool_version`, `inspect base.snap.json` | correct fixed-order content | ✓ PASS |
-| `--content` plumbing-only honesty | `dir` help/flag wiring | explicit "accepted but has no effect yet" message, not silent | ✓ PASS |
-| `--set`/`--tol` before subcommand token | `mediadiff --set ... compare a b` | exit 64 "not expected" (documented CLI11 2.6.2 limitation) | ✓ PASS (confirms documented deviation, doesn't affect ROADMAP wording) |
-| ENG-16 lint | `scripts/lint_eng16.sh` | "clean" | ✓ PASS |
+| No raw `getenv` outside `fs.h` | `grep -rn 'std::getenv(\|[^_]getenv(' src tests tools --include='*.cpp' --include='*.h' \| grep -v '^src/util/fs.h:'` | 0 matches | ✓ PASS |
+| `getenv_utf8` present with both platform branches | direct read of `src/util/fs.h:222-241` | `_dupenv_s`/`unique_ptr` + `std::getenv` fallback present | ✓ PASS |
+| All six call sites migrated | per-file grep for `getenv_utf8` | all 6 files match | ✓ PASS |
+| Three false comments corrected | plan's own grep gates re-run | all 3 return 0, all 3 co-sites named | ✓ PASS |
+| No GNU-only `\+` under `.github/workflows/` | `grep -rF '\+' .github/workflows/` | 0 matches | ✓ PASS |
+| `ci.yml` line uses POSIX pattern | direct read | `[0-9][0-9]*` confirmed | ✓ PASS |
+| Linux build unaffected | `cmake --build --preset x64-linux` | `ninja: no work to do` (already built, up to date) | ✓ PASS |
+| Test count grew by exactly 1 (296→297) | `ctest --test-dir build/x64-linux -N` | `Total Tests: 297` | ✓ PASS |
+| Local branch vs origin | `git log origin/...\.\.gsd/phase-2-core-engine` | 12 commits ahead (gap closure unpushed) | ⚠️ FLAGGED — drives the human-verification item |
+| PR #2's actual CI status | `gh pr view 2 --json statusCheckRollup` | `build (x64-windows-static-md)`: FAILURE, `build (arm64-osx)`: FAILURE, both from the pre-fix run 31937349647 | ⚠️ FLAGGED — confirms no green run exists yet |
 
 ### Probe Execution
 
-Not applicable — Phase 2 has no `scripts/*/tests/probe-*.sh` convention; probes begin in Phase 3.
-
-### Full Test Suite (run once)
-
-`ctest --output-on-failure` in `build/x64-linux`: **296/296 passing**, 1 legitimate skip (`unit.console_vt`, needs a real TTY — matches the phase's own documented expectation). Binary confirmed up to date with HEAD (`18fc086`) via a no-op incremental build.
+Not applicable — Phase 2 has no `scripts/*/tests/probe-*.sh` convention.
 
 ### Human Verification Required
 
-### 1. Colour renders as styling in a real Windows console
+### 1. Push the branch and confirm both previously-failing CI legs go green
 
-**Test:** Run `mediadiff compare`/`dir` with colour enabled in an actual Windows `cmd.exe` or Windows Terminal session.
-**Expected:** ANSI-styled output (colour, not literal `\x1b[...m` bytes) — confirms `SetConsoleMode`'s `ENABLE_VIRTUAL_TERMINAL_PROCESSING` path actually works on real Windows hardware, not just that the decision logic is unit-tested.
-**Why human:** This sandbox is Linux; `unit.console_vt` is itself skipped here for the same reason. Explicitly called out as human-only in the phase's verification context.
+**Test:** Push `gsd/phase-2-core-engine` (or open/update PR #2 with the 14 local commits) and read the resulting `build (x64-windows-static-md)` and `build (arm64-osx)` job logs in full.
+**Expected:** `x64-windows-static-md` compiles through all 97 build steps (not just past the former C4996 failure at step 32/97) and its test executables run; `arm64-osx`'s Test step executes past the count guard (which should no longer abort) and the 297-test suite passes to completion.
+**Why human:** This sandbox cannot run MSVC or BSD sed, and — more fundamentally — the fix commits have never been pushed to origin, so no CI run (past or present) has ever exercised them. `02-12-PLAN.md` and `02-13-PLAN.md` both explicitly warn that fixing the diagnosed defect is necessary but not proven sufficient: 65 of 97 Windows build steps and the full macOS test run have never executed in any CI run to date, so unrelated breakage could still be waiting behind each fix.
 
-### 2. Colour precedence rules as experienced in a real terminal session
+### 2. Colour renders as styling in a real Windows console
 
-**Test:** Set `NO_COLOR=1` with `GITHUB_ACTIONS=true`, and separately `CI=true` with `GITHUB_ACTIONS=true`, in a real interactive terminal and observe actual rendered output.
-**Expected:** Matches the WR-02-fixed precedence table (`NO_COLOR` wins over everything; `GITHUB_ACTIONS=true` wins over `CI=true`) as visually experienced, not only as asserted by the 11 passing unit tests against `decide_color`'s pure function.
-**Why human:** Terminal color rendering (glyph width, ANSI interpretation) is a visual property this sandbox cannot observe directly, even though the underlying decision logic is thoroughly unit-tested and was specifically regression-tested for the exact `NO_COLOR`/`GITHUB_ACTIONS` interaction the review flagged.
+**Test:** Run `mediadiff compare`/`dir` with colour enabled in an actual Windows `cmd.exe` or Windows Terminal session, once a Windows binary exists.
+**Expected:** ANSI-styled output (colour, not literal `\x1b[...m` bytes) — confirms `SetConsoleMode`'s `ENABLE_VIRTUAL_TERMINAL_PROCESSING` path works on real Windows hardware.
+**Why human:** Carried forward unchanged from the original verification and UAT test 1, which could not reach this check at all because no Windows binary had ever built successfully. This check only becomes reachable once item 1 above produces a green Windows leg.
 
 ### Gaps Summary
 
-No blocking gaps found. Every one of the 48 requirement IDs assigned to Phase 2 has direct, reproducible evidence in the built binary and/or a passing automated test, cross-checked rather than taken from SUMMARY.md claims. The phase's own explicitly-acknowledged boundary items (live-media `snapshot`, decode-path-signature wiring) are correctly deferred to Phase 3 rather than faked or silently dropped — the CLI itself says so out loud (`snapshot` on real media exits 65 naming Phase 3). The one open Windows-ledger stub (`Finding.delta`/`evidence` unconditional null) is honestly tracked and does not undermine any of the five success criteria. The one code-review cycle (3 Critical, 3 Warning) was fully remediated with independently-verified regression tests, and this verification re-confirmed two of the fixes (CR-01, CR-02) directly against the built binary rather than trusting the fix report. The only outstanding items are two genuinely human-only visual checks in a real Windows console, which this Linux sandbox cannot perform.
+Both UAT-surfaced gaps (G-02-1, G-02-2) are **closed at the code level** — this re-verification independently confirmed every artifact, wiring link, and behavioral claim the two gap-closure plans made, reading the actual files rather than trusting either SUMMARY.md. The fixes are correct, complete, and match their diagnosed root causes exactly: all six `getenv` call sites migrated with byte-for-byte-preserved truth-table semantics, the unset/set/set-to-empty contract is unit-tested, the three misleading "sole reader" comments are corrected, and the CI workflow's regex is now POSIX-portable with both guard branches intact. The Linux build and full 297-test suite pass, and a full code review of the 11-file diff found zero critical issues.
+
+What remains open is not a code defect but an **unclosed verification loop**: the gap-closure commits exist only in the local worktree (14 commits ahead of `origin/gsd/phase-2-core-engine`), so the CI system that is the only oracle for "does the Windows leg actually build" and "does the arm64-osx leg actually run its tests" has never seen this code. PR #2's last recorded run (31937349647) still shows both target legs as `FAILURE`, from before any of these fixes existed. Per this task's own framing, that is a genuine unknown rather than a code gap, and per both plans' own honesty sections, a first fix passing local scrutiny is not the same as a target CI leg going green — Windows never got past build step 32/97 and macOS has never run its full suite to completion, so undiscovered breakage on either leg is a real possibility, not a formality.
+
+**Recommendation:** push the branch, let CI run, and read the two previously-red job logs for their new first failure (if any) before treating this phase as ready to ship. This does not block the code from being considered correct — it blocks the phase from being certified CI-green, which was the explicit purpose of scoping G-02-2 into this closure in the first place ("arm64-osx is a required check... the phase cannot merge while it is red").
 
 ---
 
-_Verified: 2026-08-15T21:42:27Z_
+_Verified: 2026-08-16T13:10:00Z_
 _Verifier: Claude (gsd-verifier)_
