@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 02-core-engine
 source: [02-VERIFICATION.md]
 started: 2026-08-15T21:45:00Z
@@ -74,19 +74,52 @@ blocked: 0
   reason: "User reported: I created a PR of this branch into main to generate Windows artifacts during CI - and all builds failed"
   severity: blocker
   test: 1
-  root_cause: "Phase 2 code calls std::getenv in the mediadiff target; MSVC raises C4996 ('getenv' unsafe), which /WX escalates to C2220. src/cli/options.cpp:251 is the first occurrence to fail the build; src/cli/commands/snapshot.cpp:175 and src/cli/commands/dir.cpp:278 are the same defect and were not reached before ninja stopped."
+  root_cause: "Phase 2 introduced SIX unguarded std::getenv call sites (no _WIN32 guard). MSVC's CRT deprecates getenv (C4996) and mediadiff_apply_warnings() applies /W4 /WX to all four first-party targets, so /WX escalates each to C2220. The CI Build step runs `cmake --build --preset x64-windows-static-md` with no --target, so the default `all` target -- both test executables included -- is in scope. Only ONE C4996 has ever been emitted: ninja stopped at [32/97], so 65 steps never ran and the other five sites have never been compiled by MSVC in any run."
   artifacts:
     - path: "src/cli/options.cpp"
-      issue: "line 251 read_env() calls std::getenv -- C4996 under /W4 /WX"
+      issue: "line 251 read_env() calls std::getenv -- the only site reached, [27/97]"
     - path: "src/cli/commands/snapshot.cpp"
-      issue: "line 175 std::getenv(\"CI\") -- same C4996, not yet reached by the build"
+      issue: "line 175 ci_env_is_true() -- same target, never reached"
     - path: "src/cli/commands/dir.cpp"
-      issue: "line 278 std::getenv(\"MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR\") -- same C4996, not yet reached"
+      issue: "line 278 inline env read -- same target, never reached"
+    - path: "tests/support/golden.cpp"
+      issue: "line 23 update_goldens_requested() -- compiled into BOTH /WX test targets, so two compilations"
+    - path: "tests/integration/test_exit_codes.cpp"
+      issue: "line 137 getenv(\"PATH\") -- test target is NOT exempt from /WX (tests/integration/CMakeLists.txt:99)"
+    - path: "tests/integration/test_snapshot_safe_write.cpp"
+      issue: "line 136 getenv(\"PATH\") -- same"
+    - path: "src/cli/options.h"
+      issue: "line 149 'one place' claim is already FALSE -- CI is also read at snapshot.cpp:175; documentation-level defect that survives a getenv-only fix"
+    - path: "src/cli/color_policy.h"
+      issue: "lines 9-10 'one place' claim FALSE on both counts -- 3 getenv sites, 3 isatty sites"
+    - path: "scripts/lint_eng16.sh"
+      issue: "lines 26-34 SCAN_DIRS excludes src/cli -- explains why no gate caught the recurrence"
   missing:
-    - "An MSVC-safe env-var read (_dupenv_s / getenv_s under _WIN32), matching the existing _wfopen_s precedent for C4996 in this codebase -- not a blanket _CRT_SECURE_NO_WARNINGS"
-    - "Route all three call sites through the single read_env() helper so the platform primitive stays confined to one place, per src/cli/options.h's stated convention"
-  debug_session: ""
+    - "One _WIN32-guarded env-read shim in src/util/fs.h -- the codebase's designated home for platform primitives, and the only place besides main.cpp permitted to name wide-char types. Precedent: commit 47d5965 put _wfopen_s there for this exact C4996 reason. A shim in options.cpp would be barred by the project's own rule from ever using the encoding-correct wide form."
+    - "_dupenv_s, not getenv_s, and never _CRT_SECURE_NO_WARNINGS. _dupenv_s sets buffer=NULL when unset and yields non-NULL pointing at \"\" when set-but-empty, preserving the unset-vs-empty distinction that ColorInputs's optional<string> and NO_COLOR presence-is-the-signal (WR-02) depend on. Single-call; requires free(), contained by copying into std::string. getenv_s preserves the distinction too but needs a two-call probe whose size-probe returns ERANGE as a non-error."
+    - "Route all SIX sites through it, including the three test-side ones -- otherwise the Build step just fails later in the same step."
+    - "Correct the three false 'one place' comments in the same change (options.h:149, color_policy.h:9, options.cpp:258-261)."
+  scope_caveat: "Fixing getenv is NECESSARY but NOT provably SUFFICIENT. 65 of 97 build steps have never been compiled by MSVC in any run -- five remaining mediadiff sources, the header-verify target, and both test executables in full. Unrelated MSVC breakage may be hiding behind this one. Expect to iterate on the Windows leg rather than assuming one green run follows the first fix."
+  debug_session: ".planning/debug/windows-getenv-c4996.md"
   evidence: "CI run 31937349647 job 95141247678; main run 31881353367 job 95004285813 passed the same leg, and src/cli/options.cpp does not exist on origin/main"
+
+- gap_id: G-02-2
+  truth: "The blocking arm64-osx CI leg runs the test suite instead of failing its own test-count guard, so PR #2 can reach a mergeable state"
+  status: failed
+  reason: "Surfaced by the same PR run as G-02-1. NOT a Phase 2 regression -- reproduces identically on main -- but it is a BLOCKING matrix leg, so the phase cannot merge while it is red. Scoped into gap closure on that basis, with the user's explicit agreement."
+  severity: blocker
+  test: 1
+  regression_of_phase_2: false
+  root_cause: "CONFIRMED by CI differential. .github/workflows/ci.yml:246 uses `sed -n 's/^Total Tests: \\([0-9]\\+\\)$/\\1/p'`. `\\+` is a GNU extension, not POSIX BRE. The arm64-osx leg runs on macos-15, whose /usr/bin/sed is BSD sed, which treats `\\+` as a LITERAL `+` -- the pattern then demands `Total Tests: <digit>+` and can never match the real `Total Tests: 296`. `sed -n` with no match prints nothing and EXITS 0, so neither `|| true` nor pipefail intervenes: TOTAL is empty, the `-z` branch fires, and the step aborts before any test runs. A REGRESSION, not a never-worked: introduced by commit e684579, which swapped an extension-free `grep -c '^  Test #'` for this sed pattern AND added the `-z` branch that now fires, in the same commit."
+  artifacts:
+    - path: ".github/workflows/ci.yml"
+      issue: "line 246 -- non-portable GNU-only `\\+`. Whole-workflow scan found this is the ONLY GNU-only regex construct (line 211's `grep -iE` is portable), so the fix is single-sited."
+  missing:
+    - "Replace `\\([0-9]\\+\\)` with pure-POSIX `\\([0-9][0-9]*\\)`. Verified to yield 296 against real ctest output and 0 against `Total Tests: 0`, so the guard's stated anti-false-pass intent survives. `sed -E` also works but adds a flag assumption for no benefit."
+    - "Add a comment that this pipeline runs under BSD sed on the macOS legs -- e684579's own comment documents a GNU-sed-only verification, which is exactly how the defect shipped."
+  scope_caveat: "Unblocks the step but does NOT guarantee a green leg. The 296-test suite has never executed on macOS -- the last successful macOS run (31849289102) executed 11. Budget a follow-up for genuine macOS test failures revealed behind the guard."
+  debug_session: ".planning/debug/arm64-osx-ctest-count-guard.md"
+  evidence: "CI run 31937349647 job 95141247762 (branch) and run 31881353367 job 95004285871 (main), identical symptom: 'could not parse a test count from ctest -N ... refusing to assume the suite is healthy'. The x64-linux leg runs the same step and passes; the x64-osx leg never reaches the Test step because its Build fails first (see CI-x64-osx below)."
 
 ## Pre-Existing CI Failures (not Phase 2 regressions)
 
