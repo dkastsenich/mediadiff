@@ -85,7 +85,7 @@ Plans:
   4. `mediadiff dir a b` pairs a corpus by relative path in deterministic order under a `--threads`-bounded pool, reports unpaired files, and honours the exit-code contract (0/1/2 for regression signals, 64/65/66/70 for could-not-run) with partial JSON still emitted on 66 — all process control living in `cli/`, with the library writing nothing to stdout and never calling `exit()`.
   5. Every registered check ID resolves to documentation the build enforces: `mediadiff explain <check.id>` prints what it measures, why it matters and how to accept/tune/silence it; `mediadiff inspect` renders every implemented check family; `skipped` carries a machine-readable reason and is never conflated with `pass`; and all seven comparison semantics behave per spec with time tolerances compared in ticks rather than floats.
 
-**Plans**: 11/11 plans executed
+**Plans**: 13 plans — 11/11 original plans executed, plus 2 gap-closure plans pending (UAT gaps G-02-1, G-02-2)
 
 Plans:
 **Wave 1**
@@ -131,6 +131,11 @@ Plans:
 **Wave 11** *(blocked on Wave 10 completion)*
 
 - [x] 02-11-PLAN.md — `dir` orchestration: pairing, bounded worker pool, corpus rollup
+
+**Gap closure — Wave 1** *(both blocker gaps from 02-UAT.md; independent, no file overlap, run in parallel)*
+
+- [ ] 02-12-PLAN.md — G-02-1: `getenv_utf8` shim in `src/util/fs.h`, all six env reads routed through it, three false sole-reader comments corrected (unblocks the `x64-windows-static-md` C4996 build failure)
+- [ ] 02-13-PLAN.md — G-02-2: POSIX-portable ctest count parse at `ci.yml:246` (unblocks the `arm64-osx` test-count guard)
 
 **Source doc**: `claude_docs/01-core-concepts.md` (design-doc phase 1)
 
