@@ -85,7 +85,7 @@ Plans:
   4. `mediadiff dir a b` pairs a corpus by relative path in deterministic order under a `--threads`-bounded pool, reports unpaired files, and honours the exit-code contract (0/1/2 for regression signals, 64/65/66/70 for could-not-run) with partial JSON still emitted on 66 — all process control living in `cli/`, with the library writing nothing to stdout and never calling `exit()`.
   5. Every registered check ID resolves to documentation the build enforces: `mediadiff explain <check.id>` prints what it measures, why it matters and how to accept/tune/silence it; `mediadiff inspect` renders every implemented check family; `skipped` carries a machine-readable reason and is never conflated with `pass`; and all seven comparison semantics behave per spec with time tolerances compared in ticks rather than floats.
 
-**Plans**: 13/13 plans executed — 11/11 original plans executed, plus 2 gap-closure plans pending (UAT gaps G-02-1, G-02-2)
+**Plans**: 16 plans — 11/11 original executed, 2/2 round-2 gap-closure executed (G-02-1, G-02-2 confirmed closed by CI run 31943688186), 3 round-3 gap-closure plans pending (UAT gaps G-02-3, G-02-4)
 
 Plans:
 **Wave 1**
@@ -136,6 +136,15 @@ Plans:
 
 - [x] 02-12-PLAN.md — G-02-1: `getenv_utf8` shim in `src/util/fs.h`, all six env reads routed through it, three false sole-reader comments corrected (unblocks the `x64-windows-static-md` C4996 build failure)
 - [x] 02-13-PLAN.md — G-02-2: POSIX-portable ctest count parse at `ci.yml:246` (unblocks the `arm64-osx` test-count guard)
+
+**Gap closure round 3 — Wave 1** *(successor gaps revealed behind the round-2 fixes; independent, no file overlap, run in parallel)*
+
+- [ ] 02-14-PLAN.md — G-02-3: `block_for` restructured to a single reachable exit (ends MSVC C4702 → C2220 at Windows build step [60/97]) plus a permanent scan gate for the FAIL()-then-statement shape
+- [ ] 02-15-PLAN.md — G-02-4: case-collision-free byte-order fixture with an explicit expected order and a self-proving teeth assertion (ends the `4 == 5` failure of arm64-osx test #40) plus a permanent fixture case-collision lint
+
+**Gap closure round 3 — Wave 2** *(blocked on both round-3 wave-1 plans)*
+
+- [ ] 02-16-PLAN.md — Wire both portability lints into the required `lint` job, push, and read the new CI run per required status-check context; human checkpoint decides certify-or-iterate
 
 **Source doc**: `claude_docs/01-core-concepts.md` (design-doc phase 1)
 
