@@ -244,10 +244,20 @@ CliOptions add_common_options(CLI::App& cmd) {
 
 namespace {
 
-// The one place mediadiff calls isatty (POSIX) / _isatty (MSVC) -- neither
-// name is permitted outside this function, matching src/util/fs.h's own
-// "confine platform-specific I/O primitives to one file" convention for a
-// different primitive.
+// Three sites in the repository call isatty (POSIX) / _isatty (MSVC): this
+// one, src/cli/commands/compare.cpp:59 and src/cli/commands/dir.cpp:74 --
+// this function does NOT currently satisfy src/util/fs.h's own "confine
+// platform-specific I/O primitives to one file" convention for this
+// primitive, unlike the environment reads this file's read_color_inputs
+// now performs exclusively through mediadiff::getenv_utf8. The causal
+// asymmetry is the single most useful thing to learn here: the TTY-test
+// drift is compile-INVISIBLE on MSVC, because all three call sites sit
+// inside non-Windows preprocessor branches, whereas the environment-read
+// drift this file used to have was compile-VISIBLE, because getenv was
+// called unconditionally on every platform. Same broken convention --
+// only the compile-visible half ever broke the Windows build, which is
+// exactly why the TTY-test drift went unnoticed for as long as the
+// getenv drift did (.planning/debug/windows-getenv-c4996.md).
 bool stdout_is_tty() {
 #ifdef _WIN32
   return _isatty(_fileno(stdout)) != 0;

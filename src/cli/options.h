@@ -142,13 +142,17 @@ ColorArgs default_color_args();
 
 // Reads every signal `decide_color` (src/cli/color_policy.h) needs into a
 // ColorInputs value: `args`' two CLI11-parsed flags, plus `NO_COLOR`/`CI`/
-// `GITHUB_ACTIONS` from the process environment and whether stdout is a
-// TTY -- this function, and the platform-specific isatty check it calls,
-// are the ONLY place in mediadiff that reads those three environment
-// variables or performs that TTY test (src/cli/color_policy.h's own header
-// comment: decide_color itself never touches getenv/isatty, which is what
-// keeps it table-testable). Called exactly once per compare invocation,
-// after CLI11 has finished parsing.
+// `GITHUB_ACTIONS` from the process environment (via `mediadiff::getenv_utf8`,
+// src/util/fs.h) and whether stdout is a TTY. This function IS the only
+// reader of `NO_COLOR` and `GITHUB_ACTIONS` in the repository; `CI` is ALSO
+// read independently by src/cli/commands/snapshot.cpp's write gate
+// (`ci_env_is_true()`, SNAP-07's CI-safe overwrite refusal) for an
+// unrelated purpose. The TTY test performed here is likewise not unique to
+// this function -- src/cli/commands/compare.cpp and src/cli/commands/dir.cpp
+// each perform their own, independent TTY check. What still holds:
+// `decide_color` itself never touches `getenv_utf8`/isatty (src/cli/color_policy.h's
+// own header comment), which is what keeps it table-testable. Called
+// exactly once per compare invocation, after CLI11 has finished parsing.
 ColorInputs read_color_inputs(const ColorArgs& args);
 
 // The shared bundle of every flag more than one subcommand needs
