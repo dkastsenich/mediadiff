@@ -6,8 +6,15 @@
 // the environment/isatty itself -- that separation is what makes the whole
 // precedence matrix table-testable (tests/unit/test_color_policy.cpp)
 // without spawning a process or mutating the test runner's own environment.
-// `read_color_inputs` (src/cli/options.h/.cpp) is the one place `getenv`
-// and the TTY test are actually called from.
+// Every environment read in the repository goes through
+// `mediadiff::getenv_utf8` (src/util/fs.h), the single site of the
+// platform primitive; `read_color_inputs` (src/cli/options.h/.cpp) is the
+// only caller that reads the COLOUR variables (`NO_COLOR`/`CI`/
+// `GITHUB_ACTIONS`), but src/cli/commands/snapshot.cpp and
+// src/cli/commands/dir.cpp each read their own, different variables
+// through that same shim. The TTY test likewise has three call sites:
+// `read_color_inputs`, src/cli/commands/compare.cpp and
+// src/cli/commands/dir.cpp.
 
 #include <optional>
 #include <string>

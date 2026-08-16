@@ -18,6 +18,7 @@
 
 #include "core/glob.h"
 #include "core/registry.h"
+#include "util/fs.h"
 
 namespace mediadiff {
 
@@ -243,22 +244,20 @@ CliOptions add_common_options(CLI::App& cmd) {
 
 namespace {
 
-// Reads one environment variable, distinguishing "unset" (nullopt) from
-// "set to the empty string" (a value holding "") -- std::getenv already
-// makes that distinction (nullptr vs a pointer to ""), this just carries
-// it into ColorInputs's own optional-string shape.
-std::optional<std::string> read_env(const char* name) {
-  const char* value = std::getenv(name);
-  if (value == nullptr) {
-    return std::nullopt;
-  }
-  return std::string(value);
-}
-
-// The one place mediadiff calls isatty (POSIX) / _isatty (MSVC) -- neither
-// name is permitted outside this function, matching src/util/fs.h's own
-// "confine platform-specific I/O primitives to one file" convention for a
-// different primitive.
+// Three sites in the repository call isatty (POSIX) / _isatty (MSVC): this
+// one, src/cli/commands/compare.cpp:59 and src/cli/commands/dir.cpp:74 --
+// this function does NOT currently satisfy src/util/fs.h's own "confine
+// platform-specific I/O primitives to one file" convention for this
+// primitive, unlike the environment reads this file's read_color_inputs
+// now performs exclusively through mediadiff::getenv_utf8. The causal
+// asymmetry is the single most useful thing to learn here: the TTY-test
+// drift is compile-INVISIBLE on MSVC, because all three call sites sit
+// inside non-Windows preprocessor branches, whereas the environment-read
+// drift this file used to have was compile-VISIBLE, because getenv was
+// called unconditionally on every platform. Same broken convention --
+// only the compile-visible half ever broke the Windows build, which is
+// exactly why the TTY-test drift went unnoticed for as long as the
+// getenv drift did (.planning/debug/windows-getenv-c4996.md).
 bool stdout_is_tty() {
 #ifdef _WIN32
   return _isatty(_fileno(stdout)) != 0;
@@ -272,9 +271,9 @@ bool stdout_is_tty() {
 ColorInputs read_color_inputs(const ColorArgs& args) {
   ColorInputs inputs;
   inputs.stdout_is_tty = stdout_is_tty();
-  inputs.no_color = read_env("NO_COLOR");
-  inputs.ci = read_env("CI");
-  inputs.github_actions = read_env("GITHUB_ACTIONS");
+  inputs.no_color = getenv_utf8("NO_COLOR");
+  inputs.ci = getenv_utf8("CI");
+  inputs.github_actions = getenv_utf8("GITHUB_ACTIONS");
   inputs.flag_no_color = *args.no_color;
   inputs.flag_ascii = *args.ascii;
   return inputs;

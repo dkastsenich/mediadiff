@@ -15,13 +15,14 @@ namespace mediadiff::test {
 
 namespace {
 
-// Reads a getenv() result honestly: unset AND empty are both "not set" for
-// UPDATE_GOLDENS's purposes (D-12) -- `UPDATE_GOLDENS=` on a CI runner that
-// merely exports the variable name without a value must not silently
-// re-enable the local-developer refresh path.
+// Reads UPDATE_GOLDENS through getenv_utf8 (src/util/fs.h) honestly: unset
+// AND empty are both "not set" for UPDATE_GOLDENS's purposes (D-12) --
+// `UPDATE_GOLDENS=` on a CI runner that merely exports the variable name
+// without a value must not silently re-enable the local-developer refresh
+// path.
 bool update_goldens_requested() {
-  const char* value = std::getenv("UPDATE_GOLDENS");
-  return value != nullptr && value[0] != '\0';
+  const auto value = getenv_utf8("UPDATE_GOLDENS");
+  return value.has_value() && !value->empty();
 }
 
 std::string golden_path(std::string_view case_name) { return golden_dir() + "/" + std::string(case_name) + ".txt"; }
