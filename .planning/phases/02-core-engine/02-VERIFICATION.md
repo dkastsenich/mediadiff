@@ -1,18 +1,22 @@
 ---
 phase: 02-core-engine
-verified: 2026-08-16T13:10:00Z
-status: human_needed
-score: 7/7 must-haves verified (5 original ROADMAP truths + 2 gap-closure truths); 2 items routed to human verification (unchanged colour-in-real-terminal item, plus 1 new push-and-confirm-CI item covering both gaps)
+verified: 2026-08-16T14:05:00Z
+status: gaps_found
+score: 7/7 must-haves verified at the code level; CI confirmation ran and REFUTED the green-legs truth — 2 new gaps opened (G-02-3, G-02-4)
 behavior_unverified: 0
 overrides_applied: 0
+uat_round_2: "Test 1 (CI legs green) reported as an issue against run 31943688186 / headSha 1e065bb. Both original gaps confirmed CLOSED by that run's own evidence; two successor defects revealed behind them. See 02-UAT.md for full gap definitions."
 re_verification:
   previous_status: human_needed
   previous_score: 5/5 truths verified (2 present, behavior-unverified — routed to human/Phase-3 deferral)
   gaps_closed:
-    - "G-02-1 — six unguarded getenv call sites causing MSVC C4996/C2220 under /W4 /WX: code-level fix verified complete and correct (all six sites migrated to mediadiff::getenv_utf8, exactly one raw getenv call remains in the whole repo, unit test proves the unset/set/set-to-empty contract, GCC build+full suite green, code review found 0 critical/1 non-blocking warning)"
-    - "G-02-2 — GNU-only \\+ BRE breaking the arm64-osx ctest-count guard under BSD sed: code-level fix verified complete and correct (POSIX [0-9][0-9]* pattern shipped, both guard branches intact, zero GNU-only regex constructs remain under .github/workflows/, dialect-emulation control clause confirms the harness detects the original bug)"
-  gaps_remaining: []
+    - "G-02-1 — six unguarded getenv call sites causing MSVC C4996/C2220 under /W4 /WX: CONFIRMED CLOSED BY CI. Run 31943688186 emits zero C4996 diagnostics; every former call site compiles clean under MSVC /W4 /WX (snapshot.cpp [35/97], dir.cpp [38/97], the new test_fs_utf8.cpp [42/97]), and the build advanced from its old stop at [32/97] to [65/97]. mediadiff.exe itself links successfully at [49/97]."
+    - "G-02-2 — GNU-only \\+ BRE breaking the arm64-osx ctest-count guard under BSD sed: CONFIRMED CLOSED BY CI. Run 31943688186's arm64-osx leg passed the count guard and executed the full 297-test suite for the first time in the project's history; 296 of 297 passed."
+  gaps_remaining:
+    - "G-02-3 — tests/unit/test_report_model.cpp:56-57: dead code after a throwing Catch2 FAIL() trips MSVC C4702 → C2220 under /WX. Successor to G-02-1, not a recurrence; a translation unit MSVC had never reached before. Toolchain-parity conflict: the lines that silence GCC/Clang's -Wreturn-type are exactly what MSVC rejects."
+    - "G-02-4 — tests/unit/test_dir_pairing.cpp:100: fixture names 'Beta.snap.json' and 'beta.snap.json' collide on case-insensitive APFS, so only 4 of 5 files exist and line 108's size assertion fails 4 != 5 on macOS. Successor to G-02-2, not a recurrence. NOT a product defect — src/cli/dir_pairing.cpp keys on std::map<std::string,...>, byte-wise and platform-independent; the test never reached its ordering check."
   regressions: []
+  gap_closure_caused_regressions: false
 human_verification:
   - test: "Push the branch (or the equivalent PR head) and read the resulting CI run for build (x64-windows-static-md) and build (arm64-osx)"
     expected: "x64-windows-static-md compiles clean through all 97 build steps (not just past the former C4996 failure at step 32) and its own test run passes; arm64-osx's Test step now executes past the count guard and the 297-test suite passes (not just that the guard no longer aborts)"
@@ -26,9 +30,24 @@ human_verification:
 
 **Phase Goal:** The complete compare engine — registry, comparison semantics, policy resolution, snapshots, all four report formats and `dir` orchestration — works end to end against stub measurements, so every analyzer that follows plugs into finished machinery.
 
-**Verified:** 2026-08-16T13:10:00Z
-**Status:** human_needed
+**Verified:** 2026-08-16T14:05:00Z
+**Status:** gaps_found
 **Re-verification:** Yes — after gap closure (plans 02-12, 02-13, closing UAT-surfaced gaps G-02-1 and G-02-2)
+
+> **Amended 2026-08-16T14:05Z — CI evidence arrived.** This report was written at
+> `human_needed`, awaiting a pushed CI run to confirm the two gap fixes. That run happened
+> (31943688186, headSha `1e065bb`) and settled the question in both directions: **both original
+> gaps are confirmed closed by the run's own evidence**, and **two successor defects were
+> revealed behind them**, so the phase moves to `gaps_found` rather than `passed`.
+>
+> The distinction matters and is deliberate. G-02-1 and G-02-2 did not recur — they were fixed,
+> and fixing them let the build and the test suite reach code that had never been compiled by
+> MSVC or executed on macOS in any run to date. Both plans' `scope_caveat` sections predicted
+> exactly this and warned against reading one fix as one green leg. The new gaps are
+> pre-existing Phase-2 defects (from plans 02-08 and 02-11), not regressions introduced by the
+> gap-closure work.
+>
+> Full root causes, artifacts and fix constraints for G-02-3 and G-02-4 are in `02-UAT.md`.
 
 ## What changed since the last verification
 
