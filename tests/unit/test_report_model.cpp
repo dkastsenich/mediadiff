@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,15 +47,21 @@ Finding make_finding(std::string_view id, Status status, Severity severity,
   return f;
 }
 
+// A throwing unconditional Catch2 failure macro followed by a fall-through
+// return is a genuine toolchain-parity conflict: the statements that keep
+// GCC/Clang quiet about a missing return (-Wreturn-type) are exactly the
+// statements MSVC's flow analysis proves unreachable after that macro
+// throws, and rejects under /W4 /WX (C4702 -> C2220). Rather than suppress
+// the diagnostic on one side, this helper is written with a single
+// conditional assertion and one reachable exit, so there is nothing left
+// for either toolchain to complain about. scripts/lint_dead_code_after_fail.sh
+// scans the rest of the test tree for the same shape.
 const mediadiff::GroupBlock& block_for(const ReportModel& model, Group group) {
-  for (const auto& block : model.groups) {
-    if (block.group == group) {
-      return block;
-    }
-  }
-  FAIL("group not present in model");
-  static mediadiff::GroupBlock unreachable{Group::meta, {}, {}};
-  return unreachable;
+  const auto it = std::find_if(model.groups.begin(), model.groups.end(),
+                                [group](const mediadiff::GroupBlock& block) { return block.group == group; });
+  INFO("group not present in model: " << mediadiff::group_to_string(group));
+  REQUIRE(it != model.groups.end());
+  return *it;
 }
 
 }  // namespace
