@@ -368,6 +368,12 @@ jobs:
           Write-Host "Manifest key order confirmed: $($keys -join ', ')"
 
   lint:
+    # "lint (ENG-16 boundary)" is a required status check context on the
+    # repository's active "main merge gate" ruleset (id 20862843). Do not
+    # rename this job's `name:` — GitHub matches required checks by context
+    # string, and a rename silently orphans the ruleset's required context
+    # with no visible failure anywhere. If the name genuinely needs to
+    # change, edit ruleset 20862843 in the same change.
     name: lint (ENG-16 boundary)
     runs-on: ubuntu-24.04
     permissions:
@@ -382,3 +388,9 @@ jobs:
 
       - name: Run D-03 check-id string-literal lint
         run: bash scripts/lint_check_id_strings.sh
+
+      - name: Run dead-code-after-FAIL portability lint
+        run: bash scripts/lint_dead_code_after_fail.sh
+
+      - name: Run fixture case-collision portability lint
+        run: bash scripts/lint_fixture_case_collisions.sh
