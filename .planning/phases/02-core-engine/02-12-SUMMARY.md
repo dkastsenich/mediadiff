@@ -155,3 +155,13 @@ None - no external service configuration required.
 ---
 *Phase: 02-core-engine*
 *Completed: 2026-08-16*
+
+## Self-Check: PASSED
+
+- FOUND: src/util/fs.h
+- FOUND: tests/unit/test_fs_utf8.cpp
+- FOUND: .planning/phases/02-core-engine/02-12-SUMMARY.md
+- FOUND commit: 2197c88 (Task 1)
+- FOUND commit: f005af8 (Task 2)
+- FOUND commit: c023be3 (Task 3)
+- FOUND commit: 3e89b4b (plan metadata)
