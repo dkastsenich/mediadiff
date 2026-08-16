@@ -172,8 +172,8 @@ std::string resolve_out_path(const std::string& input, const std::string& out_fl
 }
 
 bool ci_env_is_true() {
-  const char* ci = std::getenv("CI");
-  return ci != nullptr && std::string_view(ci) == "true";
+  const auto ci = getenv_utf8("CI");
+  return ci.has_value() && *ci == "true";
 }
 
 }  // namespace

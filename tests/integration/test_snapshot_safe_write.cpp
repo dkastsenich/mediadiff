@@ -19,6 +19,7 @@
 
 #include "cli_harness.h"
 #include "process_spawn.h"
+#include "util/fs.h"
 
 using mediadiff::test::CliResult;
 using mediadiff::test::EnvVars;
@@ -133,8 +134,8 @@ TEST_CASE("snapshot_safe_write - SNAP-07: CI=true refuses an existing untracked 
   write_file(target, R"({"seed": true})");  // deliberately NOT added/committed.
   const std::string before = read_file(target);
 
-  const char* path_env = std::getenv("PATH");
-  EnvVars env = {{"CI", "true"}, {"PATH", path_env != nullptr ? path_env : ""}};
+  const auto path_env = mediadiff::getenv_utf8("PATH");
+  EnvVars env = {{"CI", "true"}, {"PATH", path_env.value_or("")}};
   CliResult result = run_cli({"snapshot", source_snapshot(), "--out", target.string()}, &env);
   REQUIRE(result.exit_code == 64);
   REQUIRE(read_file(target) == before);

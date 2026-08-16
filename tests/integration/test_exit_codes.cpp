@@ -14,6 +14,7 @@
 #include <nlohmann/json.hpp>
 
 #include "cli_harness.h"
+#include "util/fs.h"
 
 using mediadiff::test::CliResult;
 using mediadiff::test::EnvVars;
@@ -134,8 +135,8 @@ TEST_CASE(
   write_file(baseline / "one.snap.json");
   write_file(candidate / "one.snap.json");
 
-  const char* path_env = std::getenv("PATH");
-  EnvVars env = {{"PATH", path_env != nullptr ? path_env : ""}, {"MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR", "1"}};
+  const auto path_env = mediadiff::getenv_utf8("PATH");
+  EnvVars env = {{"PATH", path_env.value_or("")}, {"MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR", "1"}};
   CliResult result = run_cli({"dir", baseline.string(), candidate.string()}, &env);
   CHECK(result.exit_code == 70);
 }

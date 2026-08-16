@@ -275,8 +275,8 @@ void register_dir_command(CLI::App& app) {
     // genuine internal-error path for CLI-06's exit-70 contract, reached
     // without requiring a real analyzer bug. Read once, before the pool
     // starts, matching every other config value's "read once" contract.
-    const char* inject_internal_env = std::getenv("MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR");
-    const bool inject_internal_error = inject_internal_env != nullptr && inject_internal_env[0] != '\0';
+    const auto inject_internal_env = getenv_utf8("MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR");
+    const bool inject_internal_error = inject_internal_env.has_value() && !inject_internal_env->empty();
 
     std::vector<FileResult> results(pairs.size());
     std::vector<JobOutcome> outcomes(pairs.size());
