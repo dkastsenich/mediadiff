@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -95,9 +96,23 @@ TEST_CASE("dir_pairing: nested subdirectories pair by their full relative path",
 }
 
 TEST_CASE("dir_pairing: the returned order is byte-wise sorted", "[dir]") {
+  // Case-collision hazard (G-02-4, CI run 31943688186 job 95156439342):
+  // macOS ships APFS case-insensitive by default, so two fixture names that
+  // differ only by ASCII case denote ONE file there. write_file()'s
+  // truncating std::ofstream open silently overwrote the earlier write
+  // rather than adding a second file, so only four files ever landed on
+  // disk against five expected names -- which is what made the size
+  // REQUIRE below read 4 against 5 in CI, not a byte-wise-ordering defect.
+  //
+  // The two uppercase stems below are chosen to straddle the ASCII case
+  // boundary (uppercase block ends at 0x5A, lowercase block starts at
+  // 0x61) so the byte-wise order of this fixture provably differs from its
+  // case-folded order -- the property DIR-04's ordering guarantee rests
+  // on. scripts/lint_fixture_case_collisions.sh enforces the no-collision
+  // rule this fixture demonstrates across the whole test tree.
   const fs::path baseline = unique_scratch_dir("sorted_a");
   const fs::path candidate = unique_scratch_dir("sorted_b");
-  const std::vector<std::string> names = {"zeta.snap.json", "alpha.snap.json", "Beta.snap.json", "beta.snap.json",
+  const std::vector<std::string> names = {"zeta.snap.json", "alpha.snap.json", "Beta.snap.json", "Zulu.snap.json",
                                             "1.snap.json"};
   for (const std::string& name : names) {
     write_file(baseline / name);
@@ -111,9 +126,29 @@ TEST_CASE("dir_pairing: the returned order is byte-wise sorted", "[dir]") {
   for (const FilePair& pair : *result) {
     actual_order.push_back(pair.relative_path);
   }
-  std::vector<std::string> expected_order = actual_order;
-  std::sort(expected_order.begin(), expected_order.end());
+
+  // Explicit literal expected order (byte-wise), not a sort of the test's
+  // own result -- this makes the exact byte-boundary claim auditable from
+  // the source rather than merely asserting "the result is sorted".
+  const std::vector<std::string> expected_order = {"1.snap.json", "Beta.snap.json", "Zulu.snap.json",
+                                                     "alpha.snap.json", "zeta.snap.json"};
   CHECK(actual_order == expected_order);
+
+  // Teeth assertion: prove the fixture still discriminates byte-wise order
+  // from case-folded order. A case-folded sort of the same five names must
+  // land in a DIFFERENT order than the byte-wise expected order above -- if
+  // a future edit replaces these names with a set whose byte-wise and
+  // case-folded orders coincide, this assertion fails rather than passing
+  // quietly, converting "the fixture has teeth" from a claim into an
+  // enforced invariant.
+  std::vector<std::string> case_folded_order = expected_order;
+  std::sort(case_folded_order.begin(), case_folded_order.end(), [](const std::string& lhs, const std::string& rhs) {
+    return std::lexicographical_compare(
+        lhs.begin(), lhs.end(), rhs.begin(), rhs.end(), [](char a, char b) {
+          return std::tolower(static_cast<unsigned char>(a)) < std::tolower(static_cast<unsigned char>(b));
+        });
+  });
+  CHECK(case_folded_order != expected_order);
 }
 
 TEST_CASE("dir_pairing: two empty roots return an empty vector and no error", "[dir]") {
