@@ -85,7 +85,7 @@ Plans:
   4. `mediadiff dir a b` pairs a corpus by relative path in deterministic order under a `--threads`-bounded pool, reports unpaired files, and honours the exit-code contract (0/1/2 for regression signals, 64/65/66/70 for could-not-run) with partial JSON still emitted on 66 — all process control living in `cli/`, with the library writing nothing to stdout and never calling `exit()`.
   5. Every registered check ID resolves to documentation the build enforces: `mediadiff explain <check.id>` prints what it measures, why it matters and how to accept/tune/silence it; `mediadiff inspect` renders every implemented check family; `skipped` carries a machine-readable reason and is never conflated with `pass`; and all seven comparison semantics behave per spec with time tolerances compared in ticks rather than floats.
 
-**Plans**: 19 plans — 16/16 executed (11 original, 2 round-2 gap-closure closing G-02-1/G-02-2, 3 round-3 gap-closure closing G-02-3/G-02-4 per CI run 31946964023), 3 round-4 gap-closure plans pending (UAT gaps G-02-5, G-02-6, G-02-7 — the 7 Windows test failures from the suite's first-ever execution)
+**Plans**: 18/19 plans executed — 16/16 executed (11 original, 2 round-2 gap-closure closing G-02-1/G-02-2, 3 round-3 gap-closure closing G-02-3/G-02-4 per CI run 31946964023), 3 round-4 gap-closure plans pending (UAT gaps G-02-5, G-02-6, G-02-7 — the 7 Windows test failures from the suite's first-ever execution)
 
 Plans:
 **Wave 1**
@@ -148,8 +148,8 @@ Plans:
 
 **Gap closure round 4 — Wave 1** *(the 7 Windows test failures; independent, no file overlap, run in parallel)*
 
-- [ ] 02-17-PLAN.md — G-02-5 byte identity: `.gitattributes` pinning checkout to LF plus Windows stdout binary mode in `wmain`, landed together because either alone moves the failures rather than fixing them; new TRUST-05 test comparing `--json` stdout bytes against `--json=<path>` file bytes
-- [ ] 02-18-PLAN.md — G-02-5 (#95) and G-02-6 (#36): the process-spawn fixture's Python child writes through the binary stream, and the non-ASCII fixture path is constructed via a new `tests/support/utf8_path.h` UTF-8 helper instead of `std::filesystem::path`'s ACP narrow constructor
+- [x] 02-17-PLAN.md — G-02-5 byte identity: `.gitattributes` pinning checkout to LF plus Windows stdout binary mode in `wmain`, landed together because either alone moves the failures rather than fixing them; new TRUST-05 test comparing `--json` stdout bytes against `--json=<path>` file bytes
+- [x] 02-18-PLAN.md — G-02-5 (#95) and G-02-6 (#36): the process-spawn fixture's Python child writes through the binary stream, and the non-ASCII fixture path is constructed via a new `tests/support/utf8_path.h` UTF-8 helper instead of `std::filesystem::path`'s ACP narrow constructor
 
 **Gap closure round 4 — Wave 2** *(blocked on both round-4 wave-1 plans; shares `src/cli/main.cpp` with 02-17)*
 
@@ -250,7 +250,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
-| 2. Core Engine | 16/16 | In Progress|  |
+| 2. Core Engine | 18/19 | In Progress|  |
 | 3. Probe Layer, Container & Size | 0/TBD | Not started | - |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
