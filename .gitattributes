@@ -1,0 +1,25 @@
+# mediadiff's determinism constraint makes line endings content rather than
+# presentation: a golden file whose bytes depend on which OS checked it out
+# is a false-positive generator, exactly the failure class this project
+# calls P0. Pin every text file to LF on checkout, on every platform.
+
+# Every file git classifies as text is normalised to LF in the index and
+# checked out as LF on every platform, overriding the runner's
+# core.autocrlf default. Both halves matter here: `text=auto` alone still
+# lets a Windows checkout convert to CRLF, which looks like the fix and
+# changes nothing.
+* text=auto eol=lf
+
+# Belt and braces. PROJECT.md forbids media binaries in git and
+# scripts/gen_corpus.sh output is ignored, so these match nothing today;
+# they exist so the first fixture someone does commit cannot be
+# line-ending-converted by the `*` rule above.
+*.mp4 binary
+*.mkv binary
+*.mov binary
+*.webm binary
+*.mp3 binary
+*.aac binary
+*.wav binary
+*.png binary
+*.jpg binary
