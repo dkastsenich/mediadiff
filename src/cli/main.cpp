@@ -58,6 +58,29 @@ int run(int argc, char** argv) {
   // CLI11 bump that flips the default cannot silently re-enable it.
   app.allow_subcommand_prefix_matching(false);
 
+  // T-02-19-01/T-02-19-02 (CLI-06): argv classification must be identical
+  // on every platform, and this call must sit ABOVE every subcommand
+  // registration for the same reason `allow_subcommand_prefix_matching`
+  // does, immediately above -- CLI11 2.6.2's parent-taking `App`
+  // constructor copies `allow_windows_style_options_` from the parent in
+  // its INHERITABLE block (App.hpp:259-267), so a child registered before
+  // this line would keep the platform default instead of inheriting it.
+  //
+  // CLI11 defaults this member to `true` under `_WIN32` and `false`
+  // elsewhere, so leaving it alone means mediadiff parses argv differently
+  // on Windows than on POSIX. mediadiff defines no `/`-prefixed option
+  // anywhere, so the only observable effect of the default is that a
+  // legitimate forward-slash-rooted path argument (e.g.
+  // "/data/out.snap.json", a normal absolute path on Windows) is
+  // reclassified as an unknown option: the parse throws a
+  // `CLI::ParseError`, `app.exit(e)` below maps it to `kExitUsage` (64),
+  // and the path is never opened -- instead of `read_snapshot` failing it
+  // and this reaching `kExitInput` (65) as CLI-06 requires. This was found
+  // by tests/integration/test_exit_codes.cpp's "exit_codes - 65" case
+  // failing `64 == 65` on the Windows leg of CI run 31946964023, the first
+  // run in the project's history in which the Windows test suite executed.
+  app.allow_windows_style_options(false);
+
   // Lazily computed: only touches the libavutil/libavcodec/libavformat
   // version APIs when --version is actually passed.
   app.set_version_flag("--version", []() { return mediadiff::compose_version_string(); });

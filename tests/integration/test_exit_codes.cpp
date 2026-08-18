@@ -92,6 +92,14 @@ TEST_CASE("exit_codes - 64: a --tol in the wrong unit for its check exits 64 and
 TEST_CASE("exit_codes - 65: a nonexistent input path exits exactly 65", "[integration]") {
   CliResult result = run_cli({"compare", fixture("tracer_a.snap.json"), "/no/such/file.snap.json"});
   CHECK(result.exit_code == 65);
+  // Proves the argument was CLASSIFIED as a path and reached read_snapshot,
+  // not merely that a number happened to match -- see
+  // allow_windows_style_options(false) in src/cli/main.cpp (CLI-06,
+  // G-02-7). Without that call, a leading '/' is misclassified as a
+  // Windows-style option on Windows, the parse throws before
+  // read_snapshot ever runs, and this stderr text is never produced.
+  CHECK(result.err.find("could not open snapshot file: ") != std::string::npos);
+  CHECK(result.err.find("/no/such/file.snap.json") != std::string::npos);
 }
 
 TEST_CASE("exit_codes - 65: a snapshot with an incompatible schema_version major exits exactly 65",
