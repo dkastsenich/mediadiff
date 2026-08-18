@@ -5,6 +5,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -16,6 +21,7 @@
 #include "cli_harness.h"
 #include "support/fixture_paths.h"
 #include "support/golden.h"
+#include "util/fs.h"
 
 using mediadiff::test::CliResult;
 using mediadiff::test::run_cli;
@@ -24,6 +30,17 @@ namespace {
 
 std::string config_fixture(const std::string& name) { return mediadiff::test::fixture_dir() + "/config/" + name; }
 std::string snap_fixture(const std::string& name) { return mediadiff::test::snapshot_dir() + "/" + name; }
+
+// Mirrors tests/integration/test_dir_mode.cpp's own unique_scratch_dir --
+// same shape (temp_directory_path() + tag + monotonic clock + atomic
+// counter), duplicated locally rather than shared because that helper is a
+// file-local anonymous-namespace function, not a header.
+std::filesystem::path unique_scratch_path(const std::string& tag) {
+  static std::atomic<int> counter{0};
+  const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+  return std::filesystem::temp_directory_path() /
+         ("mediadiff_json_schema_" + tag + "_" + std::to_string(now) + "_" + std::to_string(counter++) + ".json");
+}
 
 // MEDIADIFF_REPORT_SCHEMA is injected by tests/integration/CMakeLists.txt
 // as an absolute path to docs/schema/report-1.0.json, resolved at
@@ -172,4 +189,51 @@ TEST_CASE("json_schema - two identical compare --json runs produce byte-identica
   CHECK(first.out == second.out);
 
   mediadiff::test::check_golden("json_schema_basic", first.out);
+}
+
+TEST_CASE("json_schema - TRUST-05: --json to stdout and --json=<path> produce identical bytes", "[integration]") {
+  // TRUST-05: byte-identical --json across identical runs. On POSIX this
+  // has always held trivially -- there is no text-mode translation to
+  // diverge over. On Windows, the MSVC CRT opens stdout in _O_TEXT by
+  // default while the four report-file destinations already open "wb",
+  // so before src/cli/main.cpp's _setmode fix this assertion is exactly
+  // the one that fails there. On this host both assertions below already
+  // pass, so a red result here means the TEST is wrong, not the product.
+  const std::string baseline = snap_fixture("tracer_a.snap.json");
+  const std::string candidate = snap_fixture("tracer_b_clean.snap.json");
+
+  CliResult stdout_result = run_cli({"compare", baseline, candidate, "--json"});
+  REQUIRE(stdout_result.exit_code == 0);
+  REQUIRE_FALSE(stdout_result.out.empty());
+
+  // JSON cannot carry an unescaped raw CR inside a string, so any 0x0D
+  // present in captured stdout is a translation artifact, not content --
+  // this assertion names the defect rather than merely detecting a
+  // byte difference against the file side below.
+  CHECK(stdout_result.out.find('\r') == std::string::npos);
+
+  const std::filesystem::path scratch_path = unique_scratch_path("trust05");
+  CliResult file_result = run_cli({"compare", baseline, candidate, "--json=" + scratch_path.string()});
+  REQUIRE(file_result.exit_code == 0);
+  REQUIRE(std::filesystem::exists(scratch_path));
+
+  // Read the file side in BINARY mode through fopen_utf8(..., "rb") --
+  // never through a defaulted text-mode std::ifstream, which on Windows
+  // would silently undo the very translation this test exists to catch
+  // and turn it into a permanently green false pass.
+  FILE* handle = mediadiff::fopen_utf8(scratch_path.string(), "rb");
+  REQUIRE(handle != nullptr);
+  std::string file_bytes;
+  char buffer[4096];
+  std::size_t read = 0;
+  while ((read = std::fread(buffer, 1, sizeof(buffer), handle)) > 0) {
+    file_bytes.append(buffer, read);
+  }
+  std::fclose(handle);
+  std::filesystem::remove(scratch_path);
+
+  // The assertion that fails today on Windows and passes everywhere
+  // after the fix: --json to stdout and --json=<path> to a file must be
+  // the SAME bytes for the SAME report.
+  CHECK(stdout_result.out == file_bytes);
 }

@@ -29,6 +29,16 @@
 #include <string_view>  // std::wstring_view
 #include <utility>      // std::move
 #include <vector>
+
+// _setmode/_fileno/_O_BINARY -- the fd-level binary-mode switch below
+// (TRUST-05, G-02-5 lead B). Deliberately NOT in src/util/fs.h: that header
+// is under scripts/lint_eng16.sh's SCAN_DIRS (src/util), and the lint's
+// PATTERN matches the bare `stdout`/`stderr` tokens -- the same code there
+// would red the required `lint (ENG-16 boundary)` merge-gate context. This
+// file (src/cli/main.cpp) is outside every ENG-16 scan directory, so it is
+// the only place this call is allowed to live.
+#include <fcntl.h>
+#include <io.h>
 #endif
 
 namespace mediadiff {
@@ -160,8 +170,51 @@ int run(int argc, char** argv) {
 // MSVC's default CRT startup selects wmainCRTStartup automatically when a
 // wmain is defined, so no separate linker entry-point flag is needed.
 int wmain(int /*argc*/, wchar_t** /*argv*/) {
-  // First statement, before any output is produced and before the parser
-  // is constructed — see enable_vt_output's own ordering contract.
+  // First statement of all, before enable_vt_output() and before any
+  // output is produced (including this function's own UTF-16-conversion
+  // failure path a few lines below, which writes to stderr).
+  //
+  // The MSVC CRT opens fd 1 and fd 2 in _O_TEXT by default, translating
+  // every '\n' a program writes into "\r\n". mediadiff's four report-file
+  // destinations (compare.cpp, dir.cpp x2, snapshot.cpp) already open
+  // "wb" -- binary, untranslated -- so without this call, `--json` to
+  // stdout and `--json=path` to a file produce DIFFERENT BYTES on
+  // Windows for the identical report. That breaks TRUST-05 (byte-
+  // identical --json across identical runs), a hard project determinism
+  // constraint. Decision recorded 2026-08-18 (02-17-PLAN.md Task 2,
+  // option B): both stdout AND stderr go binary, unconditionally --
+  // one rule, no exceptions, matching the four "wb" destinations exactly,
+  // rather than leaving stderr as the one place newline representation
+  // still depends on which stream a byte went to.
+  //
+  // The asymmetry is closed by raising stdout/stderr TO the file
+  // destinations' behaviour, not by lowering the file destinations' --
+  // those four "wb" call sites are already correct and are deliberately
+  // untouched here.
+  //
+  // This call cannot live in src/util/fs.h next to enable_vt_output(),
+  // its natural-looking home: that header is inside
+  // scripts/lint_eng16.sh's SCAN_DIRS (src/util), and the lint's PATTERN
+  // matches the bare `stdout`/`stderr` tokens, so the same code there
+  // would red the required `lint (ENG-16 boundary)` merge-gate context.
+  // src/cli/main.cpp is outside every ENG-16 scan directory, which is
+  // why it lives here instead.
+  //
+  // _setmode/_fileno (not the unprefixed POSIX setmode/fileno): MSVC
+  // deprecates the unprefixed spellings (C4996), and /W4 /WX (BUILD-05)
+  // promotes that to a hard error -- this project has already lost two
+  // rounds to C4996 (getenv, then _wfopen). The (void) cast discards
+  // _setmode's previous-mode return value explicitly; the CRT annotates
+  // it _Check_return_opt_, and discarding it deliberately costs nothing
+  // under /W4.
+  (void)_setmode(_fileno(stdout), _O_BINARY);
+  (void)_setmode(_fileno(stderr), _O_BINARY);
+
+  // See enable_vt_output's own ordering contract: first statement to
+  // touch the console, before the parser is constructed. Emits no bytes
+  // of its own, so its position relative to the binary-mode calls above
+  // is immaterial to TRUST-05 -- both must simply precede the first
+  // actual write, which they do.
   mediadiff::enable_vt_output();
 
   int argc_w = 0;
