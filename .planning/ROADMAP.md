@@ -28,7 +28,7 @@ The journey: a static binary that builds on three platforms → a complete compa
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Foundation & Toolchain** - Static binary builds and runs on three platforms, with every toolchain decision recorded
-- [ ] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements
+- [x] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements (completed 2026-08-18)
 - [ ] **Phase 3: Probe Layer, Container & Size** - Real media enters: header pass, packet sweep, raw scanners, all `container.*`/`meta.*`/`size.*` checks
 - [ ] **Phase 4: Video Analysis** - Parser pass plus every `video.*` parameter, GOP, colorimetry and HDR check
 - [ ] **Phase 5: Timeline Analysis** - Every `timeline.*` check and the flagship A/V drift algorithm on integer/rational math
@@ -85,7 +85,7 @@ Plans:
   4. `mediadiff dir a b` pairs a corpus by relative path in deterministic order under a `--threads`-bounded pool, reports unpaired files, and honours the exit-code contract (0/1/2 for regression signals, 64/65/66/70 for could-not-run) with partial JSON still emitted on 66 — all process control living in `cli/`, with the library writing nothing to stdout and never calling `exit()`.
   5. Every registered check ID resolves to documentation the build enforces: `mediadiff explain <check.id>` prints what it measures, why it matters and how to accept/tune/silence it; `mediadiff inspect` renders every implemented check family; `skipped` carries a machine-readable reason and is never conflated with `pass`; and all seven comparison semantics behave per spec with time tolerances compared in ticks rather than floats.
 
-**Plans**: 18/19 plans executed — 16/16 executed (11 original, 2 round-2 gap-closure closing G-02-1/G-02-2, 3 round-3 gap-closure closing G-02-3/G-02-4 per CI run 31946964023), 3 round-4 gap-closure plans pending (UAT gaps G-02-5, G-02-6, G-02-7 — the 7 Windows test failures from the suite's first-ever execution)
+**Plans**: 19/19 plans complete — 16/16 executed (11 original, 2 round-2 gap-closure closing G-02-1/G-02-2, 3 round-3 gap-closure closing G-02-3/G-02-4 per CI run 31946964023), 3 round-4 gap-closure plans pending (UAT gaps G-02-5, G-02-6, G-02-7 — the 7 Windows test failures from the suite's first-ever execution)
 
 Plans:
 **Wave 1**
@@ -153,7 +153,7 @@ Plans:
 
 **Gap closure round 4 — Wave 2** *(blocked on both round-4 wave-1 plans; shares `src/cli/main.cpp` with 02-17)*
 
-- [ ] 02-19-PLAN.md — G-02-7 (#236): `allow_windows_style_options(false)` so a `/`-rooted path is not reclassified as an option on Windows (restores the CLI-06 65-not-64 contract), then push all three plans and read the run test by test; human checkpoint decides certify-or-iterate
+- [x] 02-19-PLAN.md — G-02-7 (#236): `allow_windows_style_options(false)` so a `/`-rooted path is not reclassified as an option on Windows (restores the CLI-06 65-not-64 contract), then push all three plans and read the run test by test; human checkpoint decides certify-or-iterate
 
 **Source doc**: `claude_docs/01-core-concepts.md` (design-doc phase 1)
 
@@ -250,7 +250,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
-| 2. Core Engine | 18/19 | In Progress|  |
+| 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 0/TBD | Not started | - |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |

@@ -1,10 +1,10 @@
 ---
-status: diagnosed
+status: resolved
 phase: 02-core-engine
 source: [02-VERIFICATION.md]
 started: 2026-08-16T13:20:00Z
-updated: 2026-08-18T00:00:00Z
-round: 3
+updated: 2026-08-18T16:00:00Z
+round: 4
 prior_round: "Round 1 (2026-08-15/16) produced G-02-1 and G-02-2, closed by plans 02-12/02-13. Round 2 (2026-08-16) confirmed those closed and opened G-02-3 and G-02-4, closed by plans 02-14/02-15. Full prior record in git history and in 02-VERIFICATION.md."
 round_3_verdict:
   run_id: 31946964023
@@ -15,11 +15,24 @@ round_3_verdict:
   G-02-4: "CLOSED — confirmed by the run's own log. arm64-osx `100% tests passed out of 297`; test #40 Passed; zero `test_dir_pairing.cpp:108: FAILED`; zero `4 == 5`."
   windows_leg: "STILL RED, new cause, ROUND-4 GAP OPENED (human decision). The Windows test suite executed for the first time in project history and 7 of 297 tests failed. Recorded below as G-02-5, G-02-6, G-02-7."
   deferred_legs: "RE-CONFIRMED DEFERRED (human decision). CI-x64-osx and CI-arm64-linux both still match their recorded signatures in this run and remain out of scope and non-blocking."
+round_4_verdict:
+  run_id: 32153890395
+  head_sha: d7274258ad73b61a4927721f0020e66099e65912
+  decided_by: human
+  decided_at: 2026-08-18
+  outcome: "ALL FOUR REQUIRED MERGE CONTEXTS GREEN SIMULTANEOUSLY — first time in the project's history. lint (ENG-16 boundary), build (x64-linux) 298/298, build (arm64-osx) 298/298, build (x64-windows-static-md) Build success with zero C4702/C2220/C4996 and Test success at 0 failed out of 298."
+  G-02-5: "CLOSED — all four affected tests plus the new TRUST-05 parity test pass on Windows."
+  G-02-6: "CLOSED — the non-ASCII filename test passes on Windows."
+  G-02-7: "CLOSED — both halves. #236 closed directly by the CLI11 argv-classification fix; #247 confirmed downstream of the stdout binary-mode fix by a designed experiment (its file was never modified) and now passes."
+  green_legs_not_regressed: "x64-linux and arm64-osx both moved 297 -> 298, not down. .gitattributes renormalized no existing content (git add --renormalize stages nothing)."
+  trust_05_human_item: "CLOSED BY AUTOMATED TEST (human decision). The new `json_schema - TRUST-05: --json to stdout and --json=<path> produce identical bytes` asserts it on all three blocking legs every run. The manual redirected-output check is no longer required."
+  uat_test_2: "DEFERRED TO PHASE 3 (human decision). Windows console colour rendering needs a human at real Windows hardware; a usable artifact exists (mediadiff-windows-x64, 1301968 bytes, sha d727425) but the check does not block Phase 2."
+  deferred_legs: "RE-CONFIRMED DEFERRED. CI-x64-osx and CI-arm64-linux unchanged signatures, out of scope, non-blocking. The three Deferred Follow-Ups also remain open and non-blocking."
 ---
 
 ## Current Test
 
-[testing complete — test 1 reported as issue, test 2 still blocked behind it]
+[ROUND 4 COMPLETE — test 1 RESOLVED (all four required contexts green, run 32153890395). Test 2 DEFERRED TO PHASE 3 by human decision: needs real Windows hardware, does not block Phase 2.]
 
 ## Tests
 
@@ -81,6 +94,7 @@ note: |
   or executed on macOS. Test 2 remains unreachable: still no Windows binary.
 
 ### 2. Colour renders as real styling in a Windows console
+<!-- DEFERRED TO PHASE 3 by human decision 2026-08-18. Artifact available: mediadiff-windows-x64 (1301968 bytes) at sha d727425 from run 32153890395. Does not block Phase 2 completion. -->
 expected: |
   Running mediadiff's compare / dir / TTY report output in cmd.exe or Windows Terminal, with
   the `SetConsoleMode` `ENABLE_VIRTUAL_TERMINAL_PROCESSING` path exercised, shows colour as
@@ -89,7 +103,7 @@ why_human: |
   Carried forward unchanged from round 1's test 1, which could not be reached because no
   Windows binary was ever produced. Blocked on the same push as test 1 above — once a green
   Windows build exists, this becomes reachable for the first time in the phase's history.
-result: reachable_not_yet_run
+result: deferred_to_phase_3
 blocked_by: null
 previously_blocked_by: G-02-3
 note: |
@@ -248,7 +262,10 @@ blocked: 1
 
 - gap_id: G-02-5
   truth: "mediadiff's byte-level output is identical on Windows and POSIX — goldens match, and captured subprocess bytes are exactly what the child wrote"
-  status: failed
+  status: closed
+  closed_at: 2026-08-18
+  closure_evidence: |
+    All four affected tests pass on Windows in run 32153890395: the three golden tests (junit/markdown/tty), and the process_spawn byte-exact capture. The new `json_schema - TRUST-05: --json to stdout and --json=<path> produce identical bytes` also passes on x64-linux, arm64-osx AND x64-windows-static-md — byte-identical --json is now ASSERTED on Windows rather than assumed. Closed by plan 02-17 (.gitattributes + _setmode binary stdout/stderr in wmain, landed in one commit because either alone breaks the other's tests) and plan 02-18 (Python child writes via sys.stdout.buffer).
   severity: blocker
   test: 1
   round: 4
@@ -319,7 +336,10 @@ blocked: 1
 
 - gap_id: G-02-6
   truth: "A non-ASCII filename round-trips through mediadiff's path handling unchanged on Windows"
-  status: failed
+  status: closed
+  closed_at: 2026-08-18
+  closure_evidence: |
+    `unit.dir_pairing: a tree containing a non-ASCII filename pairs correctly` passes on Windows in run 32153890395. Closed by plan 02-18's `tests/support/utf8_path.h` `path_from_utf8` helper, which mirrors src/cli/dir_pairing.cpp's two-branch conversion. The assertion and its non-ASCII literal are unchanged; no platform guard, no ASCII retreat. Sibling-literal audit completed: 8 sites examined, only the fixed one reaches the filesystem.
   severity: blocker
   test: 1
   round: 4
@@ -352,7 +372,10 @@ blocked: 1
 
 - gap_id: G-02-7
   truth: "mediadiff's documented exit-code contract and inspect output hold identically on Windows"
-  status: failed
+  status: closed
+  closed_at: 2026-08-18
+  closure_evidence: |
+    Both halves closed in run 32153890395. #236 `integration.exit_codes - 65` passes: closed by plan 02-19's `allow_windows_style_options(false)` on the root App above subcommand registration — the real cause was CLI11 classifying `/no/such/file.snap.json` as a Windows-style OPTION so it never reached read_snapshot. src/cli/exit_code.cpp was correct all along (input_open -> 65 unconditionally) and was NOT modified; the `== 65` assertion was NOT relaxed. #247 `integration.explain_inspect - REPORT-07` passes WITHOUT its file ever being modified this round — a designed experiment confirming it was downstream of 02-17's stdout fix, not an independent defect.
   severity: blocker
   test: 1
   round: 4

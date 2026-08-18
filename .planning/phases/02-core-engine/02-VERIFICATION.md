@@ -1,219 +1,244 @@
 ---
 phase: 02-core-engine
-verified: 2026-08-18T09:30:00Z
-status: gaps_found
-score: 14/17 truths verified directly (3 open blockers carried from round-4 human UAT, none newly introduced by this verification pass)
+verified: 2026-08-18T15:44:33Z
+status: passed
+score: 22/22 must-have truths verified (17 carried/regression-checked from prior rounds + 5 round-4 closure truths); 0 behavior_unverified
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: gaps_found
-  previous_score: "11/12 truths verified directly; 1 truth (actual CI-green confirmation) unverifiable without a pushed CI run"
+  previous_score: "14/17 truths verified directly (round-3 report); 3 open blockers G-02-5, G-02-6, G-02-7"
   gaps_closed:
-    - truth: "G-02-3 — block_for()'s FAIL()-then-dead-code shape trips MSVC C4702 -> C2220 under /W4 /WX"
-      evidence: "Read tests/unit/test_report_model.cpp:59-65 directly on this host: block_for() now does std::find_if + INFO + REQUIRE + one reachable `return *it;`. grep -c 'FAIL(' on the file returns 0. grep for pragma warning(suppress, std::abort, std::terminate all return 0 — no compiler-specific escape hatch. Independently confirmed against CI run 31946964023 job 95164409600 via `gh run view --job 95164409600 --log`: Build step conclusion success, zero C4702/C2220/C4996 in the log."
-    - truth: "G-02-4 — test_dir_pairing.cpp's fixture collided under case-insensitive APFS (4 vs 5 files)"
-      evidence: "Read tests/unit/test_dir_pairing.cpp:113-152 directly: fixture is now {zeta, alpha, Beta, Zulu, 1}.snap.json — five names, pairwise distinct under case folding, confirmed by independently computing sorted(names) vs sorted(names, key=str.lower) in Python: they differ in 4 of 5 positions (strictly stronger than the original single case-pair). Independently confirmed via `gh run view --job 95164409605 --log`: test #40 'unit.dir_pairing: the returned order is byte-wise sorted' -> Passed, '100% tests passed out of 297'."
-  gaps_remaining:
-    - "G-02-5 — Windows byte-level output divergence (newline/text-mode), affecting tests #95, 67, 75, 201 — see gaps below"
-    - "G-02-6 — non-ASCII filename mis-decodes on Windows (test #36) — see gaps below"
-    - "G-02-7 — exit-code and inspect-output behavioral divergence on Windows (tests #236, #247) — see gaps below"
+    - truth: "G-02-5 — mediadiff's byte-level output is identical on Windows and POSIX (goldens match; captured subprocess bytes are exactly what the child wrote)"
+      evidence: |
+        CI run 32153890395 (headSha d7274258ad73b61a4927721f0020e66099e65912), pulled fresh
+        via `gh run view --job 95766278227 --log` in THIS session (not transcribed from any
+        SUMMARY): grep over the 2137-line Windows job log returns 0 for `C4996`, `C4702`,
+        `C2220`, `golden mismatch`, `85000`, and `FAILED`. All four affected tests confirmed
+        Passed by exact name: #67 `unit.junit - golden`, #75 `unit.markdown_budget - golden`,
+        #201 `unit.tty - golden`, #95 `unit.process_spawn`. The new
+        `integration.json_schema - TRUST-05: --json to stdout and --json=<path> produce
+        identical bytes` (#262) also Passed on x64-linux, arm64-osx AND
+        x64-windows-static-md — independently confirmed by reading
+        tests/integration/test_json_schema.cpp directly: it reads the file side in binary via
+        fopen_utf8(...,"rb"), asserts stdout carries no 0x0D, and compares full byte equality.
+        Root cause verified in source: src/cli/main.cpp's wmain sets
+        `_setmode(_fileno(stdout), _O_BINARY)` and the matching stderr line as literally the
+        first statements of wmain, before enable_vt_output() and before any output — read
+        directly at lines 195, 233-234, 241 of src/cli/main.cpp. .gitattributes (`* text=auto
+        eol=lf`) confirmed present and confirmed a no-op on existing content in this session
+        (`git add --renormalize .` stages nothing but a pre-existing, unrelated UAT.md edit).
+    - truth: "G-02-6 — a non-ASCII filename round-trips through mediadiff's path handling unchanged on Windows"
+      evidence: |
+        CI run 32153890395, job 95766278227: test #36
+        `unit.dir_pairing: a tree containing a non-ASCII filename pairs correctly` confirmed
+        Passed by exact name in the raw log pulled this session; `grep -c 'sumÃ'` returns 0.
+        tests/support/utf8_path.h read directly: `path_from_utf8` routes through
+        `mediadiff::utf8_to_wide` on Windows (never std::filesystem::path's narrow
+        constructor, never the deprecated u8path), byte-verbatim elsewhere — mirrors
+        src/cli/dir_pairing.cpp's own two-branch conversion exactly, confirmed by reading both
+        files. tests/unit/test_dir_pairing.cpp's literal
+        `"r\xC3\xA9sum\xC3\xA9.snap.json"` and its `relative_path == non_ascii_name` assertion
+        confirmed unchanged. src/cli/dir_pairing.cpp confirmed untouched across the entire
+        round-4 commit range (4f17a19^..f11f807).
+    - truth: "G-02-7 — mediadiff's documented exit-code contract and inspect output hold identically on Windows"
+      evidence: |
+        CI run 32153890395, job 95766278227: test #236
+        `integration.exit_codes - 65: a nonexistent input path exits exactly 65` and test #247
+        `integration.explain_inspect - REPORT-07: inspect on a snapshot with no meta
+        measurements...` both confirmed Passed by exact name; `grep -c '64 == 65'` over the
+        raw log returns 0. src/cli/main.cpp confirmed to set
+        `app.allow_windows_style_options(false)` immediately after
+        `allow_subcommand_prefix_matching(false)`, above every `register_*_command` call (line
+        82, before line 92 — confirmed by direct read). src/cli/exit_code.cpp/.h confirmed
+        byte-for-byte untouched across the whole round-4 range: `input_open` maps to 65 and
+        `usage` to 64 unconditionally, no platform branch, no default: arm — read directly.
+        tests/integration/test_exit_codes.cpp's `== 65` assertion confirmed unchanged
+        (`/no/such/file.snap.json` unchanged); two new stderr assertions added and confirmed
+        present. #247's file (tests/integration/test_explain_inspect.cpp) confirmed untouched
+        across the entire round-4 range — its pass is the designed experiment proving it was
+        downstream of G-02-5's stdout fix, not its own defect, exactly as G-02-7's `missing:`
+        bullet asked to be established.
+  gaps_remaining: []
   regressions: []
   gap_closure_caused_regressions: false
-gaps:
-  - gap_id: G-02-5
-    truth: "mediadiff's byte-level output is identical on Windows and POSIX — goldens match, and captured subprocess bytes are exactly what the child wrote"
-    status: failed
-    severity: blocker
-    reason: "Confirmed open. Independently re-pulled CI run 31946964023 job 95164409600's raw log via `gh run view --job 95164409600 --log`: test_process_spawn.cpp(42) FAILED with 85000 (0x14c08) == 82500 (0x14244) (delta exactly 2500 bytes); three golden mismatches at golden.cpp(119) (junit_basic, markdown_basic, tty golden), all 'at line 1'."
-    artifacts:
-      - path: "tests/unit/test_process_spawn.cpp"
-        issue: "line 42 — byte-count mismatch consistent with LF->CRLF pipe-read translation, unconfirmed on this Linux host"
-      - path: "tests/support/golden.cpp"
-        issue: "line 119 — three golden mismatches reported 'at line 1' with visually identical expected/actual"
-    missing:
-      - "Diagnose on real Windows hardware/CI, per G-02-5's own missing[] in 02-UAT.md — not re-derivable from this Linux host."
-  - gap_id: G-02-6
-    truth: "A non-ASCII filename round-trips through mediadiff's path handling unchanged on Windows"
-    status: failed
-    severity: blocker
-    reason: "Confirmed open via `gh run view --job 95164409600 --log`: test_dir_pairing.cpp(204) FAILED — mojibake 'rÃ©sumÃ©.snap.json' vs 'résumé.snap.json', a UTF-8-bytes-read-as-Latin-1 signature."
-    artifacts:
-      - path: "tests/unit/test_dir_pairing.cpp"
-        issue: "line 204 — non-ASCII filename mis-decodes on Windows"
-    missing:
-      - "Diagnose on real Windows hardware/CI, per G-02-6's own missing[] in 02-UAT.md."
-  - gap_id: G-02-7
-    truth: "mediadiff's documented exit-code contract and inspect output hold identically on Windows"
-    status: failed
-    severity: blocker
-    reason: "Confirmed open via `gh run view --job 95164409600 --log`: test_exit_codes.cpp(94) FAILED 64 == 65; test_explain_inspect.cpp(112) FAILED found_meta_no_measurements -> false."
-    artifacts:
-      - path: "tests/integration/test_exit_codes.cpp"
-        issue: "line 94 — nonexistent input path exits 64 on Windows, contract requires 65"
-      - path: "tests/integration/test_explain_inspect.cpp"
-        issue: "line 112 — may be downstream of G-02-5's newline handling; not yet split apart"
-    missing:
-      - "Diagnose on real Windows hardware/CI, per G-02-7's own missing[] in 02-UAT.md."
-human_verification:
-  - test: "Colour renders as real styling in a Windows console (mediadiff compare/dir/TTY output in cmd.exe or Windows Terminal, ENABLE_VIRTUAL_TERMINAL_PROCESSING path exercised)"
-    expected: "ANSI-interpreted styling, not literal escape-sequence bytes"
-    why_human: "Reachable for the first time in the phase's history — run 31946964023's Windows Build step succeeded and produced mediadiff.exe — but has not been run. Requires a real Windows console; this sandbox is Linux-only. Carried forward from 02-UAT.md test 2, unchanged in substance. Record the mediadiff build sha with the result: if G-02-5 (newline handling) is closed after this check runs, the console bytes this check observes could change."
-  - test: "Confirm whether mediadiff's own --json/--report stdout output is actually byte-identical on Windows, independent of the seven known test failures"
-    expected: "Either (a) mediadiff.exe run on Windows with --json piped/redirected produces byte-for-byte the same content as the POSIX build (no \\r\\n insertion), confirming the determinism contract holds in the product itself and not just in in-process unit tests; or (b) it does not, which would be a product-level defect distinct from and more consequential than any of G-02-5/6/7 as currently scoped (those are entirely test-harness/test-fixture failures, not confirmed product-output failures)."
-    why_human: "This verification pass found a plausible, unconfirmed mechanism for a POSIX-invisible defect that no currently-open gap covers: src/cli/commands/compare.cpp and src/cli/commands/dir.cpp write --json/TTY output to stdout via `std::fputs(report.c_str(), stdout)`, and grep across the whole of src/ for `_setmode`/`_O_BINARY`/`SetConsoleMode`-adjacent binary-mode guards on stdout returns zero matches (only src/util/fs.h:262's unrelated `SetConsoleMode(..., ENABLE_VIRTUAL_TERMINAL_PROCESSING)` VT call exists). File-destination writes (`write_report_file`, both compare.cpp and dir.cpp) DO use `fopen_utf8(path, \"wb\")` — explicit binary mode — so that path looks safe. But the C runtime's documented default text-mode behavior for `stdout` on Windows (CRLF-translating every `\\n` written through it, unless the stream's mode is explicitly set to binary) cannot be exercised or confirmed from this Linux sandbox. If real, this would mean any Windows user piping `mediadiff --json > out.json` gets \\r\\n-terminated JSON while the same run on Linux/macOS produces \\n-terminated JSON — a direct violation of the project's own stated 'byte-identical --json across identical runs' determinism requirement, and one none of G-02-5's four currently-affected tests (all test-harness or golden-fixture failures) directly exercises. This is reported as an open question, not a confirmed defect — the code inspection is real, but the runtime behavior needs a Windows host to confirm."
+deferred:
+  - item: "UAT test 2 — colour renders as real styling in a Windows console"
+    status: deferred_to_phase_3
+    decided_by: human
+    decided_at: 2026-08-18
+    evidence: "02-UAT.md round_4_verdict.uat_test_2 frontmatter: 'DEFERRED TO PHASE 3 (human decision). Windows console colour rendering needs a human at real Windows hardware; a usable artifact exists (mediadiff-windows-x64, 1301968 bytes, sha d727425) but the check does not block Phase 2.' Artifact existence and exact byte size independently confirmed this session via `gh api repos/dkastsenich/mediadiff/actions/runs/32153890395/artifacts` -> {\"name\":\"mediadiff-windows-x64\",\"size_in_bytes\":1301968}. This is a human decision, not a re-opened blocker: the round-4 human checkpoint (02-19-PLAN.md Task 3) explicitly deferred it. Not counted as an open human-verification item in this report."
+  - item: "CI-x64-osx"
+    status: deferred_non_blocking
+    evidence: "Job 95766278109, run 32153890395, independently re-pulled this session: 'ld: warning: ignoring file vcpkg_installed/x64-osx/lib/libavformat.a: fat file missing arch arm64, file has x86_64' -- identical signature to the recorded 02-UAT.md entry. Not a required merge context. Root cause: x64-osx preset cross-builds from an arm64 host without -arch x86_64."
+  - item: "CI-arm64-linux"
+    status: deferred_non_blocking
+    evidence: "Job 95766278139, run 32153890395, independently re-pulled this session: fails at 'Register vcpkg NuGet feed (read-write, trusted runs only)' -- identical signature to the recorded 02-UAT.md entry. Not a required merge context. Root cause undetermined (mono/NuGet availability), documented as such."
+  - item: "Deferred Follow-Up: getenv_utf8 thread-safety contract undocumented"
+    status: deferred_non_blocking
+    evidence: "02-UAT.md Deferred Follow-Ups, deferred 2026-08-16. Not exploitable in current code (all six call sites execute before any thread spawns); a documentation/robustness improvement, untouched by round 4."
+  - item: "Deferred Follow-Up: dead <cstdlib> include in src/cli/options.cpp"
+    status: deferred_non_blocking
+    evidence: "02-UAT.md Deferred Follow-Ups, deferred 2026-08-16. Cosmetic; untouched by round 4."
+  - item: "Deferred Follow-Up: severity colour applies only to the status glyph, not the summary line"
+    status: deferred_non_blocking
+    evidence: "02-UAT.md Deferred Follow-Ups, deferred 2026-08-16. Scope ambiguity in the spec (CLI-08/REPORT-02 never specify what gets coloured), not a defect. Untouched by round 4."
+  - item: "Deferred Follow-Up: no test exercises a non-ASCII path end-to-end through the built mediadiff binary"
+    status: deferred_non_blocking
+    evidence: "02-18-SUMMARY.md's Task 2 Part 3 audit: test_fs_utf8.cpp and test_dir_pairing.cpp both cover non-ASCII handling in-process, but neither spawns mediadiff.exe with a non-ASCII argument -- the CLI-09 path CLI-09 actually promises. Recorded as a deferred follow-up per the plan's explicit instruction, not added in round 4 (would have grown the suite total 02-17's count criteria were written against)."
+human_decisions:
+  - decision: "Round-4 certify-or-iterate checkpoint (02-19-PLAN.md Task 3)"
+    decided_by: human
+    decided_at: 2026-08-18
+    outcome: "Certified. All four required merge contexts green simultaneously (first time in project history). G-02-5, G-02-6, G-02-7 all closed. #247 confirmed downstream of G-02-5's stdout fix (its file never modified). The stdout/file byte-parity human-verification item from the prior VERIFICATION.md closed by the new automated TRUST-05 test rather than requiring manual confirmation. UAT test 2 deferred to Phase 3. CI-x64-osx, CI-arm64-linux and the three Deferred Follow-Ups re-confirmed deferred and non-blocking."
+    source: "02-UAT.md frontmatter round_4_verdict block, status: resolved"
 ---
 
-# Phase 2: Core Engine Verification Report (Round-3 Re-Verification, Superseding Prior Report)
+# Phase 2: Core Engine Verification Report (Round-4 Sealing Report — Supersedes Prior `gaps_found` Report)
 
 **Phase Goal:** The complete compare engine — registry, comparison semantics, policy resolution, snapshots, all four report formats and `dir` orchestration — works end to end against stub measurements, so every analyzer that follows plugs into finished machinery.
 
-**Verified:** 2026-08-18T09:30:00Z
-**Status:** gaps_found
-**Re-verification:** Yes — round 3, superseding the prior `02-VERIFICATION.md` (2026-08-16T14:05:00Z, `gaps_found`, `gaps_remaining: [G-02-3, G-02-4]`)
+**Verified:** 2026-08-18T15:44:33Z
+**Status:** passed
+**Re-verification:** Yes — round 4, sealing report, superseding the prior `02-VERIFICATION.md` (`status: gaps_found`, `gaps_remaining: [G-02-5, G-02-6, G-02-7]`)
 
-## Why this report supersedes the prior one
+## Why this report supersedes the prior one, and what changed the verdict
 
-The prior report's `gaps_remaining` listed G-02-3 and G-02-4 as open, discovered from CI run `31943688186` (headSha `1e065bb`). Plans `02-14` and `02-15` closed those two gaps at the code level; plan `02-16` wired two new portability lints into the required `lint (ENG-16 boundary)` CI job, pushed, and read the resulting run — **CI run `31946964023`, headSha `8d4aa4ac99c024c89e9816f843eb0b540e152a4a`**. A human reviewed that run on 2026-08-18, confirmed both closures, and opened three round-4 gaps (G-02-5, G-02-6, G-02-7) against the Windows test suite's first-ever execution.
+The prior report's three remaining gaps (G-02-5 byte-level output divergence, G-02-6 non-ASCII path mis-decoding, G-02-7 exit-code/inspect divergence) were all Windows-only failures discovered when the Windows test suite executed for the first time in the project's history (CI run 31946964023). Three plans closed them:
 
-**This verification independently re-derived every claim below rather than trusting `02-UAT.md`, `02-16-SUMMARY.md`, or either gap-closure SUMMARY.** Concretely:
+- **02-17**: `.gitattributes` (`* text=auto eol=lf`) pinning checkout to LF on every platform, plus `_setmode(_fileno(stdout/stderr), _O_BINARY)` in `wmain` before any output — landed in one commit because either half alone converts the failures into a different set rather than fixing them. New `TRUST-05` destination-parity test.
+- **02-18**: the process-spawn test fixture's Python child now writes through `sys.stdout.buffer`/`sys.stderr.buffer` (a test-fixture defect, not a product defect); a new `tests/support/utf8_path.h` helper constructs non-ASCII test paths the same way the product does.
+- **02-19**: `app.allow_windows_style_options(false)` on the root `CLI::App`, above every subcommand registration, so a `/`-rooted argument is a path on Windows exactly as it is everywhere else — the actual cause of the `64 vs 65` divergence (CLI11 2.6.2 defaults this to `true` under `_WIN32`).
 
-- Read `tests/unit/test_report_model.cpp` and `tests/unit/test_dir_pairing.cpp` directly.
-- Re-computed the byte-wise-vs-case-folded ordering claim independently in Python rather than trusting the SUMMARY's assertion that they differ.
-- Ran both new lint scripts locally, then deliberately broke them (empty scan dir, injected known-bad fixtures) to confirm their self-tests and guards actually fire, not just that they report clean on the current tree.
-- Ran `git show`/`git diff --unified=0` on commit `8d4aa4a` myself to confirm the `ci.yml` change is additions-only with the required-check name intact.
-- **Pulled CI run `31946964023`'s raw job logs myself via `gh run view --job <id> --log`**, independently of the SUMMARY's transcription, for both the Windows Test step and the arm64-osx Test step.
-- Built and ran the local Linux test suite myself (297/297) rather than citing the SUMMARY's number.
-- Went beyond the assigned re-read to trace the product's own stdout-writing code path for a POSIX-invisible risk the CI read did not surface — see the new human-verification item below.
+All three landed, were pushed together, and **CI run `32153890395` (headSha `d7274258ad73b61a4927721f0020e66099e65912`) is the first run in this project's history where all four required merge contexts are green simultaneously**, including a Windows Test step at `0 tests failed out of 298`. A human reviewed that run on 2026-08-18 and certified the round (`02-UAT.md` `round_4_verdict`, `status: resolved`).
 
-Every claim in this report is labeled by its evidence source: **[LOCAL]** = observed directly on this Linux host in this session; **[CI-31946964023]** = pulled from that specific run's logs in this session (not from a SUMMARY's transcription of it); **[CARRIED]** = a regression-checked claim from the prior verification round, not re-derived from zero this round.
+**This verification independently re-derived every load-bearing claim rather than trusting `02-UAT.md`, the three SUMMARYs, or the prior `02-VERIFICATION.md`.** Concretely, in this session:
+
+- Read `.gitattributes`, `src/cli/main.cpp` (the full `_setmode` placement and the `allow_windows_style_options(false)` placement), `tests/support/utf8_path.h`, `tests/unit/test_process_spawn.cpp`, `tests/unit/test_dir_pairing.cpp`, `tests/integration/test_json_schema.cpp`, `tests/integration/test_exit_codes.cpp`, and `src/cli/exit_code.cpp` directly — not the SUMMARYs' descriptions of them.
+- Ran `git diff --stat` across the entire round-4 commit range (`4f17a19^..f11f807`) against every prohibited file: `src/cli/exit_code.cpp`/`.h`, `tests/integration/test_explain_inspect.cpp`, `tests/support/golden.cpp`, `tests/process_spawn.h`, `src/cli/dir_pairing.cpp` — all confirmed empty (untouched).
+- Ran `git add --renormalize .` myself and confirmed it stages nothing but a pre-existing, unrelated `02-UAT.md` edit already in the working tree — `.gitattributes` is a genuine no-op on existing content, confirmed directly rather than trusted from the plan's own claim.
+- Grepped for `UPDATE_GOLDENS`, `pragma warning(suppress`, `SKIP(`, and debt markers (`TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER`) across every round-4-touched file — all zero.
+- **Pulled CI run `32153890395`'s raw job logs myself via `gh run view --job <id> --log`**, independent of `02-19-SUMMARY.md`'s transcription, for the Windows job, the x64-linux job, the arm64-osx job, the lint job, and both non-required legs — confirmed `headSha` string-equality against local `HEAD` via `gh run view 32153890395 --json headSha`.
+- Confirmed the `mediadiff-windows-x64` artifact's existence and exact byte size (`1301968`) via the GitHub Actions API directly, not from the SUMMARY.
+- Rebuilt the changed translation units from a touched (non-cached) state and ran the full local suite myself: `298/298` passed, `0` failed, `1` skipped, clean under `-Wall -Wextra -Werror` (the rebuild would have failed outright under `-Werror` had there been any warning).
+- Independently re-confirmed all 48 Phase-2 requirement IDs are `Complete` in `REQUIREMENTS.md`, and specifically confirmed `CLI-05`/`CLI-09` are Phase-1-owned (not part of Phase 2's 48) by reading their rows directly — resolving the discrepancy between "CLI-01…10" (10 IDs) and the true Phase-2 CLI set (8 IDs, excluding 05 and 09).
+
+Every claim below is labeled by its evidence source: **[LOCAL]** = observed directly on this Linux host in this session; **[CI-32153890395]** = pulled from that specific run's logs/artifacts in this session; **[CARRIED]** = a regression-checked claim from the round-3 verification, re-confirmed as untouched by round 4 rather than re-derived from zero.
 
 ## Goal Achievement
 
 ### Observable Truths
 
-#### Carried forward from prior rounds (regression-checked, not re-derived)
+#### Carried forward from round 3 (regression-checked against the round-4 diff, not re-derived)
 
 | # | Truth | Status | Regression check |
 |---|-------|--------|-------------------|
-| 1 | Snapshot/compare round-trip, schema_version gate, CI tracked-overwrite gate | ✓ VERIFIED [CARRIED] | `ctest --test-dir build/x64-linux` [LOCAL]: 297/297 passed, 0 failed — same count and same pass rate as the round-2 verification's regression check; no file under `src/core/snapshot*` appears in any of the three round-3 plans' diffs. |
-| 2 | Policy resolution (profiles, TOML, `--set`/`--tol`, provenance) | ✓ VERIFIED [CARRIED] | None of `02-14`, `02-15`, `02-16`'s file lists touch `src/config` or `policy.cpp`. |
-| 3 | Four report formats render correctly; colour auto-disable logic | ✓ VERIFIED [CARRIED] (logic); real-Windows-console rendering ⚠️ still human-only | `render_markdown`/`render_junit`/`render_tty`'s own unit suites unaffected — `02-15`'s only test-file touch is `test_dir_pairing.cpp` (an unrelated `dir` test). See "New finding" below: the round-3 work surfaced new information about how the four formats reach stdout that bears on this truth and is now routed to human verification. |
-| 4 | `dir` pairing, threads, exit-code contract, `ENG-16` process-control confinement | ✓ VERIFIED [CARRIED] on Linux/macOS; ⚠️ Windows exit-code contract now has an OPEN, CONFIRMED failure (G-02-7, test #236) | `src/cli/dir_pairing.cpp` untouched by any round-3 plan (confirmed via `git diff --name-only` in 02-15's own evidence and independently by `grep -rn dir_pairing.cpp` against the three plans' `key-files`). The exit-code CONTRACT truth is downgraded here relative to the prior report because G-02-7 is new, confirmed, Windows-specific information the prior report did not have. |
-| 5 | Registry/docs enforcement, seven comparison semantics, `skipped != pass` | ✓ VERIFIED [CARRIED] | No round-3 plan touches `src/core/checks.def`, `src/compare/*`, or the registry generator. |
+| 1 | Snapshot/compare round-trip, schema_version gate, CI tracked-overwrite gate | ✓ VERIFIED [CARRIED] | `git diff --stat 4f17a19^..f11f807 -- src/core/snapshot.cpp` [LOCAL] confirmed empty except the deliberately-untouched `"wb"` call site was read, not modified. `ctest --test-dir build/x64-linux` [LOCAL]: 298/298 passed. |
+| 2 | Policy resolution (profiles, TOML, `--set`/`--tol`, provenance) | ✓ VERIFIED [CARRIED] | No round-4 plan's `files_modified` touches `src/config` or `policy.cpp`; confirmed by the full round-4 file list (`.gitattributes`, `src/cli/main.cpp`, three test files, one new test header, three SUMMARYs, ROADMAP.md). |
+| 3a | Four report formats render correctly (logic) | ✓ VERIFIED [CARRIED] | Golden-comparison unit suites (`test_junit.cpp`, `test_markdown_budget.cpp`, `test_tty_render.cpp`) untouched by round 4; now additionally proven byte-identical on Windows for the first time (see truth 6 below). |
+| 3b | Colour output renders as real styling in a real Windows console | ⚠️ still human-only, now explicitly DEFERRED TO PHASE 3 | Human decision 2026-08-18, `02-UAT.md round_4_verdict.uat_test_2`, independently confirmed present in the frontmatter and the artifact it depends on (`mediadiff-windows-x64`, 1,301,968 bytes) confirmed to exist [CI-32153890395]. See Deferred Items — not a gap, not counted against this report's score. |
+| 4 | `dir` pairing, threads, exit-code contract, `ENG-16` process-control confinement | ✓ VERIFIED [CARRIED] on Linux/macOS; now ALSO ✓ VERIFIED on Windows | `src/cli/dir_pairing.cpp` confirmed untouched across the whole round-4 range [LOCAL]. The Windows exit-code contract gap (G-02-7, test #236) that downgraded this truth in the round-3 report is now closed — see truth 8 below. |
+| 5 | Registry/docs enforcement, seven comparison semantics, `skipped != pass` | ✓ VERIFIED [CARRIED] | No round-4 plan touches `src/core/checks.def`, `src/compare/*`, or the registry generator; confirmed by the full round-4 file list. |
 
-#### New truths verified this round (G-02-3/G-02-4 closure and its CI confirmation)
-
-| # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 6 | G-02-3 closed: `block_for()` has a single reachable exit; no compiler-specific suppression was used | ✓ VERIFIED [LOCAL] | Read `tests/unit/test_report_model.cpp:59-65` directly: `std::find_if` + `INFO` + `REQUIRE` + one `return *it;`. `grep -n "FAIL("` on the file → 0 matches (exit 1, no output). `grep -n "pragma warning\|std::abort\|std::terminate"` → 0 matches. All 11 `TEST_CASE("report_model...")` cases still present (`grep -c` → 11) — none deleted, skipped, or platform-guarded, satisfying `02-14-PLAN.md`'s three prohibitions verbatim. |
-| 7 | G-02-3 closed on the real Windows target, not just locally | ✓ VERIFIED [CI-31946964023] | `gh run view --job 95164409600 --log` (job for `build (x64-windows-static-md)`), pulled fresh in this session: the Build step's log contains zero `C4702`, zero `C2220`, zero `C4996`. Build step conclusion `success`. This is independent of `02-16-SUMMARY.md`'s transcription — I ran the same query myself and got the same result. |
-| 8 | G-02-4 closed: the byte-wise-order fixture is case-collision-free AND the teeth assertion is genuinely stronger, not just claimed to be | ✓ VERIFIED [LOCAL] | Read `tests/unit/test_dir_pairing.cpp:113-152` directly. Fixture: `{"zeta.snap.json","alpha.snap.json","Beta.snap.json","Zulu.snap.json","1.snap.json"}`. Independently computed in Python (not trusting the SUMMARY's "differ in four of five positions" claim): `sorted(names)` vs `sorted(names, key=str.lower)` — confirmed to differ at 4 of 5 positions (`1`,`Beta`,`Zulu`,`alpha`,`zeta` byte-wise vs `1`,`alpha`,`Beta`,`zeta`,`Zulu` case-folded). This is strictly stronger than the original single Beta/beta pair. The `expected_order` literal in the file matches my independently-computed byte-wise order exactly. Case-fold uniqueness confirmed: `{1, beta, zulu, alpha, zeta}` — five distinct lowercased stems, no collision. |
-| 9 | G-02-4 closed on the real macOS target, not just locally | ✓ VERIFIED [CI-31946964023] | `gh run view --job 95164409605 --log` (job for `build (arm64-osx)`), pulled fresh: `Test #40: unit.dir_pairing: the returned order is byte-wise sorted ... Passed`; `100% tests passed out of 297`. Independent of the SUMMARY's transcription. |
-| 10 | The two new lint scripts have real teeth — they fail loudly when their input is genuinely bad, not merely when told to | ✓ VERIFIED [LOCAL] | Ran both scripts against the current tree: both exit 0, "clean," scanning 49 files each. Then deliberately broke each: (a) pointed each script's `SCAN_DIR(S)` at an empty directory — both correctly refuse to report clean and exit 1 with a "zero files" diagnostic; (b) injected a real known-bad file (a `FAIL()`-then-`static`-then-`return` function; two case-colliding literals `"Case.snap.json"`/`"case.snap.json"`) into an isolated scan tree — both scripts correctly flag the violation by file:line and exit 1. Neither script can be made to report clean over an empty or unreadable scan. |
-| 11 | The `ci.yml` change wiring the two lints in is additions-only, preserves the required-check name, and adds no escape hatch | ✓ VERIFIED [LOCAL] | `git show 8d4aa4a -- .github/workflows/ci.yml` → `+12 lines, 0 deletions`, confined to the `lint` job. `git diff --unified=0 8d4aa4a~1 8d4aa4a -- .github/workflows/ci.yml \| grep -c '^-[^-]'` → 0. `grep -c "name: lint (ENG-16 boundary)"` → exactly 1. `continue-on-error` search scoped to the `lint:` job block → 0 matches (the one file-wide match is the pre-existing, unrelated `build` job's `continue-on-error: ${{ !matrix.blocking }}`, present before this commit). |
-| 12 | Local Linux build/test suite unaffected by the round-3 work | ✓ VERIFIED [LOCAL] | `cmake --build --preset x64-linux` → `ninja: no work to do` (already built at current HEAD `4057254`). `ctest --test-dir build/x64-linux` → `100% tests passed, 0 tests failed out of 297`. Independently cross-checked against `build (x64-linux)`'s own CI conclusion for the same headSha via `gh run view 31946964023 --json jobs` → `{"name":"build (x64-linux)","conclusion":"success"}`. Local and CI agree. |
-| 13 | No debt markers or anti-patterns introduced in the round-3 diff | ✓ VERIFIED [LOCAL] | `grep -n -E "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER"` across `tests/unit/test_report_model.cpp`, `tests/unit/test_dir_pairing.cpp`, both new lint scripts, and `ci.yml` → 0 matches. |
-| 14 | All 48 Phase-2 requirement IDs remain traceable | ✓ VERIFIED [LOCAL] | `grep -cE` over `REQUIREMENTS.md`'s Phase 2 rows for the 48-ID list → 48 matches, all `Complete`. `02-14`/`02-16` declare `requirements: [BUILD-01, BUILD-05]`; `02-15` declares `[BUILD-01, BUILD-05, DIR-04]` — DIR-04 IS one of Phase 2's own 48 IDs (byte-wise dir-pairing ordering), correctly claimed since 02-15 is the plan that repairs its test coverage. BUILD-01/BUILD-05 are Phase-1-owned IDs being *restored* (the prior verification's framing, confirmed correct here — not re-litigated). No orphans found. |
-
-#### Truths NOT verified this round — still open, confirmed blockers (round-4 gaps)
+#### Round-4 gap-closure truths, newly verified this round
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 15 | mediadiff's byte-level test output is identical on Windows and POSIX (goldens match; captured subprocess bytes match exactly) | ✗ FAILED — G-02-5, open | `gh run view --job 95164409600 --log` [CI-31946964023], pulled fresh: `test_process_spawn.cpp(42): FAILED: 85000 (0x14c08) == 82500 (0x14244)` (delta exactly 2500 bytes); three `golden.cpp(119): FAILED:` lines for junit_basic/markdown_basic/the tty golden. All confirmed present in the raw log, not just in the SUMMARY's transcription. |
-| 16 | A non-ASCII filename round-trips through mediadiff's path handling unchanged on Windows | ✗ FAILED — G-02-6, open | `gh run view --job 95164409600 --log`: `test_dir_pairing.cpp(204): FAILED:` — confirmed present in the raw log. |
-| 17 | mediadiff's documented exit-code contract and inspect output hold identically on Windows | ✗ FAILED — G-02-7, open | `gh run view --job 95164409600 --log`: `test_exit_codes.cpp(94): FAILED:` and `test_explain_inspect.cpp(112): FAILED:` — confirmed present in the raw log. `98% tests passed, 7 tests failed out of 297` matches the sum of all seven distinct failure lines counted in the raw log (2 golden lines were double-checked as belonging to two of the three reported golden mismatches; total distinct FAILED lines in the Test step = 7). |
+| 6 | G-02-5 closed: mediadiff's byte-level output is identical on Windows and POSIX (goldens match, subprocess bytes match, `--json` stdout equals `--json=<path>` file bytes) | ✓ VERIFIED [LOCAL + CI-32153890395] | `.gitattributes` read directly: `* text=auto eol=lf`, no `filter`/`merge`/`-diff` attribute. `git add --renormalize .` [LOCAL] stages nothing but a pre-existing unrelated edit — confirmed a genuine no-op on tracked content. `src/cli/main.cpp` read directly: `_setmode(_fileno(stdout), _O_BINARY)` and the matching `stderr` line are literally the first two statements of `wmain` (lines 233-234), before `enable_vt_output()` (line 241) and before any output, including the function's own UTF-16-conversion failure path. `tests/integration/test_json_schema.cpp`'s new `TRUST-05` TEST_CASE read directly: reads the file destination in binary via `fopen_utf8(...,"rb")`, asserts no `0x0D` in captured stdout, and asserts full byte equality between stdout and the file. On CI run `32153890395`, job `95766278227`, pulled fresh via `gh run view --job 95766278227 --log`: `grep -c` returns `0` for `C4996`/`C4702`/`C2220`/`golden mismatch`/`85000`/`FAILED`; tests `#67`, `#75`, `#95`, `#201`, `#262` (TRUST-05) all confirmed `Passed` by exact name at their logged line numbers. `tests/process_spawn.h`, `tests/support/golden.cpp`, and the four `fopen_utf8(..., "wb")` file-destination call sites all confirmed untouched (`git diff --stat` empty across the whole round-4 range). |
+| 7 | G-02-6 closed: a non-ASCII filename round-trips through mediadiff's path handling unchanged on Windows | ✓ VERIFIED [LOCAL + CI-32153890395] | `tests/support/utf8_path.h` read directly: `path_from_utf8` routes through `mediadiff::utf8_to_wide` on Windows (no wide type named directly, no `u8path`), byte-verbatim elsewhere — mirrors `src/cli/dir_pairing.cpp`'s own two-branch conversion, confirmed by reading both files side by side. `tests/unit/test_dir_pairing.cpp`'s literal `"r\xC3\xA9sum\xC3\xA9.snap.json"` and its `relative_path == non_ascii_name` assertion confirmed unchanged (`grep -c` = 1 each). `src/cli/dir_pairing.cpp` confirmed untouched across the whole round-4 range — the product was never at fault. On CI run `32153890395`, job `95766278227`: test `#36` `unit.dir_pairing: a tree containing a non-ASCII filename pairs correctly` confirmed `Passed`, `grep -c 'sumÃ'` returns `0`. |
+| 8 | G-02-7 closed (both halves): mediadiff's documented exit-code contract and `explain_inspect` output hold identically on Windows | ✓ VERIFIED [LOCAL + CI-32153890395] | `src/cli/main.cpp` read directly: `app.allow_windows_style_options(false);` sits immediately after `allow_subcommand_prefix_matching(false)` (line 82), above every `register_*_command` call (first at line 92) — placement is load-bearing per CLI11 2.6.2's parent-to-child INHERITABLE copy, and the ordering was confirmed by line number, not assumed. `src/cli/exit_code.cpp` read directly and confirmed byte-for-byte untouched across the whole round-4 range: `input_open` → `kExitInput` (65), `usage` → `kExitUsage` (64), unconditional, no platform branch, no `default:` arm. `tests/integration/test_exit_codes.cpp` read directly: `CHECK(result.exit_code == 65)` at line 94 is unchanged; the input path `/no/such/file.snap.json` is unchanged; two new stderr assertions (lines 101-102) confirmed present. Locally ran `ctest -R exit_codes` [LOCAL]: all 12 cases pass, including all four `64` cases and both `65` cases. `tests/integration/test_explain_inspect.cpp` confirmed untouched across the whole round-4 range — its file was deliberately never modified so that its Windows pass would be a designed experiment proving downstream causation, not an independent fix. On CI run `32153890395`, job `95766278227`: test `#236` `integration.exit_codes - 65: ...` and test `#247` `integration.explain_inspect - REPORT-07: ...` both confirmed `Passed` by exact name; `grep -c '64 == 65'` returns `0`. |
+| 9 | The four Windows tests that passed in round 3 for the wrong reason (CRLF golden matching CRLF stdout) now pass for the RIGHT reason | ✓ VERIFIED [CI-32153890395] | `#225` `dir_mode - the TTY worst-N table...`, `#248` `explain_inspect - REPORT-07: two inspect runs produce byte-identical stdout...`, `#268` `json_schema - two identical compare --json runs...`, `#273` `list_checks - ENG-12: --effective is byte-identical...` — all four independently re-pulled from the raw Windows job log this session and confirmed `Passed` at the exact test numbers `02-19-SUMMARY.md` reports. Both halves of `02-17`'s fix (goldens pinned to LF, stdout set to binary/LF) needed to land together for these four to keep passing at LF == LF instead of the coincidental CRLF == CRLF that made them pass before. |
+| 10 | The four required CI merge contexts are green simultaneously, for the first time in the project's history, on the exact commit this report certifies | ✓ VERIFIED [CI-32153890395] | `gh run view 32153890395 --json headSha,conclusion,jobs` [CI-32153890395], pulled fresh this session: `headSha` = `d7274258ad73b61a4927721f0020e66099e65912`, string-equal to local `HEAD` (`git rev-parse HEAD` [LOCAL], confirmed identical). Job conclusions: `lint (ENG-16 boundary)` success, `build (x64-linux)` success, `build (arm64-osx)` success, `build (x64-windows-static-md)` success. `build (x64-osx)` and `build (arm64-linux)` both `failure`, confirmed matching their recorded non-blocking signatures (below). |
+| 11 | The local build reproduces the CI result on this host, under the same warnings-as-errors discipline | ✓ VERIFIED [LOCAL] | Touched every round-4-modified translation unit and forced a clean rebuild: `cmake --build --preset x64-linux` succeeded with zero warning/error lines under `-Wall -Wextra -Werror` (a `-Werror` build cannot succeed silently past a warning). `ctest --test-dir build/x64-linux`: `298/298` passed, `0` failed, `1` skipped (`unit.console_vt`, real-console-only, unchanged). All four lint scripts (`lint_eng16.sh`, `lint_check_id_strings.sh`, `lint_dead_code_after_fail.sh`, `lint_fixture_case_collisions.sh`) exit `0`. |
+| 12 | No debt markers or prohibited escape hatches were introduced anywhere in the round-4 diff | ✓ VERIFIED [LOCAL] | `grep -n -E "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER"` across every round-4-touched source/test file → `0` matches. `grep -rn "pragma warning(suppress\|SKIP(\|UPDATE_GOLDENS"` across the same files → `0` matches. |
+| 13 | All 48 Phase-2 requirement IDs remain traceable and `Complete` | ✓ VERIFIED [LOCAL] | Re-derived the correct 48-ID set by reading `REQUIREMENTS.md` directly rather than trusting the round-3 report's summary: `CLI-05` and `CLI-09` are `Phase 1`-owned, not Phase 2 (confirmed by their own rows), so Phase 2's true set is `CLI-01,02,03,04,06,07,08,10` (8, not 10) + `ENG-01..16` (16) + `SNAP-01..07` (7) + `REPORT-01..07` (7) + `DIR-01..05` (5) + `TRUST-03,05,08` (3) + `DOC-01,02` (2) = **48**. `grep -c` over exactly those 48 rows for `Complete` → `48`. `ROADMAP.md`'s own Phase-2 `**Requirements**:` line independently lists the identical 48-ID set, cross-confirming the derivation. |
 
-**Score:** 14/17 truths verified directly against the codebase or against CI's own raw logs (11 code-level + CI-confirmed truths, plus 3 carried-forward regression checks not separately numbered above). 3 truths remain FAILED — all three are the round-4 gaps a human already opened against this exact CI run, none newly discovered here, and none is a regression caused by the round-3 gap-closure work (all three are pre-existing Phase-2 defects in code the Windows leg had literally never executed before this run, per G-02-3's own scope_caveat).
+**Score:** 13 directly-numbered truths above, all VERIFIED, covering 22 distinct must-have items across the phase's five roadmap Success Criteria plus the three round-4 gap closures. **0 truths FAILED. 0 behavior-unverified.** The one remaining human-facing item (UAT test 2, real-Windows-console colour rendering) is not counted as open: it was explicitly deferred to Phase 3 by human decision at the round-4 checkpoint, not left unresolved by this verification pass.
 
-### Required Artifacts (round-3 scope)
+### Deferred Items
+
+Not gaps — explicitly deferred by human decision or by the round-4 plans' own scope, and none blocks this phase's goal.
+
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | UAT test 2 — colour renders as real styling in a Windows console | Deferred to Phase 3 (human decision, 2026-08-18) | `02-UAT.md round_4_verdict.uat_test_2`; artifact `mediadiff-windows-x64` (1,301,968 bytes) confirmed to exist at sha `d727425` via the GitHub Actions API [CI-32153890395]. |
+| 2 | `CI-x64-osx` | Deferred, non-blocking, unchanged signature | Job `95766278109` re-pulled this session: `fat file missing arch 'arm64', file has 'x86_64'`. Not a required context. |
+| 3 | `CI-arm64-linux` | Deferred, non-blocking, unchanged signature | Job `95766278139` re-pulled this session: fails at `Register vcpkg NuGet feed`, exit 1. Not a required context. |
+| 4 | `getenv_utf8` thread-safety contract undocumented | Deferred, non-blocking | `02-UAT.md` Deferred Follow-Ups, deferred 2026-08-16, untouched by round 4. |
+| 5 | Dead `<cstdlib>` include in `src/cli/options.cpp` | Deferred, non-blocking | `02-UAT.md` Deferred Follow-Ups, deferred 2026-08-16, untouched by round 4. |
+| 6 | Severity colour applies only to the status glyph | Deferred, non-blocking (spec ambiguity, not a defect) | `02-UAT.md` Deferred Follow-Ups, deferred 2026-08-16, untouched by round 4. |
+| 7 | No test exercises a non-ASCII path end-to-end through the built `mediadiff` binary (CLI-09's actual promise) | Deferred, non-blocking | `02-18-SUMMARY.md`'s Task 2 Part 3 audit; explicitly recorded rather than added in round 4 to avoid perturbing `02-17`'s count criteria. |
+
+### Required Artifacts (round-4 scope)
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `tests/unit/test_report_model.cpp` | `block_for()` restructured to single reachable exit | ✓ VERIFIED [LOCAL] | Read directly; matches spec, all 11 tests intact. |
-| `scripts/lint_dead_code_after_fail.sh` | self-testing lint, FAIL()-then-statement shape, zero-file guard | ✓ VERIFIED [LOCAL] | Ran clean, then broke deliberately (see truth #10); both guards fire correctly. |
-| `tests/unit/test_dir_pairing.cpp` | case-collision-free byte-wise-order fixture with teeth assertion | ✓ VERIFIED [LOCAL] | Read directly; independently recomputed the ordering claim (see truth #8). |
-| `scripts/lint_fixture_case_collisions.sh` | self-testing lint, case-fold-collision shape, zero-file guard | ✓ VERIFIED [LOCAL] | Ran clean, then broke deliberately; both guards fire correctly. |
-| `.github/workflows/ci.yml` | two new lint steps wired in, additions-only, required-check name preserved | ✓ VERIFIED [LOCAL] | `git show`/`git diff --unified=0` confirm +12/-0, name intact, no `continue-on-error` added. |
+| `.gitattributes` | pins every text file to LF on checkout, no content-hiding attribute | ✓ VERIFIED [LOCAL] | Read directly; renormalize proven a no-op this session. |
+| `src/cli/main.cpp` — `_setmode` binary-mode block | stdout AND stderr binary before any output | ✓ VERIFIED [LOCAL] | Read directly; first two statements of `wmain`, before `enable_vt_output()`. |
+| `src/cli/main.cpp` — `allow_windows_style_options(false)` | above every subcommand registration | ✓ VERIFIED [LOCAL] | Read directly; line 82 precedes line 92 (first `register_` call). |
+| `tests/integration/test_json_schema.cpp` — TRUST-05 test | asserts stdout bytes == file bytes, no `0x0D` in stdout | ✓ VERIFIED [LOCAL + CI] | Read directly; passed on all three blocking legs [CI-32153890395]. |
+| `tests/support/utf8_path.h` | mirrors product's UTF-8 conversion, no wide type named, no `u8path` | ✓ VERIFIED [LOCAL] | Read directly; `grep` confirms no wide-type identifiers, no `u8path`. |
+| `tests/unit/test_process_spawn.cpp` | child writes via `sys.stdout.buffer`/`sys.stderr.buffer`, no-CR assertions added | ✓ VERIFIED [LOCAL] | Read directly; `kLineCount`/`kLineBytes` unchanged, `tests/process_spawn.h` untouched. |
+| `tests/unit/test_dir_pairing.cpp` — non-ASCII fixture | routed through `path_from_utf8`, literal and assertion unchanged | ✓ VERIFIED [LOCAL] | Read directly. |
+| `tests/integration/test_exit_codes.cpp` — 65 case | `== 65` verbatim, stderr classification assertions added | ✓ VERIFIED [LOCAL] | Read directly. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `tests/unit/test_report_model.cpp::block_for` | `mediadiff::group_to_string` | `INFO(...)` diagnostic on miss | ✓ WIRED [LOCAL] | Confirmed at line 62; the diagnostic names the missing group rather than the function crashing or silently returning a default. |
-| `.github/workflows/ci.yml` `lint` job | `scripts/lint_dead_code_after_fail.sh` | `run: bash scripts/...` step | ✓ WIRED [CI-31946964023] | `gh run view --job 95164409561 --log`-class confirmation not separately re-pulled this session, but `02-16-SUMMARY.md`'s claim that all four lint steps ran by name is consistent with the job's `success` conclusion pulled via `gh run view 31946964023 --json jobs`. |
-| `.github/workflows/ci.yml` `lint` job | `scripts/lint_fixture_case_collisions.sh` | `run: bash scripts/...` step | ✓ WIRED [CI-31946964023] | Same job, same conclusion. |
-| `src/cli/commands/compare.cpp` / `dir.cpp` | `stdout` (for `--json`, TTY, and any report NOT sent to `--report`/`--json` file path) | `std::fputs(..., stdout)` | ⚠️ WIRED but binary-mode-unconfirmed on Windows | See new finding below and the corresponding human-verification item — routed to human, not asserted as broken. |
-| `src/cli/commands/compare.cpp::write_report_file` / `dir.cpp` equivalent | file destinations (`--report`, `--json <path>`) | `fopen_utf8(path, "wb")` | ✓ WIRED, binary-mode confirmed [LOCAL] | Read directly: explicit `"wb"` mode at the one shared `write_report_file` helper compare.cpp uses, and the equivalent call site in dir.cpp. This path is NOT implicated in the newline-translation risk the stdout path is. |
-
-### New finding — beyond the CI read (task item 6)
-
-The task asked whether any of the seven Windows test failures have a POSIX-invisible analogue already latent in the code that no currently-open gap would catch. Two candidate mechanisms were found by tracing the code, neither confirmed on a real Windows host (this sandbox is Linux-only), both reported as open questions rather than defects:
-
-**1. Missing `.gitattributes` — plausible explanation for the golden-file mismatches (G-02-5's three golden failures).** `cat .gitattributes` [LOCAL] → file does not exist. `git check-attr text eol -- tests/golden/*.txt` [LOCAL] → `text: unspecified`, `eol: unspecified` for every golden file. `golden.cpp` opens both the golden file (`fopen_utf8(path, "rb"/"wb")`) and compares against an in-memory string built entirely by `render_markdown`/`render_junit`/`render_tty` (pure string builders, no file I/O, confirmed by reading `test_markdown_budget.cpp:226`, `test_junit.cpp:219`, `test_tty_render.cpp:258`). With no `.gitattributes` pinning these files to LF, a Windows checkout under GitHub Actions' documented default `core.autocrlf=true` would materialize `tests/golden/*.txt` with CRLF line endings on disk, while the in-memory rendered string uses plain `\n` — producing exactly the observed symptom ("mismatch at line 1, expected and actual render identically in the log," since a trailing `\r` is invisible when printed). This is a distinct mechanism from the pipe-capture hypothesis 02-UAT.md's G-02-5 already favors for test #95 (which goes through an actual OS pipe, not a git-checked-out file) — both could be simultaneously true, explaining different subsets of the four affected tests. Not confirmed; would need a Windows checkout to verify the golden files' actual on-disk line endings.
-
-**2. No binary-mode guard on `stdout` anywhere in `src/` — a possible product-level defect the current gaps do not cover.** `grep -rn "_setmode\|_O_BINARY\|O_BINARY" src/` [LOCAL] → 0 matches anywhere in the first-party source tree. Both `src/cli/commands/compare.cpp` and `src/cli/commands/dir.cpp` write `--json` and TTY report output to `stdout` via `std::fputs(report.c_str(), stdout)` — the C runtime's `stdout` stream, not an explicitly binary-mode handle. By contrast, every file-destination write in the same two files goes through `fopen_utf8(path, "wb")` — explicit binary mode, confirmed safe. Windows' C runtime is documented to default `stdout` to text mode, translating every `\n` written through it to `\r\n`, unless the stream's mode is explicitly set to binary (`_setmode`). **If this holds on real Windows hardware, `mediadiff --json > out.json` (or any pipe consumer) would receive CRLF-terminated JSON on Windows and LF-terminated JSON on Linux/macOS for byte-identical input — a direct, product-level violation of the project's own stated determinism contract ("byte-identical `--json` across identical runs"), and a defect none of the seven currently-failing tests directly exercises** (all seven are either in-process unit-test golden comparisons or a test-harness's own subprocess-capture, not a real end-to-end CLI-invocation-to-redirected-file check). This is reported as an open question, not a confirmed defect — routed to human verification below, since it cannot be exercised from this Linux sandbox and no currently-open gap (G-02-5/6/7) is scoped to catch it if it manifests only outside the test suite.
-
-Both findings are additive to, not replacements for, the three human-confirmed round-4 gaps — they do not change this report's `gaps_found` status, and neither is presented as proven.
+| GitHub Actions Windows runner checkout | bytes of `tests/golden/*.txt` on disk | `.gitattributes`'s `* text=auto eol=lf` | ✓ WIRED [CI-32153890395] | Three in-process golden tests confirmed `Passed`, zero `golden mismatch` in the log. |
+| `wmain`'s `_setmode` calls | `std::fputs`/`fwrite` to stdout/stderr in `src/cli/` | fd-level binary mode set before any write | ✓ WIRED [LOCAL + CI-32153890395] | New TRUST-05 test asserts and passes on all three blocking legs. |
+| root `CLI::App`'s `allow_windows_style_options(false)` | every subcommand's own argv classification | CLI11 2.6.2 parent-to-child INHERITABLE copy | ✓ WIRED [LOCAL + CI-32153890395] | Placement confirmed above all `register_*_command` calls; test `#236` confirmed `Passed`. |
+| `tests/support/utf8_path.h`'s `path_from_utf8` | the on-disk filename `write_file` creates | `mediadiff::utf8_to_wide` (mirrors `src/cli/dir_pairing.cpp`) | ✓ WIRED [LOCAL + CI-32153890395] | Test `#36` confirmed `Passed`. |
+| `src/cli/commands/compare.cpp`/`dir.cpp` `fopen_utf8(..., "wb")` file destinations | stdout/stderr (now also binary) | Both now converge on LF/binary, closing the asymmetry the round-3 report flagged as an open human-verification item | ✓ WIRED, CLOSED MECHANICALLY [LOCAL + CI-32153890395] | The round-3 `02-VERIFICATION.md`'s second `human_verification` item (whether `--json` redirected to stdout is byte-identical to the file destination on Windows) is now answered by an automated, CI-enforced test rather than requiring a manual confirmation — human-accepted per `02-UAT.md round_4_verdict.trust_05_human_item`. |
 
 ### Requirements Coverage
 
-All 48 Phase-2 requirement IDs (`CLI-01…04,06,07,08,10`, `ENG-01…16`, `SNAP-01…07`, `REPORT-01…07`, `DIR-01…05`, `TRUST-03,05,08`, `DOC-01,02`) remain `Complete` and traceable in `.planning/REQUIREMENTS.md`, independently re-confirmed by `grep -cE` in this session (48/48 matches). `02-14`/`02-16` correctly declare `[BUILD-01, BUILD-05]` — Phase-1-owned IDs being restored, per the established 02-12/02-13 precedent the prior verification endorsed (not re-litigated here). `02-15` additionally and correctly declares `DIR-04`, its own Phase-2 ID, since it repairs `DIR-04`'s test coverage directly. No orphaned or lost requirement coverage found.
+All 48 Phase-2 requirement IDs — `CLI-01,02,03,04,06,07,08,10` (8; `CLI-05`/`CLI-09` are Phase-1-owned, confirmed by direct read and excluded), `ENG-01…16` (16), `SNAP-01…07` (7), `REPORT-01…07` (7), `DIR-01…05` (5), `TRUST-03,05,08` (3), `DOC-01,02` (2) — are `Complete` in `.planning/REQUIREMENTS.md`, independently re-confirmed by `grep -c` in this session against exactly that 48-row set (`48` matches). `DIR-06` is the one nearby ID that is NOT part of this phase (`Phase 3`, `Pending`) — confirmed by direct read, not assumed. `ROADMAP.md`'s own Phase-2 `**Requirements**:` line lists the identical 48-ID set, cross-confirming the derivation independently of `REQUIREMENTS.md`. `TRUST-05` in particular is now backed by both a mechanical CI-enforced test (this round's `TRUST-05` TEST_CASE) and the pre-existing POSIX byte-identity guarantee, closing the one requirement this round's evidence most directly strengthens.
 
 ### Anti-Patterns Found
 
-None. `grep -n -E "TBD|FIXME|XXX|TODO|HACK|PLACEHOLDER"` across every file touched by the round-3 plans (`test_report_model.cpp`, `test_dir_pairing.cpp`, both new lint scripts, `ci.yml`) returned zero matches.
+None. `grep -n -E "TBD|FIXME|XXX|TODO|HACK|PLACEHOLDER"` across every file touched in the round-4 commit range (`.gitattributes`, `src/cli/main.cpp`, `tests/integration/test_json_schema.cpp`, `tests/integration/test_exit_codes.cpp`, `tests/unit/test_process_spawn.cpp`, `tests/unit/test_dir_pairing.cpp`, `tests/support/utf8_path.h`) returned zero matches. `grep -rn "pragma warning(suppress|SKIP(|UPDATE_GOLDENS"` across the same files returned zero matches. No prohibited escape hatch was used anywhere in the round-4 diff.
 
 ### Behavioral Spot-Checks
 
-| Behavior | Command | Result | Status |
+| Behavior | Command | Result | Evidence source |
 |----------|---------|--------|--------|
-| `block_for()` has no dead code, no suppression | `grep -n "FAIL(\|pragma warning\|std::abort\|std::terminate" tests/unit/test_report_model.cpp` | 0 matches | ✓ PASS |
-| All 11 report_model tests intact | `grep -c 'TEST_CASE("report_model'` | 11 | ✓ PASS |
-| `lint_dead_code_after_fail.sh` clean on current tree | `bash scripts/lint_dead_code_after_fail.sh` | exit 0, "clean. Scanned 49 file(s)" | ✓ PASS |
-| `lint_dead_code_after_fail.sh` fires on empty scan dir | modified copy pointed at an empty dir | exit 1, "yielded zero files" | ✓ PASS |
-| `lint_dead_code_after_fail.sh` fires on real known-bad input | injected `FAIL()`-then-`static`-then-`return` fixture | exit 1, names `badtests/probe.cpp:3` | ✓ PASS |
-| `lint_fixture_case_collisions.sh` clean on current tree | `bash scripts/lint_fixture_case_collisions.sh` | exit 0, "clean. Scanned 49 file(s)" | ✓ PASS |
-| `lint_fixture_case_collisions.sh` fires on empty scan dir | modified copy pointed at an empty dir | exit 1, "yielded zero files" | ✓ PASS |
-| `lint_fixture_case_collisions.sh` fires on real known-bad input | injected `"Case.snap.json"`/`"case.snap.json"` fixture | exit 1, names both spellings | ✓ PASS |
-| Fixture ordering claim (byte-wise vs case-folded differ) | independent Python recomputation of `sorted(names)` vs `sorted(names, key=str.lower)` | differ at 4/5 positions | ✓ PASS |
-| `ci.yml` diff is additions-only | `git diff --unified=0 8d4aa4a~1 8d4aa4a -- .github/workflows/ci.yml \| grep -c '^-[^-]'` | 0 | ✓ PASS |
-| Required-check name intact, exactly once | `grep -c "name: lint (ENG-16 boundary)"` | 1 | ✓ PASS |
-| Local Linux build unaffected | `cmake --build --preset x64-linux` | `ninja: no work to do` | ✓ PASS |
-| Local Linux test suite | `ctest --test-dir build/x64-linux` | `100% tests passed, 0 tests failed out of 297` | ✓ PASS |
-| CI run's actual job conclusions (fresh pull) | `gh run view 31946964023 --json headSha,conclusion,jobs` | matches SUMMARY exactly: lint success, x64-linux success, arm64-osx success, x64-windows-static-md failure (test step), x64-osx failure (unchanged, non-blocking), arm64-linux failure (unchanged, non-blocking) | ✓ PASS |
-| Windows Test step's raw failure lines (fresh pull, not SUMMARY transcription) | `gh run view --job 95164409600 --log \| grep FAILED` | 7 distinct `FAILED:` lines at the exact file:line pairs 02-UAT.md records | ✓ PASS |
-| arm64-osx Test #40 raw result (fresh pull) | `gh run view --job 95164409605 --log \| grep 'Test  #40'` | `Passed` | ✓ PASS |
-| No `_setmode`/`_O_BINARY` guard anywhere in `src/` | `grep -rn "_setmode\|_O_BINARY\|O_BINARY" src/` | 0 matches | ⚠️ NOTED — routed to human verification, not asserted as a failure |
+| `_setmode` covers both streams, before any output | Direct read of `src/cli/main.cpp:233-241` | Confirmed: both calls precede `enable_vt_output()` | [LOCAL] |
+| `allow_windows_style_options(false)` precedes subcommand registration | `grep -n` line-number comparison | Line 82 < line 92 | [LOCAL] |
+| `.gitattributes` renormalizes nothing | `git add --renormalize .` then `git reset` | Stages nothing but a pre-existing unrelated edit | [LOCAL] |
+| Prohibited files untouched across round 4 | `git diff --stat 4f17a19^..f11f807 -- <5 files>` | All five diffs empty | [LOCAL] |
+| Full local suite | `ctest --test-dir build/x64-linux` after a forced clean rebuild | 298/298 passed, 0 failed, 1 skipped | [LOCAL] |
+| `exit_codes` suite specifically | `ctest --test-dir build/x64-linux -R exit_codes` | 12/12 passed (4×64, 2×65, others) | [LOCAL] |
+| All four lint scripts | `bash scripts/lint_*.sh` ×4 | All exit 0 | [LOCAL] |
+| Windows job's zero-diagnostic claims | `gh run view --job 95766278227 --log \| grep -c` for `C4996`/`C4702`/`C2220`/`FAILED`/`golden mismatch`/`85000`/`64 == 65`/`sumÃ` | All 0 | [CI-32153890395] |
+| Windows Test step total | same log | `100% tests passed, 0 tests failed out of 298` | [CI-32153890395] |
+| x64-linux / arm64-osx totals | `gh run view --job <id> --log` | `0 tests failed out of 298` both legs | [CI-32153890395] |
+| Lint job's four steps | `gh run view --job 95766277880 --log` | All four report "clean" by name | [CI-32153890395] |
+| Non-required legs unchanged | `gh run view --job 95766278109/95766278139 --log` | Both match recorded signatures exactly | [CI-32153890395] |
+| `mediadiff-windows-x64` artifact | `gh api .../runs/32153890395/artifacts` | `1301968` bytes, exists | [CI-32153890395] |
+| Eight round-4-relevant tests by exact name | `gh run view --job 95766278227 --log \| grep -n` | All `Passed` at the exact line/number `02-19-SUMMARY.md` reports | [CI-32153890395] |
 
 ### Probe Execution
 
-Not applicable — Phase 2 has no `scripts/*/tests/probe-*.sh` convention. The two new lint scripts (`lint_dead_code_after_fail.sh`, `lint_fixture_case_collisions.sh`) are covered under Behavioral Spot-Checks above instead, since they are CI gates, not probes in the `references/verifier-wiring-patterns.md` sense.
+Not applicable — Phase 2 has no `scripts/*/tests/probe-*.sh` convention (unchanged from the round-3 report). The four required lint scripts function as this project's equivalent gate and are covered under Behavioral Spot-Checks above.
 
 ### Human Verification Required
 
-### 1. Colour renders as real styling in a Windows console
+**None outstanding.** The two items open in the prior (round-3) `02-VERIFICATION.md`'s `human_verification` block are both resolved:
 
-**Test:** Run `mediadiff compare`/`dir` with colour enabled in a real Windows `cmd.exe` or Windows Terminal session, exercising the `SetConsoleMode` `ENABLE_VIRTUAL_TERMINAL_PROCESSING` path.
-**Expected:** ANSI-interpreted styling (real colour), not literal escape-sequence bytes.
-**Why human:** Reachable for the first time in the phase's history — CI run `31946964023`'s Windows Build step succeeded and produced `mediadiff.exe` — but it has not been run. This sandbox is Linux-only. Record the mediadiff build sha alongside the result: if G-02-5 (newline handling) closes before this runs, a later build's console output could plausibly differ.
-
-### 2. Confirm whether mediadiff's own stdout output (not just its test suite) is byte-identical on Windows
-
-**Test:** On a real Windows build of `mediadiff.exe` (the same artifact from run `31946964023`), run `mediadiff compare <a> <b> --json > out.json` (and separately `--report md=out.md`) against fixed, small inputs, and byte-compare `out.json`/`out.md` against the same command's output on Linux/macOS for identical inputs. Also check whether the same `\r\n` pattern appears when `--json` is piped (not redirected to a file) into a consuming process.
-**Expected:** Byte-identical output across platforms, per the project's own stated determinism contract. If `\r\n` line endings appear on Windows where Linux/macOS produce `\n`, this is a genuine product-level defect.
-**Why human:** This verification pass traced the code path (`std::fputs(report.c_str(), stdout)` with no `_setmode`/`_O_BINARY` guard found anywhere in `src/`) and found a plausible, unconfirmed mechanism for exactly this outcome — see "New finding" above. It cannot be exercised from this Linux sandbox, and it is a genuinely open question, not a confirmed defect: Windows CRT default stdout text-mode behavior is a documented platform fact, not something observed directly in this session. None of the three currently-open gaps (G-02-5/6/7) is scoped to catch this if it manifests only in the product's actual CLI invocation rather than in the test suite's in-process golden checks or test-harness subprocess capture.
+1. **Real-Windows-console colour rendering (UAT test 2)** — resolved by explicit human decision to defer to Phase 3 (`02-UAT.md round_4_verdict.uat_test_2`, decided 2026-08-18), not by verification. Recorded under Deferred Items above, not re-opened here.
+2. **Whether `--json` redirected to stdout is byte-identical to the file destination on Windows** — resolved mechanically by the new `TRUST-05` test, which asserts and enforces exactly this property in CI on every run going forward, confirmed `Passed` on all three blocking legs in run `32153890395`. Human-accepted as sufficient (`02-UAT.md round_4_verdict.trust_05_human_item`).
 
 ### Gaps Summary
 
-**Two gaps are genuinely, independently confirmed closed this round** — not merely re-asserted from the prior report. `block_for()`'s dead-code shape is gone from the source (read directly, no compiler-specific suppression used, all 11 report_model tests intact), and CI run `31946964023`'s own raw Windows-build log (pulled fresh via `gh run view --job 95164409600 --log` in this session, not taken from any SUMMARY) shows zero C4702/C2220/C4996 and a successful Build step conclusion. Independently for G-02-4: the `test_dir_pairing.cpp` fixture is case-collision-free (re-verified by an independent Python computation, not by trusting the SUMMARY's arithmetic), and the arm64-osx job's own raw log shows test #40 passing and `100% tests passed out of 297`. Both new lint scripts were deliberately broken during this verification (pointed at empty directories, fed known-bad injected fixtures) and both correctly refused to report clean — their self-tests have real teeth, not just the appearance of teeth. The `ci.yml` change wiring them in is additions-only with the required-check name preserved exactly once and no escape hatch added.
+**All three round-4 gaps (G-02-5, G-02-6, G-02-7) are closed, independently re-verified against the source and against CI's own raw logs in this session — not accepted on the strength of any SUMMARY's narrative.** This phase took four rounds: round 1 found the environment-portability defects (`getenv`, ctest count parsing) that had never been exercised on Windows/macOS; round 2 confirmed those closed and, by finally letting MSVC and macOS's ctest compile/run further, revealed round 3's genuine toolchain-parity and fixture-portability defects; round 3 closed those and, by finally letting the Windows test suite execute end to end for the first time ever, revealed round 4's three defects — a stdout/checkout byte-identity gap that touched a hard product determinism constraint (TRUST-05), a test-fixture ANSI-codepage mis-decode, and an argv-classification divergence with a real CLI-06 contract consequence. Each round's fix worked exactly as intended and immediately exposed the next layer underneath it; that pattern, stated plainly across all four rounds' UAT records, is the honest shape of this phase's history, not evidence against it.
 
-**Three gaps remain open, all confirmed by this session's own fresh pull of the CI logs, none new and none caused by the round-3 work:** G-02-5 (Windows byte-level output divergence — 4 tests), G-02-6 (non-ASCII path mis-decoding on Windows — 1 test), and G-02-7 (exit-code and inspect-output behavioral divergence on Windows — 2 tests). All seven Windows test failures are first-ever executions of code paths the Windows leg had never reached before this run; none is a regression from the round-3 gap-closure work (verified: `src/cli/dir_pairing.cpp` untouched by any round-3 plan, and none of `02-14`/`02-15`/`02-16` touch `test_process_spawn.cpp`, `test_exit_codes.cpp`, or `test_explain_inspect.cpp`).
+**What round 4 leaves genuinely open, stated plainly rather than absorbed into "passed":** UAT test 2 (Windows console colour) has still never been run on a real console — it is deferred to Phase 3 by explicit human decision, not verified, and the artifact it needs is real and available. `CI-x64-osx` and `CI-arm64-linux` are still red with unchanged, understood, non-blocking causes. Three cosmetic/documentation follow-ups from earlier rounds remain open and non-blocking. None of these five items is a gap against this phase's goal; all five are recorded above rather than silently dropped.
 
-**Beyond re-confirming what the human's round-3 UAT already found, this verification surfaced two additional, unconfirmed but concretely-traced risks**: (1) the absence of a `.gitattributes` file, which plausibly explains the three golden-file mismatches independently of the pipe-capture hypothesis already recorded against G-02-5; and (2) a total absence of any `_setmode`/`_O_BINARY` binary-mode guard on `stdout` anywhere in `src/`, meaning the product's own `--json`/report stdout output — not just its test suite — may be subject to the same CRLF translation on Windows, which would be a direct violation of the project's stated byte-identical-`--json` determinism contract and is not covered by any currently-open gap. Both are reported honestly as open questions requiring a real Windows host to confirm, not as proven defects — but both are concrete enough that they should be checked before or alongside the G-02-5/6/7 diagnosis work, since a fix for G-02-5's test-level symptoms would not necessarily touch the product-level `stdout` path this finding describes.
-
-**The phase is not closer to done than three open blockers indicate, and the two genuine closures are real progress, not merely claimed progress** — both were independently re-derived against the actual source and the actual CI logs in this session, not accepted on the strength of any SUMMARY.md's narrative.
+**What round 4 genuinely, newly proves:** byte-identical `--json` output — a hard project determinism constraint — is now asserted by an automated test on the one platform (Windows) that could previously have silently violated it, closing a real gap between "assumed on POSIX" and "proven everywhere." The four required CI merge contexts are green simultaneously for the first time in this project's history. All 48 Phase-2 requirement IDs trace to `Complete` implementations, independently re-confirmed. The phase goal — a complete compare engine (registry, seven comparison semantics, policy resolution with provenance, snapshots with schema-version gating, all four report formats, `dir` orchestration with the full exit-code contract, `skipped != pass`) working end to end against stub measurements — is achieved and observably verified, on every platform the project's required merge gate covers.
 
 ---
 
-_Verified: 2026-08-18T09:30:00Z_
+_Verified: 2026-08-18T15:44:33Z_
 _Verifier: Claude (gsd-verifier)_
