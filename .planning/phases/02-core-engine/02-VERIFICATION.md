@@ -1,158 +1,219 @@
 ---
 phase: 02-core-engine
-verified: 2026-08-16T14:05:00Z
+verified: 2026-08-18T09:30:00Z
 status: gaps_found
-score: 7/7 must-haves verified at the code level; CI confirmation ran and REFUTED the green-legs truth — 2 new gaps opened (G-02-3, G-02-4)
+score: 14/17 truths verified directly (3 open blockers carried from round-4 human UAT, none newly introduced by this verification pass)
 behavior_unverified: 0
 overrides_applied: 0
-uat_round_2: "Test 1 (CI legs green) reported as an issue against run 31943688186 / headSha 1e065bb. Both original gaps confirmed CLOSED by that run's own evidence; two successor defects revealed behind them. See 02-UAT.md for full gap definitions."
 re_verification:
-  previous_status: human_needed
-  previous_score: 5/5 truths verified (2 present, behavior-unverified — routed to human/Phase-3 deferral)
+  previous_status: gaps_found
+  previous_score: "11/12 truths verified directly; 1 truth (actual CI-green confirmation) unverifiable without a pushed CI run"
   gaps_closed:
-    - "G-02-1 — six unguarded getenv call sites causing MSVC C4996/C2220 under /W4 /WX: CONFIRMED CLOSED BY CI. Run 31943688186 emits zero C4996 diagnostics; every former call site compiles clean under MSVC /W4 /WX (snapshot.cpp [35/97], dir.cpp [38/97], the new test_fs_utf8.cpp [42/97]), and the build advanced from its old stop at [32/97] to [65/97]. mediadiff.exe itself links successfully at [49/97]."
-    - "G-02-2 — GNU-only \\+ BRE breaking the arm64-osx ctest-count guard under BSD sed: CONFIRMED CLOSED BY CI. Run 31943688186's arm64-osx leg passed the count guard and executed the full 297-test suite for the first time in the project's history; 296 of 297 passed."
+    - truth: "G-02-3 — block_for()'s FAIL()-then-dead-code shape trips MSVC C4702 -> C2220 under /W4 /WX"
+      evidence: "Read tests/unit/test_report_model.cpp:59-65 directly on this host: block_for() now does std::find_if + INFO + REQUIRE + one reachable `return *it;`. grep -c 'FAIL(' on the file returns 0. grep for pragma warning(suppress, std::abort, std::terminate all return 0 — no compiler-specific escape hatch. Independently confirmed against CI run 31946964023 job 95164409600 via `gh run view --job 95164409600 --log`: Build step conclusion success, zero C4702/C2220/C4996 in the log."
+    - truth: "G-02-4 — test_dir_pairing.cpp's fixture collided under case-insensitive APFS (4 vs 5 files)"
+      evidence: "Read tests/unit/test_dir_pairing.cpp:113-152 directly: fixture is now {zeta, alpha, Beta, Zulu, 1}.snap.json — five names, pairwise distinct under case folding, confirmed by independently computing sorted(names) vs sorted(names, key=str.lower) in Python: they differ in 4 of 5 positions (strictly stronger than the original single case-pair). Independently confirmed via `gh run view --job 95164409605 --log`: test #40 'unit.dir_pairing: the returned order is byte-wise sorted' -> Passed, '100% tests passed out of 297'."
   gaps_remaining:
-    - "G-02-3 — tests/unit/test_report_model.cpp:56-57: dead code after a throwing Catch2 FAIL() trips MSVC C4702 → C2220 under /WX. Successor to G-02-1, not a recurrence; a translation unit MSVC had never reached before. Toolchain-parity conflict: the lines that silence GCC/Clang's -Wreturn-type are exactly what MSVC rejects."
-    - "G-02-4 — tests/unit/test_dir_pairing.cpp:100: fixture names 'Beta.snap.json' and 'beta.snap.json' collide on case-insensitive APFS, so only 4 of 5 files exist and line 108's size assertion fails 4 != 5 on macOS. Successor to G-02-2, not a recurrence. NOT a product defect — src/cli/dir_pairing.cpp keys on std::map<std::string,...>, byte-wise and platform-independent; the test never reached its ordering check."
+    - "G-02-5 — Windows byte-level output divergence (newline/text-mode), affecting tests #95, 67, 75, 201 — see gaps below"
+    - "G-02-6 — non-ASCII filename mis-decodes on Windows (test #36) — see gaps below"
+    - "G-02-7 — exit-code and inspect-output behavioral divergence on Windows (tests #236, #247) — see gaps below"
   regressions: []
   gap_closure_caused_regressions: false
+gaps:
+  - gap_id: G-02-5
+    truth: "mediadiff's byte-level output is identical on Windows and POSIX — goldens match, and captured subprocess bytes are exactly what the child wrote"
+    status: failed
+    severity: blocker
+    reason: "Confirmed open. Independently re-pulled CI run 31946964023 job 95164409600's raw log via `gh run view --job 95164409600 --log`: test_process_spawn.cpp(42) FAILED with 85000 (0x14c08) == 82500 (0x14244) (delta exactly 2500 bytes); three golden mismatches at golden.cpp(119) (junit_basic, markdown_basic, tty golden), all 'at line 1'."
+    artifacts:
+      - path: "tests/unit/test_process_spawn.cpp"
+        issue: "line 42 — byte-count mismatch consistent with LF->CRLF pipe-read translation, unconfirmed on this Linux host"
+      - path: "tests/support/golden.cpp"
+        issue: "line 119 — three golden mismatches reported 'at line 1' with visually identical expected/actual"
+    missing:
+      - "Diagnose on real Windows hardware/CI, per G-02-5's own missing[] in 02-UAT.md — not re-derivable from this Linux host."
+  - gap_id: G-02-6
+    truth: "A non-ASCII filename round-trips through mediadiff's path handling unchanged on Windows"
+    status: failed
+    severity: blocker
+    reason: "Confirmed open via `gh run view --job 95164409600 --log`: test_dir_pairing.cpp(204) FAILED — mojibake 'rÃ©sumÃ©.snap.json' vs 'résumé.snap.json', a UTF-8-bytes-read-as-Latin-1 signature."
+    artifacts:
+      - path: "tests/unit/test_dir_pairing.cpp"
+        issue: "line 204 — non-ASCII filename mis-decodes on Windows"
+    missing:
+      - "Diagnose on real Windows hardware/CI, per G-02-6's own missing[] in 02-UAT.md."
+  - gap_id: G-02-7
+    truth: "mediadiff's documented exit-code contract and inspect output hold identically on Windows"
+    status: failed
+    severity: blocker
+    reason: "Confirmed open via `gh run view --job 95164409600 --log`: test_exit_codes.cpp(94) FAILED 64 == 65; test_explain_inspect.cpp(112) FAILED found_meta_no_measurements -> false."
+    artifacts:
+      - path: "tests/integration/test_exit_codes.cpp"
+        issue: "line 94 — nonexistent input path exits 64 on Windows, contract requires 65"
+      - path: "tests/integration/test_explain_inspect.cpp"
+        issue: "line 112 — may be downstream of G-02-5's newline handling; not yet split apart"
+    missing:
+      - "Diagnose on real Windows hardware/CI, per G-02-7's own missing[] in 02-UAT.md."
 human_verification:
-  - test: "Push the branch (or the equivalent PR head) and read the resulting CI run for build (x64-windows-static-md) and build (arm64-osx)"
-    expected: "x64-windows-static-md compiles clean through all 97 build steps (not just past the former C4996 failure at step 32) and its own test run passes; arm64-osx's Test step now executes past the count guard and the 297-test suite passes (not just that the guard no longer aborts)"
-    why_human: "Neither fix has ever been exercised against its real target: MSVC/_dupenv_s/_W4 /WX cannot run on this Linux sandbox, and BSD sed cannot run here either (02-13 verified only via GNU sed's --posix emulation, which is a documented approximation, not BSD sed itself). More importantly, the local git branch (gsd/phase-2-core-engine) is 14 commits ahead of origin -- the gap-closure commits (2197c88, f005af8, c023be3, e403e32, and the docs commits) have never been pushed, so the CI run visible on PR #2 (31937349647) still reflects the OLD, pre-fix code and is FAILURE on both legs. There is no CI evidence, old or new, that either leg is actually green with these fixes applied. Both plans' own <verification> sections say the same thing explicitly and warn against assuming a first fix is sufficient (65/97 MSVC build steps and the full macOS test run have never executed in any CI run to date)."
-  - test: "Run mediadiff compare/dir/TTY report output in a real Windows console (cmd.exe or Windows Terminal) with SetConsoleMode's ENABLE_VIRTUAL_TERMINAL_PROCESSING path exercised"
-    expected: "Colour renders as actual styling (ANSI-interpreted) rather than literal escape-sequence bytes"
-    why_human: "Carried forward unchanged from the original verification and from UAT test 1, which could not even reach this check because no Windows binary existed. Blocked on the same CI push as the item above -- once a green Windows build exists, this check becomes reachable for the first time in the phase's history."
+  - test: "Colour renders as real styling in a Windows console (mediadiff compare/dir/TTY output in cmd.exe or Windows Terminal, ENABLE_VIRTUAL_TERMINAL_PROCESSING path exercised)"
+    expected: "ANSI-interpreted styling, not literal escape-sequence bytes"
+    why_human: "Reachable for the first time in the phase's history — run 31946964023's Windows Build step succeeded and produced mediadiff.exe — but has not been run. Requires a real Windows console; this sandbox is Linux-only. Carried forward from 02-UAT.md test 2, unchanged in substance. Record the mediadiff build sha with the result: if G-02-5 (newline handling) is closed after this check runs, the console bytes this check observes could change."
+  - test: "Confirm whether mediadiff's own --json/--report stdout output is actually byte-identical on Windows, independent of the seven known test failures"
+    expected: "Either (a) mediadiff.exe run on Windows with --json piped/redirected produces byte-for-byte the same content as the POSIX build (no \\r\\n insertion), confirming the determinism contract holds in the product itself and not just in in-process unit tests; or (b) it does not, which would be a product-level defect distinct from and more consequential than any of G-02-5/6/7 as currently scoped (those are entirely test-harness/test-fixture failures, not confirmed product-output failures)."
+    why_human: "This verification pass found a plausible, unconfirmed mechanism for a POSIX-invisible defect that no currently-open gap covers: src/cli/commands/compare.cpp and src/cli/commands/dir.cpp write --json/TTY output to stdout via `std::fputs(report.c_str(), stdout)`, and grep across the whole of src/ for `_setmode`/`_O_BINARY`/`SetConsoleMode`-adjacent binary-mode guards on stdout returns zero matches (only src/util/fs.h:262's unrelated `SetConsoleMode(..., ENABLE_VIRTUAL_TERMINAL_PROCESSING)` VT call exists). File-destination writes (`write_report_file`, both compare.cpp and dir.cpp) DO use `fopen_utf8(path, \"wb\")` — explicit binary mode — so that path looks safe. But the C runtime's documented default text-mode behavior for `stdout` on Windows (CRLF-translating every `\\n` written through it, unless the stream's mode is explicitly set to binary) cannot be exercised or confirmed from this Linux sandbox. If real, this would mean any Windows user piping `mediadiff --json > out.json` gets \\r\\n-terminated JSON while the same run on Linux/macOS produces \\n-terminated JSON — a direct violation of the project's own stated 'byte-identical --json across identical runs' determinism requirement, and one none of G-02-5's four currently-affected tests (all test-harness or golden-fixture failures) directly exercises. This is reported as an open question, not a confirmed defect — the code inspection is real, but the runtime behavior needs a Windows host to confirm."
 ---
 
-# Phase 2: Core Engine Verification Report (Re-Verification After Gap Closure)
+# Phase 2: Core Engine Verification Report (Round-3 Re-Verification, Superseding Prior Report)
 
 **Phase Goal:** The complete compare engine — registry, comparison semantics, policy resolution, snapshots, all four report formats and `dir` orchestration — works end to end against stub measurements, so every analyzer that follows plugs into finished machinery.
 
-**Verified:** 2026-08-16T14:05:00Z
+**Verified:** 2026-08-18T09:30:00Z
 **Status:** gaps_found
-**Re-verification:** Yes — after gap closure (plans 02-12, 02-13, closing UAT-surfaced gaps G-02-1 and G-02-2)
+**Re-verification:** Yes — round 3, superseding the prior `02-VERIFICATION.md` (2026-08-16T14:05:00Z, `gaps_found`, `gaps_remaining: [G-02-3, G-02-4]`)
 
-> **Amended 2026-08-16T14:05Z — CI evidence arrived.** This report was written at
-> `human_needed`, awaiting a pushed CI run to confirm the two gap fixes. That run happened
-> (31943688186, headSha `1e065bb`) and settled the question in both directions: **both original
-> gaps are confirmed closed by the run's own evidence**, and **two successor defects were
-> revealed behind them**, so the phase moves to `gaps_found` rather than `passed`.
->
-> The distinction matters and is deliberate. G-02-1 and G-02-2 did not recur — they were fixed,
-> and fixing them let the build and the test suite reach code that had never been compiled by
-> MSVC or executed on macOS in any run to date. Both plans' `scope_caveat` sections predicted
-> exactly this and warned against reading one fix as one green leg. The new gaps are
-> pre-existing Phase-2 defects (from plans 02-08 and 02-11), not regressions introduced by the
-> gap-closure work.
->
-> Full root causes, artifacts and fix constraints for G-02-3 and G-02-4 are in `02-UAT.md`.
+## Why this report supersedes the prior one
 
-## What changed since the last verification
+The prior report's `gaps_remaining` listed G-02-3 and G-02-4 as open, discovered from CI run `31943688186` (headSha `1e065bb`). Plans `02-14` and `02-15` closed those two gaps at the code level; plan `02-16` wired two new portability lints into the required `lint (ENG-16 boundary)` CI job, pushed, and read the resulting run — **CI run `31946964023`, headSha `8d4aa4ac99c024c89e9816f843eb0b540e152a4a`**. A human reviewed that run on 2026-08-18, confirmed both closures, and opened three round-4 gaps (G-02-5, G-02-6, G-02-7) against the Windows test suite's first-ever execution.
 
-The original `02-VERIFICATION.md` (2026-08-15) scored the 5 ROADMAP success criteria 5/5 verified and routed two Windows-console colour-rendering checks to human UAT. That UAT (`02-UAT.md`) ran, passed one of those two checks on Linux, and — while trying to reach the other on a real Windows console — surfaced two blocking CI gaps that had nothing to do with colour rendering: `G-02-1` (six unguarded `getenv` calls making `x64-windows-static-md` fail to build under `/W4 /WX`) and `G-02-2` (a GNU-only regex breaking the `arm64-osx` leg's own test-count guard). Plans `02-12` and `02-13` closed those gaps. This report re-verifies the phase with that closure applied.
+**This verification independently re-derived every claim below rather than trusting `02-UAT.md`, `02-16-SUMMARY.md`, or either gap-closure SUMMARY.** Concretely:
+
+- Read `tests/unit/test_report_model.cpp` and `tests/unit/test_dir_pairing.cpp` directly.
+- Re-computed the byte-wise-vs-case-folded ordering claim independently in Python rather than trusting the SUMMARY's assertion that they differ.
+- Ran both new lint scripts locally, then deliberately broke them (empty scan dir, injected known-bad fixtures) to confirm their self-tests and guards actually fire, not just that they report clean on the current tree.
+- Ran `git show`/`git diff --unified=0` on commit `8d4aa4a` myself to confirm the `ci.yml` change is additions-only with the required-check name intact.
+- **Pulled CI run `31946964023`'s raw job logs myself via `gh run view --job <id> --log`**, independently of the SUMMARY's transcription, for both the Windows Test step and the arm64-osx Test step.
+- Built and ran the local Linux test suite myself (297/297) rather than citing the SUMMARY's number.
+- Went beyond the assigned re-read to trace the product's own stdout-writing code path for a POSIX-invisible risk the CI read did not surface — see the new human-verification item below.
+
+Every claim in this report is labeled by its evidence source: **[LOCAL]** = observed directly on this Linux host in this session; **[CI-31946964023]** = pulled from that specific run's logs in this session (not from a SUMMARY's transcription of it); **[CARRIED]** = a regression-checked claim from the prior verification round, not re-derived from zero this round.
 
 ## Goal Achievement
 
 ### Observable Truths
 
-#### Carried forward from the original verification (regression-checked only — see prior report for full evidence)
+#### Carried forward from prior rounds (regression-checked, not re-derived)
 
 | # | Truth | Status | Regression check |
 |---|-------|--------|-------------------|
-| 1a-1d | Snapshot/compare round-trip, schema_version gate, CI tracked-overwrite gate | ✓ VERIFIED (unchanged) | `ctest -N` still discovers `integration.schema_version`, `integration.snapshot_safe_write` etc.; post-merge test gate (297/297, 0 failed) confirms no regression. |
-| 2 | Policy resolution (profiles, TOML, `--set`/`--tol`, provenance) | ✓ VERIFIED (unchanged) | Gap-closure diff touches `options.cpp`'s `read_color_inputs` only (the 3 colour env reads), not `policy.cpp` or any profile-resolution code. No overlap. |
-| 3 | Four report formats, colour auto-disable logic | ✓ VERIFIED (logic unchanged); real-terminal Windows rendering ⚠️ still human-only | The gap closure is a pure refactor of *how* `NO_COLOR`/`CI`/`GITHUB_ACTIONS` are read (`std::getenv` → `getenv_utf8`), not of `decide_color`'s precedence logic. `02-12-SUMMARY.md`'s own coverage table and the code review confirm all 11 colour-precedence unit tests, including the two WR-02 regression cases, still pass unmodified. |
-| 4 | `dir` pairing, threads, exit-code contract, `ENG-16` process-control confinement | ✓ VERIFIED (unchanged) | `dir.cpp`'s only change is routing one pre-existing test-injection env read through the new shim (same truth-table); `scripts/lint_eng16.sh`'s `src/cli` exclusion (noted as a contributing cause in the UAT gap analysis) was deliberately NOT touched — out of scope for this closure per the plan. |
-| 5 | Registry/docs enforcement, seven comparison semantics, `skipped != pass` | ✓ VERIFIED (unchanged) | No file in either gap-closure diff touches `src/core/checks.def`, `src/compare/*`, or the registry generator. |
+| 1 | Snapshot/compare round-trip, schema_version gate, CI tracked-overwrite gate | ✓ VERIFIED [CARRIED] | `ctest --test-dir build/x64-linux` [LOCAL]: 297/297 passed, 0 failed — same count and same pass rate as the round-2 verification's regression check; no file under `src/core/snapshot*` appears in any of the three round-3 plans' diffs. |
+| 2 | Policy resolution (profiles, TOML, `--set`/`--tol`, provenance) | ✓ VERIFIED [CARRIED] | None of `02-14`, `02-15`, `02-16`'s file lists touch `src/config` or `policy.cpp`. |
+| 3 | Four report formats render correctly; colour auto-disable logic | ✓ VERIFIED [CARRIED] (logic); real-Windows-console rendering ⚠️ still human-only | `render_markdown`/`render_junit`/`render_tty`'s own unit suites unaffected — `02-15`'s only test-file touch is `test_dir_pairing.cpp` (an unrelated `dir` test). See "New finding" below: the round-3 work surfaced new information about how the four formats reach stdout that bears on this truth and is now routed to human verification. |
+| 4 | `dir` pairing, threads, exit-code contract, `ENG-16` process-control confinement | ✓ VERIFIED [CARRIED] on Linux/macOS; ⚠️ Windows exit-code contract now has an OPEN, CONFIRMED failure (G-02-7, test #236) | `src/cli/dir_pairing.cpp` untouched by any round-3 plan (confirmed via `git diff --name-only` in 02-15's own evidence and independently by `grep -rn dir_pairing.cpp` against the three plans' `key-files`). The exit-code CONTRACT truth is downgraded here relative to the prior report because G-02-7 is new, confirmed, Windows-specific information the prior report did not have. |
+| 5 | Registry/docs enforcement, seven comparison semantics, `skipped != pass` | ✓ VERIFIED [CARRIED] | No round-3 plan touches `src/core/checks.def`, `src/compare/*`, or the registry generator. |
 
-#### New truths from this re-verification (the two gap-closure plans)
+#### New truths verified this round (G-02-3/G-02-4 closure and its CI confirmation)
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 6 | G-02-1 closed: no first-party translation unit calls the deprecated C environment-read function outside `src/util/fs.h` | ✓ VERIFIED | `grep -rn 'std::getenv(\|[^_]getenv(' src tests tools --include='*.cpp' --include='*.h' \| grep -v '^src/util/fs.h:'` → 0 matches, independently re-run in this verification. `src/util/fs.h:222-241` contains `mediadiff::getenv_utf8` with both the `_WIN32`/`_dupenv_s`+`unique_ptr<char,&std::free>` branch and the non-Windows `std::getenv` branch, matching the plan's spec exactly (read directly, not taken from the SUMMARY). |
-| 7 | G-02-1 closed: all six former call sites route through the shim, preserving their exact prior truth-test semantics | ✓ VERIFIED | Independently grepped every site: `src/cli/options.cpp:274-276` (`NO_COLOR`/`CI`/`GITHUB_ACTIONS`), `src/cli/commands/snapshot.cpp:175` (`ci_env_is_true`), `src/cli/commands/dir.cpp:278` (test-injection read), `tests/support/golden.cpp:24` (`UPDATE_GOLDENS`), `tests/integration/test_exit_codes.cpp:138` and `tests/integration/test_snapshot_safe_write.cpp:137` (`PATH`) — all call `getenv_utf8`/`mediadiff::getenv_utf8`. `read_env` helper confirmed deleted from `options.cpp` (only the new function's usage remains at those three line numbers; no stray `read_env` reference anywhere). |
-| 8 | G-02-1 closed: unset-vs-set-to-empty contract is proven by an automated test | ✓ VERIFIED | `tests/unit/test_fs_utf8.cpp:137` contains `TEST_CASE("test_fs_utf8 - getenv_utf8 separates unset from set-to-empty")` with the disengaged/engaged/POSIX-only-empty sections the plan specified. `ctest -N` (independently re-run) discovers 297 total tests (up from 296), consistent with one new case added. |
-| 9 | G-02-1 closed: the three false "sole reader" comments now name their real co-sites | ✓ VERIFIED | Independently re-ran the plan's own grep gates: `grep -c 'ONLY place in mediadiff that reads' src/cli/options.h` → 0; `grep -c 'is the one place' src/cli/color_policy.h` → 0; `grep -c 'The one place mediadiff calls isatty' src/cli/options.cpp` → 0; and each file now names its real co-site (`snapshot.cpp` in `options.h:148`, `dir.cpp` in `color_policy.h:14/17`, `compare.cpp` in `options.cpp:248`). |
-| 10 | G-02-2 closed: the ctest count parse uses a POSIX-portable pattern and both guard branches survive | ✓ VERIFIED | `.github/workflows/ci.yml:264` reads `sed -n 's/^Total Tests: \([0-9][0-9]*\)$/\1/p'` (confirmed by direct read, not the SUMMARY's claim) — the GNU-only `\+` is gone. `grep -rF '\+' .github/workflows/` → 0 matches, independently re-run. The comment block above the line documents the BSD-sed constraint exactly as the plan required. |
-| 11 | G-02-1/G-02-2 closure did not regress the Linux build or test suite | ✓ VERIFIED | `cmake --build --preset x64-linux` → `ninja: no work to do` (up to date, independently re-run in this verification session). `ctest --test-dir build/x64-linux -N` → `Total Tests: 297`, matching the orchestrator's stated post-merge gate result (297/297 passed, 0 failed, 1 skipped). Code review of the full 11-file gap diff (`02-REVIEW-GAPS.md`) found 0 critical issues; the one warning (missing thread-safety doc comment on `getenv_utf8`) and one info item (dead `<cstdlib>` include) are both non-blocking and independently confirmed still open (not silently fixed and mis-reported) — `grep -n "Thread-safety" src/util/fs.h` → no match; `src/cli/options.cpp:5` still has `#include <cstdlib>`. |
-| 12 | G-02-1/G-02-2 actually make their target CI legs green | ⚠️ UNVERIFIABLE IN THIS ENVIRONMENT — routed to human verification | Neither fix has ever been run against its real target. Critically: `git log origin/gsd/phase-2-core-engine..gsd/phase-2-core-engine` shows the local branch is **14 commits ahead of origin** — none of the gap-closure commits have been pushed. `gh pr view 2` confirms the PR's only CI run (31937349647, 2026-08-16T08:47Z) still shows `build (x64-windows-static-md)`: FAILURE and `build (arm64-osx)`: FAILURE — that run predates every gap-closure commit by construction. There is no CI evidence, old or new, that either leg is green with the fix applied. |
+| 6 | G-02-3 closed: `block_for()` has a single reachable exit; no compiler-specific suppression was used | ✓ VERIFIED [LOCAL] | Read `tests/unit/test_report_model.cpp:59-65` directly: `std::find_if` + `INFO` + `REQUIRE` + one `return *it;`. `grep -n "FAIL("` on the file → 0 matches (exit 1, no output). `grep -n "pragma warning\|std::abort\|std::terminate"` → 0 matches. All 11 `TEST_CASE("report_model...")` cases still present (`grep -c` → 11) — none deleted, skipped, or platform-guarded, satisfying `02-14-PLAN.md`'s three prohibitions verbatim. |
+| 7 | G-02-3 closed on the real Windows target, not just locally | ✓ VERIFIED [CI-31946964023] | `gh run view --job 95164409600 --log` (job for `build (x64-windows-static-md)`), pulled fresh in this session: the Build step's log contains zero `C4702`, zero `C2220`, zero `C4996`. Build step conclusion `success`. This is independent of `02-16-SUMMARY.md`'s transcription — I ran the same query myself and got the same result. |
+| 8 | G-02-4 closed: the byte-wise-order fixture is case-collision-free AND the teeth assertion is genuinely stronger, not just claimed to be | ✓ VERIFIED [LOCAL] | Read `tests/unit/test_dir_pairing.cpp:113-152` directly. Fixture: `{"zeta.snap.json","alpha.snap.json","Beta.snap.json","Zulu.snap.json","1.snap.json"}`. Independently computed in Python (not trusting the SUMMARY's "differ in four of five positions" claim): `sorted(names)` vs `sorted(names, key=str.lower)` — confirmed to differ at 4 of 5 positions (`1`,`Beta`,`Zulu`,`alpha`,`zeta` byte-wise vs `1`,`alpha`,`Beta`,`zeta`,`Zulu` case-folded). This is strictly stronger than the original single Beta/beta pair. The `expected_order` literal in the file matches my independently-computed byte-wise order exactly. Case-fold uniqueness confirmed: `{1, beta, zulu, alpha, zeta}` — five distinct lowercased stems, no collision. |
+| 9 | G-02-4 closed on the real macOS target, not just locally | ✓ VERIFIED [CI-31946964023] | `gh run view --job 95164409605 --log` (job for `build (arm64-osx)`), pulled fresh: `Test #40: unit.dir_pairing: the returned order is byte-wise sorted ... Passed`; `100% tests passed out of 297`. Independent of the SUMMARY's transcription. |
+| 10 | The two new lint scripts have real teeth — they fail loudly when their input is genuinely bad, not merely when told to | ✓ VERIFIED [LOCAL] | Ran both scripts against the current tree: both exit 0, "clean," scanning 49 files each. Then deliberately broke each: (a) pointed each script's `SCAN_DIR(S)` at an empty directory — both correctly refuse to report clean and exit 1 with a "zero files" diagnostic; (b) injected a real known-bad file (a `FAIL()`-then-`static`-then-`return` function; two case-colliding literals `"Case.snap.json"`/`"case.snap.json"`) into an isolated scan tree — both scripts correctly flag the violation by file:line and exit 1. Neither script can be made to report clean over an empty or unreadable scan. |
+| 11 | The `ci.yml` change wiring the two lints in is additions-only, preserves the required-check name, and adds no escape hatch | ✓ VERIFIED [LOCAL] | `git show 8d4aa4a -- .github/workflows/ci.yml` → `+12 lines, 0 deletions`, confined to the `lint` job. `git diff --unified=0 8d4aa4a~1 8d4aa4a -- .github/workflows/ci.yml \| grep -c '^-[^-]'` → 0. `grep -c "name: lint (ENG-16 boundary)"` → exactly 1. `continue-on-error` search scoped to the `lint:` job block → 0 matches (the one file-wide match is the pre-existing, unrelated `build` job's `continue-on-error: ${{ !matrix.blocking }}`, present before this commit). |
+| 12 | Local Linux build/test suite unaffected by the round-3 work | ✓ VERIFIED [LOCAL] | `cmake --build --preset x64-linux` → `ninja: no work to do` (already built at current HEAD `4057254`). `ctest --test-dir build/x64-linux` → `100% tests passed, 0 tests failed out of 297`. Independently cross-checked against `build (x64-linux)`'s own CI conclusion for the same headSha via `gh run view 31946964023 --json jobs` → `{"name":"build (x64-linux)","conclusion":"success"}`. Local and CI agree. |
+| 13 | No debt markers or anti-patterns introduced in the round-3 diff | ✓ VERIFIED [LOCAL] | `grep -n -E "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER"` across `tests/unit/test_report_model.cpp`, `tests/unit/test_dir_pairing.cpp`, both new lint scripts, and `ci.yml` → 0 matches. |
+| 14 | All 48 Phase-2 requirement IDs remain traceable | ✓ VERIFIED [LOCAL] | `grep -cE` over `REQUIREMENTS.md`'s Phase 2 rows for the 48-ID list → 48 matches, all `Complete`. `02-14`/`02-16` declare `requirements: [BUILD-01, BUILD-05]`; `02-15` declares `[BUILD-01, BUILD-05, DIR-04]` — DIR-04 IS one of Phase 2's own 48 IDs (byte-wise dir-pairing ordering), correctly claimed since 02-15 is the plan that repairs its test coverage. BUILD-01/BUILD-05 are Phase-1-owned IDs being *restored* (the prior verification's framing, confirmed correct here — not re-litigated). No orphans found. |
 
-**Score:** 11/12 truths verified directly against the codebase (code-level closure of both gaps is complete and correct); 1 truth (actual CI-green confirmation) cannot be established without pushing the branch and reading a new CI run.
+#### Truths NOT verified this round — still open, confirmed blockers (round-4 gaps)
 
-### Required Artifacts (gap-closure scope)
+| # | Truth | Status | Evidence |
+|---|-------|--------|----------|
+| 15 | mediadiff's byte-level test output is identical on Windows and POSIX (goldens match; captured subprocess bytes match exactly) | ✗ FAILED — G-02-5, open | `gh run view --job 95164409600 --log` [CI-31946964023], pulled fresh: `test_process_spawn.cpp(42): FAILED: 85000 (0x14c08) == 82500 (0x14244)` (delta exactly 2500 bytes); three `golden.cpp(119): FAILED:` lines for junit_basic/markdown_basic/the tty golden. All confirmed present in the raw log, not just in the SUMMARY's transcription. |
+| 16 | A non-ASCII filename round-trips through mediadiff's path handling unchanged on Windows | ✗ FAILED — G-02-6, open | `gh run view --job 95164409600 --log`: `test_dir_pairing.cpp(204): FAILED:` — confirmed present in the raw log. |
+| 17 | mediadiff's documented exit-code contract and inspect output hold identically on Windows | ✗ FAILED — G-02-7, open | `gh run view --job 95164409600 --log`: `test_exit_codes.cpp(94): FAILED:` and `test_explain_inspect.cpp(112): FAILED:` — confirmed present in the raw log. `98% tests passed, 7 tests failed out of 297` matches the sum of all seven distinct failure lines counted in the raw log (2 golden lines were double-checked as belonging to two of the three reported golden mismatches; total distinct FAILED lines in the Test step = 7). |
+
+**Score:** 14/17 truths verified directly against the codebase or against CI's own raw logs (11 code-level + CI-confirmed truths, plus 3 carried-forward regression checks not separately numbered above). 3 truths remain FAILED — all three are the round-4 gaps a human already opened against this exact CI run, none newly discovered here, and none is a regression caused by the round-3 gap-closure work (all three are pre-existing Phase-2 defects in code the Windows leg had literally never executed before this run, per G-02-3's own scope_caveat).
+
+### Required Artifacts (round-3 scope)
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/util/fs.h` | `mediadiff::getenv_utf8`, `_WIN32`-guarded, leak-free | ✓ VERIFIED | Read directly (lines 185-241): full rationale doc comment, `_dupenv_s` + `unique_ptr<char, decltype(&std::free)>` on Windows, plain `std::getenv` passthrough elsewhere. |
-| `tests/unit/test_fs_utf8.cpp` | unset/set/set-to-empty test case | ✓ VERIFIED | `TEST_CASE` present at line 137 with the three sections the plan specified. |
-| `.github/workflows/ci.yml` | POSIX-portable count parse + BSD-sed comment | ✓ VERIFIED | Line 264 confirmed portable; comment block (lines ~250-263) documents the constraint. |
-| `src/cli/options.h`, `src/cli/color_policy.h`, `src/cli/options.cpp` | corrected exclusivity comments | ✓ VERIFIED | All three false claims removed; each names its real co-site. |
+| `tests/unit/test_report_model.cpp` | `block_for()` restructured to single reachable exit | ✓ VERIFIED [LOCAL] | Read directly; matches spec, all 11 tests intact. |
+| `scripts/lint_dead_code_after_fail.sh` | self-testing lint, FAIL()-then-statement shape, zero-file guard | ✓ VERIFIED [LOCAL] | Ran clean, then broke deliberately (see truth #10); both guards fire correctly. |
+| `tests/unit/test_dir_pairing.cpp` | case-collision-free byte-wise-order fixture with teeth assertion | ✓ VERIFIED [LOCAL] | Read directly; independently recomputed the ordering claim (see truth #8). |
+| `scripts/lint_fixture_case_collisions.sh` | self-testing lint, case-fold-collision shape, zero-file guard | ✓ VERIFIED [LOCAL] | Ran clean, then broke deliberately; both guards fire correctly. |
+| `.github/workflows/ci.yml` | two new lint steps wired in, additions-only, required-check name preserved | ✓ VERIFIED [LOCAL] | `git show`/`git diff --unified=0` confirm +12/-0, name intact, no `continue-on-error` added. |
 
-### Key Link Verification (gap-closure scope)
+### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `src/cli/options.cpp::read_color_inputs` | `src/util/fs.h::getenv_utf8` | direct call | ✓ WIRED | Confirmed at lines 274-276. |
-| `src/cli/commands/snapshot.cpp::ci_env_is_true` | `getenv_utf8` | direct call | ✓ WIRED | Confirmed at line 175. |
-| `src/cli/commands/dir.cpp` (test injection) | `getenv_utf8` | direct call | ✓ WIRED | Confirmed at line 278. |
-| `tests/support/golden.cpp::update_goldens_requested` | `getenv_utf8` | direct call | ✓ WIRED | Confirmed at line 24; compiled into both unit and integration test targets per the plan's D2 claim. |
-| `tests/integration/test_exit_codes.cpp`, `test_snapshot_safe_write.cpp` | `mediadiff::getenv_utf8` | direct call | ✓ WIRED | Confirmed at lines 138 and 137 respectively. |
-| local branch `gsd/phase-2-core-engine` | `origin/gsd/phase-2-core-engine` (and thus GitHub Actions CI) | `git push` | ✗ NOT WIRED | 14 commits including all gap-closure work sit only in the local worktree. Until pushed, no automated system — this one included — can observe the fix running against its real target. This is the single blocking link for calling the phase CI-clean. |
+| `tests/unit/test_report_model.cpp::block_for` | `mediadiff::group_to_string` | `INFO(...)` diagnostic on miss | ✓ WIRED [LOCAL] | Confirmed at line 62; the diagnostic names the missing group rather than the function crashing or silently returning a default. |
+| `.github/workflows/ci.yml` `lint` job | `scripts/lint_dead_code_after_fail.sh` | `run: bash scripts/...` step | ✓ WIRED [CI-31946964023] | `gh run view --job 95164409561 --log`-class confirmation not separately re-pulled this session, but `02-16-SUMMARY.md`'s claim that all four lint steps ran by name is consistent with the job's `success` conclusion pulled via `gh run view 31946964023 --json jobs`. |
+| `.github/workflows/ci.yml` `lint` job | `scripts/lint_fixture_case_collisions.sh` | `run: bash scripts/...` step | ✓ WIRED [CI-31946964023] | Same job, same conclusion. |
+| `src/cli/commands/compare.cpp` / `dir.cpp` | `stdout` (for `--json`, TTY, and any report NOT sent to `--report`/`--json` file path) | `std::fputs(..., stdout)` | ⚠️ WIRED but binary-mode-unconfirmed on Windows | See new finding below and the corresponding human-verification item — routed to human, not asserted as broken. |
+| `src/cli/commands/compare.cpp::write_report_file` / `dir.cpp` equivalent | file destinations (`--report`, `--json <path>`) | `fopen_utf8(path, "wb")` | ✓ WIRED, binary-mode confirmed [LOCAL] | Read directly: explicit `"wb"` mode at the one shared `write_report_file` helper compare.cpp uses, and the equivalent call site in dir.cpp. This path is NOT implicated in the newline-translation risk the stdout path is. |
+
+### New finding — beyond the CI read (task item 6)
+
+The task asked whether any of the seven Windows test failures have a POSIX-invisible analogue already latent in the code that no currently-open gap would catch. Two candidate mechanisms were found by tracing the code, neither confirmed on a real Windows host (this sandbox is Linux-only), both reported as open questions rather than defects:
+
+**1. Missing `.gitattributes` — plausible explanation for the golden-file mismatches (G-02-5's three golden failures).** `cat .gitattributes` [LOCAL] → file does not exist. `git check-attr text eol -- tests/golden/*.txt` [LOCAL] → `text: unspecified`, `eol: unspecified` for every golden file. `golden.cpp` opens both the golden file (`fopen_utf8(path, "rb"/"wb")`) and compares against an in-memory string built entirely by `render_markdown`/`render_junit`/`render_tty` (pure string builders, no file I/O, confirmed by reading `test_markdown_budget.cpp:226`, `test_junit.cpp:219`, `test_tty_render.cpp:258`). With no `.gitattributes` pinning these files to LF, a Windows checkout under GitHub Actions' documented default `core.autocrlf=true` would materialize `tests/golden/*.txt` with CRLF line endings on disk, while the in-memory rendered string uses plain `\n` — producing exactly the observed symptom ("mismatch at line 1, expected and actual render identically in the log," since a trailing `\r` is invisible when printed). This is a distinct mechanism from the pipe-capture hypothesis 02-UAT.md's G-02-5 already favors for test #95 (which goes through an actual OS pipe, not a git-checked-out file) — both could be simultaneously true, explaining different subsets of the four affected tests. Not confirmed; would need a Windows checkout to verify the golden files' actual on-disk line endings.
+
+**2. No binary-mode guard on `stdout` anywhere in `src/` — a possible product-level defect the current gaps do not cover.** `grep -rn "_setmode\|_O_BINARY\|O_BINARY" src/` [LOCAL] → 0 matches anywhere in the first-party source tree. Both `src/cli/commands/compare.cpp` and `src/cli/commands/dir.cpp` write `--json` and TTY report output to `stdout` via `std::fputs(report.c_str(), stdout)` — the C runtime's `stdout` stream, not an explicitly binary-mode handle. By contrast, every file-destination write in the same two files goes through `fopen_utf8(path, "wb")` — explicit binary mode, confirmed safe. Windows' C runtime is documented to default `stdout` to text mode, translating every `\n` written through it to `\r\n`, unless the stream's mode is explicitly set to binary (`_setmode`). **If this holds on real Windows hardware, `mediadiff --json > out.json` (or any pipe consumer) would receive CRLF-terminated JSON on Windows and LF-terminated JSON on Linux/macOS for byte-identical input — a direct, product-level violation of the project's own stated determinism contract ("byte-identical `--json` across identical runs"), and a defect none of the seven currently-failing tests directly exercises** (all seven are either in-process unit-test golden comparisons or a test-harness's own subprocess-capture, not a real end-to-end CLI-invocation-to-redirected-file check). This is reported as an open question, not a confirmed defect — routed to human verification below, since it cannot be exercised from this Linux sandbox and no currently-open gap (G-02-5/6/7) is scoped to catch it if it manifests only outside the test suite.
+
+Both findings are additive to, not replacements for, the three human-confirmed round-4 gaps — they do not change this report's `gaps_found` status, and neither is presented as proven.
 
 ### Requirements Coverage
 
-All 48 requirement IDs assigned to Phase 2 in `.planning/REQUIREMENTS.md` remain marked Complete and traceable to a plan's `requirements:` frontmatter, independently re-confirmed by grep against the REQUIREMENTS.md Phase 2 traceability table (48 rows, `| Phase 2 | Complete |`, matching exactly the 48 IDs in this verification's task scope — no orphans, no gaps).
-
-The two gap-closure plans additionally declare `requirements: [BUILD-01, BUILD-05, CLI-08, CLI-09]` (02-12) and `[BUILD-01, BUILD-05]` (02-13). These are **not** Phase 2's own requirement IDs — `REQUIREMENTS.md` traces `BUILD-01`, `BUILD-05` and `CLI-09` to **Phase 1**, already marked Complete there. That "Complete" status carries evidence from CI run `31823918842`, which predates Phase 2 entirely. Phase 2's own code (the six unguarded `getenv` sites) subsequently regressed `BUILD-01`/`BUILD-05`'s "builds clean on 3 OSes" and "CI matrix green" claims without REQUIREMENTS.md being updated to reflect it — this is exactly the gap G-02-1/G-02-2 diagnosis describes. The gap-closure plans correctly target these IDs because they are restoring them, not because Phase 2 owns them. **This verification flags, but does not correct, that `REQUIREMENTS.md`'s BUILD-01/BUILD-05/CLI-09 rows still cite the stale pre-Phase-2 CI run as evidence** — once the branch is pushed and a new green matrix run exists, that evidence citation should be refreshed to the new run ID. This is not a Phase 2 requirement gap (Phase 2's own 48 IDs are all satisfied); it is a documentation-freshness note surfaced by this re-verification.
+All 48 Phase-2 requirement IDs (`CLI-01…04,06,07,08,10`, `ENG-01…16`, `SNAP-01…07`, `REPORT-01…07`, `DIR-01…05`, `TRUST-03,05,08`, `DOC-01,02`) remain `Complete` and traceable in `.planning/REQUIREMENTS.md`, independently re-confirmed by `grep -cE` in this session (48/48 matches). `02-14`/`02-16` correctly declare `[BUILD-01, BUILD-05]` — Phase-1-owned IDs being restored, per the established 02-12/02-13 precedent the prior verification endorsed (not re-litigated here). `02-15` additionally and correctly declares `DIR-04`, its own Phase-2 ID, since it repairs `DIR-04`'s test coverage directly. No orphaned or lost requirement coverage found.
 
 ### Anti-Patterns Found
 
-None new. `02-REVIEW-GAPS.md`'s code review of the full 11-file gap diff found 0 Critical issues. Its one Warning (`getenv_utf8` has no documented thread-safety contract) and one Info item (dead `<cstdlib>` include in `options.cpp`) were independently re-confirmed as still open in this verification (not fixed, not silently claimed fixed) — both are explicitly non-blocking per the review's own severity classification and do not affect either gap's closure.
+None. `grep -n -E "TBD|FIXME|XXX|TODO|HACK|PLACEHOLDER"` across every file touched by the round-3 plans (`test_report_model.cpp`, `test_dir_pairing.cpp`, both new lint scripts, `ci.yml`) returned zero matches.
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| No raw `getenv` outside `fs.h` | `grep -rn 'std::getenv(\|[^_]getenv(' src tests tools --include='*.cpp' --include='*.h' \| grep -v '^src/util/fs.h:'` | 0 matches | ✓ PASS |
-| `getenv_utf8` present with both platform branches | direct read of `src/util/fs.h:222-241` | `_dupenv_s`/`unique_ptr` + `std::getenv` fallback present | ✓ PASS |
-| All six call sites migrated | per-file grep for `getenv_utf8` | all 6 files match | ✓ PASS |
-| Three false comments corrected | plan's own grep gates re-run | all 3 return 0, all 3 co-sites named | ✓ PASS |
-| No GNU-only `\+` under `.github/workflows/` | `grep -rF '\+' .github/workflows/` | 0 matches | ✓ PASS |
-| `ci.yml` line uses POSIX pattern | direct read | `[0-9][0-9]*` confirmed | ✓ PASS |
-| Linux build unaffected | `cmake --build --preset x64-linux` | `ninja: no work to do` (already built, up to date) | ✓ PASS |
-| Test count grew by exactly 1 (296→297) | `ctest --test-dir build/x64-linux -N` | `Total Tests: 297` | ✓ PASS |
-| Local branch vs origin | `git log origin/...\.\.gsd/phase-2-core-engine` | 12 commits ahead (gap closure unpushed) | ⚠️ FLAGGED — drives the human-verification item |
-| PR #2's actual CI status | `gh pr view 2 --json statusCheckRollup` | `build (x64-windows-static-md)`: FAILURE, `build (arm64-osx)`: FAILURE, both from the pre-fix run 31937349647 | ⚠️ FLAGGED — confirms no green run exists yet |
+| `block_for()` has no dead code, no suppression | `grep -n "FAIL(\|pragma warning\|std::abort\|std::terminate" tests/unit/test_report_model.cpp` | 0 matches | ✓ PASS |
+| All 11 report_model tests intact | `grep -c 'TEST_CASE("report_model'` | 11 | ✓ PASS |
+| `lint_dead_code_after_fail.sh` clean on current tree | `bash scripts/lint_dead_code_after_fail.sh` | exit 0, "clean. Scanned 49 file(s)" | ✓ PASS |
+| `lint_dead_code_after_fail.sh` fires on empty scan dir | modified copy pointed at an empty dir | exit 1, "yielded zero files" | ✓ PASS |
+| `lint_dead_code_after_fail.sh` fires on real known-bad input | injected `FAIL()`-then-`static`-then-`return` fixture | exit 1, names `badtests/probe.cpp:3` | ✓ PASS |
+| `lint_fixture_case_collisions.sh` clean on current tree | `bash scripts/lint_fixture_case_collisions.sh` | exit 0, "clean. Scanned 49 file(s)" | ✓ PASS |
+| `lint_fixture_case_collisions.sh` fires on empty scan dir | modified copy pointed at an empty dir | exit 1, "yielded zero files" | ✓ PASS |
+| `lint_fixture_case_collisions.sh` fires on real known-bad input | injected `"Case.snap.json"`/`"case.snap.json"` fixture | exit 1, names both spellings | ✓ PASS |
+| Fixture ordering claim (byte-wise vs case-folded differ) | independent Python recomputation of `sorted(names)` vs `sorted(names, key=str.lower)` | differ at 4/5 positions | ✓ PASS |
+| `ci.yml` diff is additions-only | `git diff --unified=0 8d4aa4a~1 8d4aa4a -- .github/workflows/ci.yml \| grep -c '^-[^-]'` | 0 | ✓ PASS |
+| Required-check name intact, exactly once | `grep -c "name: lint (ENG-16 boundary)"` | 1 | ✓ PASS |
+| Local Linux build unaffected | `cmake --build --preset x64-linux` | `ninja: no work to do` | ✓ PASS |
+| Local Linux test suite | `ctest --test-dir build/x64-linux` | `100% tests passed, 0 tests failed out of 297` | ✓ PASS |
+| CI run's actual job conclusions (fresh pull) | `gh run view 31946964023 --json headSha,conclusion,jobs` | matches SUMMARY exactly: lint success, x64-linux success, arm64-osx success, x64-windows-static-md failure (test step), x64-osx failure (unchanged, non-blocking), arm64-linux failure (unchanged, non-blocking) | ✓ PASS |
+| Windows Test step's raw failure lines (fresh pull, not SUMMARY transcription) | `gh run view --job 95164409600 --log \| grep FAILED` | 7 distinct `FAILED:` lines at the exact file:line pairs 02-UAT.md records | ✓ PASS |
+| arm64-osx Test #40 raw result (fresh pull) | `gh run view --job 95164409605 --log \| grep 'Test  #40'` | `Passed` | ✓ PASS |
+| No `_setmode`/`_O_BINARY` guard anywhere in `src/` | `grep -rn "_setmode\|_O_BINARY\|O_BINARY" src/` | 0 matches | ⚠️ NOTED — routed to human verification, not asserted as a failure |
 
 ### Probe Execution
 
-Not applicable — Phase 2 has no `scripts/*/tests/probe-*.sh` convention.
+Not applicable — Phase 2 has no `scripts/*/tests/probe-*.sh` convention. The two new lint scripts (`lint_dead_code_after_fail.sh`, `lint_fixture_case_collisions.sh`) are covered under Behavioral Spot-Checks above instead, since they are CI gates, not probes in the `references/verifier-wiring-patterns.md` sense.
 
 ### Human Verification Required
 
-### 1. Push the branch and confirm both previously-failing CI legs go green
+### 1. Colour renders as real styling in a Windows console
 
-**Test:** Push `gsd/phase-2-core-engine` (or open/update PR #2 with the 14 local commits) and read the resulting `build (x64-windows-static-md)` and `build (arm64-osx)` job logs in full.
-**Expected:** `x64-windows-static-md` compiles through all 97 build steps (not just past the former C4996 failure at step 32/97) and its test executables run; `arm64-osx`'s Test step executes past the count guard (which should no longer abort) and the 297-test suite passes to completion.
-**Why human:** This sandbox cannot run MSVC or BSD sed, and — more fundamentally — the fix commits have never been pushed to origin, so no CI run (past or present) has ever exercised them. `02-12-PLAN.md` and `02-13-PLAN.md` both explicitly warn that fixing the diagnosed defect is necessary but not proven sufficient: 65 of 97 Windows build steps and the full macOS test run have never executed in any CI run to date, so unrelated breakage could still be waiting behind each fix.
+**Test:** Run `mediadiff compare`/`dir` with colour enabled in a real Windows `cmd.exe` or Windows Terminal session, exercising the `SetConsoleMode` `ENABLE_VIRTUAL_TERMINAL_PROCESSING` path.
+**Expected:** ANSI-interpreted styling (real colour), not literal escape-sequence bytes.
+**Why human:** Reachable for the first time in the phase's history — CI run `31946964023`'s Windows Build step succeeded and produced `mediadiff.exe` — but it has not been run. This sandbox is Linux-only. Record the mediadiff build sha alongside the result: if G-02-5 (newline handling) closes before this runs, a later build's console output could plausibly differ.
 
-### 2. Colour renders as styling in a real Windows console
+### 2. Confirm whether mediadiff's own stdout output (not just its test suite) is byte-identical on Windows
 
-**Test:** Run `mediadiff compare`/`dir` with colour enabled in an actual Windows `cmd.exe` or Windows Terminal session, once a Windows binary exists.
-**Expected:** ANSI-styled output (colour, not literal `\x1b[...m` bytes) — confirms `SetConsoleMode`'s `ENABLE_VIRTUAL_TERMINAL_PROCESSING` path works on real Windows hardware.
-**Why human:** Carried forward unchanged from the original verification and UAT test 1, which could not reach this check at all because no Windows binary had ever built successfully. This check only becomes reachable once item 1 above produces a green Windows leg.
+**Test:** On a real Windows build of `mediadiff.exe` (the same artifact from run `31946964023`), run `mediadiff compare <a> <b> --json > out.json` (and separately `--report md=out.md`) against fixed, small inputs, and byte-compare `out.json`/`out.md` against the same command's output on Linux/macOS for identical inputs. Also check whether the same `\r\n` pattern appears when `--json` is piped (not redirected to a file) into a consuming process.
+**Expected:** Byte-identical output across platforms, per the project's own stated determinism contract. If `\r\n` line endings appear on Windows where Linux/macOS produce `\n`, this is a genuine product-level defect.
+**Why human:** This verification pass traced the code path (`std::fputs(report.c_str(), stdout)` with no `_setmode`/`_O_BINARY` guard found anywhere in `src/`) and found a plausible, unconfirmed mechanism for exactly this outcome — see "New finding" above. It cannot be exercised from this Linux sandbox, and it is a genuinely open question, not a confirmed defect: Windows CRT default stdout text-mode behavior is a documented platform fact, not something observed directly in this session. None of the three currently-open gaps (G-02-5/6/7) is scoped to catch this if it manifests only in the product's actual CLI invocation rather than in the test suite's in-process golden checks or test-harness subprocess capture.
 
 ### Gaps Summary
 
-Both UAT-surfaced gaps (G-02-1, G-02-2) are **closed at the code level** — this re-verification independently confirmed every artifact, wiring link, and behavioral claim the two gap-closure plans made, reading the actual files rather than trusting either SUMMARY.md. The fixes are correct, complete, and match their diagnosed root causes exactly: all six `getenv` call sites migrated with byte-for-byte-preserved truth-table semantics, the unset/set/set-to-empty contract is unit-tested, the three misleading "sole reader" comments are corrected, and the CI workflow's regex is now POSIX-portable with both guard branches intact. The Linux build and full 297-test suite pass, and a full code review of the 11-file diff found zero critical issues.
+**Two gaps are genuinely, independently confirmed closed this round** — not merely re-asserted from the prior report. `block_for()`'s dead-code shape is gone from the source (read directly, no compiler-specific suppression used, all 11 report_model tests intact), and CI run `31946964023`'s own raw Windows-build log (pulled fresh via `gh run view --job 95164409600 --log` in this session, not taken from any SUMMARY) shows zero C4702/C2220/C4996 and a successful Build step conclusion. Independently for G-02-4: the `test_dir_pairing.cpp` fixture is case-collision-free (re-verified by an independent Python computation, not by trusting the SUMMARY's arithmetic), and the arm64-osx job's own raw log shows test #40 passing and `100% tests passed out of 297`. Both new lint scripts were deliberately broken during this verification (pointed at empty directories, fed known-bad injected fixtures) and both correctly refused to report clean — their self-tests have real teeth, not just the appearance of teeth. The `ci.yml` change wiring them in is additions-only with the required-check name preserved exactly once and no escape hatch added.
 
-What remains open is not a code defect but an **unclosed verification loop**: the gap-closure commits exist only in the local worktree (14 commits ahead of `origin/gsd/phase-2-core-engine`), so the CI system that is the only oracle for "does the Windows leg actually build" and "does the arm64-osx leg actually run its tests" has never seen this code. PR #2's last recorded run (31937349647) still shows both target legs as `FAILURE`, from before any of these fixes existed. Per this task's own framing, that is a genuine unknown rather than a code gap, and per both plans' own honesty sections, a first fix passing local scrutiny is not the same as a target CI leg going green — Windows never got past build step 32/97 and macOS has never run its full suite to completion, so undiscovered breakage on either leg is a real possibility, not a formality.
+**Three gaps remain open, all confirmed by this session's own fresh pull of the CI logs, none new and none caused by the round-3 work:** G-02-5 (Windows byte-level output divergence — 4 tests), G-02-6 (non-ASCII path mis-decoding on Windows — 1 test), and G-02-7 (exit-code and inspect-output behavioral divergence on Windows — 2 tests). All seven Windows test failures are first-ever executions of code paths the Windows leg had never reached before this run; none is a regression from the round-3 gap-closure work (verified: `src/cli/dir_pairing.cpp` untouched by any round-3 plan, and none of `02-14`/`02-15`/`02-16` touch `test_process_spawn.cpp`, `test_exit_codes.cpp`, or `test_explain_inspect.cpp`).
 
-**Recommendation:** push the branch, let CI run, and read the two previously-red job logs for their new first failure (if any) before treating this phase as ready to ship. This does not block the code from being considered correct — it blocks the phase from being certified CI-green, which was the explicit purpose of scoping G-02-2 into this closure in the first place ("arm64-osx is a required check... the phase cannot merge while it is red").
+**Beyond re-confirming what the human's round-3 UAT already found, this verification surfaced two additional, unconfirmed but concretely-traced risks**: (1) the absence of a `.gitattributes` file, which plausibly explains the three golden-file mismatches independently of the pipe-capture hypothesis already recorded against G-02-5; and (2) a total absence of any `_setmode`/`_O_BINARY` binary-mode guard on `stdout` anywhere in `src/`, meaning the product's own `--json`/report stdout output — not just its test suite — may be subject to the same CRLF translation on Windows, which would be a direct violation of the project's stated byte-identical-`--json` determinism contract and is not covered by any currently-open gap. Both are reported honestly as open questions requiring a real Windows host to confirm, not as proven defects — but both are concrete enough that they should be checked before or alongside the G-02-5/6/7 diagnosis work, since a fix for G-02-5's test-level symptoms would not necessarily touch the product-level `stdout` path this finding describes.
+
+**The phase is not closer to done than three open blockers indicate, and the two genuine closures are real progress, not merely claimed progress** — both were independently re-derived against the actual source and the actual CI logs in this session, not accepted on the strength of any SUMMARY.md's narrative.
 
 ---
 
-_Verified: 2026-08-16T13:10:00Z_
+_Verified: 2026-08-18T09:30:00Z_
 _Verifier: Claude (gsd-verifier)_

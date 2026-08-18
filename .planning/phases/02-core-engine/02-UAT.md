@@ -278,6 +278,44 @@ blocked: 1
     - "Do NOT normalise goldens by stripping \\r inside the comparison helper. That would mute the check on every platform to make one platform pass — the project treats a muted gate as worth nothing, and byte-identical output is a REPORT-level guarantee, not a test-harness convenience."
   scope_caveat: "This is the largest of the three groupings and the only one whose fix plausibly touches production code rather than test code. If the boundary turns out to be in the report writers, the blast radius reaches all four report formats and the fix needs its own verification on the already-green legs, not just Windows."
   evidence: "CI run 31946964023, job 95164409600. Test step: `98% tests passed, 7 tests failed out of 297`. test_process_spawn.cpp(42): 85000 (0x14c08) == 82500 (0x14244). golden.cpp(119) x3."
+  lead_from_verification: |
+    ADDED 2026-08-18 during round-3 re-verification, then independently re-checked. This is a
+    LEAD, not a confirmed diagnosis — it advances the "find the boundary" bullet above rather
+    than adding new scope, and it may widen this gap from test-portability to PRODUCT defect.
+
+    **A. No `.gitattributes` exists in the repository.** Golden fixture files are therefore
+    checked out with whatever line endings git's platform default produces. On a Windows
+    runner that plausibly means CRLF on disk while the code emits LF — which would explain
+    tests #67, #75 and #201 (`golden mismatch ... at line 1`, expected and actual visually
+    identical) with no product defect at all. Check this FIRST: it is the cheapest of the two
+    explanations and, if it is the whole story for the golden trio, the fix is a
+    `.gitattributes` entry rather than a code change.
+
+    **B. stdout is never put into binary mode, while file destinations always are.** Verified
+    by direct grep, twice, on 2026-08-18:
+      - `grep -rn '_setmode\|_O_BINARY\|O_BINARY' src/` → ZERO matches anywhere in src/.
+      - File destinations correctly open binary: `src/cli/commands/compare.cpp:71`,
+        `src/cli/commands/dir.cpp:410`, `src/cli/commands/dir.cpp:439` and
+        `src/core/snapshot.cpp:333` all use `fopen_utf8(..., "wb")`.
+      - stdout is written with plain `std::fputs` / `fwrite` and no mode change.
+
+    On Windows the CRT opens stdout in TEXT mode by default, translating every `\n` into
+    `\r\n`. If that applies here, then `mediadiff compare --json > out.json` and writing the
+    same report to a file via `--json-path` would produce DIFFERENT BYTES — an asymmetry
+    entirely invisible on Linux and macOS, where the two paths are identical.
+
+    That would bear directly on a hard project constraint: byte-identical `--json` across
+    identical runs. It would also mean the determinism guarantee is currently only PROVEN on
+    POSIX, never on Windows, because the Windows test suite had never executed until run
+    31946964023.
+
+    **Not confirmed.** Neither the Linux dev host nor any current CI leg can observe Windows
+    CRT stdout behaviour, and no test asserts redirected-stdout bytes on Windows. Confirming
+    or refuting it needs either a Windows console run or a new test that captures redirected
+    stdout and compares it byte-for-byte against the file-destination output.
+  missing_addendum:
+    - "Resolve lead A before lead B — a `.gitattributes` fix may account for the three golden failures entirely, and knowing that first prevents an unnecessary product change."
+    - "If lead B holds, the fix belongs at the stdout boundary once (binary mode at startup), NOT per report writer, and it must be covered by a test that compares redirected-stdout bytes against file-destination bytes — otherwise the guarantee stays unproven on the one platform that can break it."
 
 - gap_id: G-02-6
   truth: "A non-ASCII filename round-trips through mediadiff's path handling unchanged on Windows"
