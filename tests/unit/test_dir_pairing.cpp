@@ -15,6 +15,7 @@
 
 #include "cli/dir_pairing.h"
 #include "core/error.h"
+#include "support/utf8_path.h"
 
 using mediadiff::ErrorKind;
 using mediadiff::FilePair;
@@ -39,6 +40,25 @@ void write_file(const fs::path& path) {
   fs::create_directories(path.parent_path(), ec);
   std::ofstream out(path, std::ios::binary);
   out << "x";
+}
+
+// Space-separated lowercase hex rendering of `s`'s bytes -- used as an
+// INFO diagnostic (G-02-6's first bullet) so a mismatch identifies the
+// mis-decoded side straight from the log: the side holding "c3 a9" is
+// correct, the side holding two separately-mojibake'd bytes is not.
+std::string hex_bytes(const std::string& s) {
+  static const char* const kHexDigits = "0123456789abcdef";
+  std::string out;
+  out.reserve(s.size() * 3);
+  for (std::size_t i = 0; i < s.size(); ++i) {
+    if (i != 0) {
+      out.push_back(' ');
+    }
+    const auto byte = static_cast<unsigned char>(s[i]);
+    out.push_back(kHexDigits[(byte >> 4) & 0xF]);
+    out.push_back(kHexDigits[byte & 0xF]);
+  }
+  return out;
 }
 
 }  // namespace
@@ -195,12 +215,18 @@ TEST_CASE("dir_pairing: a tree containing a non-ASCII filename pairs correctly",
   const fs::path candidate = unique_scratch_dir("utf8_b");
   // U+00E9 (LATIN SMALL LETTER E WITH ACUTE), UTF-8 encoded -- résumé.snap.json
   const std::string non_ascii_name = "r\xC3\xA9sum\xC3\xA9.snap.json";
-  write_file(baseline / non_ascii_name);
-  write_file(candidate / non_ascii_name);
+  // The leaf goes through path_from_utf8 (tests/support/utf8_path.h) rather
+  // than fs::path's own narrow constructor: on MSVC that constructor
+  // decodes via the CRT's active code page, not UTF-8, which would put a
+  // CP1252-mojibake'd name on disk instead of the intended one (G-02-6).
+  write_file(baseline / mediadiff::test::path_from_utf8(non_ascii_name));
+  write_file(candidate / mediadiff::test::path_from_utf8(non_ascii_name));
 
   auto result = pair_directories(baseline.string(), candidate.string());
   REQUIRE(result.has_value());
   REQUIRE(result->size() == 1);
+  INFO("expected: " << hex_bytes(non_ascii_name));
+  INFO("actual:   " << hex_bytes((*result)[0].relative_path));
   CHECK((*result)[0].relative_path == non_ascii_name);
   CHECK((*result)[0].in_baseline);
   CHECK((*result)[0].in_candidate);

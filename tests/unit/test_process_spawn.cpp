@@ -6,6 +6,16 @@
 // more than one pipe buffer (64 KiB) of output on stdout AND stderr
 // concurrently, so the truncation path this task closes has an actual
 // observer: the captured length must equal exactly what was produced.
+//
+// G-02-5 (CI run 31946964023): the child writes through
+// sys.stdout.buffer/sys.stderr.buffer rather than the text-mode
+// sys.stdout/sys.stderr wrapper. Python's default text-mode stdout expands
+// every '\n' to '\r\n' on Windows, so a text-mode child injects exactly
+// kLineCount extra bytes and the harness under test gets blamed for a
+// translation it never performed. tests/process_spawn.h's Windows reader
+// uses raw CreatePipe/ReadFile (its POSIX reader uses pipe()/read()),
+// neither of which translates -- which is why this fix belongs in the
+// fixture's script, not in that file.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -32,8 +42,10 @@ TEST_CASE("process_spawn: captures more than one pipe buffer's worth of stdout a
       "for _ in range(" +
       std::to_string(kLineCount) +
       "):\n"
-      "    sys.stdout.write('O' * 32 + chr(10))\n"
-      "    sys.stderr.write('E' * 32 + chr(10))\n";
+      "    sys.stdout.buffer.write(b'O' * 32 + bytes([10]))\n"
+      "    sys.stderr.buffer.write(b'E' * 32 + bytes([10]))\n"
+      "sys.stdout.buffer.flush()\n"
+      "sys.stderr.buffer.flush()\n";
 
   const ProcessResult result = run_process(MEDIADIFF_PYTHON, {"-c", script});
 
@@ -41,4 +53,6 @@ TEST_CASE("process_spawn: captures more than one pipe buffer's worth of stdout a
   const std::size_t expected_len = kLineCount * kLineBytes;
   REQUIRE(result.out.size() == expected_len);
   REQUIRE(result.err.size() == expected_len);
+  REQUIRE(result.out.find('\r') == std::string::npos);
+  REQUIRE(result.err.find('\r') == std::string::npos);
 }
