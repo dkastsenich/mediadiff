@@ -85,7 +85,7 @@ Plans:
   4. `mediadiff dir a b` pairs a corpus by relative path in deterministic order under a `--threads`-bounded pool, reports unpaired files, and honours the exit-code contract (0/1/2 for regression signals, 64/65/66/70 for could-not-run) with partial JSON still emitted on 66 — all process control living in `cli/`, with the library writing nothing to stdout and never calling `exit()`.
   5. Every registered check ID resolves to documentation the build enforces: `mediadiff explain <check.id>` prints what it measures, why it matters and how to accept/tune/silence it; `mediadiff inspect` renders every implemented check family; `skipped` carries a machine-readable reason and is never conflated with `pass`; and all seven comparison semantics behave per spec with time tolerances compared in ticks rather than floats.
 
-**Plans**: 15/16 plans executed — 11/11 original executed, 2/2 round-2 gap-closure executed (G-02-1, G-02-2 confirmed closed by CI run 31943688186), 3 round-3 gap-closure plans pending (UAT gaps G-02-3, G-02-4)
+**Plans**: 16/16 plans executed — 11/11 original executed, 2/2 round-2 gap-closure executed (G-02-1, G-02-2 confirmed closed by CI run 31943688186), 3 round-3 gap-closure plans pending (UAT gaps G-02-3, G-02-4)
 
 Plans:
 **Wave 1**
@@ -144,7 +144,7 @@ Plans:
 
 **Gap closure round 3 — Wave 2** *(blocked on both round-3 wave-1 plans)*
 
-- [ ] 02-16-PLAN.md — Wire both portability lints into the required `lint` job, push, and read the new CI run per required status-check context; human checkpoint decides certify-or-iterate
+- [x] 02-16-PLAN.md — Wire both portability lints into the required `lint` job, push, and read the new CI run per required status-check context; human checkpoint decides certify-or-iterate
 
 **Source doc**: `claude_docs/01-core-concepts.md` (design-doc phase 1)
 
@@ -241,7 +241,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
-| 2. Core Engine | 15/16 | In Progress|  |
+| 2. Core Engine | 16/16 | In Progress|  |
 | 3. Probe Layer, Container & Size | 0/TBD | Not started | - |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
