@@ -18,7 +18,8 @@
     "xxhash",
     "libebur128",
     "catch2",
-    "tl-expected"
+    "tl-expected",
+    "json-schema-validator"
   ],
   "features": {
     "vmaf": {

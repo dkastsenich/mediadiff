@@ -28,7 +28,7 @@ The journey: a static binary that builds on three platforms → a complete compa
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Foundation & Toolchain** - Static binary builds and runs on three platforms, with every toolchain decision recorded
-- [ ] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements
+- [x] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements (completed 2026-08-18)
 - [ ] **Phase 3: Probe Layer, Container & Size** - Real media enters: header pass, packet sweep, raw scanners, all `container.*`/`meta.*`/`size.*` checks
 - [ ] **Phase 4: Video Analysis** - Parser pass plus every `video.*` parameter, GOP, colorimetry and HDR check
 - [ ] **Phase 5: Timeline Analysis** - Every `timeline.*` check and the flagship A/V drift algorithm on integer/rational math
@@ -85,7 +85,76 @@ Plans:
   4. `mediadiff dir a b` pairs a corpus by relative path in deterministic order under a `--threads`-bounded pool, reports unpaired files, and honours the exit-code contract (0/1/2 for regression signals, 64/65/66/70 for could-not-run) with partial JSON still emitted on 66 — all process control living in `cli/`, with the library writing nothing to stdout and never calling `exit()`.
   5. Every registered check ID resolves to documentation the build enforces: `mediadiff explain <check.id>` prints what it measures, why it matters and how to accept/tune/silence it; `mediadiff inspect` renders every implemented check family; `skipped` carries a machine-readable reason and is never conflated with `pass`; and all seven comparison semantics behave per spec with time tolerances compared in ticks rather than floats.
 
-**Plans**: TBD
+**Plans**: 19/19 plans complete — 16/16 executed (11 original, 2 round-2 gap-closure closing G-02-1/G-02-2, 3 round-3 gap-closure closing G-02-3/G-02-4 per CI run 31946964023), 3 round-4 gap-closure plans pending (UAT gaps G-02-5, G-02-6, G-02-7 — the 7 Windows test failures from the suite's first-ever execution)
+
+Plans:
+**Wave 1**
+
+- [x] 02-01-PLAN.md — Contract freeze checkpoint + tracer: `compare a.snap.json b.snap.json --json` end to end
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 02-02-PLAN.md — Registry generator completion, glob matcher, aliases, build-enforced check docs
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 02-03-PLAN.md — Fail-first infrastructure: test registry, coverage gate, canary, golden and determinism harnesses
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 02-04-PLAN.md — Tolerance grammar and the seven comparison semantics
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 02-05-PLAN.md — Five profiles, severity resolution with provenance, volatile and transform behaviour
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 02-06-PLAN.md — `mediadiff.toml`, the four-layer precedence merge, and `list-checks --effective`
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [x] 02-07-PLAN.md — Canonical serializer, snapshot envelope, safe write, idempotence harnesses
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [x] 02-08-PLAN.md — Shared report model, JSON plus shipped schema, Markdown budget, JUnit
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [x] 02-09-PLAN.md — TTY renderer, colour policy, accept/tune/silence triple
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [x] 02-10-PLAN.md — CLI surface completion: implicit compare, exit-code contract, `explain` and `inspect`
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [x] 02-11-PLAN.md — `dir` orchestration: pairing, bounded worker pool, corpus rollup
+
+**Gap closure — Wave 1** *(both blocker gaps from 02-UAT.md; independent, no file overlap, run in parallel)*
+
+- [x] 02-12-PLAN.md — G-02-1: `getenv_utf8` shim in `src/util/fs.h`, all six env reads routed through it, three false sole-reader comments corrected (unblocks the `x64-windows-static-md` C4996 build failure)
+- [x] 02-13-PLAN.md — G-02-2: POSIX-portable ctest count parse at `ci.yml:246` (unblocks the `arm64-osx` test-count guard)
+
+**Gap closure round 3 — Wave 1** *(successor gaps revealed behind the round-2 fixes; independent, no file overlap, run in parallel)*
+
+- [x] 02-14-PLAN.md — G-02-3: `block_for` restructured to a single reachable exit (ends MSVC C4702 → C2220 at Windows build step [60/97]) plus a permanent scan gate for the FAIL()-then-statement shape
+- [x] 02-15-PLAN.md — G-02-4: case-collision-free byte-order fixture with an explicit expected order and a self-proving teeth assertion (ends the `4 == 5` failure of arm64-osx test #40) plus a permanent fixture case-collision lint
+
+**Gap closure round 3 — Wave 2** *(blocked on both round-3 wave-1 plans)*
+
+- [x] 02-16-PLAN.md — Wire both portability lints into the required `lint` job, push, and read the new CI run per required status-check context; human checkpoint decides certify-or-iterate
+
+**Gap closure round 4 — Wave 1** *(the 7 Windows test failures; independent, no file overlap, run in parallel)*
+
+- [x] 02-17-PLAN.md — G-02-5 byte identity: `.gitattributes` pinning checkout to LF plus Windows stdout binary mode in `wmain`, landed together because either alone moves the failures rather than fixing them; new TRUST-05 test comparing `--json` stdout bytes against `--json=<path>` file bytes
+- [x] 02-18-PLAN.md — G-02-5 (#95) and G-02-6 (#36): the process-spawn fixture's Python child writes through the binary stream, and the non-ASCII fixture path is constructed via a new `tests/support/utf8_path.h` UTF-8 helper instead of `std::filesystem::path`'s ACP narrow constructor
+
+**Gap closure round 4 — Wave 2** *(blocked on both round-4 wave-1 plans; shares `src/cli/main.cpp` with 02-17)*
+
+- [x] 02-19-PLAN.md — G-02-7 (#236): `allow_windows_style_options(false)` so a `/`-rooted path is not reclassified as an option on Windows (restores the CLI-06 65-not-64 contract), then push all three plans and read the run test by test; human checkpoint decides certify-or-iterate
+
 **Source doc**: `claude_docs/01-core-concepts.md` (design-doc phase 1)
 
 ### Phase 3: Probe Layer, Container & Size
@@ -181,7 +250,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
-| 2. Core Engine | 0/TBD | Not started | - |
+| 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 0/TBD | Not started | - |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |

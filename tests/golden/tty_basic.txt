@@ -1,0 +1,14 @@
+pass:0 info:0 warn:1 fail:1 skipped:1 error:0 (worst: fail)
+
+video (1)
+  ✗ video.color video[0]  range flipped from limited to full (baseline="before", candidate="aft...
+
+audio (1)
+  ○ audio.level audio[0]  cannot compare across sampling rates (baseline="before", candidate="a...
+
+meta (1)
+  ⚠ t.exact_string global  tool version skew (baseline="before", candidate="after")
+    accept: Not applicable -- this check never observes real media.
+    tune: Not applicable -- `exact` has no tolerance.
+    silence: Not applicable -- test-only fixture.
+

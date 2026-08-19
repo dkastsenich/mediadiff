@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "tool_version": "test",
+  "measurements": [
+    { "id": "t.set_tags", "scope": { "kind": "global", "index": 0 }, "value": ["a", "c"] }
+  ]
+}

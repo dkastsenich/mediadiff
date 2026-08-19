@@ -1,0 +1,4 @@
+# A config declaring only `profile=` -- every other ConfigFile field must
+# resolve to its unset default (nullopt/empty).
+
+profile = "remux"

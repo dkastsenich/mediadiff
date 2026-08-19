@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "tool_version": "0.1.0",
+  "partial": true,
+  "diagnostics": {
+    "decode_error": "simulated mid-analysis decode failure (02-10-PLAN.md Task 2 fixture -- no real probe layer exists until Phase 3)"
+  },
+  "measurements": [
+    {
+      "id": "meta.tool_version",
+      "scope": { "kind": "global", "index": 0 },
+      "value": "1.2.3"
+    }
+  ]
+}

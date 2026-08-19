@@ -6,6 +6,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libswscale/swscale.h>
 }
 
 namespace mediadiff {
@@ -47,6 +48,21 @@ std::string compose_version_string() {
       decode_packed_version(avutil_version()), AV_STRINGIFY(LIBAVUTIL_VERSION),
       avutil_license(),
       enabled_features_csv());
+}
+
+std::string tool_version() { return MEDIADIFF_VERSION; }
+
+std::string compose_decode_path_signature() {
+  // AV_VERSION_MAJOR/MINOR/MICRO extract integer components directly from
+  // the packed runtime version int (avcodec_version() et al.) — never a
+  // substring slice of a rendered "8.1.100"-style string, which is the
+  // exact class of bug TRUST-03 calls out (a version bump that happens to
+  // share a substring with the old one would otherwise go unnoticed).
+  return fmt::format(
+      "avcodec/{}.{}.{} avformat/{}.{}.{} swscale/{}.{}.{}",
+      AV_VERSION_MAJOR(avcodec_version()), AV_VERSION_MINOR(avcodec_version()), AV_VERSION_MICRO(avcodec_version()),
+      AV_VERSION_MAJOR(avformat_version()), AV_VERSION_MINOR(avformat_version()), AV_VERSION_MICRO(avformat_version()),
+      AV_VERSION_MAJOR(swscale_version()), AV_VERSION_MINOR(swscale_version()), AV_VERSION_MICRO(swscale_version()));
 }
 
 }  // namespace mediadiff

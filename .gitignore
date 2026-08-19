@@ -16,3 +16,23 @@
 # stays tracked; the media it describes is never committed.
 tests/fixtures/*
 !tests/fixtures/GENERATOR_MANIFEST.json
+
+# Hand-authored snapshot fixtures (D-10, 02-01-PLAN.md) are text, not media —
+# they ARE the primary compare-engine integration harness and must be
+# git-diffable, so they are tracked despite the tests/fixtures/* ignore above.
+!tests/fixtures/snapshots/
+!tests/fixtures/snapshots/**
+
+# Hand-authored registry-generator fixtures (02-02-PLAN.md Task 3) are also
+# text, not media — known-good/known-bad checks.def + docs/ trees proving
+# the ENG-01/DOC-01 documentation gate can actually fail, tracked for the
+# same reason snapshots/ is above.
+!tests/fixtures/registry/
+!tests/fixtures/registry/**
+
+# Hand-authored mediadiff.toml fixtures (02-06-PLAN.md Task 1) are also
+# text, not media — known-good/known-bad configs proving the ENG-11 shape
+# validator can actually fail, tracked for the same reason snapshots/ is
+# above.
+!tests/fixtures/config/
+!tests/fixtures/config/**

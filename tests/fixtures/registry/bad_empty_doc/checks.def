@@ -1,0 +1,11 @@
+# Known-bad registry fixture (02-02-PLAN.md Task 3): a registered check
+# whose doc file exists but is zero bytes. tools/gen_registry.py must exit
+# non-zero naming "bad.empty_doc" specifically.
+
+[[check]]
+id = "bad.empty_doc"
+group = "bad"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"

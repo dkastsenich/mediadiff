@@ -1,0 +1,6 @@
+# A non-ASCII UTF-8 override path glob -- proves the config loader passes
+# non-ASCII bytes through unmangled rather than mis-decoding or rejecting
+# them outright.
+
+[override."résumé/**".severity]
+"meta.tool_version" = "warn"
