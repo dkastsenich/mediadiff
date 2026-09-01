@@ -39,6 +39,38 @@ done
 # period.
 PATTERN='"[a-z0-9_]+(\.[a-z0-9_]+)+"'
 
+# WR-06 (02-REVIEW.md): self-test control clause, run before the real scan
+# on every invocation. Without it, a matcher that has silently stopped
+# matching (a regex typo, a grep version/locale difference) would report
+# "clean" forever and the gate would be decorative -- the same
+# T-02-14-02/T-02-15-03 failure mode this project adopted the discipline
+# to prevent, and the exact discipline scripts/lint_dead_code_after_fail.sh
+# and scripts/lint_fixture_case_collisions.sh already both apply. This
+# matters MORE here than for those two siblings: src/analyzers/ currently
+# holds only .gitkeep files, so PATTERN has never once been exercised
+# against real matching content in this repository -- without a synthetic
+# fixture, a latent regex defect would stay invisible until Phase 3's
+# first analyzer source lands, and would then be indistinguishable from
+# "nothing to scan" rather than "the matcher stopped matching". Materialise
+# a synthetic known-bad fixture -- an obviously-matching hardcoded dotted
+# check-id string literal outside a comment -- and run the identical
+# PATTERN against it before trusting the real scan's "clean" result.
+SELF_TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$SELF_TEST_DIR"' EXIT
+SELF_TEST_FIXTURE="$SELF_TEST_DIR/self_test_probe.cpp"
+printf 'const char* x = "meta.tool_version";\n' > "$SELF_TEST_FIXTURE"
+
+set +e
+SELF_TEST_HITS=$(grep -nE "$PATTERN" "$SELF_TEST_FIXTURE")
+SELF_TEST_RC=$?
+set -e
+
+if [ "$SELF_TEST_RC" -ne 0 ] || [ -z "$SELF_TEST_HITS" ]; then
+  echo "lint_check_id_strings.sh error: the matcher's own self-test did not fire against a synthetic known-bad fixture (a hardcoded dotted check-id string literal, expected a match, got grep exit ${SELF_TEST_RC})." >&2
+  echo "Refusing to report the real scan as clean — a matcher that cannot detect its own known-bad control input cannot be trusted to detect a real one, and src/analyzers/ has no real content yet to catch this any other way." >&2
+  exit 1
+fi
+
 # Run the scan restricted to actual C++ source/header files. Capture the
 # matcher's own exit status explicitly, before any comment filtering, so a
 # tool failure (grep exit > 1: bad pattern, unreadable file, etc.) is never
