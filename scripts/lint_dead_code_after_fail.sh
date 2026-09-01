@@ -61,19 +61,26 @@ done
 # state-1 check on the SAME line, so a single-line `FAIL("x");` call is
 # handled without a second line.
 #
-# State 1 (consuming the failure statement): advances until a line whose
-# trimmed content ends with a closing parenthesis followed by a semicolon
-# — correct even when the failure macro's arguments span several lines,
-# which a naive next-line check would miss. That terminating line moves
-# the scanner to state 2 for the FOLLOWING line.
+# State 1 (consuming the failure statement): advances until the failure
+# statement's own terminating `);` is found — searched for *anywhere* in
+# the line, not just as the line's own suffix (CR-04 fix: the previous
+# suffix-only check missed `FAIL("x"); int y = 5;`, where the FAIL call's
+# `);` is not the last thing on the line). This is correct even when the
+# failure macro's arguments span several lines, which a naive next-line
+# check would miss. On the line where the terminator is found, whatever
+# text remains AFTER the `);` on that SAME physical line is judged
+# immediately under state 2's own rule below — it is not deferred to the
+# next line, so trailing dead code on the FAIL(...) line itself is caught.
+# Only when nothing trails the terminator on that line does judgment defer
+# to the next surviving line, exactly as before.
 #
 # State 2 (judging what follows): blank lines, `//`-comment lines, and
-# preprocessor `#` lines are skipped. The first surviving line decides: if
-# its trimmed content begins with a closing brace, the failure statement
-# was the last statement of its enclosing block — correctly shaped, return
-# to state 0 silently. Anything else is a violation: print `file:line` and
-# the offending trimmed line, record that a violation occurred, and return
-# to state 0 so the rest of the file is still scanned.
+# preprocessor `#` lines are skipped. The first surviving text decides: if
+# it begins with a closing brace, the failure statement was the last
+# statement of its enclosing block — correctly shaped, return to state 0
+# silently. Anything else is a violation: print `file:line` and the
+# offending trimmed text, record that a violation occurred, and return to
+# state 0 so the rest of the file is still scanned.
 AWK_PROGRAM='
   FNR == 1 { state = 0 }
   {
@@ -82,19 +89,35 @@ AWK_PROGRAM='
     sub(/^[ \t]+/, "", trimmed)
     sub(/[ \t]+$/, "", trimmed)
 
+    seg = line
+
     if (state == 0) {
-      if (line ~ /(^|[^A-Za-z0-9_])FAIL[ \t]*\(/) {
+      if (match(line, /(^|[^A-Za-z0-9_])FAIL[ \t]*\(/)) {
         state = 1
+        # Search for the terminating `);` only from just past the FAIL(
+        # match onward, so text preceding FAIL( on the same line can never
+        # masquerade as the failure statement'"'"'s own terminator.
+        seg = substr(line, RSTART + RLENGTH)
       } else {
         next
       }
     }
 
     if (state == 1) {
-      if (trimmed ~ /\)[ \t]*;$/) {
+      if (match(seg, /\);/)) {
+        tail = substr(seg, RSTART + RLENGTH)
+        sub(/^[ \t]+/, "", tail)
+        sub(/[ \t]+$/, "", tail)
         state = 2
+        if (tail == "") {
+          # Nothing trails the terminator on this line; defer judgment to
+          # the next surviving line via the state-2 path below.
+          next
+        }
+        trimmed = tail
+      } else {
+        next
       }
-      next
     }
 
     if (state == 2) {
@@ -118,23 +141,39 @@ AWK_PROGRAM='
 # Without it, a matcher that has silently stopped matching (a regex typo,
 # an awk version difference) would report "clean" forever and the gate
 # would be decorative — 02-13-PLAN.md's own root cause was a verification
-# that had only ever been run one way. A synthetic known-bad fixture — a
-# function whose failure-macro call spans two lines, followed by a
-# `static` declaration, a return, and the closing brace — must be flagged
-# by the identical matcher used below, or this script refuses to proceed.
+# that had only ever been run one way. Two synthetic known-bad fixtures —
+# one where the failure-macro call spans two lines followed by a `static`
+# declaration, a return, and the closing brace, and one (CR-04) where the
+# dead-code statement follows FAIL(...) on the exact SAME physical line —
+# must both be flagged by the identical matcher used below, or this script
+# refuses to proceed. The same-line fixture exists specifically because a
+# prior version of this matcher only checked for the FAIL(...) terminator
+# as a line's own suffix, which silently passed over `FAIL("x"); int y =
+# 5;` — this second fixture is what pins that gap closed.
 SELF_TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$SELF_TEST_DIR"' EXIT
 SELF_TEST_FIXTURE="$SELF_TEST_DIR/self_test_probe.cpp"
 printf 'int f() {\n  FAIL(\n      "x");\n  static int d = 0;\n  return d;\n}\n' > "$SELF_TEST_FIXTURE"
 
+SELF_TEST_SAME_LINE_FIXTURE="$SELF_TEST_DIR/self_test_probe_same_line.cpp"
+printf 'int f() {\n  FAIL("x"); int y = 5;\n  return y;\n}\n' > "$SELF_TEST_SAME_LINE_FIXTURE"
+
 set +e
 awk "$AWK_PROGRAM" "$SELF_TEST_FIXTURE" >/dev/null
 SELF_TEST_RC=$?
+awk "$AWK_PROGRAM" "$SELF_TEST_SAME_LINE_FIXTURE" >/dev/null
+SELF_TEST_SAME_LINE_RC=$?
 set -e
 
 if [ "$SELF_TEST_RC" -ne 1 ]; then
   echo "lint_dead_code_after_fail.sh error: the matcher's own self-test did not fire against a synthetic known-bad fixture (expected exit 1, got ${SELF_TEST_RC})." >&2
   echo "Refusing to report the real scan as clean — a matcher that cannot detect its own known-bad control input cannot be trusted to detect a real one." >&2
+  exit 1
+fi
+
+if [ "$SELF_TEST_SAME_LINE_RC" -ne 1 ]; then
+  echo "lint_dead_code_after_fail.sh error: the matcher's own self-test did not fire against a synthetic known-bad fixture where the dead code follows FAIL(...) on the SAME physical line (expected exit 1, got ${SELF_TEST_SAME_LINE_RC})." >&2
+  echo "Refusing to report the real scan as clean — this is the CR-04 same-line blind spot; a matcher that cannot detect it here cannot be trusted to detect it in real test code." >&2
   exit 1
 fi
 
