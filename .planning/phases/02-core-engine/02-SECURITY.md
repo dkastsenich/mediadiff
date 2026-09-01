@@ -12,6 +12,7 @@ block_on: high
 register_authored_at_plan_time: true
 created: 2026-08-24
 audited: 2026-08-24
+evidence_refreshed: 2026-09-01
 ---
 
 # Phase 02 — Security
@@ -59,7 +60,7 @@ block, so the auditor verified declared mitigations rather than retroactively sc
 | T-2-22 | Elevation of Privilege | `src/core/policy.cpp` | high | mitigate | A later layer can only lower or raise a severity through a recorded provenance entry; there is no unrecorded write path, so a config cannot silently d… | closed |
 | T-2-04 | Tampering | `src/core/snapshot.cpp` | high | mitigate | A `schema_version` major mismatch, an absent `schema_version`, or a value whose encoded kind contradicts the registry is `ErrorKind::input_unsupported… | closed |
 | T-2-07 | Information Disclosure | `src/core/snapshot.cpp` | high | mitigate | The envelope carries only the input's basename, size and digest — no absolute path, home directory, hostname, username or environment variable. Enforc… | closed |
-| T-2-24 | Tampering | `src/cli/commands/snapshot.cpp` | high | mitigate | A tracked existing target, or any existing target under `CI=true`, is refused without `--force`, and the check runs before the first byte is written s… | closed |
+| T-2-24 | Tampering | `src/cli/commands/snapshot.cpp` | high | mitigate | A tracked existing target, or any existing target under `CI=true`, is refused without `--force`, and the check runs before the first byte is written. **Evidence refreshed 2026-09-01** — see the T-2-24 note below: the gate's git-tracked probe was argument-injectable on Windows until `524ea88`. | closed |
 | T-2-25 | Tampering | `write_snapshot` | high | mitigate | Writes go to a sibling temporary file that is renamed into place, so a crash or a concurrent reader never observes a torn document, and an input file … | closed |
 | T-2-28 | Tampering | `src/report/junit.cpp` | high | mitigate | Every attribute value and text body is XML-escaped, and a test re-parses output containing `<`, `>` and `&` as XML. An unescaped filename would produc… | closed |
 | T-2-29 | Repudiation | `src/report/markdown.cpp` | high | mitigate | The fold drops non-gating findings before gating ones and states the real withheld count, so the Markdown surface can never disagree with the exit cod… | closed |
@@ -170,6 +171,46 @@ recorded here as the highest-priority security item leaving Phase 2.
 
 ---
 
+## Post-Audit Correction — T-2-24 (2026-09-01)
+
+**The 2026-08-24 audit certified T-2-24 CLOSED while a bypass of it existed.** Recording this
+plainly, because a security document that quietly absorbs its own miss is worth less than one that
+shows where its evidence stopped.
+
+What the audit verified was real and remains true: `write_snapshot_gated`
+(`src/cli/commands/snapshot.cpp:181-201`) refuses a tracked existing target, or any existing target
+under `CI=true`, before the first byte is written, and `tests/integration/test_snapshot_safe_write.cpp`
+asserts it at four call sites. That guard exists and works.
+
+What the audit did not reach was the input feeding it. The gate asks git whether the target is
+tracked via `spawn_git_ls_files`, and on Windows that function built its `CreateProcessA` command
+line by raw concatenation:
+
+    "git -C \"" + target.dir + "\" ls-files --error-unmatch -- \"" + target.filename + "\""
+
+An embedded `"` in the path broke the quoting and injected arguments into `git`, which could change
+which repository was consulted and return "not tracked" for a tracked file — bypassing the refusal
+without `--force`. The function's own header comment asserted that no injection concern applied on
+that platform, which is likely why it read as safe.
+
+Found by the post-ship code re-review of 2026-09-01 (`02-REVIEW.md`, WR-05), not by this audit.
+
+**Fixed in `524ea88`:** both `target.dir` and `target.filename` are escaped through a new
+`win32_quote_arg` implementing standard MSVC-CRT-compatible quoting; the incorrect header comment
+was corrected. Verified locally by a portable reference-tokenizer round-trip test (13 cases,
+including the exact injection payload from the finding) and **confirmed on the real platform** by CI
+run 33550930821 (headSha `721e1e7`): `build (x64-windows-static-md)` green at 303/303 with zero MSVC
+diagnostics.
+
+**Scope of the original exposure, stated honestly:** the injectable value is the user's own `--out`
+path in a local, offline CLI, so there was no attacker who controlled it without already controlling
+the whole invocation. This was a correctness defect with a security shape rather than a remote
+bypass — but T-2-24 is a `high` threat at the block threshold, and the audit asserted a completeness
+that did not hold. The lesson for future audits: verifying that a guard exists is not the same as
+verifying the inputs that guard consumes.
+
+---
+
 ## Accepted Risks Log
 
 | Risk ID | Threat Ref | Rationale | Accepted By | Date |
@@ -218,6 +259,7 @@ this is self-inflicted only. Worth a follow-up bound on all three sources.
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-08-24 | 88 | 87 | 1 (all below `high` threshold) | gsd-security-auditor (ASVS L1, block_on high) |
+| 2026-09-01 | 88 | 87 | 1 (T-2-33, below threshold) | post-ship code re-review — found WR-05 bypassing T-2-24; fixed in `524ea88`, CI-confirmed run 33550930821 |
 
 ---
 
@@ -226,4 +268,5 @@ this is self-inflicted only. Worth a follow-up bound on all three sources.
 - [x] All threats have a disposition (mitigate / accept / transfer)
 - [x] Accepted risks documented in Accepted Risks Log (23 entries)
 - [x] `threats_open: 0` confirmed at the `high` block threshold
+- [x] T-2-24 evidence refreshed after the 2026-09-01 re-review found and closed a Windows bypass (`524ea88`, CI-confirmed)
 - [ ] T-2-33 (medium) resolved — deliberately carried to Phase 3
