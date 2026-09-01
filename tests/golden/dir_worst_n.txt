@@ -1,0 +1,10 @@
+pass:1 info:0 warn:1 fail:1 skipped:0 error:0 (worst: fail)
+
+m_missing.snap.json: pass:0 info:0 warn:0 fail:1 skipped:0 error:0 (worst: fail)
+x_extra.snap.json: pass:0 info:0 warn:1 fail:0 skipped:0 error:0 (worst: warn)
+z_clean.snap.json: pass:1 info:0 warn:0 fail:0 skipped:0 error:0 (worst: warn)
+
+worst 3 files:
+  fail m_missing.snap.json (pass:0 info:0 warn:0 fail:1 skipped:0 error:0)
+  warn x_extra.snap.json (pass:0 info:0 warn:1 fail:0 skipped:0 error:0)
+  warn z_clean.snap.json (pass:1 info:0 warn:0 fail:0 skipped:0 error:0)

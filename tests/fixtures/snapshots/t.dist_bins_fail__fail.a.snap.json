@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "tool_version": "test",
+  "measurements": [
+    { "id": "t.dist_bins_fail", "scope": { "kind": "global", "index": 0 },
+      "value": [ { "bin": "a", "count": 50 }, { "bin": "b", "count": 50 } ] }
+  ]
+}

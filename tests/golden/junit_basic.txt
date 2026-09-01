@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="3" failures="2" errors="0" skipped="1">
+  <testsuite name="video" tests="1" failures="1" errors="0" skipped="0">
+    <testcase classname="video" name="video.frame_hash[global]"><failure message="video finding">baseline: null | candidate: null</failure></testcase>
+  </testsuite>
+  <testsuite name="meta" tests="2" failures="1" errors="0" skipped="1">
+    <testcase classname="meta" name="t.exact_string[global]"><skipped message="none: meta a"/></testcase>
+    <testcase classname="meta" name="t.tol_ms[global]"><failure message="meta b">baseline: null | candidate: null</failure></testcase>
+  </testsuite>
+</testsuites>

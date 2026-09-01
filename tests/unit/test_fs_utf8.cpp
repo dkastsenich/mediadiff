@@ -12,6 +12,7 @@
 #include "util/fs.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -83,6 +84,29 @@ void round_trip_through_shim(const std::string& name) {
   REQUIRE(std::memcmp(read_back, kPattern, sizeof(kPattern)) == 0);
 }
 
+// Sets `name` to `value`, returning whether the platform call reported
+// success. Uses the non-deprecated secure variant on Windows so this test
+// file itself does not trip the same C4996-under-/WX class getenv_utf8
+// exists to fix.
+bool set_env(const char* name, const char* value) {
+#ifdef _WIN32
+  return _putenv_s(name, value) == 0;
+#else
+  return setenv(name, value, 1) == 0;
+#endif
+}
+
+// Clears `name` from the environment, returning whether the platform call
+// reported success. On Windows, `_putenv_s` with an empty value is how
+// Win32 removes a variable -- there is no separate "unset" call.
+bool clear_env(const char* name) {
+#ifdef _WIN32
+  return _putenv_s(name, "") == 0;
+#else
+  return unsetenv(name) == 0;
+#endif
+}
+
 }  // namespace
 
 TEST_CASE("test_fs_utf8 - non-ASCII filename round trip and empty-path rejection") {
@@ -108,4 +132,40 @@ TEST_CASE("test_fs_utf8 - non-ASCII filename round trip and empty-path rejection
     REQUIRE(back == original);
   }
 #endif
+}
+
+TEST_CASE("test_fs_utf8 - getenv_utf8 separates unset from set-to-empty") {
+  static constexpr const char* kVarName = "MEDIADIFF_TEST_ENV_SHIM";
+
+  // Cleared at both start and end: a partially-unwound REQUIRE above must
+  // not leak this variable's state into a later test in the same process.
+  REQUIRE(clear_env(kVarName));
+
+  SECTION("unset variable returns a disengaged optional") {
+    const std::optional<std::string> result = mediadiff::getenv_utf8(kVarName);
+    REQUIRE_FALSE(result.has_value());
+  }
+
+  SECTION("set-to-non-empty variable returns an engaged optional holding that value") {
+    REQUIRE(set_env(kVarName, "some-value"));
+    const std::optional<std::string> result = mediadiff::getenv_utf8(kVarName);
+    REQUIRE(result.has_value());
+    REQUIRE(*result == "some-value");
+  }
+
+#ifndef _WIN32
+  SECTION("set-to-empty variable returns an engaged optional holding the empty string (POSIX only)") {
+    // POSIX-only: Win32's environment API cannot represent a set-but-empty
+    // variable at all -- both `_putenv_s` with an empty value and
+    // `SetEnvironmentVariable` with an empty value DELETE the variable, so
+    // this case is unreachable on Windows by construction, not merely
+    // unexercised there.
+    REQUIRE(set_env(kVarName, ""));
+    const std::optional<std::string> result = mediadiff::getenv_utf8(kVarName);
+    REQUIRE(result.has_value());
+    REQUIRE(*result == "");
+  }
+#endif
+
+  REQUIRE(clear_env(kVarName));
 }

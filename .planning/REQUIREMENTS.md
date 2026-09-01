@@ -22,63 +22,63 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### CLI Surface
 
-- [ ] **CLI-01**: User can run `mediadiff <BASELINE> <CANDIDATE>` with two bare positionals and get an implicit compare
-- [ ] **CLI-02**: User can invoke the `compare`, `snapshot`, `dir`, `inspect`, `list-checks`, and `explain` subcommands
-- [ ] **CLI-03**: User can repeat `--set <glob>=<severity>` and `--tol <check>=<value>`, and later flags override earlier ones in argv order
-- [ ] **CLI-04**: User can request reports with `--json[=path]` and repeatable `--report kind=path` for `md` and `junit`
+- [x] **CLI-01**: User can run `mediadiff <BASELINE> <CANDIDATE>` with two bare positionals and get an implicit compare
+- [x] **CLI-02**: User can invoke the `compare`, `snapshot`, `dir`, `inspect`, `list-checks`, and `explain` subcommands
+- [x] **CLI-03**: User can repeat `--set <glob>=<severity>` and `--tol <check>=<value>`, and later flags override earlier ones in argv order
+- [x] **CLI-04**: User can request reports with `--json[=path]` and repeatable `--report kind=path` for `md` and `junit`
 - [x] **CLI-05**: `mediadiff --version` prints the tool version, linked FFmpeg library versions, and enabled features (`vmaf`, `cuda`)
-- [ ] **CLI-06**: Exit codes follow the contract: `0` clean, `1` fail findings, `2` warn under `--strict`, `64` usage, `65` unreadable input, `66` decode failure mid-analysis, `70` internal
-- [ ] **CLI-07**: On exit code `66`, partial JSON is still emitted so CI can see what was measured before the failure
-- [ ] **CLI-08**: Color output auto-disables on `NO_COLOR`, non-TTY stdout, and `CI=true`, but stays enabled when `GITHUB_ACTIONS=true`; `--no-color` and `--ascii` force it manually
+- [x] **CLI-06**: Exit codes follow the contract: `0` clean, `1` fail findings, `2` warn under `--strict`, `64` usage, `65` unreadable input, `66` decode failure mid-analysis, `70` internal
+- [x] **CLI-07**: On exit code `66`, partial JSON is still emitted so CI can see what was measured before the failure
+- [x] **CLI-08**: Color output auto-disables on `NO_COLOR`, non-TTY stdout, and `CI=true`, but stays enabled when `GITHUB_ACTIONS=true`; `--no-color` and `--ascii` force it manually
 - [x] **CLI-09**: **[R]** Windows non-ASCII paths work end to end — UTF-16 args via `CommandLineToArgvW` converted once to UTF-8, all file I/O through a `util/fs.h` shim, VT sequences enabled via `SetConsoleMode` (research: PITFALLS — must be phase 0, not retrofitted)
-- [ ] **CLI-10**: A tolerance given in the wrong unit for a check is a usage error (exit `64`) that names the expected unit
+- [x] **CLI-10**: A tolerance given in the wrong unit for a check is a usage error (exit `64`) that names the expected unit
 
 ### Core Engine
 
-- [ ] **ENG-01**: A single check registry (`src/core/checks.def`) generates the ID enum, the registry, and the docs manifest — the build fails if `docs/checks/<id>.md` is missing for any registered ID
-- [ ] **ENG-02**: Check IDs match by segment-wise glob (`*` one segment, `**` trailing segments) for `--set` and config, with no regex
-- [ ] **ENG-03**: A renamed check resolves through `deprecated_alias` at config-parse time with a warning, so existing user configs keep working
-- [ ] **ENG-04**: All seven comparison semantics work per spec: `exact`, `±tol`, `set`, `presence`, `hash`, `dist`, `span`
-- [ ] **ENG-05**: Time-unit tolerances compare in ticks/samples using rational math, never floats
-- [ ] **ENG-06**: Severity resolves through the chain built-in → profile → config globs (file order) → CLI `--set` (argv order), last writer wins, and the resolved chain appears in evidence under `-v`
-- [ ] **ENG-07**: `volatile`-flagged checks default to `ignore` in every profile, but their differing values are still computed and shown under `-v`
-- [ ] **ENG-08**: All five profiles ship and behave per the normative matrix: `strict-bitexact`, `sw-encoder`, `hw-encoder`, `remux`, `transform`
-- [ ] **ENG-09**: Default profile is `sw-encoder` when neither `--profile` nor a TOML `profile=` is given
-- [ ] **ENG-10**: The `transform` profile converts affected identity checks into checks against a declared expectation block (`expect.resolution`) instead of baseline equality
-- [ ] **ENG-11**: Config merges in precedence order profile → `[severity]`/`[tolerance]` → matching `[override.*]` blocks in file order → CLI
-- [ ] **ENG-12**: `mediadiff list-checks --effective` dumps the merged effective policy so a user can debug config surprises
-- [ ] **ENG-13**: `mediadiff explain <check.id>` prints that check's documentation, compiled into the binary at build time
-- [ ] **ENG-14**: `skipped` is a first-class status carrying a machine-readable reason, always present in JSON, and never rendered as or conflated with `pass`
-- [ ] **ENG-15**: Errors map by kind to exit codes (`usage`→64, `input_open`/`input_unsupported`→65, `decode`→66, `internal`→70) with no exceptions crossing the `libmediadiff` boundary
-- [ ] **ENG-16**: `libmediadiff` writes nothing to stdout and never calls `exit()` — all rendering and process control lives in `cli/`
+- [x] **ENG-01**: A single check registry (`src/core/checks.def`) generates the ID enum, the registry, and the docs manifest — the build fails if `docs/checks/<id>.md` is missing for any registered ID
+- [x] **ENG-02**: Check IDs match by segment-wise glob (`*` one segment, `**` trailing segments) for `--set` and config, with no regex
+- [x] **ENG-03**: A renamed check resolves through `deprecated_alias` at config-parse time with a warning, so existing user configs keep working
+- [x] **ENG-04**: All seven comparison semantics work per spec: `exact`, `±tol`, `set`, `presence`, `hash`, `dist`, `span`
+- [x] **ENG-05**: Time-unit tolerances compare in ticks/samples using rational math, never floats
+- [x] **ENG-06**: Severity resolves through the chain built-in → profile → config globs (file order) → CLI `--set` (argv order), last writer wins, and the resolved chain appears in evidence under `-v`
+- [x] **ENG-07**: `volatile`-flagged checks default to `ignore` in every profile, but their differing values are still computed and shown under `-v`
+- [x] **ENG-08**: All five profiles ship and behave per the normative matrix: `strict-bitexact`, `sw-encoder`, `hw-encoder`, `remux`, `transform`
+- [x] **ENG-09**: Default profile is `sw-encoder` when neither `--profile` nor a TOML `profile=` is given
+- [x] **ENG-10**: The `transform` profile converts affected identity checks into checks against a declared expectation block (`expect.resolution`) instead of baseline equality
+- [x] **ENG-11**: Config merges in precedence order profile → `[severity]`/`[tolerance]` → matching `[override.*]` blocks in file order → CLI
+- [x] **ENG-12**: `mediadiff list-checks --effective` dumps the merged effective policy so a user can debug config surprises
+- [x] **ENG-13**: `mediadiff explain <check.id>` prints that check's documentation, compiled into the binary at build time
+- [x] **ENG-14**: `skipped` is a first-class status carrying a machine-readable reason, always present in JSON, and never rendered as or conflated with `pass`
+- [x] **ENG-15**: Errors map by kind to exit codes (`usage`→64, `input_open`/`input_unsupported`→65, `decode`→66, `internal`→70) with no exceptions crossing the `libmediadiff` boundary
+- [x] **ENG-16**: `libmediadiff` writes nothing to stdout and never calls `exit()` — all rendering and process control lives in `cli/`
 
 ### Fingerprints & Snapshots
 
-- [ ] **SNAP-01**: `mediadiff snapshot <file>` writes a `*.snap.json` fingerprint containing all measurements plus the envelope (schema/tool versions, decode path, sampling state, input identity with XXH3-128)
-- [ ] **SNAP-02**: `mediadiff compare <file> <file>.snap.json` accepts a snapshot in place of live media and produces the same findings a live compare would
-- [ ] **SNAP-03**: Snapshot output is canonical and git-diffable — registry field order, sorted scopes, one value per line, shortest round-trip float formatting
-- [ ] **SNAP-04**: Times are stored as `{num, den, tb}` rationals with the float form as a derived convenience field
-- [ ] **SNAP-05**: `compare` warns on tool-version skew and refuses with exit `65` on an incompatible `schema_version` major
-- [ ] **SNAP-06**: `mediadiff snapshot f && mediadiff compare f f.snap.json` is clean — enforced as a permanent CI test
-- [ ] **SNAP-07**: **[R]** `snapshot` refuses to silently overwrite an existing tracked snapshot in CI (`CI=true` / non-TTY) without an explicit `--force`/`--update` flag, so a misinvoked job cannot launder a regression into the committed baseline (research: FEATURES gap 1 — the convention every comparable snapshot tool enforces)
+- [x] **SNAP-01**: `mediadiff snapshot <file>` writes a `*.snap.json` fingerprint containing all measurements plus the envelope (schema/tool versions, decode path, sampling state, input identity with XXH3-128)
+- [x] **SNAP-02**: `mediadiff compare <file> <file>.snap.json` accepts a snapshot in place of live media and produces the same findings a live compare would
+- [x] **SNAP-03**: Snapshot output is canonical and git-diffable — registry field order, sorted scopes, one value per line, shortest round-trip float formatting
+- [x] **SNAP-04**: Times are stored as `{num, den, tb}` rationals with the float form as a derived convenience field
+- [x] **SNAP-05**: `compare` warns on tool-version skew and refuses with exit `65` on an incompatible `schema_version` major
+- [x] **SNAP-06**: `mediadiff snapshot f && mediadiff compare f f.snap.json` is clean — enforced as a permanent CI test
+- [x] **SNAP-07**: **[R]** `snapshot` refuses to silently overwrite an existing tracked snapshot in CI (`CI=true` / non-TTY) without an explicit `--force`/`--update` flag, so a misinvoked job cannot launder a regression into the committed baseline (research: FEATURES gap 1 — the convention every comparable snapshot tool enforces)
 
 ### Reporting
 
-- [ ] **REPORT-01**: JSON output is schema-validated against `docs/schema/report-1.0.json` in CI and byte-identical across identical runs (timing fields excluded)
-- [ ] **REPORT-02**: TTY output groups findings in fixed order (container → video → timeline → audio → content → size → meta), shows only non-pass by default, and is width-aware without wrapping value columns
-- [ ] **REPORT-03**: Every gating finding prints the accept / tune / silence triple in TTY output
-- [ ] **REPORT-04**: Markdown output renders a summary table plus per-group `<details>`, and folds overflow into "N more findings, see JSON artifact"
-- [ ] **REPORT-05**: **[R]** The Markdown cap is enforced as a character budget under GitHub's real 65,536-character comment limit, not an ambiguous "60 KB" byte figure (research: PITFALLS — corrects doc 01 §9)
-- [ ] **REPORT-06**: JUnit output emits one `<testcase>` per gating-capable finding, one suite per group, so Jenkins/GitLab show results with zero integration work
-- [ ] **REPORT-07**: `mediadiff inspect <file>` renders the complete analysis of a single file across every implemented check family
+- [x] **REPORT-01**: JSON output is schema-validated against `docs/schema/report-1.0.json` in CI and byte-identical across identical runs (timing fields excluded)
+- [x] **REPORT-02**: TTY output groups findings in fixed order (container → video → timeline → audio → content → size → meta), shows only non-pass by default, and is width-aware without wrapping value columns
+- [x] **REPORT-03**: Every gating finding prints the accept / tune / silence triple in TTY output
+- [x] **REPORT-04**: Markdown output renders a summary table plus per-group `<details>`, and folds overflow into "N more findings, see JSON artifact"
+- [x] **REPORT-05**: **[R]** The Markdown cap is enforced as a character budget under GitHub's real 65,536-character comment limit, not an ambiguous "60 KB" byte figure (research: PITFALLS — corrects doc 01 §9)
+- [x] **REPORT-06**: JUnit output emits one `<testcase>` per gating-capable finding, one suite per group, so Jenkins/GitLab show results with zero integration work
+- [x] **REPORT-07**: `mediadiff inspect <file>` renders the complete analysis of a single file across every implemented check family
 
 ### Directory Mode
 
-- [ ] **DIR-01**: `mediadiff dir <a> <b>` pairs files by relative path and reports unpaired files as `meta.missing_candidate` (fail) / `meta.extra_candidate` (warn)
-- [ ] **DIR-02**: `dir` defaults to header + packet passes and only decodes when `--content` is passed
-- [ ] **DIR-03**: `dir` output rolls up per-file summaries, corpus totals, and a worst-N table in TTY, with a `files[]` layer in JSON using the same finding schema
-- [ ] **DIR-04**: File processing order is deterministic (sorted relative paths) so reports diff cleanly across runs
-- [ ] **DIR-05**: `--threads N` bounds a worker pool across files while analyzer code stays single-file-synchronous
+- [x] **DIR-01**: `mediadiff dir <a> <b>` pairs files by relative path and reports unpaired files as `meta.missing_candidate` (fail) / `meta.extra_candidate` (warn)
+- [x] **DIR-02**: `dir` defaults to header + packet passes and only decodes when `--content` is passed
+- [x] **DIR-03**: `dir` output rolls up per-file summaries, corpus totals, and a worst-N table in TTY, with a `files[]` layer in JSON using the same finding schema
+- [x] **DIR-04**: File processing order is deterministic (sorted relative paths) so reports diff cleanly across runs
+- [x] **DIR-05**: `--threads N` bounds a worker pool across files while analyzer code stays single-file-synchronous
 - [ ] **DIR-06**: **[R]** Peak memory per in-flight file is bounded and asserted, since `--threads` is simultaneously the concurrency and the memory knob (research: ARCHITECTURE)
 
 ### Probe Layer
@@ -167,18 +167,18 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 - [ ] **TRUST-01**: Every fingerprint records, per hashed stream, the decoder name, determinism class, flags, and (class 2) a path signature
 - [ ] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
-- [ ] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
+- [x] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
 - [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
-- [ ] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
+- [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
 - [ ] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
 - [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains
-- [ ] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
+- [x] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
 - [ ] **TRUST-09**: `ts_scan` output is cross-checked against TSDuck's analysis of the same fixtures via a manual test jig, without linking TSDuck
 
 ### Documentation & Explainability
 
-- [ ] **DOC-01**: Every registered check has a `docs/checks/<id>.md` file, enforced by the build rather than by review discipline
-- [ ] **DOC-02**: Every check's `--explain` text states what the check measures, why it matters, and how to accept, tune, or silence it
+- [x] **DOC-01**: Every registered check has a `docs/checks/<id>.md` file, enforced by the build rather than by review discipline
+- [x] **DOC-02**: Every check's `--explain` text states what the check measures, why it matters, and how to accept, tune, or silence it
 - [ ] **DOC-03**: Every check is demonstrated by at least one fixture pair that triggers it and one that comes back clean
 - [ ] **DOC-04**: Timeline fixtures assert the *no-others* clause — the intended finding fires and nothing else does
 
@@ -254,51 +254,51 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | BUILD-08 | Phase 1 | Complete |
 | BUILD-09 | Phase 1 | Complete |
 | BUILD-10 | Phase 1 | Complete |
-| CLI-01 | Phase 2 | Pending |
-| CLI-02 | Phase 2 | Pending |
-| CLI-03 | Phase 2 | Pending |
-| CLI-04 | Phase 2 | Pending |
+| CLI-01 | Phase 2 | Complete |
+| CLI-02 | Phase 2 | Complete |
+| CLI-03 | Phase 2 | Complete |
+| CLI-04 | Phase 2 | Complete |
 | CLI-05 | Phase 1 | Complete |
-| CLI-06 | Phase 2 | Pending |
-| CLI-07 | Phase 2 | Pending |
-| CLI-08 | Phase 2 | Pending |
+| CLI-06 | Phase 2 | Complete |
+| CLI-07 | Phase 2 | Complete |
+| CLI-08 | Phase 2 | Complete |
 | CLI-09 | Phase 1 | Complete |
-| CLI-10 | Phase 2 | Pending |
-| ENG-01 | Phase 2 | Pending |
-| ENG-02 | Phase 2 | Pending |
-| ENG-03 | Phase 2 | Pending |
-| ENG-04 | Phase 2 | Pending |
-| ENG-05 | Phase 2 | Pending |
-| ENG-06 | Phase 2 | Pending |
-| ENG-07 | Phase 2 | Pending |
-| ENG-08 | Phase 2 | Pending |
-| ENG-09 | Phase 2 | Pending |
-| ENG-10 | Phase 2 | Pending |
-| ENG-11 | Phase 2 | Pending |
-| ENG-12 | Phase 2 | Pending |
-| ENG-13 | Phase 2 | Pending |
-| ENG-14 | Phase 2 | Pending |
-| ENG-15 | Phase 2 | Pending |
-| ENG-16 | Phase 2 | Pending |
-| SNAP-01 | Phase 2 | Pending |
-| SNAP-02 | Phase 2 | Pending |
-| SNAP-03 | Phase 2 | Pending |
-| SNAP-04 | Phase 2 | Pending |
-| SNAP-05 | Phase 2 | Pending |
-| SNAP-06 | Phase 2 | Pending |
-| SNAP-07 | Phase 2 | Pending |
-| REPORT-01 | Phase 2 | Pending |
-| REPORT-02 | Phase 2 | Pending |
-| REPORT-03 | Phase 2 | Pending |
-| REPORT-04 | Phase 2 | Pending |
-| REPORT-05 | Phase 2 | Pending |
-| REPORT-06 | Phase 2 | Pending |
-| REPORT-07 | Phase 2 | Pending |
-| DIR-01 | Phase 2 | Pending |
-| DIR-02 | Phase 2 | Pending |
-| DIR-03 | Phase 2 | Pending |
-| DIR-04 | Phase 2 | Pending |
-| DIR-05 | Phase 2 | Pending |
+| CLI-10 | Phase 2 | Complete |
+| ENG-01 | Phase 2 | Complete |
+| ENG-02 | Phase 2 | Complete |
+| ENG-03 | Phase 2 | Complete |
+| ENG-04 | Phase 2 | Complete |
+| ENG-05 | Phase 2 | Complete |
+| ENG-06 | Phase 2 | Complete |
+| ENG-07 | Phase 2 | Complete |
+| ENG-08 | Phase 2 | Complete |
+| ENG-09 | Phase 2 | Complete |
+| ENG-10 | Phase 2 | Complete |
+| ENG-11 | Phase 2 | Complete |
+| ENG-12 | Phase 2 | Complete |
+| ENG-13 | Phase 2 | Complete |
+| ENG-14 | Phase 2 | Complete |
+| ENG-15 | Phase 2 | Complete |
+| ENG-16 | Phase 2 | Complete |
+| SNAP-01 | Phase 2 | Complete |
+| SNAP-02 | Phase 2 | Complete |
+| SNAP-03 | Phase 2 | Complete |
+| SNAP-04 | Phase 2 | Complete |
+| SNAP-05 | Phase 2 | Complete |
+| SNAP-06 | Phase 2 | Complete |
+| SNAP-07 | Phase 2 | Complete |
+| REPORT-01 | Phase 2 | Complete |
+| REPORT-02 | Phase 2 | Complete |
+| REPORT-03 | Phase 2 | Complete |
+| REPORT-04 | Phase 2 | Complete |
+| REPORT-05 | Phase 2 | Complete |
+| REPORT-06 | Phase 2 | Complete |
+| REPORT-07 | Phase 2 | Complete |
+| DIR-01 | Phase 2 | Complete |
+| DIR-02 | Phase 2 | Complete |
+| DIR-03 | Phase 2 | Complete |
+| DIR-04 | Phase 2 | Complete |
+| DIR-05 | Phase 2 | Complete |
 | DIR-06 | Phase 3 | Pending |
 | PROBE-01 | Phase 3 | Pending |
 | PROBE-02 | Phase 3 | Pending |
@@ -366,15 +366,15 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONTENT-11 | Phase 7 | Pending |
 | TRUST-01 | Phase 6 | Pending |
 | TRUST-02 | Phase 6 | Pending |
-| TRUST-03 | Phase 2 | Pending |
+| TRUST-03 | Phase 2 | Complete |
 | TRUST-04 | Phase 7 | Pending |
-| TRUST-05 | Phase 2 | Pending |
+| TRUST-05 | Phase 2 | Complete |
 | TRUST-06 | Phase 3 | Pending |
 | TRUST-07 | Phase 7 | Pending |
-| TRUST-08 | Phase 2 | Pending |
+| TRUST-08 | Phase 2 | Complete |
 | TRUST-09 | Phase 3 | Pending |
-| DOC-01 | Phase 2 | Pending |
-| DOC-02 | Phase 2 | Pending |
+| DOC-01 | Phase 2 | Complete |
+| DOC-02 | Phase 2 | Complete |
 | DOC-03 | Phase 3 | Pending |
 | DOC-04 | Phase 5 | Pending |
 | PERF-01 | Phase 5 | Pending |

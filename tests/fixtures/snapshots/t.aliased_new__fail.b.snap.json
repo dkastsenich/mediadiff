@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "tool_version": "test",
+  "measurements": [
+    { "id": "t.aliased_new", "scope": { "kind": "global", "index": 0 }, "value": "fail-candidate-DIFFERS" }
+  ]
+}

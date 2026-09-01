@@ -21,6 +21,9 @@
 // is therefore unnecessary and stays out of scope.
 
 #include <cstdio>
+#include <cstdlib>
+#include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -136,6 +139,107 @@ inline FILE* fopen_utf8(std::string_view path, std::string_view mode) {
 }
 
 #endif  // _WIN32
+
+// Atomically replaces `to` with `from` (or plainly renames `from` to `to`
+// when `to` doesn't exist yet) — the temp-file-then-rename primitive every
+// mediadiff writer that must never leave a reader observing a partially-
+// written file (SNAP-07's own "leave the existing file byte-identical on
+// refusal" contract, and write_snapshot's "no torn file" guarantee) builds
+// on.
+//
+// On POSIX, std::rename() already atomically replaces an existing `to`.
+// On Windows, the MSVC CRT's rename() does NOT replace an existing
+// destination — it fails with EEXIST-equivalent behavior — so this wraps
+// MoveFileExW with MOVEFILE_REPLACE_EXISTING instead, reusing this
+// header's own utf8_to_wide conversion rather than asking a caller
+// outside fs.h to construct a wide path itself (this header and
+// src/cli/main.cpp are the only two places permitted to name
+// wide-character types).
+//
+// Returns false on any failure, including an empty `from`/`to`.
+inline bool rename_replace_utf8(std::string_view from, std::string_view to) {
+  if (from.empty() || to.empty()) {
+    return false;
+  }
+#ifdef _WIN32
+  const std::wstring wide_from = utf8_to_wide(from);
+  const std::wstring wide_to = utf8_to_wide(to);
+  if (wide_from.empty() || wide_to.empty()) {
+    return false;
+  }
+  return MoveFileExW(wide_from.c_str(), wide_to.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
+#else
+  return std::rename(std::string(from).c_str(), std::string(to).c_str()) == 0;
+#endif
+}
+
+// Reads one environment variable as UTF-8, distinguishing "unset"
+// (std::nullopt) from "set to the empty string" (an engaged optional
+// holding ""). That distinction is load-bearing: `ColorInputs`' three
+// `std::optional<std::string>` fields (src/cli/color_policy.h) exist for
+// it, `NO_COLOR`'s own convention is that PRESENCE is the signal rather
+// than the value, and the WR-02 regression tests assert exactly this
+// unset-versus-empty behaviour.
+//
+// This is the single first-party call site of the deprecated C environment
+// accessor (Windows: `_dupenv_s` rather than `getenv`/`getenv_s`). MSVC's
+// CRT deprecates the plain accessor (C4996), and `/W4 /WX` (BUILD-05)
+// promotes that to a hard error — the same reason `fopen_utf8` above uses
+// `_wfopen_s` instead of `_wfopen` (commit 47d5965). `_CRT_SECURE_NO_WARNINGS`
+// is not an alternative: it would disable a whole class of deprecation
+// diagnostics repository-wide just to hide this one call.
+//
+// `_dupenv_s` rather than `getenv_s`: both preserve the unset-versus-empty
+// distinction, but `getenv_s` needs a two-call size-probe-then-read
+// pattern whose probe call reports `ERANGE` as a non-error condition,
+// while `_dupenv_s` is single-call and its null-buffer-means-unset shape
+// maps one-to-one onto the null-pointer test every call site already used
+// before this shim existed.
+//
+// Ownership: `_dupenv_s` allocates via `malloc` on success and the caller
+// must release it. The `unique_ptr` below does that on every exit path,
+// including one where constructing the returned `std::string` throws, so
+// no path leaks the CRT allocation.
+//
+// Encoding honesty: the narrow form reads the CRT's active-code-page view
+// of the environment. Inside the `mediadiff` executable, `app.manifest`'s
+// `activeCodePage` makes that UTF-8; the two test executables carry no
+// manifest (CMakeLists.txt attaches it to `mediadiff` only), so there it
+// is the machine's ambient ANSI code page. Every variable read through
+// this shim today (`NO_COLOR`, `CI`, `GITHUB_ACTIONS`,
+// `MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR`, `UPDATE_GOLDENS`, `PATH`) is
+// ASCII in practice, so narrow is adequate rather than merely convenient.
+// If a non-ASCII value ever matters, the encoding-exact upgrade is
+// `_wdupenv_s` fed through this header's own `wide_to_utf8` — and it can
+// only live in this file, since this header and `src/cli/main.cpp` are
+// the only two places in the repository permitted to name wide-character
+// types.
+//
+// `name` is `const char*` rather than this header's usual
+// `std::string_view`: both CRT entry points require a NUL-terminated name
+// and every caller passes a literal, so a `string_view` would only add an
+// allocation.
+inline std::optional<std::string> getenv_utf8(const char* name) {
+#ifdef _WIN32
+  char* buffer = nullptr;
+  std::size_t count = 0;
+  const errno_t err = _dupenv_s(&buffer, &count, name);
+  std::unique_ptr<char, decltype(&std::free)> owned(buffer, &std::free);
+  if (err != 0) {
+    return std::nullopt;
+  }
+  if (owned == nullptr) {
+    return std::nullopt;
+  }
+  return std::string(owned.get());
+#else
+  const char* value = std::getenv(name);
+  if (value == nullptr) {
+    return std::nullopt;
+  }
+  return std::string(value);
+#endif
+}
 
 // Enables virtual-terminal (ANSI escape sequence) output processing on the
 // standard output handle. Must be the first statement of the process entry

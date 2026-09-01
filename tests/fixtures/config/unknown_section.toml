@@ -1,0 +1,6 @@
+# A top-level key/section not in the closed set
+# {profile, severity, tolerance, transform, dir, override} -- must be
+# rejected as ErrorKind::usage naming the offending key.
+
+[bogus]
+foo = "bar"

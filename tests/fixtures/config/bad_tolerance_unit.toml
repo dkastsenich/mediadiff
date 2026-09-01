@@ -1,0 +1,6 @@
+# A [tolerance] value whose unit contradicts the check it resolves to:
+# meta.tool_version declares unit=none in src/core/checks.def, so a "ms"
+# suffix must be rejected as ErrorKind::usage.
+
+[tolerance]
+"meta.tool_version" = "5ms"

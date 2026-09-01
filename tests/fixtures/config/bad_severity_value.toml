@@ -1,0 +1,5 @@
+# A [severity] value outside the closed set ignore|info|warn|fail -- must be
+# rejected as ErrorKind::usage naming the offending key.
+
+[severity]
+"meta.tool_version" = "critical"

@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "tool_version": "test",
+  "measurements": [
+    { "id": "t.presence_track", "scope": { "kind": "global", "index": 0 }, "value": "track-B" }
+  ]
+}

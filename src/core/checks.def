@@ -1,0 +1,83 @@
+# src/core/checks.def
+#
+# TOML-syntax despite the .def extension (D-01) — doc 01 section 2 mandates
+# the filename `checks.def`; the content is TOML 1.0, parsed by
+# tools/gen_registry.py with the Python 3.11+ standard-library `tomllib`
+# module (D-05), never a third-party TOML library. Every entry is a
+# `[[check]]` array-of-tables record.
+#
+# Keys:
+#   id            dotted lowercase grammar [a-z0-9_]+(\.[a-z0-9_]+)*
+#   group         the check's family, e.g. "meta"
+#   semantic      exact | tol | set | presence | hash | dist | span
+#   unit          none | ms | ms_per_min | frames | percent | db | lu |
+#                 samples | ticks | count
+#   value_kind    int64 | rational | real | string | string_set |
+#                 histogram | span_list | hash_chain
+#   severity      ignore | info | warn | fail        (baseline, D-04)
+#   tolerance     optional; baseline tolerance grammar text, unparsed
+#   volatile      optional bool, default false
+#   requires_pass optional bool, default false
+#   transform_affected  optional bool, default false -- true only for a
+#                 check the `transform` profile's declared expectation
+#                 converts into a comparison against that expectation
+#                 rather than baseline equality (doc 01 section 5, ENG-10).
+#                 The key exists as of 02-05-PLAN.md but no check below
+#                 declares it yet: the resolution identity check that would
+#                 carry it in production lands in Phase 4. Proven against a
+#                 test-only check in tests/support/test_checks.def instead.
+#   aliases       optional array of deprecated-alias id strings that now
+#                 resolve to this check (doc 01 section 2)
+#
+# Per-profile exceptions are declared as sub-tables on the check's own
+# `[[check]]` array element — standard TOML array-of-tables-with-subtable
+# syntax, not a special case tools/gen_registry.py invents:
+#   [check.profile_severity]    profile name -> severity override
+#   [check.profile_tolerance]   profile name -> tolerance override
+# A profile with no entry inherits the baseline (D-04). Profile names must
+# match core/registry.h's ProfileId enumerators exactly: strict_bitexact,
+# sw_encoder, hw_encoder, remux, transform.
+#
+# Registered here: the seed set approved in Task 1 of 02-01-PLAN.md's
+# checkpoint, now fully registered per 02-02-PLAN.md Task 1 — every check
+# has a real, non-empty docs/checks/<id>.md (D-02). meta.tool_version also
+# carries a demonstrative alias and profile-severity override so
+# test_registry.cpp can exercise both against the real generated registry,
+# not only against Task 3's fixture trees.
+
+[[check]]
+id = "meta.tool_version"
+group = "meta"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+# Demonstrative pre-v1 rename: "meta.version" was this check's id before it
+# was renamed to the more specific "meta.tool_version". Renames without an
+# alias are forbidden post-v1 (doc 01 section 2); this alias is what proves
+# CheckRegistry::resolve_alias actually resolves a real declared alias
+# rather than only the registry's synthetic unit-test fixtures.
+aliases = ["meta.version"]
+
+[check.profile_severity]
+# Under strict-bitexact, a tool-version skew between baseline and candidate
+# is escalated from a warning to a hard failure — that profile exists
+# precisely to catch exactly this class of "the tool changed, not just the
+# media" ambiguity.
+strict_bitexact = "fail"
+
+[[check]]
+id = "meta.missing_candidate"
+group = "meta"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[[check]]
+id = "meta.extra_candidate"
+group = "meta"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "warn"

@@ -97,6 +97,18 @@ jobs:
         with:
           arch: x64
 
+      # Pins the interpreter for Phase 2's tools/gen_registry.py, which parses
+      # src/core/checks.def via stdlib tomllib (Python >= 3.11 only). Runs at
+      # build time via CMake on every leg, so this step is deliberately
+      # unguarded rather than OS-scoped like its neighbours.
+      # '3.11' resolves to the latest 3.11.x — a series pin, not a >=3.11 range.
+      # Deterministic by choice, matching how windows-2022 is pinned over
+      # windows-latest; bump deliberately when a newer minor is wanted.
+      - name: Set up Python (3.11 series, for the Phase 2 registry generator)
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
       - name: Install nasm (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -231,7 +243,25 @@ jobs:
           # `|| true` on the pipeline stays load-bearing: Actions runs bash with
           # `-e -o pipefail`, and a failing sed/grep in the pipeline would kill
           # the step before the check below could print its diagnostic.
-          TOTAL=$(ctest --test-dir "$TEST_DIR" -N | sed -n 's/^Total Tests: \([0-9]\+\)$/\1/p' || true)
+          #
+          # This pipeline runs under BSD sed on the macOS legs: the workflow sets
+          # a bash default shell, so the Windows leg runs Git Bash and gets GNU
+          # sed, and Linux gets GNU sed — macOS is the only host in the matrix
+          # whose /usr/bin/sed is BSD. GNU-only regex extensions must therefore
+          # never appear here. The specific trap: BSD sed reads a backslash
+          # followed by an ordinary character as that literal character rather
+          # than as a repetition operator, so a GNU-only one-or-more quantifier
+          # does not merely mis-count — it matches nothing at all, `sed -n`
+          # prints nothing and exits 0, and neither `|| true` nor `pipefail`
+          # intervenes: the capture comes back empty and the step aborts before
+          # any test runs. The pattern below uses the POSIX-portable
+          # `[0-9][0-9]*` form instead, and this comment exists because the
+          # commit that introduced that GNU-only quantifier carried its own note
+          # claiming the line had been verified — a GNU-sed-only verification,
+          # which is precisely how the defect shipped. A verification that only
+          # ever ran on one dialect is what a comment at this line has to guard
+          # against.
+          TOTAL=$(ctest --test-dir "$TEST_DIR" -N | sed -n 's/^Total Tests: \([0-9][0-9]*\)$/\1/p' || true)
           if [ -z "$TOTAL" ]; then
             echo "::error::could not parse a test count from 'ctest -N' in $TEST_DIR — refusing to assume the suite is healthy."
             exit 1
@@ -338,6 +368,12 @@ jobs:
           Write-Host "Manifest key order confirmed: $($keys -join ', ')"
 
   lint:
+    # "lint (ENG-16 boundary)" is a required status check context on the
+    # repository's active "main merge gate" ruleset (id 20862843). Do not
+    # rename this job's `name:` — GitHub matches required checks by context
+    # string, and a rename silently orphans the ruleset's required context
+    # with no visible failure anywhere. If the name genuinely needs to
+    # change, edit ruleset 20862843 in the same change.
     name: lint (ENG-16 boundary)
     runs-on: ubuntu-24.04
     permissions:
@@ -349,3 +385,12 @@ jobs:
 
       - name: Run ENG-16 boundary lint
         run: bash scripts/lint_eng16.sh
+
+      - name: Run D-03 check-id string-literal lint
+        run: bash scripts/lint_check_id_strings.sh
+
+      - name: Run dead-code-after-FAIL portability lint
+        run: bash scripts/lint_dead_code_after_fail.sh
+
+      - name: Run fixture case-collision portability lint
+        run: bash scripts/lint_fixture_case_collisions.sh

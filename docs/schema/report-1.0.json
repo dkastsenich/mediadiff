@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mediadiff.dev/schema/report-1.0.json",
+  "title": "mediadiff compare report",
+  "description": "Schema for the document `mediadiff compare --json` and `mediadiff dir --json` render (doc 01 sections 9-10, REPORT-01, DIR-03). schema_version's own value is the frozen contract; this filename's '1.0' component tracks that same value and a MAJOR bump requires a new schema file. Two document shapes share this schema: a single-file compare document carries top-level `findings`; a `dir`-mode corpus document carries top-level `files` (one block per paired file, each with the SAME per-finding shape `findings` uses) instead -- `oneOf` below requires exactly one of the two, never both, never neither.",
+  "type": "object",
+  "required": ["schema_version", "tool_version", "profile", "summary", "diagnostics"],
+  "oneOf": [
+    { "required": ["findings"] },
+    { "required": ["files"] }
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string" },
+    "tool_version": { "type": "string" },
+    "profile": {
+      "enum": ["strict-bitexact", "sw-encoder", "hw-encoder", "remux", "transform"]
+    },
+    "summary": { "$ref": "#/$defs/summary" },
+    "diagnostics": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "files": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/file_block" }
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "required": ["pass", "info", "warn", "fail", "skipped", "error", "worst_gating"],
+      "additionalProperties": false,
+      "properties": {
+        "pass": { "type": "integer", "minimum": 0 },
+        "info": { "type": "integer", "minimum": 0 },
+        "warn": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "error": { "type": "integer", "minimum": 0 },
+        "worst_gating": { "enum": ["ignore", "info", "warn", "fail"] }
+      }
+    },
+    "file_block": {
+      "type": "object",
+      "required": ["relative_path", "summary", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "relative_path": { "type": "string" },
+        "summary": { "$ref": "#/$defs/summary" },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "required": ["kind", "index"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["global", "video", "audio", "subtitle", "data", "program"] },
+        "index": { "type": "integer" }
+      }
+    },
+    "tolerance": {
+      "type": ["object", "null"],
+      "required": ["num", "den", "unit", "is_relative"],
+      "additionalProperties": false,
+      "properties": {
+        "num": { "type": "integer" },
+        "den": { "type": "integer" },
+        "unit": { "type": "string" },
+        "is_relative": { "type": "boolean" },
+        "warn_num": { "type": ["integer", "null"] }
+      }
+    },
+    "severity_chain_entry": {
+      "type": "object",
+      "required": ["layer", "detail", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "layer": { "enum": ["builtin", "profile", "config", "cli"] },
+        "detail": { "type": "string" },
+        "value": { "enum": ["ignore", "info", "warn", "fail"] }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "id", "scope", "group", "status", "severity", "gating", "baseline", "candidate", "delta",
+        "tolerance", "unit", "message", "skip_reason", "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "group": { "enum": ["container", "video", "timeline", "audio", "content", "size", "meta"] },
+        "status": { "enum": ["pass", "info", "warn", "fail", "skipped", "error"] },
+        "severity": { "enum": ["ignore", "info", "warn", "fail"] },
+        "gating": { "type": "boolean" },
+        "baseline": {},
+        "candidate": {},
+        "delta": {},
+        "tolerance": { "$ref": "#/$defs/tolerance" },
+        "unit": { "type": "string" },
+        "message": { "type": "string" },
+        "skip_reason": {
+          "enum": [
+            "none",
+            "not_applicable_container",
+            "requires_decode",
+            "cross_container",
+            "sampling_mismatch",
+            "hash_incomparable",
+            "no_parser",
+            "unparsed_mechanism",
+            "vfr",
+            "requires_media",
+            "no_prior_release"
+          ]
+        },
+        "evidence": {},
+        "severity_chain": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/severity_chain_entry" }
+        }
+      }
+    }
+  }
+}
