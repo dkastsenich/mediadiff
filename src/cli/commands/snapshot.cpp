@@ -32,9 +32,14 @@ namespace {
 // core/snapshot.cpp's own basename_utf8 rationale: plain byte-oriented
 // string search rather than std::filesystem::path, which -- constructed
 // from a narrow std::string on Windows -- converts via the ambient ANSI
-// code page rather than UTF-8. Both halves are handed to `git` as
-// argv/cwd, never through a shell, so no quoting/injection concern
-// applies either.
+// code page rather than UTF-8. Both halves are handed to `git` as an
+// argument list, never through a shell. On POSIX that argument list is a
+// real argv array (posix_spawnp), so no quoting/injection concern applies
+// there. On Windows, CreateProcessA instead takes a single
+// lpCommandLine string that the CHILD process's own CRT startup
+// re-tokenizes using the same quote/backslash rules a shell would use --
+// "no shell involved" does not mean "no injection concern" on that path;
+// see win32_quote_arg below (WR-05).
 struct SplitPath {
   std::string dir;
   std::string filename;
@@ -71,6 +76,52 @@ bool file_exists_utf8(const std::string& path) {
 // that identically to "not tracked", per this file's own header comment.
 #if defined(_WIN32)
 
+// WR-05 fix: escapes a single argument for safe embedding in a
+// CreateProcessA `lpCommandLine` string, following the MSVC C runtime's
+// own documented argv-tokenization rules (the same rules
+// CommandLineToArgvW implements, and every MSVC-linked child process --
+// including `git.exe` -- parses its command line with): a run of N
+// backslashes immediately followed by a literal `"` is re-encoded as
+// 2N+1 backslashes then `"` (N backslashes survive as N literal
+// backslashes, the extra one escapes the quote so it too becomes
+// literal); a run of N backslashes immediately before the CLOSING quote
+// this function appends is re-encoded as 2N backslashes (so they survive
+// literally without escaping the terminator, which must remain a real
+// string delimiter). An argument containing no space/tab/quote needs no
+// quoting at all and is passed through unchanged, matching how a real
+// argv element with the same content would be received. Without this
+// escaping, an embedded `"` in `target.dir`/`target.filename` terminates
+// the intended quoted argument early and lets the remaining text be
+// re-parsed as ADDITIONAL command-line tokens by git's own CRT startup --
+// this is the argument-injection WR-05 (02-REVIEW.md) reports, and is why
+// the previous raw `"` + arg + `"` concatenation below was unsafe.
+std::string win32_quote_arg(const std::string& arg) {
+  if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos) {
+    return arg;
+  }
+  std::string result = "\"";
+  for (auto it = arg.begin();; ++it) {
+    std::size_t backslash_count = 0;
+    while (it != arg.end() && *it == '\\') {
+      ++it;
+      ++backslash_count;
+    }
+    if (it == arg.end()) {
+      result.append(backslash_count * 2, '\\');
+      break;
+    }
+    if (*it == '"') {
+      result.append(backslash_count * 2 + 1, '\\');
+      result.push_back('"');
+    } else {
+      result.append(backslash_count, '\\');
+      result.push_back(*it);
+    }
+  }
+  result.push_back('"');
+  return result;
+}
+
 std::optional<int> spawn_git_ls_files(const SplitPath& target) {
   SECURITY_ATTRIBUTES sa{};
   sa.nLength = sizeof(sa);
@@ -91,7 +142,8 @@ std::optional<int> spawn_git_ls_files(const SplitPath& target) {
   si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 
   PROCESS_INFORMATION pi{};
-  std::string cmdline = "git -C \"" + target.dir + "\" ls-files --error-unmatch -- \"" + target.filename + "\"";
+  std::string cmdline = "git -C " + win32_quote_arg(target.dir) + " ls-files --error-unmatch -- " +
+                         win32_quote_arg(target.filename);
 
   BOOL ok = CreateProcessA(nullptr, cmdline.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi);
   CloseHandle(null_write);
