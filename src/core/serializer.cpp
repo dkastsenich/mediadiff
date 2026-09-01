@@ -315,6 +315,22 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
       rv.den = json.at("den").get<std::int64_t>();
       rv.tb.num = tb.at("num").get<std::int64_t>();
       rv.tb.den = tb.at("den").get<std::int64_t>();
+      // WR-04: the checks above only validate TYPE (integer), never
+      // MAGNITUDE. den <= 0 breaks the "num/den is the value's magnitude
+      // in the check's declared unit" invariant compare/tol.cpp's own
+      // header comment states; tb.den <= 0 breaks the "denominators
+      // (tb.den) are assumed strictly positive" invariant core/
+      // rational.h's compare_ticks documents as a caller obligation it
+      // does not itself detect. Neither is UB (CR-03's overflow-checked
+      // arithmetic still holds on any surviving magnitude), but each can
+      // silently produce a semantically wrong pass/warn/fail verdict from
+      // a crafted snapshot rather than a rejected input — reject both
+      // here, one property deeper than the type-check CR-01 already
+      // added at this same call site.
+      if (rv.den <= 0 || rv.tb.den <= 0) {
+        return mediadiff::unexpected(
+            Error{ErrorKind::input_unsupported, "rational value has a non-positive den/tb.den"});
+      }
       // "ms" is a derived convenience field excluded from comparison
       // (Task 1's checkpoint decision) — deliberately not read here.
       return Value{rv};
@@ -358,7 +374,22 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
         if (!bin.at("bin").is_string() || !bin.at("count").is_number_integer()) {
           return mediadiff::unexpected(Error{ErrorKind::input_unsupported, "histogram bin has wrong bin/count type"});
         }
-        hist.bins.emplace_back(bin.at("bin").get<std::string>(), bin.at("count").get<std::int64_t>());
+        const std::int64_t count = bin.at("count").get<std::int64_t>();
+        // WR-04: a negative bin count is not a valid histogram magnitude.
+        // compare/dist.cpp accumulates every bin's count into
+        // baseline_total/candidate_total and treats a non-positive total
+        // as "no meaningful proportion" (falls back to a total of 1) —
+        // that fallback is a deliberate, correct design choice for the
+        // genuine zero-bins case, but a negative total produced by a
+        // crafted negative count would silently engage the SAME fallback,
+        // coercing what should be a large or meaningless proportion into
+        // "compare against denominator 1". Reject here, one property
+        // deeper than the type-check CR-01 already added at this call
+        // site.
+        if (count < 0) {
+          return mediadiff::unexpected(Error{ErrorKind::input_unsupported, "histogram bin has a negative count"});
+        }
+        hist.bins.emplace_back(bin.at("bin").get<std::string>(), count);
       }
       return Value{std::move(hist)};
     }

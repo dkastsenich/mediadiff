@@ -222,6 +222,81 @@ TEST_CASE("serializer - value_from_json refuses a kind mismatch rather than coer
   REQUIRE(result.error().kind == mediadiff::ErrorKind::input_unsupported);
 }
 
+// WR-04 regression (02-REVIEW.md, 2026-09-01 re-review): CR-01 type-checks
+// a RationalValue's num/den/tb.num/tb.den before .get<std::int64_t>(), but
+// never range-checks the resulting magnitude. den <= 0 breaks the
+// "num/den is the value's magnitude" invariant compare/tol.cpp's own
+// header comment states, without being rejected -- silently reaching
+// compare/tol.cpp's cross-multiplication with a zero or negative
+// denominator, which is not UB (CR-03's overflow guards hold) but can
+// flip a comparison's sign into a wrong pass/warn/fail verdict.
+TEST_CASE("serializer - value_from_json rejects a RationalValue with den <= 0", "[serializer]") {
+  nlohmann::ordered_json j;
+  j["num"] = 5;
+  j["den"] = 0;
+  j["tb"] = nlohmann::ordered_json{{"num", 1}, {"den", 1000}};
+  auto zero_den = value_from_json(j, ValueKind::rational);
+  REQUIRE_FALSE(zero_den.has_value());
+  REQUIRE(zero_den.error().kind == mediadiff::ErrorKind::input_unsupported);
+
+  j["den"] = -3;
+  auto negative_den = value_from_json(j, ValueKind::rational);
+  REQUIRE_FALSE(negative_den.has_value());
+  REQUIRE(negative_den.error().kind == mediadiff::ErrorKind::input_unsupported);
+}
+
+// WR-04: the same magnitude gap applies to the timebase's own
+// denominator -- core/rational.h's compare_ticks documents "Denominators
+// (tb.den) are assumed strictly positive... a zero or negative
+// denominator is a caller bug, not a value this function attempts to
+// detect", i.e. value_from_json is the caller responsible for the
+// invariant compare_ticks relies on but does not itself verify.
+TEST_CASE("serializer - value_from_json rejects a RationalValue with tb.den <= 0", "[serializer]") {
+  nlohmann::ordered_json j;
+  j["num"] = 5;
+  j["den"] = 1;
+  j["tb"] = nlohmann::ordered_json{{"num", 1}, {"den", 0}};
+  auto zero_tb_den = value_from_json(j, ValueKind::rational);
+  REQUIRE_FALSE(zero_tb_den.has_value());
+  REQUIRE(zero_tb_den.error().kind == mediadiff::ErrorKind::input_unsupported);
+
+  j["tb"] = nlohmann::ordered_json{{"num", 1}, {"den", -1000}};
+  auto negative_tb_den = value_from_json(j, ValueKind::rational);
+  REQUIRE_FALSE(negative_tb_den.has_value());
+  REQUIRE(negative_tb_den.error().kind == mediadiff::ErrorKind::input_unsupported);
+}
+
+// WR-04: a positive den/tb.den must still round-trip normally -- the new
+// range check must not reject any value it previously accepted.
+TEST_CASE("serializer - value_from_json still accepts a RationalValue with positive den/tb.den", "[serializer]") {
+  const RationalValue rv{-7, 3, mediadiff::Rational{1, 48000}};
+  assert_round_trip(Value{rv}, ValueKind::rational);
+}
+
+// WR-04: a Histogram bin's count is accumulated into
+// compare/dist.cpp's baseline_total/candidate_total, which degrades a
+// non-positive total to "always agrees" (a_total/b_total = 1) as a
+// deliberate design choice for the genuine zero-bins case -- a crafted
+// negative count must not be allowed to silently engage that same
+// fallback.
+TEST_CASE("serializer - value_from_json rejects a Histogram bin with a negative count", "[serializer]") {
+  nlohmann::ordered_json bin;
+  bin["bin"] = "bin_a";
+  bin["count"] = -1;
+  const nlohmann::ordered_json j = nlohmann::ordered_json::array({bin});
+  auto result = value_from_json(j, ValueKind::histogram);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().kind == mediadiff::ErrorKind::input_unsupported);
+}
+
+// WR-04: a zero count is a legitimate magnitude (an empty bin), not an
+// invalid one -- only strictly negative counts must be rejected.
+TEST_CASE("serializer - value_from_json still accepts a Histogram bin with a zero count", "[serializer]") {
+  Histogram hist;
+  hist.bins.emplace_back("bin_a", 0);
+  assert_round_trip(Value{hist}, ValueKind::histogram);
+}
+
 TEST_CASE("serializer - serialize_document places exactly one scalar per line", "[serializer]") {
   nlohmann::ordered_json doc;
   doc["schema_version"] = "1.0";
