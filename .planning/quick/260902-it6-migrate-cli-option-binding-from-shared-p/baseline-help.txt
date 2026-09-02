@@ -1097,3 +1097,32 @@ src/cli/options.cpp:19
 src/cli/dir_pairing.cpp:0
 src/cli/exit_code.cpp:0
 src/cli/tty_render.cpp:0
+===== make_shared after =====
+src/cli/provenance_render.cpp:0
+src/cli/commands/list_checks.cpp:0
+src/cli/commands/inspect.cpp:0
+src/cli/commands/compare.cpp:0
+src/cli/commands/snapshot.cpp:0
+src/cli/commands/dir.cpp:1
+src/cli/commands/explain.cpp:0
+src/cli/worker_pool.cpp:0
+src/cli/color_policy.cpp:0
+src/cli/main.cpp:0
+src/cli/options.cpp:0
+src/cli/dir_pairing.cpp:0
+src/cli/exit_code.cpp:0
+src/cli/tty_render.cpp:0
+
+Total: 1 (down from 38).
+
+src/cli/commands/dir.cpp -- 1 site: the --threads bound int, retained per
+D-05's typed-numeric exception so that a non-integer argument keeps
+failing as a parse-time CLI::ParseError (exit 64) rather than throwing
+from inside the callback. Manually verified: `mediadiff dir a b --threads
+abc` and `mediadiff dir a b --threads 0` both still exit 64, with
+byte-identical diagnostic text to the pre-migration binary.
+
+MSVC /W4 /WX is the sole CI-only verification criterion for this task --
+every other criterion (help diff, test count, tests/ untouched, four
+lints, GCC -Wall -Wextra -Werror, make_shared census) was proven locally
+against a clean rebuild.

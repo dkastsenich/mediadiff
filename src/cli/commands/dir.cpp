@@ -122,8 +122,12 @@ void register_dir_command(CLI::App& app) {
       "--content additionally requests the decode-pass content checks, which trades corpus speed "
       "for coverage -- expect a `dir` run to take substantially longer per file with --content set.");
 
-  CLI::Option* baseline_dir = cmd->add_option("baseline_dir", "Baseline directory")->required();
-  CLI::Option* candidate_dir = cmd->add_option("candidate_dir", "Candidate directory")->required();
+  // ->type_name("TEXT"): see src/cli/options.cpp's add_policy_flags for the
+  // fully worked rationale (D-05) -- the untargeted add_option(name, desc)
+  // overload runs none of the templated overload's type inference, which
+  // otherwise sets this help-text annotation from the bound variable's type.
+  CLI::Option* baseline_dir = cmd->add_option("baseline_dir", "Baseline directory")->type_name("TEXT")->required();
+  CLI::Option* candidate_dir = cmd->add_option("candidate_dir", "Candidate directory")->type_name("TEXT")->required();
 
   // D-05's explicit numeric exception: `threads` KEEPS its bound shared_ptr<int>
   // and targeted add_option overload, deliberately NOT migrated to the

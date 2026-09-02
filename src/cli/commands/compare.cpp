@@ -94,8 +94,16 @@ void register_compare_command(CLI::App& app) {
       "To compare a file literally named 'compare', path-qualify it (e.g. './compare') or use "
       "'mediadiff compare ./compare <candidate>'.");
 
-  CLI::Option* baseline_path = cmp->add_option("baseline", "Baseline artifact or *.snap.json")->required();
-  CLI::Option* candidate_path = cmp->add_option("candidate", "Candidate artifact or *.snap.json")->required();
+  // ->type_name("TEXT") restores the help-text type annotation CLI11's own
+  // type inference set for the templated add_option(name, string&, desc)
+  // overload this replaces (D-05) -- the untargeted overload used here has
+  // no bound variable to infer a type from. See options.cpp's
+  // add_policy_flags for the fully worked rationale, confirmed against the
+  // pinned CLI11.
+  CLI::Option* baseline_path =
+      cmp->add_option("baseline", "Baseline artifact or *.snap.json")->type_name("TEXT")->required();
+  CLI::Option* candidate_path =
+      cmp->add_option("candidate", "Candidate artifact or *.snap.json")->type_name("TEXT")->required();
 
   CLI::Option* strict_flag = cmp->add_flag("--strict", "A worst-warn finding also fails the run (exit 2)");
   CLI::Option* verbose_flag =

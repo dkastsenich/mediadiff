@@ -137,7 +137,9 @@ std::string render_inspect_json(const Fingerprint& fp, const CheckRegistry& regi
 void register_inspect_command(CLI::App& app) {
   auto* cmd = app.add_subcommand("inspect", "Render every implemented check family for a single *.snap.json (UC8)");
 
-  CLI::Option* file_path = cmd->add_option("file", "A *.snap.json to inspect")->required();
+  // ->type_name("TEXT"): see src/cli/options.cpp's add_policy_flags for the
+  // fully worked rationale (D-05).
+  CLI::Option* file_path = cmd->add_option("file", "A *.snap.json to inspect")->type_name("TEXT")->required();
 
   CliOptions options = add_common_options(*cmd);
 

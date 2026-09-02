@@ -257,10 +257,14 @@ mediadiff::expected<void, Error> write_snapshot_gated(const Fingerprint& fp, con
 void register_snapshot_command(CLI::App& app) {
   auto* cmd = app.add_subcommand("snapshot", "Write a *.snap.json fingerprint (or re-materialize an existing one)");
 
-  CLI::Option* input_path =
-      cmd->add_option("file", "Media file to fingerprint, or an existing *.snap.json to rewrite")->required();
-  CLI::Option* out_path = cmd->add_option(
-      "--out", "Output path (default: <file> if it already ends in .snap.json, else <file>.snap.json)");
+  // ->type_name("TEXT"): see src/cli/options.cpp's add_policy_flags for the
+  // fully worked rationale (D-05).
+  CLI::Option* input_path = cmd->add_option("file", "Media file to fingerprint, or an existing *.snap.json to rewrite")
+                                 ->type_name("TEXT")
+                                 ->required();
+  CLI::Option* out_path =
+      cmd->add_option("--out", "Output path (default: <file> if it already ends in .snap.json, else <file>.snap.json)")
+          ->type_name("TEXT");
   CLI::Option* force_flag = cmd->add_flag("--force", "Overwrite an existing git-tracked or CI-protected target");
 
   // ENG-16 explicitly reserves exit()/stdout/stderr as "the CLI's

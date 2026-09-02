@@ -29,8 +29,11 @@ std::string first_dot_segment(std::string_view id) {
 void register_explain_command(CLI::App& app) {
   auto* cmd = app.add_subcommand("explain", "Print compiled-in documentation for a check (ENG-13, DOC-02)");
 
-  CLI::Option* check_id_text =
-      cmd->add_option("check_id", "The check id to explain, e.g. meta.tool_version")->required();
+  // ->type_name("TEXT"): see src/cli/options.cpp's add_policy_flags for the
+  // fully worked rationale (D-05).
+  CLI::Option* check_id_text = cmd->add_option("check_id", "The check id to explain, e.g. meta.tool_version")
+                                    ->type_name("TEXT")
+                                    ->required();
 
   // ENG-16: exit()/stdout/stderr are the CLI's prerogative -- this
   // callback is the one place in the `explain` path permitted to call
