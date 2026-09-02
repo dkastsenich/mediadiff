@@ -6,8 +6,8 @@ current_phase: 02
 current_phase_name: core-engine
 status: "Phase 02 shipped — PR #2"
 stopped_at: Completed 02-11-PLAN.md (final plan of phase 02-core-engine)
-last_updated: "2026-08-24T11:01:49.326Z"
-last_activity: 2026-08-24
+last_updated: "2026-09-02T11:28:42.844Z"
+last_activity: 2026-09-02
 progress:
   total_phases: 2
   completed_phases: 1
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 Phase: 02 (core-engine) — EXECUTING
 Plan: 1 of 19
 Status: Phase 02 shipped — PR #2
-Last activity: 2026-08-24
+Last activity: 2026-09-02
 
 Progress: [██████████] 100%
 
@@ -147,6 +147,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260815-m5g | Pin Python to 3.11+ in CI so the Phase 2 registry generator can rely on stdlib tomllib | 2026-08-15 | 2a628fd | [260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-](./quick/260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-/) |
+| 260902-it6 | Migrate CLI option binding from shared_ptr to CLI::Option* (03-CONTEXT.md D-05) | 2026-09-02 | 8258c83 | [260902-it6-migrate-cli-option-binding-from-shared-p](./quick/260902-it6-migrate-cli-option-binding-from-shared-p/) |
 
 ## Deferred Items
 
