@@ -83,20 +83,20 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Probe Layer
 
-- [ ] **PROBE-01**: `DemuxSession` opens any supported input with `AVFMT_FLAG_GENPTS` **off**, a hard wall-clock budget via interrupt callback, and captures libav warnings into fingerprint diagnostics
+- [x] **PROBE-01**: `DemuxSession` opens any supported input with `AVFMT_FLAG_GENPTS` **off**, a hard wall-clock budget via interrupt callback, and captures libav warnings into fingerprint diagnostics
 - [ ] **PROBE-02**: `PacketScan` performs one `av_read_frame` sweep with no decode, recording per-stream `{pts, dts, duration, size, flags, pos}` and byte totals, capping at 5M packets/stream with `partial:true` beyond
 - [ ] **PROBE-03**: `ParserScan` extends the same sweep to record per-access-unit `pict_type`, `key_frame`, `repeat_pict`, `field_order`, plus NAL-type sequences for H.264/HEVC, at under 10% overhead over plain PacketScan
 - [ ] **PROBE-04**: `bmff_scan` reads MP4/MOV top-level box order and offsets, `ftyp` brands, `mvhd`/`mdhd` timescales, `elst` entries, and `moof`/`sidx` presence without loading payloads
 - [ ] **PROBE-05**: `ebml_scan` reads Matroska/WebM element offsets (SeekHead, Info, Tracks, first Cluster, Cues), `TimestampScale`, `Duration` presence, and per-track `CodecDelay`/`SeekPreRoll`
 - [ ] **PROBE-06**: `ts_scan` resyncs on 0x47 with 188/192/204 autodetect and extracts per-PID counts, continuity-counter state, PCR values, PAT/PMT parsing with version tracking, and null-packet counts
 - [ ] **PROBE-07**: **[R]** `ts_scan` implements the ISO 13818-1 §2.4.3.3 continuity-counter carve-outs explicitly — increment only on payload-carrying packets, one duplicate allowed, `discontinuity_indicator` resets counted separately (research: PITFALLS — hand-rolled CC logic false-alarms without these)
-- [ ] **PROBE-08**: Every analyzer declares which passes it needs and the orchestrator runs the union exactly once per file — no analyzer re-reads the file
+- [x] **PROBE-08**: Every analyzer declares which passes it needs and the orchestrator runs the union exactly once per file — no analyzer re-reads the file
 - [x] **PROBE-09**: Unparseable structure degrades to `skipped:unparsed_mechanism` with a byte offset in evidence — never a crash, never a silent pass; truncated and garbage inputs exit `65` cleanly
 - [ ] **PROBE-10**: **[R]** Packet-interval statistics are computed once as a shared probe-level primitive consumed by both `video.frame_rate.measured` and `timeline.*`, resolving the phase-3-depends-on-phase-4 inversion (research: ARCHITECTURE hazard A)
 
 ### Container & Metadata Checks
 
-- [ ] **CONT-01**: Container-agnostic topology checks work: `container.format`, `track_count`, `track_types`, `track_order`, `chapters`
+- [x] **CONT-01**: Container-agnostic topology checks work: `container.format`, `track_count`, `track_types`, `track_order`, `chapters`
 - [ ] **CONT-02**: A cross-container migration demotes cleanly — `container.<fmt>.*` on both sides becomes `skipped:cross_container` and comparison proceeds at the semantic layer
 - [ ] **CONT-03**: `meta.tags` compares as a set with a volatile ignore list (`creation_time`, `encoder`, `handler_name`, `encoding_tool`), showing ignored-but-differing values under `-v`
 - [ ] **CONT-04**: `meta.tags.language` treats `und` and absent as equal, since that divergence is a muxer artifact and not a regression
@@ -300,17 +300,17 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | DIR-04 | Phase 2 | Complete |
 | DIR-05 | Phase 2 | Complete |
 | DIR-06 | Phase 3 | Pending |
-| PROBE-01 | Phase 3 | Pending |
+| PROBE-01 | Phase 3 | Complete |
 | PROBE-02 | Phase 3 | Pending |
 | PROBE-03 | Phase 4 | Pending |
 | PROBE-04 | Phase 3 | Pending |
 | PROBE-05 | Phase 3 | Pending |
 | PROBE-06 | Phase 3 | Pending |
 | PROBE-07 | Phase 3 | Pending |
-| PROBE-08 | Phase 3 | Pending |
+| PROBE-08 | Phase 3 | Complete |
 | PROBE-09 | Phase 3 | Complete |
 | PROBE-10 | Phase 3 | Pending |
-| CONT-01 | Phase 3 | Pending |
+| CONT-01 | Phase 3 | Complete |
 | CONT-02 | Phase 3 | Pending |
 | CONT-03 | Phase 3 | Pending |
 | CONT-04 | Phase 3 | Pending |

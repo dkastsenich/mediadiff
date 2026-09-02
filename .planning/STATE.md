@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-09-02T17:48:40.676Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-09-02T18:32:47.019Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 25
+  completed_plans: 26
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 2 of 11
+Plan: 3 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [███████░░░] 71%
+Progress: [███████░░░] 74%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [███████░░░] 71%
 | Phase 02-core-engine P10 | 35min | 3 tasks | 24 files |
 | Phase 02 P11 | 3h10min | 3 tasks | 30 files |
 | Phase 03 P01 | 50min | 4 tasks | 13 files |
+| Phase 03 P02 | 110min | 3 tasks | 37 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,9 @@ Recent decisions affecting current work:
 - [Phase ?]: A hard per-file error or partial-decode marker never aborts the corpus run mid-flight; exit-code escalation (hard error > any-partial > findings-based) is decided only after every requested report destination has been written
 - [Phase ?]: docs/schema/report-1.0.json extended with top-level oneOf(findings, files) and a shared $defs/summary, keeping the single-file document shape byte-for-byte unchanged while a corpus document validates under the same schema file
 - [Phase ?]: 03-01: SkipReason extended to 14 enumerators; Measurement.estimated/Finding.evidence added with single-seam propagation; detail::checked_div added; D-03 3x tolerance widening implemented; 27-id Phase-3 check roster approved (approve-as-proposed)
+- [Phase ?]: fingerprint_input distinguishes JSON-shaped-but-rejected snapshots from non-JSON via a first-non-whitespace-byte peek (looks_like_json_document), so a real probe never masks read_snapshot's own diagnostic
+- [Phase ?]: DemuxOptions::wall_clock_budget_ms defaults from a runtime-mutable atomic (default_wall_clock_budget_ms), so --probe-timeout reaches DemuxSession::open without orchestrator.cpp's frozen 2-arg fingerprint_input call site ever changing
+- [Phase ?]: Fixed report/model.cpp accumulate(): Summary.worst_gating no longer gates on a Status::pass finding's own declared severity -- only Status::warn/fail/error gate, restoring a clean exit on a routinely-passing fail-severity check
 
 ### Pending Todos
 
@@ -161,6 +165,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T17:48:40.662Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-09-02T18:32:47.005Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
