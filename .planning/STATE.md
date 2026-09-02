@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-08-PLAN.md
-last_updated: "2026-09-02T22:00:34.219Z"
+stopped_at: Completed 03-09-PLAN.md
+last_updated: "2026-09-02T22:31:01.652Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 32
+  completed_plans: 33
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 9 of 11
+Plan: 10 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [█████████░] 91%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -81,6 +81,7 @@ Progress: [█████████░] 91%
 | Phase 03 P06 | 37min | 3 tasks | 25 files |
 | Phase 03 P07 | 40min | 3 tasks | 10 files |
 | Phase 03 P08 | 30min | 3 tasks | 22 files |
+| Phase 03 P09 | 90min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-08: Rule 1 fix -- ts_scan.cpp's mux-rate estimate carried an erroneous *8 bytes-to-bits factor (bytes_per_second_num/den was actually bits/sec); removed, companion test corrected.
 - [Phase ?]: 03-08: ProgramRateContext derives a per-program, PID-filtered mux-rate estimate in ts.cpp to sidestep ts_scan's flat list-adjacency limitation on interleaved multi-program PCR PIDs (03-07-SUMMARY.md's own flagged '03-08 owns' gap).
 - [Phase ?]: 03-08: CONT-08 unpaired-program topology-fail path added to compare/engine.cpp -- generic over Scope::Kind::program, Status::fail unconditional on severity policy, mirrors the cross_container demotion shape.
+- [Phase ?]: 03-09: DemuxSession::file_size_bytes() (avio_size on the already-open AVIOContext) added so size.file reads independently of PacketScan's own completeness -- the structural D-02 exemption for the one size.* check that is a property of the file, not the scan.
+- [Phase ?]: 03-09: size.peak_bitrate's window-count bound (T-3-46) is kMaxWindowSteps=10,000,000, checked via one division before the sliding-window sweep starts; the {1001,30000} timebase test found no accumulation-vs-closed-form numeric divergence is constructible for correct all-integer arithmetic -- the static '+= step' grep gate plus the 10,000-window/far-boundary-spike test are what actually gate the architecture.
+- [Phase ?]: 03-09: size_crf20.mp4/size_crf23.mp4 fixtures are -b:v (target-bitrate) driven, never -crf, extending gen_corpus.sh's own established never-libx264/GPL convention; a 13th fixture (size_partial.mp4, 25,000 tiny frames) was added beyond the plan's own fixture list since --probe-memory-budget-mb's 1 MB integer floor exceeds every other size_*.mp4 fixture's real packet-store need.
 
 ### Pending Todos
 
@@ -189,6 +193,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T22:00:34.201Z
-Stopped at: Completed 03-08-PLAN.md
+Last session: 2026-09-02T22:30:51.086Z
+Stopped at: Completed 03-09-PLAN.md
 Resume file: None
