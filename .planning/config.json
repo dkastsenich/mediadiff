@@ -47,7 +47,11 @@
     "security_enforcement": true,
     "security_asvs_level": 1,
     "security_block_on": "high",
-    "_auto_chain_active": false
+    "_auto_chain_active": false,
+    "use_worktrees": false,
+    "build_command": "cmake --build --preset x64-linux",
+    "test_command": "ctest --preset x64-linux --output-on-failure",
+    "test_gate_timeout": 1800
   },
   "ship": {
     "pr_body_sections": [
