@@ -48,6 +48,19 @@ enum class SkipReason {
   vfr,
   requires_media,
   no_prior_release,
+  // D-02 (03-CONTEXT.md): a dependent check refuses to report a number
+  // computed from a truncated PacketScan (Fingerprint::partial == true).
+  // Emitted by size.stream_bitrate/size.peak_bitrate/size.overhead and any
+  // later consumer of packet-interval statistics.
+  partial_scan,
+  // doc 02 section 5: a single-PCR (or single-PSI-sample) TS file has
+  // nothing to measure an interval over -- emitted by
+  // container.ts.pcr_interval/container.ts.psi_interval when fewer than
+  // two samples were observed.
+  insufficient_data,
+  // A stream whose packets all carry AV_NOPTS_VALUE for dts has no axis to
+  // window size.peak_bitrate's rate computation on.
+  no_timing_data,
 };
 
 // Which stream/program a Measurement or Finding applies to. `global` covers

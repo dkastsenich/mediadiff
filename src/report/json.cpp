@@ -55,6 +55,12 @@ std::string_view skip_reason_to_string(SkipReason reason) {
       return "requires_media";
     case SkipReason::no_prior_release:
       return "no_prior_release";
+    case SkipReason::partial_scan:
+      return "partial_scan";
+    case SkipReason::insufficient_data:
+      return "insufficient_data";
+    case SkipReason::no_timing_data:
+      return "no_timing_data";
   }
   return "none";
 }
@@ -152,10 +158,11 @@ nlohmann::ordered_json finding_to_json(const Finding& finding, Group group, cons
   // Always present, even "none" -- a skipped finding can never be misread
   // as pass from the JSON body alone (ENG-14).
   j["skip_reason"] = std::string(skip_reason_to_string(finding.skip_reason));
-  // core/model.h's Finding carries no evidence field of its own (only
-  // Measurement does, and compare_fingerprints does not thread it
-  // through) -- see `delta`'s own comment above for the same rationale.
-  j["evidence"] = nullptr;
+  // Closes Broken Window #1's evidence half: compare/engine.cpp's single
+  // seam populates Finding::evidence from the paired measurements' own
+  // evidence; `delta` (above) stays null deliberately -- that half of
+  // window #1 remains open, tracked separately.
+  j["evidence"] = finding.evidence.is_null() ? nlohmann::ordered_json(nullptr) : finding.evidence;
 
   if (verbose && resolved != nullptr) {
     nlohmann::ordered_json chain = nlohmann::ordered_json::array();

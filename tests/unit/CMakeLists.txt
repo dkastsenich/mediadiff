@@ -22,6 +22,11 @@ add_executable(mediadiff_unit_tests
   # Task 3), distinct from test_fail_first_coverage.cpp's (semantic,
   # status) gate.
   test_compare_semantics.cpp
+  # SkipReason's compile-time-coupled extension (json.cpp/junit.cpp/
+  # docs/schema/report-1.0.json), Measurement.estimated's snapshot round
+  # trip, and Finding.evidence's single propagation seam (03-01-PLAN.md
+  # Tasks 1-2, closes Broken Window #1).
+  test_measurement_provenance.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp
@@ -102,6 +107,15 @@ target_include_directories(mediadiff_unit_tests PRIVATE "${CMAKE_SOURCE_DIR}/tes
 target_compile_definitions(mediadiff_unit_tests PRIVATE
   MEDIADIFF_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
   MEDIADIFF_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden"
+)
+
+# docs/schema/report-1.0.json, resolved at configure time -- same
+# MEDIADIFF_REPORT_SCHEMA convention tests/integration/CMakeLists.txt
+# already uses, so test_measurement_provenance.cpp's schema-agreement test
+# (03-01-PLAN.md Task 1) reads the schema's skip_reason enum without
+# hardcoding its 14-value vocabulary a second time.
+target_compile_definitions(mediadiff_unit_tests PRIVATE
+  MEDIADIFF_REPORT_SCHEMA="${CMAKE_SOURCE_DIR}/docs/schema/report-1.0.json"
 )
 
 # ENG-01/DOC-01 fail-first proof (02-02-PLAN.md Task 3): test_registry_generator.cpp

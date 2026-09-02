@@ -38,6 +38,12 @@ std::string_view skip_reason_text(SkipReason reason) {
       return "requires_media";
     case SkipReason::no_prior_release:
       return "no_prior_release";
+    case SkipReason::partial_scan:
+      return "partial_scan";
+    case SkipReason::insufficient_data:
+      return "insufficient_data";
+    case SkipReason::no_timing_data:
+      return "no_timing_data";
   }
   return "none";
 }

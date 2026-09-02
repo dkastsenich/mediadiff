@@ -121,7 +121,10 @@
             "unparsed_mechanism",
             "vfr",
             "requires_media",
-            "no_prior_release"
+            "no_prior_release",
+            "partial_scan",
+            "insufficient_data",
+            "no_timing_data"
           ]
         },
         "evidence": {},
