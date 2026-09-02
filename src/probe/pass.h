@@ -18,6 +18,7 @@
 #include "probe/bmff_scan.h"
 #include "probe/ebml_scan.h"
 #include "probe/packet_scan.h"
+#include "probe/ts_scan.h"
 
 namespace mediadiff {
 
@@ -128,6 +129,15 @@ struct ProbeResults {
   // analyzer scoped to `ContainerFamily::mkv` (mirrors `bmff`'s own
   // never-runs-on-the-wrong-container invariant above).
   std::optional<EbmlScanResult> ebml;
+  // 03-07-PLAN.md Task 1/2 (PROBE-06, PROBE-07): the bounded MPEG-TS
+  // packet-stream walk (stride/PID/CC/PCR/PAT/PMT), held once and shared
+  // by every applicable analyzer -- populated ONLY when `Pass::ts_scan`
+  // was requested, which is scoped to `ContainerFamily::ts` (mirrors
+  // `bmff`/`ebml`'s own never-runs-on-the-wrong-container invariant
+  // above). This plan builds the scanner only; no analyzer declares
+  // `Pass::ts_scan` yet -- 03-08-PLAN.md's `container.ts.*` checks are the
+  // first real consumer.
+  std::optional<TsScanResult> ts;
 };
 
 // One analyzer family's registration (PROBE-08): the passes it needs, the

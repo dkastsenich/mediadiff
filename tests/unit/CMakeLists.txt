@@ -79,6 +79,15 @@ add_executable(mediadiff_unit_tests
   # CONT-02: container_family_token's own mapping table, shared verbatim
   # by the probe layer and the compare engine (03-06-PLAN.md Task 3).
   test_container_family.cpp
+  # PROBE-06: ts_scan's bounded stride-autodetected packet walk -- stride
+  # detection (188/192/204), resync after corruption, the structurally-
+  # bounded per-PID table, PCR extraction, PAT/PMT parsing with version
+  # tracking, and the mux-rate estimate (03-07-PLAN.md Tasks 1-2).
+  test_ts_scan.cpp
+  # PROBE-07: the ISO 13818-1 section 2.4.3.3 continuity-counter carve-outs,
+  # proven as a nine-case hand-verified table directly against
+  # detail::step_continuity (03-07-PLAN.md Task 3).
+  test_ts_continuity.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

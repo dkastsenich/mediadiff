@@ -12,6 +12,7 @@
 #include "probe/ebml_scan.h"
 #include "probe/packet_scan.h"
 #include "probe/pass.h"
+#include "probe/ts_scan.h"
 #include "util/fs.h"
 #include "util/version.h"
 
@@ -124,9 +125,26 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   mediadiff::expected<void, Error> packet_scan_error;
   mediadiff::expected<void, Error> bmff_scan_error;
   mediadiff::expected<void, Error> ebml_scan_error;
+  mediadiff::expected<void, Error> ts_scan_error;
   union_passes.for_each([&](Pass pass) {
     if (pass == Pass::demux_header) {
       results.demux = &session;
+    } else if (pass == Pass::ts_scan) {
+      // PROBE-06/PROBE-07 (03-07-PLAN.md Tasks 1-3): mirrors
+      // Pass::bmff_scan/Pass::ebml_scan's own arms -- only ever in the
+      // union once a later plan (03-08) registers an analyzer scoped to
+      // ContainerFamily::ts that declares this pass; no such analyzer
+      // exists yet, so this arm is unreachable in production today and
+      // exercised directly via run_ts_scan() in this plan's own unit
+      // tests. run_ts_scan opens `utf8_path` itself (deliberately
+      // libav-free, independent of DemuxSession) rather than reading
+      // through the already-open session.
+      auto scan_result = run_ts_scan(utf8_path);
+      if (scan_result) {
+        results.ts = std::move(*scan_result);
+      } else {
+        ts_scan_error = mediadiff::unexpected(scan_result.error());
+      }
     } else if (pass == Pass::ebml_scan) {
       // PROBE-05 (03-06-PLAN.md Task 1): mirrors Pass::bmff_scan's own
       // arm below -- only ever in the union when an applicable analyzer's
@@ -201,6 +219,11 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     // Same reservation as bmff_scan_error above, mirrored for
     // ebml_scan.h's own complete/stop_offset contract.
     return mediadiff::unexpected(ebml_scan_error.error());
+  }
+  if (!ts_scan_error) {
+    // Same reservation as bmff_scan_error/ebml_scan_error above, mirrored
+    // for ts_scan.h's own complete/stop_offset contract.
+    return mediadiff::unexpected(ts_scan_error.error());
   }
 
   Fingerprint fp;

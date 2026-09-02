@@ -537,4 +537,82 @@ PYEOF
   -flags +bitexact -fflags +bitexact -f matroska -y - \
   > "$OUT_DIR/mkv_noduration.mkv"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv."
+# --- 03-07-PLAN.md: ts_scan fixtures (PROBE-06, PROBE-07) -----------------
+# `ts_scan`'s stride autodetection needs REAL 188-byte-stride MPEG-TS bytes
+# to derive the 192-/204-byte variants from -- ffmpeg's own mpegts muxer
+# only ever writes native 188-byte packets, so the 192-/204-byte padding is
+# THIS generator script's own job (doc 02 section 8), applied as a
+# deterministic post-mux Python step, not an ffmpeg mux option.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$OUT_DIR/ts_single.ts"
+
+cp "$OUT_DIR/ts_single.ts" "$OUT_DIR/ts_single_copy.ts"
+
+# 204-byte stride: each real 188-byte packet followed by a 16-byte
+# Reed-Solomon-FEC stand-in (ts_scan never validates FEC content, only the
+# stride the sync bytes fall on, so zero-filling this suffix is sufficient).
+python3 - "$OUT_DIR/ts_single.ts" "$OUT_DIR/ts_204.ts" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+data = open(src, 'rb').read()
+assert len(data) % 188 == 0, "ts_single.ts is not a whole number of 188-byte packets"
+out = bytearray()
+for i in range(0, len(data), 188):
+    out += data[i:i + 188]
+    out += b"\x00" * 16
+with open(dst, 'wb') as handle:
+    handle.write(bytes(out))
+PYEOF
+
+# 192-byte stride: each real 188-byte packet preceded by a 4-byte
+# timestamp-prefix stand-in -- the sync byte therefore sits 4 bytes into
+# each 192-byte block, exactly the offset-differs-per-stride case this
+# plan's own action text calls out explicitly.
+python3 - "$OUT_DIR/ts_single.ts" "$OUT_DIR/ts_192.ts" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+data = open(src, 'rb').read()
+assert len(data) % 188 == 0, "ts_single.ts is not a whole number of 188-byte packets"
+out = bytearray()
+for i in range(0, len(data), 188):
+    out += b"\x00" * 4
+    out += data[i:i + 188]
+with open(dst, 'wb') as handle:
+    handle.write(bytes(out))
+PYEOF
+
+# Two-program TS (doc 02 section 6's multi-program policy, plan 03-08's own
+# consumer): two independently A/V-mapped programs multiplexed together, so
+# ts_scan's PAT yields a two-entry program-number-to-PMT-PID map.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=880:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact \
+  -map 0:v -map 1:a -map 2:v -map 3:a \
+  -program title=ProgramA:st=0:st=1 -program title=ProgramB:st=2:st=3 \
+  -y -f mpegts "$OUT_DIR/ts_multiprogram.ts"
+
+# A continuity-counter gap fixture: a real multi-packet TS with a short
+# mid-stream byte region zeroed out, which destroys sync-byte alignment for
+# a few packets' worth of bytes without touching the surrounding stream --
+# proves resync-after-corruption (Task 1) against a REAL file, distinct
+# from Task 3's own hand-built byte-sequence tables for the ISO carve-outs
+# themselves (tests/unit/test_ts_continuity.cpp never reads a fixture).
+python3 - "$OUT_DIR/ts_single.ts" "$OUT_DIR/ts_ccgap.ts" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+data = bytearray(open(src, 'rb').read())
+assert len(data) % 188 == 0
+packet_count = len(data) // 188
+mid = (packet_count // 2) * 188
+# Zero three whole packets' worth of bytes so sync-byte alignment is
+# genuinely lost for that span, forcing a real forward resync.
+data[mid:mid + 564] = b"\x00" * 564
+with open(dst, 'wb') as handle:
+    handle.write(bytes(data))
+PYEOF
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts."

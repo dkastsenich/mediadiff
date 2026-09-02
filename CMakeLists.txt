@@ -156,6 +156,7 @@ add_library(libmediadiff STATIC
   src/probe/packet_scan.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
+  src/probe/ts_scan.cpp
   src/probe/orchestrator.cpp
   src/analyzers/container/topology.cpp
   src/analyzers/container/meta.cpp
@@ -212,6 +213,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/packet_scan.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
+  src/probe/ts_scan.h
   src/probe/orchestrator.h
   src/analyzers/container/analyzers.h
 )
