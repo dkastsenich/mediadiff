@@ -9,6 +9,7 @@
 #include "core/snapshot.h"
 #include "probe/bmff_scan.h"
 #include "probe/demux_session.h"
+#include "probe/ebml_scan.h"
 #include "probe/packet_scan.h"
 #include "probe/pass.h"
 #include "util/fs.h"
@@ -76,6 +77,11 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // order (TRUST-05) has the "real" producer first.
       container_mp4_analyzer(),
       container_mp4_not_applicable_analyzer(),
+      // 03-06-PLAN.md Tasks 1-2 (PROBE-05, CONT-06): the four
+      // container.mkv.* checks -- same real-data-first, not-applicable-
+      // sibling-second ordering as the mp4 pair above.
+      container_mkv_analyzer(),
+      container_mkv_not_applicable_analyzer(),
   };
   return registry;
 }
@@ -117,9 +123,24 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   ProbeResults results;
   mediadiff::expected<void, Error> packet_scan_error;
   mediadiff::expected<void, Error> bmff_scan_error;
+  mediadiff::expected<void, Error> ebml_scan_error;
   union_passes.for_each([&](Pass pass) {
     if (pass == Pass::demux_header) {
       results.demux = &session;
+    } else if (pass == Pass::ebml_scan) {
+      // PROBE-05 (03-06-PLAN.md Task 1): mirrors Pass::bmff_scan's own
+      // arm below -- only ever in the union when an applicable analyzer's
+      // scope is ContainerFamily::mkv (container_mkv_analyzer(),
+      // src/analyzers/container/mkv.cpp), never for an MP4/TS input.
+      // run_ebml_scan opens `utf8_path` itself (deliberately libav-free,
+      // independent of DemuxSession) rather than reading through the
+      // already-open session.
+      auto scan_result = run_ebml_scan(utf8_path);
+      if (scan_result) {
+        results.ebml = std::move(*scan_result);
+      } else {
+        ebml_scan_error = mediadiff::unexpected(scan_result.error());
+      }
     } else if (pass == Pass::bmff_scan) {
       // PROBE-04 (03-05-PLAN.md Task 1): this pass is only ever in the
       // union when an applicable analyzer's scope is ContainerFamily::mp4
@@ -175,6 +196,11 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     // in a successful BmffScanResult with complete=false, per bmff_scan.h's
     // own contract, and never reaches this branch.
     return mediadiff::unexpected(bmff_scan_error.error());
+  }
+  if (!ebml_scan_error) {
+    // Same reservation as bmff_scan_error above, mirrored for
+    // ebml_scan.h's own complete/stop_offset contract.
+    return mediadiff::unexpected(ebml_scan_error.error());
   }
 
   Fingerprint fp;

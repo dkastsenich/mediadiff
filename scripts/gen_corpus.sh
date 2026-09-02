@@ -391,4 +391,150 @@ cp "$OUT_DIR/mp4_faststart.mp4" "$OUT_DIR/mp4_faststart_copy.mp4"
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/mp4_ts_b.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4."
+# --- 03-06-PLAN.md: ebml_scan + container.mkv.* fixtures (PROBE-05, CONT-06) -
+# `container.mkv.cues_placement`: `-reserve_index_space 200k` reserves (and
+# later fills) the Cues element right after Tracks -- confirmed via direct
+# EBML-offset inspection that Cues then precedes the first Cluster ("front"),
+# vs the muxer's own default placement (Cues written last, after every
+# Cluster, "end" -- also the fixture ebml_scan's own SeekHead-follow test
+# needs, since a default mux's SeekHead verifiably points AT that trailing
+# Cues, confirmed the same way).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -reserve_index_space 200k \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mkv_cues_front.mkv"
+
+cp "$OUT_DIR/mkv_cues_front.mkv" "$OUT_DIR/mkv_cues_front_copy.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mkv_cues_end.mkv"
+
+# `container.mkv.codec_delay`: raw PCM has NO encoder lookahead/priming at
+# all, so its TrackEntry never carries a CodecDelay element (confirmed via
+# direct byte search: 0x56AA is entirely absent from the file) -- unlike
+# AAC, whose own encoder delay (1024 samples, confirmed via ffprobe's
+# initial_padding) DOES produce a real CodecDelay, disqualifying it as the
+# "absent" fixture. This is the "absent" case Test 4 needs, distinct from
+# an explicit zero.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a pcm_s16le \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mkv_noopus.mkv"
+
+# `-application lowdelay` vs the muxer default (`voip`/`audio`) is the ONE
+# libopus encoder option confirmed (via direct CodecDelay-element byte
+# inspection, never assumed) to change the ACTUAL muxed CodecDelay value --
+# `-frame_duration` alone does NOT (Opus's algorithmic pre-skip is fixed per
+# `application` mode, not per frame size): lowdelay yields 2,500,000 ns
+# (120 samples @48kHz), the muxer default yields 6,500,000 ns (312 samples).
+# `-f matroska` forces the general Matroska muxer despite the `.webm`
+# extension (the webm-profile muxer that extension would otherwise select
+# rejects the `mpeg4` video codec this project's fixture recipes
+# standardize on).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a libopus -application lowdelay \
+  -flags +bitexact -fflags +bitexact -f matroska -y \
+  "$OUT_DIR/mkv_opus_a.webm"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a libopus \
+  -flags +bitexact -fflags +bitexact -f matroska -y \
+  "$OUT_DIR/mkv_opus_b.webm"
+
+# `container.mkv.timestamp_scale`: no ffmpeg matroska-muxer CLI/AVOption
+# controls TimestampScale (confirmed: `ffmpeg -h muxer=matroska` lists no
+# such knob, and every recipe tried -- default, high-sample-rate PCM audio
+# -- muxes at the same hardcoded 1,000,000 ns default). The clean pair's
+# baseline (`mkv_tscale_a.mkv`) is a normal ffmpeg mux; the triggering
+# candidate (`mkv_tscale_b.mkv`) is produced by a small, deterministic
+# post-mux patch that walks the SAME EBML structure ebml_scan.cpp itself
+# implements (Segment -> Info -> TimestampScale) to overwrite ONLY that
+# element's 3-byte content in place (no other offset in the file moves) --
+# not a departure from this project's determinism discipline, since the
+# patch script is itself fully deterministic and committed as source.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mkv_tscale_a.mkv"
+
+python3 - "$OUT_DIR/mkv_tscale_a.mkv" "$OUT_DIR/mkv_tscale_b.mkv" <<'PYEOF'
+import sys
+
+
+def read_vint(data, pos, strip_marker):
+    b0 = data[pos]
+    width = 0
+    for w in range(1, 9):
+        if b0 & (0x80 >> (w - 1)):
+            width = w
+            break
+    raw = int.from_bytes(data[pos:pos + width], 'big')
+    if strip_marker:
+        marker = 1 << (7 * width)
+        return raw & ~marker, width
+    return raw, width
+
+
+def find_timestamp_scale(data):
+    pos = 0
+    while pos < len(data):
+        idv, idw = read_vint(data, pos, False)
+        sizev, sizew = read_vint(data, pos + idw, True)
+        content_off = pos + idw + sizew
+        content_end = content_off + sizev
+        if idv == 0x18538067:  # Segment
+            p = content_off
+            while p < content_end:
+                cidv, cidw = read_vint(data, p, False)
+                csizev, csizew = read_vint(data, p + cidw, True)
+                ccontent_off = p + cidw + csizew
+                ccontent_end = ccontent_off + csizev
+                if cidv == 0x1549A966:  # Info
+                    q = ccontent_off
+                    while q < ccontent_end:
+                        eidv, eidw = read_vint(data, q, False)
+                        esizev, esizew = read_vint(data, q + eidw, True)
+                        econtent_off = q + eidw + esizew
+                        econtent_end = econtent_off + esizev
+                        if eidv == 0x2AD7B1:  # TimestampScale
+                            return econtent_off, econtent_end
+                        q = econtent_end
+                p = ccontent_end
+        pos = content_end
+    raise SystemExit("gen_corpus: TimestampScale element not found in " + sys.argv[1])
+
+
+src, dst = sys.argv[1], sys.argv[2]
+data = bytearray(open(src, 'rb').read())
+off, end = find_timestamp_scale(data)
+width = end - off
+new_value = 2000000  # default is 1,000,000 -- clearly different, still fits the same 3-byte width
+data[off:end] = new_value.to_bytes(width, 'big')
+with open(dst, 'wb') as handle:
+    handle.write(bytes(data))
+PYEOF
+
+# `container.mkv.duration_element`: piping the mux to a non-seekable stdout
+# forces the matroska muxer's own streaming/unfinalized path -- confirmed
+# via direct EBML inspection that this ALSO produces a Segment of UNKNOWN
+# size (the "an element with unknown size that is not Segment or Cluster
+# ends the walk" rule's own positive case for Segment) and NO Cues element
+# at all (the muxer cannot seek back to write an index), alongside the
+# targeted Duration-less Info this fixture is named for -- reused by
+# ebml_scan's own "no Cues located, no walk failure" test (03-06-SUMMARY.md
+# records this double duty per this plan's own <output> instruction).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac \
+  -flags +bitexact -fflags +bitexact -f matroska -y - \
+  > "$OUT_DIR/mkv_noduration.mkv"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv."

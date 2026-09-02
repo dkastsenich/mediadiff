@@ -69,6 +69,16 @@ add_executable(mediadiff_unit_tests
   # timescale, plus the incomplete-walk skip and the family-agnostic
   # not-applicable sibling analyzer (03-05-PLAN.md Task 2).
   test_mp4_analyzer.cpp
+  # PROBE-05: ebml_scan's bounded Segment-level element walk -- the VINT
+  # reader across all eight length-descriptor widths (both marker-retained
+  # ID mode and marker-stripped size mode), the reserved unknown-size form,
+  # SeekHead/Info/Tracks descent, the guarded single-hop SeekHead-follow to
+  # a trailing Cues (bounds + ID verification, both rejection cases), and
+  # truncation at 10%/50%/90% (03-06-PLAN.md Task 1).
+  test_ebml_scan.cpp
+  # CONT-02: container_family_token's own mapping table, shared verbatim
+  # by the probe layer and the compare engine (03-06-PLAN.md Task 3).
+  test_container_family.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

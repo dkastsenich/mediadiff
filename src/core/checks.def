@@ -257,3 +257,59 @@ semantic = "exact"
 unit = "none"
 value_kind = "int64"
 severity = "warn"
+
+# 03-06-PLAN.md Task 2 (CONT-06, doc 02 section 4): the four container.mkv.*
+# checks, emitted from ebml_scan (src/probe/ebml_scan.h). Auto-skip as
+# not_applicable_container on a non-MKV input (mirrors container.mp4.*'s own
+# two-AnalyzerSpec split), and as unparsed_mechanism when the ebml_scan walk
+# itself did not complete (03-CHECK-ROSTER.md).
+
+# Cues' own byte offset compared against the first Cluster's -- a SEEKING
+# property, deliberately NOT named faststart (see
+# docs/checks/container.mkv.cues_placement.md for why).
+[[check]]
+id = "container.mkv.cues_placement"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+# One measurement per track, at that track's own scope: CodecDelay
+# converted from nanoseconds to SAMPLES via the track's own sampling
+# frequency (checked_mul then checked_div, never a floating divide).
+# Baseline severity `fail` per 03-CHECK-ROSTER.md's own note: per-codec
+# severity is not representable (a CheckDef carries one severity), and for
+# a non-Opus track CodecDelay is normally absent/zero on both sides, so the
+# check simply never fires there -- a difference anywhere is itself
+# suspicious enough to warrant `fail`.
+[[check]]
+id = "container.mkv.codec_delay"
+group = "container"
+semantic = "tol"
+unit = "samples"
+value_kind = "int64"
+severity = "fail"
+tolerance = "1samples"
+
+# Info's own TimestampScale, at global scope. Matroska's own default is
+# 1,000,000 ns (1 ms); evidence records that default so a reader can tell a
+# departure-from-default apart from a change between two non-defaults.
+[[check]]
+id = "container.mkv.timestamp_scale"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "int64"
+severity = "warn"
+
+# The `presence` semantic (doc 01 section 3): whether Info carries a
+# Duration element at all -- a missing Duration means a live or
+# unfinalized mux, which flips consumer expectations for the file.
+[[check]]
+id = "container.mkv.duration_element"
+group = "container"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "info"

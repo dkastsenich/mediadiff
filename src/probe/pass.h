@@ -16,6 +16,7 @@
 
 #include "core/model.h"
 #include "probe/bmff_scan.h"
+#include "probe/ebml_scan.h"
 #include "probe/packet_scan.h"
 
 namespace mediadiff {
@@ -121,6 +122,12 @@ struct ProbeResults {
   // analyzer scoped to `ContainerFamily::mp4` (this plan's own
   // prohibition: the scanner never runs on bytes it cannot interpret).
   std::optional<BmffScanResult> bmff;
+  // 03-06-PLAN.md Task 1 (PROBE-05): the bounded EBML element walk, held
+  // once and shared by every applicable analyzer -- populated ONLY when
+  // `Pass::ebml_scan` was requested, which only ever happens for an
+  // analyzer scoped to `ContainerFamily::mkv` (mirrors `bmff`'s own
+  // never-runs-on-the-wrong-container invariant above).
+  std::optional<EbmlScanResult> ebml;
 };
 
 // One analyzer family's registration (PROBE-08): the passes it needs, the

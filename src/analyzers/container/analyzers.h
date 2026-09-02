@@ -57,6 +57,22 @@ const AnalyzerSpec& container_mp4_analyzer();
 // scoped AnalyzerSpecs is what lets both requirements hold at once.
 const AnalyzerSpec& container_mp4_not_applicable_analyzer();
 
+// 03-06-PLAN.md Tasks 1-2 (PROBE-05, CONT-06): the four container.mkv.*
+// checks, emitted from ProbeResults::ebml (src/probe/ebml_scan.h). Scoped
+// to ContainerFamily::mkv -- required_passes includes Pass::ebml_scan, so
+// this analyzer (and therefore the scanner) is never even considered for
+// an MP4/TS input, mirroring container_mp4_analyzer()'s own reasoning
+// exactly.
+const AnalyzerSpec& container_mkv_analyzer();
+
+// The family-agnostic sibling of the analyzer above -- same structural
+// reason container_mp4_not_applicable_analyzer() exists (see that
+// accessor's own comment): scoped to ContainerFamily::other, a no-op when
+// the file IS actually MKV, and an explicit
+// skipped:not_applicable_container Measurement for all four
+// container.mkv.* checks on every OTHER family.
+const AnalyzerSpec& container_mkv_not_applicable_analyzer();
+
 namespace detail {
 
 // Test-only extraction seam (03-04-PLAN.md Task 2, T-3-15): exposes

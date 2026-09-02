@@ -24,6 +24,7 @@ extern "C" {
 #include <utility>
 #include <vector>
 
+#include "core/container_family.h"
 #include "probe/pass.h"
 
 namespace mediadiff {
@@ -160,14 +161,23 @@ std::vector<std::pair<std::string, std::string>> dict_to_pairs(const AVDictionar
   return pairs;
 }
 
+// 03-06-PLAN.md Task 3 (CONT-02): delegates to core/container_family.h's
+// container_family_token -- the SAME function compare/engine.cpp's
+// cross-container demotion calls -- rather than re-declaring this mapping
+// locally, so the probe layer's own scoping and the engine's demotion can
+// never disagree about what family a file belongs to (this plan's own
+// key_link). `format_name()` already returns the first comma-delimited
+// token (this file's own extraction rule, above); container_family_token
+// accepts that equally well as the raw, untruncated AVInputFormat::name.
 ContainerFamily container_family_from_format_name(std::string_view format_name) {
-  if (format_name == "mov") {
+  const std::string_view token = container_family_token(format_name);
+  if (token == "mp4") {
     return ContainerFamily::mp4;
   }
-  if (format_name == "matroska") {
+  if (token == "mkv") {
     return ContainerFamily::mkv;
   }
-  if (format_name == "mpegts") {
+  if (token == "ts") {
     return ContainerFamily::ts;
   }
   return ContainerFamily::other;

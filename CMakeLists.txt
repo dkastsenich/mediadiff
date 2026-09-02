@@ -138,6 +138,7 @@ add_library(libmediadiff STATIC
   src/core/tolerance.cpp
   src/core/profiles.cpp
   src/core/policy.cpp
+  src/core/container_family.cpp
   src/config/toml_load.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
@@ -154,10 +155,12 @@ add_library(libmediadiff STATIC
   src/probe/demux_session.cpp
   src/probe/packet_scan.cpp
   src/probe/bmff_scan.cpp
+  src/probe/ebml_scan.cpp
   src/probe/orchestrator.cpp
   src/analyzers/container/topology.cpp
   src/analyzers/container/meta.cpp
   src/analyzers/container/mp4.cpp
+  src/analyzers/container/mkv.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -191,6 +194,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/glob.h
   src/core/tolerance.h
   src/core/check_explain.h
+  src/core/container_family.h
   src/config/toml_load.h
   src/compare/semantics.h
   src/compare/engine.h
@@ -207,6 +211,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/demux_session.h
   src/probe/packet_scan.h
   src/probe/bmff_scan.h
+  src/probe/ebml_scan.h
   src/probe/orchestrator.h
   src/analyzers/container/analyzers.h
 )

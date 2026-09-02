@@ -28,6 +28,15 @@ add_executable(mediadiff_integration_tests
   # skipped:unparsed_mechanism, with a permanently-red canary
   # (03-05-PLAN.md Task 3).
   test_container_mp4.cpp
+  # PROBE-05/CONT-06: the four container.mkv.* checks proven through the
+  # real CLI (cues_placement front/end/absent, codec_delay samples-unit
+  # conversion, timestamp_scale, duration_element presence), cross-format
+  # skip correctness, and the incomplete-walk skip (03-06-PLAN.md Task 2).
+  test_container_mkv.cpp
+  # CONT-02: cross-container migration demotes container.<fmt>.* on BOTH
+  # sides to skipped:cross_container while unscoped checks still compare,
+  # independently of severity policy (03-06-PLAN.md Task 3).
+  test_cross_container.cpp
   test_determinism.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp

@@ -12,10 +12,64 @@
 #include <fmt/format.h>
 
 #include "compare/semantics.h"
+#include "core/container_family.h"
 
 namespace mediadiff {
 
 namespace {
+
+// CONT-02 (03-06-PLAN.md Task 3, doc 02 section 2's Edge-cases column):
+// reads `id`'s own registered check id (a `container.format` measurement
+// at GLOBAL scope, per topology.cpp's own emit shape) out of `fp` and
+// resolves it through container_family_token -- the SAME function
+// src/probe/demux_session.cpp's ContainerFamily derivation calls, so the
+// probe layer's scoping and this demotion can never disagree about what
+// family a file belongs to. Returns an empty token when no
+// `container.format` measurement exists at all (an unregistered id, or a
+// hand-built test Fingerprint that never populated it) -- container_family
+// _token's own empty-string convention already means "never demoted",
+// which is exactly the right behavior here too.
+std::string_view resolve_family(const Fingerprint& fp, const CheckRegistry& registry) {
+  const std::optional<std::uint32_t> format_index = registry.find("container.format");
+  if (!format_index.has_value()) {
+    return std::string_view{};
+  }
+  for (const Measurement& m : fp.measurements) {
+    if (m.check_index != *format_index || m.scope.kind != Scope::Kind::global || m.scope.index != 0) {
+      continue;
+    }
+    if (const auto* value = std::get_if<std::string>(&m.value)) {
+      return container_family_token(*value);
+    }
+    return std::string_view{};
+  }
+  return std::string_view{};
+}
+
+// True iff `id` has the shape `container.<family_token>.<...>` -- THREE OR
+// MORE dot-delimited segments, first segment exactly "container", second
+// segment exactly `family_token`. Guards against a false match the way
+// src/report/model.h's own `group_for` precedent does (meaning from the
+// id's own segments, never from CheckDef::group): a hypothetical two-
+// segment `container.mp4` id would never be swept up, and `container.
+// format` itself (two segments) is structurally exempt by construction --
+// it is never demoted, which is CONT-02's whole point (the migration
+// itself must still be visible).
+bool check_id_matches_family(std::string_view id, std::string_view family_token) {
+  if (family_token.empty()) {
+    return false;
+  }
+  const auto first_dot = id.find('.');
+  if (first_dot == std::string_view::npos || id.substr(0, first_dot) != "container") {
+    return false;
+  }
+  const std::string_view rest = id.substr(first_dot + 1);
+  const auto second_dot = rest.find('.');
+  if (second_dot == std::string_view::npos || second_dot + 1 >= rest.size()) {
+    return false;
+  }
+  return rest.substr(0, second_dot) == family_token;
+}
 
 // Maps the alternative Value's std::variant actually holds to the
 // ValueKind vocabulary CheckDef::value_kind declares against (D-09). Never
@@ -144,6 +198,19 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
     resolved_policy.per_check = std::move(resolved->per_check);
   }
 
+  // CONT-02: resolved ONCE, ahead of pairing -- deliberately unconditional
+  // on `policy`/`resolved_policy` (the demotion decides STATUS, severity
+  // policy decides how a status GATES; conflating the two would mean the
+  // same two files produce different statuses under different policies,
+  // breaking the idempotence story this whole project rests on). "user
+  // demotes with `--set container.format=info`" (doc 02's own Edge-cases
+  // wording) describes the user's WORKFLOW -- they stop container.format
+  // from gating the merge -- not a code dependency of this mechanism.
+  const std::string_view baseline_family = resolve_family(baseline, registry);
+  const std::string_view candidate_family = resolve_family(candidate, registry);
+  const bool cross_container_active =
+      !baseline_family.empty() && !candidate_family.empty() && baseline_family != candidate_family;
+
   std::map<PairKey, const Measurement*> baseline_by_key;
   for (const Measurement& m : baseline.measurements) {
     baseline_by_key[key_for(m)] = &m;
@@ -170,8 +237,40 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
   findings.reserve(all_keys.size());
 
   for (const PairKey& pair_key : all_keys) {
+    if (pair_key.check_index >= registry.size()) {
+      return mediadiff::unexpected(Error{ErrorKind::internal, "measurement check_index out of registry range"});
+    }
+    const CheckDef& check = registry.at(pair_key.check_index);
+
     const auto baseline_it = baseline_by_key.find(pair_key);
     const auto candidate_it = candidate_by_key.find(pair_key);
+
+    // CONT-02: checked AHEAD of the unpaired-continue below, and
+    // unconditionally on whether a Measurement exists on either side --
+    // container.mkv.codec_delay's own per-track scope, for example, is
+    // present on the real-data side but never on the family-agnostic
+    // not-applicable sibling's global-scope skip, which would otherwise
+    // make this pair "unpaired" and silently dropped. A cross-container
+    // migration must demote it EITHER WAY: doc 02's own promise is that
+    // EVERY container.<fmt>.* check on BOTH sides becomes
+    // skipped:cross_container, not merely the ones that happened to have a
+    // Measurement on both sides.
+    if (cross_container_active && (check_id_matches_family(check.id, baseline_family) ||
+                                    check_id_matches_family(check.id, candidate_family))) {
+      Finding finding;
+      finding.id = check.id;
+      finding.scope = Scope{pair_key.scope_kind, pair_key.scope_index};
+      finding.status = Status::skipped;
+      finding.severity = resolved_policy.per_check[pair_key.check_index].severity;
+      finding.baseline = baseline_it != baseline_by_key.end() ? baseline_it->second->value : Value{Absent{}};
+      finding.candidate = candidate_it != candidate_by_key.end() ? candidate_it->second->value : Value{Absent{}};
+      finding.skip_reason = SkipReason::cross_container;
+      finding.message =
+          fmt::format("check '{}' skipped: {}", check.id, skip_reason_to_string(SkipReason::cross_container));
+      findings.push_back(std::move(finding));
+      continue;
+    }
+
     if (baseline_it == baseline_by_key.end() || candidate_it == candidate_by_key.end()) {
       // Unpaired on one side: doc 01 section 10 maps this to
       // meta.missing_candidate / meta.extra_candidate, which Task 2 of
@@ -182,10 +281,6 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
       continue;
     }
 
-    if (pair_key.check_index >= registry.size()) {
-      return mediadiff::unexpected(Error{ErrorKind::internal, "measurement check_index out of registry range"});
-    }
-    const CheckDef& check = registry.at(pair_key.check_index);
     const Measurement& baseline_m = *baseline_it->second;
     const Measurement& candidate_m = *candidate_it->second;
 

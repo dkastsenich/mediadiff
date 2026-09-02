@@ -14,3 +14,7 @@ container.mp4.fragmentation  severity=fail  tolerance=<none>
 container.mp4.fragment_duration  severity=warn  tolerance=20/1 %
 container.mp4.edit_list  severity=warn  tolerance=<none>
 container.mp4.timescale  severity=warn  tolerance=<none>
+container.mkv.cues_placement  severity=warn  tolerance=<none>
+container.mkv.codec_delay  severity=fail  tolerance=1/1 samples
+container.mkv.timestamp_scale  severity=warn  tolerance=<none>
+container.mkv.duration_element  severity=info  tolerance=<none>
