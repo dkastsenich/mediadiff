@@ -313,3 +313,93 @@ semantic = "presence"
 unit = "none"
 value_kind = "string"
 severity = "info"
+
+# 03-08-PLAN.md Tasks 1-3 (CONT-07, CONT-08, doc 02 section 5), src/analyzers/
+# container/ts.cpp, src/probe/ts_scan.{h,cpp}. Every one of the six ids below
+# auto-skips as `skipped:not_applicable_container` on a non-TS container
+# (src/analyzers/container/ts.cpp's own family-agnostic sibling analyzer),
+# and as `skipped:unparsed_mechanism` (carrying `stop_offset` in evidence)
+# when the ts_scan walk itself did not complete (03-CHECK-ROSTER.md).
+
+# The unflagged (non discontinuity_indicator) continuity-counter error
+# count, summed across every PID at global scope -- `exact 0` gating: any
+# nonzero count is a failure independent of the other side (doc 02 section
+# 5). Evidence carries the per-PID breakdown and the first offending PID's
+# byte offset.
+[[check]]
+id = "container.ts.cc_errors"
+group = "container"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+
+# Split from doc 02's `cc_errors` row (03-CHECK-ROSTER.md): the FLAGGED
+# (discontinuity_indicator) reset count, reported separately at `info` --
+# the muxer declared it did that on purpose, so this is never folded into
+# the gating cc_errors count above. Addition beyond doc 02's literal row
+# count.
+[[check]]
+id = "container.ts.cc_discontinuities"
+group = "container"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "info"
+
+# The MAXIMUM spacing between consecutive PCRs on a program's own PCR_PID,
+# in milliseconds, derived from ts_scan's mux-rate estimate (D-03: this
+# value's `Measurement::estimated` flag widens the effective tolerance 3x
+# at comparison, src/compare/tol.cpp). Program-scoped: Scope{Kind::program,
+# index} where `index` is the PSI program_number (AVProgram::program_num),
+# NEVER the AVFormatContext::programs[] array position (CONT-08). Skips as
+# `insufficient_data` on fewer than two PCRs, never a fabricated interval.
+[[check]]
+id = "container.ts.pcr_interval"
+group = "container"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "100ms"
+
+# The MAXIMUM of the PAT and PMT section repetition intervals, in
+# milliseconds, also `estimated` (D-03 widening applies, see pcr_interval
+# above). Program-scoped, same program_number rule as pcr_interval --
+# version churn breaks downstream remuxers, hence `warn`.
+[[check]]
+id = "container.ts.psi_interval"
+group = "container"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "warn"
+tolerance = "500ms"
+
+# Split from doc 02's `psi_interval` row (03-CHECK-ROSTER.md): the PMT
+# `version_number` CHANGE count -- a second semantic on the same id is not
+# representable, hence its own id. Directly counted, NEVER `estimated`
+# (widening a directly-counted value would silently loosen a real gate).
+# Program-scoped, same program_number rule. Addition beyond doc 02's
+# literal row count.
+[[check]]
+id = "container.ts.pmt_version_churn"
+group = "container"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "warn"
+
+# null_packets / total_packets, kept as an EXACT RationalValue (never
+# pre-divided into a rounded percentage) -- a CBR mux efficiency drift tell
+# (doc 02 section 5), `info` severity. Global scope: a whole-transport-
+# stream property, not per-program (scoping it per program would
+# double-count shared PIDs).
+[[check]]
+id = "container.ts.null_ratio"
+group = "container"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "info"
+tolerance = "5%"

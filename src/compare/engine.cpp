@@ -272,6 +272,37 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
     }
 
     if (baseline_it == baseline_by_key.end() || candidate_it == candidate_by_key.end()) {
+      // CONT-08 (03-08-PLAN.md Task 3, doc 02 section 6): "program-scoped
+      // checks emit one measurement per program ... baseline/candidate
+      // pairing by program_number, unpaired programs -> topology fail."
+      // A program-scoped measurement (Scope::Kind::program) present on
+      // only one side means the two files declare different program
+      // topologies -- verified empirically (not assumed) that the
+      // ordinary unpaired path below silently DROPS this pair with no
+      // Finding at all (not even a skip), which both fails doc 02's own
+      // literal requirement and is worse than a silent skip: a program
+      // that vanished from a report is a program a reviewer never learns
+      // about. Emitted at Status::fail unconditionally, like the
+      // cross-container demotion above and the value_kind-mismatch path
+      // below -- this is a structural fact about the two inputs' program
+      // topology, not something a check's own severity policy should be
+      // able to downgrade.
+      if (pair_key.scope_kind == Scope::Kind::program) {
+        const bool baseline_has = baseline_it != baseline_by_key.end();
+        Finding finding;
+        finding.id = check.id;
+        finding.scope = Scope{pair_key.scope_kind, pair_key.scope_index};
+        finding.status = Status::fail;
+        finding.severity = Severity::fail;
+        finding.baseline = baseline_has ? baseline_it->second->value : Value{Absent{}};
+        finding.candidate = !baseline_has ? candidate_it->second->value : Value{Absent{}};
+        finding.skip_reason = SkipReason::none;
+        finding.message = fmt::format("check '{}': program {} present only on the {} side -- topology mismatch",
+                                       check.id, pair_key.scope_index, baseline_has ? "baseline" : "candidate");
+        findings.push_back(std::move(finding));
+        continue;
+      }
+
       // Unpaired on one side: doc 01 section 10 maps this to
       // meta.missing_candidate / meta.extra_candidate, which Task 2 of
       // this plan deliberately leaves unregistered (their `presence`

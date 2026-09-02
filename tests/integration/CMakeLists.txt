@@ -37,6 +37,16 @@ add_executable(mediadiff_integration_tests
   # sides to skipped:cross_container while unscoped checks still compare,
   # independently of severity policy (03-06-PLAN.md Task 3).
   test_cross_container.cpp
+  # CONT-07: the six container.ts.* checks proven through the real CLI
+  # (cc_errors/cc_discontinuities, pcr_interval/psi_interval's D-03
+  # widening, pmt_version_churn, null_ratio), cross-format skip
+  # correctness, and the incomplete-walk skip (03-08-PLAN.md Tasks 1-2).
+  test_container_ts.cpp
+  # CONT-08: program-scoped container.ts.* measurements keyed by PSI
+  # program_number, proven to pair correctly across a reordered-PAT
+  # sibling and to fail as an unpaired topology mismatch across a
+  # renumbered sibling (03-08-PLAN.md Task 3).
+  test_multiprogram.cpp
   test_determinism.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp

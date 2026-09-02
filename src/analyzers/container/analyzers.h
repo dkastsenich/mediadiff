@@ -73,6 +73,29 @@ const AnalyzerSpec& container_mkv_analyzer();
 // container.mkv.* checks on every OTHER family.
 const AnalyzerSpec& container_mkv_not_applicable_analyzer();
 
+// 03-08-PLAN.md Tasks 1-3 (PROBE-06/07 consumer, CONT-07, CONT-08): the six
+// container.ts.* checks, emitted from ProbeResults::ts (src/probe/ts_scan.h).
+// Scoped to ContainerFamily::ts -- required_passes includes Pass::ts_scan,
+// so this analyzer (and therefore the scanner) is never even considered for
+// an MP4/MKV input, mirroring container_mp4_analyzer()/container_mkv_analyzer()'s
+// own reasoning exactly. Three of the six (pcr_interval, psi_interval,
+// pmt_version_churn) emit one measurement per program at
+// Scope{Kind::program, program_number} -- the PSI value, never an
+// AVFormatContext::programs[] array position (CONT-08); the other three
+// (cc_errors, cc_discontinuities, null_ratio) stay at global scope, since
+// they are whole-transport-stream properties.
+const AnalyzerSpec& container_ts_analyzer();
+
+// The family-agnostic sibling of the analyzer above -- same structural
+// reason container_mp4_not_applicable_analyzer()/container_mkv_not_applicable_analyzer()
+// exist (see either accessor's own comment): scoped to ContainerFamily::other,
+// a no-op when the file IS actually MPEG-TS, and an explicit
+// skipped:not_applicable_container Measurement for all six container.ts.*
+// checks on every OTHER family (at global scope even for the three
+// normally program-scoped checks, mirroring the incomplete-walk skip's own
+// reasoning: there is no program list to skip at when the file is not TS).
+const AnalyzerSpec& container_ts_not_applicable_analyzer();
+
 namespace detail {
 
 // Test-only extraction seam (03-04-PLAN.md Task 2, T-3-15): exposes

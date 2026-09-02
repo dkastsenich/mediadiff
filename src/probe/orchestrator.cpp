@@ -83,6 +83,11 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // sibling-second ordering as the mp4 pair above.
       container_mkv_analyzer(),
       container_mkv_not_applicable_analyzer(),
+      // 03-08-PLAN.md Tasks 1-3 (CONT-07, CONT-08): the six container.ts.*
+      // checks -- same real-data-first, not-applicable-sibling-second
+      // ordering as the mp4/mkv pairs above.
+      container_ts_analyzer(),
+      container_ts_not_applicable_analyzer(),
   };
   return registry;
 }

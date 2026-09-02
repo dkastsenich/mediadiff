@@ -590,9 +590,18 @@ void process_packet(const std::string& buf, std::int64_t offset, TsScanResult& r
 
 // Doc 02 section 5's mux-rate estimate: from the FIRST valid consecutive
 // same-PID PCR pair encountered (in file order), compute
-// bytes_per_second = (offset_delta * 8 * 27000000) / pcr_delta, kept as an
-// EXACT unreduced rational (T-3-36: detail::checked_mul/checked_sub, never
-// a bare division, never a double). A pair whose PCR delta is zero or
+// bytes_per_second = (offset_delta * 27000000) / pcr_delta -- pcr_delta is
+// in 27 MHz ticks, so dividing by it converts the elapsed 27 MHz-tick count
+// into elapsed seconds' worth of the offset_delta BYTE count, yielding
+// bytes/sec exactly (never bits/sec: this struct's own name and
+// ts_scan.h's doc comment both commit to bytes/sec, since 03-08-PLAN.md's
+// byte-offset-to-milliseconds conversion consumes it directly as such --
+// an earlier revision of this formula included an erroneous `* 8`
+// bytes-to-bits factor, caught during 03-08-PLAN.md's own implementation
+// when a real fixture's independently-computed PCR spacing came back
+// exactly 8x the value this scanner reported; fixed here, Rule 1). Kept as
+// an EXACT unreduced rational (T-3-36: detail::checked_mul/checked_sub,
+// never a bare division, never a double). A pair whose PCR delta is zero or
 // negative (a 2^33-tick wrap, or a genuine discontinuity) is skipped, not
 // unwrapped; the count of skipped pairs is recorded on the resulting
 // estimate. Only pairs on the SAME PID are considered (adjacent entries in
@@ -619,7 +628,7 @@ void compute_mux_rate_estimate(TsScanResult& result) {
       continue;
     }
     std::int64_t num = 0;
-    if (!detail::checked_mul(offset_delta, 8, &num) || !detail::checked_mul(num, 27000000, &num)) {
+    if (!detail::checked_mul(offset_delta, 27000000, &num)) {
       ++skipped_pairs;
       continue;
     }

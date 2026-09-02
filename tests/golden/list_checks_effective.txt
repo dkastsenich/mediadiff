@@ -18,3 +18,9 @@ container.mkv.cues_placement  severity=warn  tolerance=<none>
 container.mkv.codec_delay  severity=fail  tolerance=1/1 samples
 container.mkv.timestamp_scale  severity=warn  tolerance=<none>
 container.mkv.duration_element  severity=info  tolerance=<none>
+container.ts.cc_errors  severity=fail  tolerance=<none>
+container.ts.cc_discontinuities  severity=info  tolerance=<none>
+container.ts.pcr_interval  severity=fail  tolerance=100/1 ms
+container.ts.psi_interval  severity=warn  tolerance=500/1 ms
+container.ts.pmt_version_churn  severity=warn  tolerance=<none>
+container.ts.null_ratio  severity=info  tolerance=5/1 %

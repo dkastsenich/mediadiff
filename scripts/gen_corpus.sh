@@ -615,4 +615,252 @@ with open(dst, 'wb') as handle:
     handle.write(bytes(data))
 PYEOF
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts."
+# --- 03-08-PLAN.md: container.ts.* fixtures (CONT-07, CONT-08) -------------
+# `container.ts.pcr_interval`: two pairs proving D-03's 3x widening is
+# bounded, not a bypass -- `-pcr_period` directly controls the actual PCR
+# insertion cadence (confirmed empirically via a scratch PCR-spacing scan:
+# 40ms vs 150ms yields a ~110ms delta, over the unwidened 100ms bound but
+# under the widened 300ms one; 40ms vs 500ms yields a ~440ms delta, over
+# even the widened bound). `-muxrate` is held constant across a pair (only
+# `-pcr_period` varies) so the pair's own mux-rate ESTIMATES stay close to
+# each other and the fixture isolates the PCR-spacing signal this check
+# measures, not a muxrate-driven estimation-noise artifact.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  -muxrate 2000000 -pcr_period 40 \
+  -f mpegts "$OUT_DIR/ts_pcr_close_a.ts"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  -muxrate 2000000 -pcr_period 150 \
+  -f mpegts "$OUT_DIR/ts_pcr_close_b.ts"
+
+cp "$OUT_DIR/ts_pcr_close_a.ts" "$OUT_DIR/ts_pcr_far_a.ts"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  -muxrate 2000000 -pcr_period 500 \
+  -f mpegts "$OUT_DIR/ts_pcr_far_b.ts"
+
+# `container.ts.pcr_interval`'s insufficient_data case: a whole-packet-
+# aligned prefix of `ts_single.ts` truncated to 111 packets -- confirmed
+# empirically (a scratch PCR-offset scan of this exact recipe) that
+# `ts_single.ts`'s first PCR lands at packet index 3 and its second at
+# packet index 112, so a 111-packet prefix carries exactly one PCR while
+# still comfortably exceeding the 5-sync-confirmation stride-detection
+# floor (Task 1, 03-07-PLAN.md) -- `complete` stays true (a whole number of
+# packets is always a structurally valid TS prefix), only the PCR count is
+# insufficient.
+python3 - "$OUT_DIR/ts_single.ts" "$OUT_DIR/ts_single_pcr.ts" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+data = open(src, 'rb').read()
+assert len(data) % 188 == 0
+with open(dst, 'wb') as handle:
+    handle.write(data[:111 * 188])
+PYEOF
+
+# `container.ts.null_ratio`: two different `-muxrate` values against
+# byte-identical content, producing genuinely different null-packet ratios
+# (confirmed empirically: 1,000,000 -> ~1.8%, 4,000,000 -> ~75%, both well
+# over the check's 5% relative tolerance) -- the triggering half of the
+# pair. The clean half reuses `ts_single.ts`/`ts_single_copy.ts` (already
+# byte-identical, so every check including null_ratio passes there).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  -muxrate 1000000 \
+  -f mpegts "$OUT_DIR/ts_nullratio_a.ts"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  -muxrate 4000000 \
+  -f mpegts "$OUT_DIR/ts_nullratio_b.ts"
+
+# `container.ts.cc_discontinuities`: `-mpegts_flags initial_discontinuity`
+# is a real libavformat mpegts-muxer option (confirmed via `ffmpeg -h
+# muxer=mpegts`) that marks each PID's very first packet
+# `discontinuity_indicator=1` -- a genuine flagged reset produced by the
+# muxer itself, not a hand-built byte buffer, and confirmed via direct
+# adaptation-field inspection to leave every PID's continuity-counter
+# SEQUENCE otherwise correct (so container.ts.cc_errors stays 0 on this
+# same file, proving Test 4's "flagged and unflagged never conflated"
+# behavior against a real file).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  -mpegts_flags initial_discontinuity \
+  -f mpegts "$OUT_DIR/ts_discontinuity.ts"
+
+# CONT-08 multi-program fixtures: `ts_multiprogram.ts` (already generated
+# above) byte-patched two different ways, each touching ONLY the bytes
+# named -- confirmed via `ffprobe -show_programs` after each patch that the
+# result remains a valid, correctly-mapped multi-program TS.
+#
+# `ts_multiprogram_reordered.ts`: every PAT section's own 4-byte
+# program-entry list (program_number + PID pairs) is byte-order REVERSED in
+# place, with the section's CRC32 recomputed -- the program_number-to-PID
+# mapping itself is UNCHANGED, only the on-wire DECLARATION order differs,
+# proving Test 2 (pairing by program_number survives a declaration-order
+# swap) without ffmpeg's own `-program` flag ordering having any effect on
+# the muxed PAT order (confirmed empirically: swapping `-program` flag
+# order alone does not change the muxer's own ascending-program_number PAT
+# layout, hence this direct byte-level patch).
+python3 - "$OUT_DIR/ts_multiprogram.ts" "$OUT_DIR/ts_multiprogram_reordered.ts" <<'PYEOF'
+import sys
+
+CRC_POLY = 0x04C11DB7
+
+def crc32_mpeg2(data):
+    crc = 0xFFFFFFFF
+    for b in data:
+        crc ^= (b << 24)
+        for _ in range(8):
+            if crc & 0x80000000:
+                crc = ((crc << 1) ^ CRC_POLY) & 0xFFFFFFFF
+            else:
+                crc = (crc << 1) & 0xFFFFFFFF
+    return crc
+
+src, dst = sys.argv[1], sys.argv[2]
+data = bytearray(open(src, 'rb').read())
+assert len(data) % 188 == 0
+n = len(data) // 188
+patched = 0
+for i in range(n):
+    off = i * 188
+    pkt = data[off:off + 188]
+    if pkt[0] != 0x47:
+        continue
+    pid = ((pkt[1] & 0x1F) << 8) | pkt[2]
+    pusi = (pkt[1] >> 6) & 1
+    if pid != 0 or not pusi:
+        continue
+    afc = (pkt[3] >> 4) & 0x3
+    assert afc == 1, f"unexpected adaptation_field_control on PAT packet {i}"
+    pointer_field = pkt[4]
+    section_start = 5 + pointer_field
+    assert pkt[section_start] == 0x00, "unexpected PAT table_id"
+    section_length = ((pkt[section_start + 1] & 0x0F) << 8) | pkt[section_start + 2]
+    section_total = 3 + section_length
+    header = pkt[section_start:section_start + 8]
+    crc_start = section_start + section_total - 4
+    entries = pkt[section_start + 8:crc_start]
+    assert len(entries) % 4 == 0
+    n_entries = len(entries) // 4
+    reordered = bytearray()
+    for e in range(n_entries - 1, -1, -1):
+        reordered += entries[e * 4:(e + 1) * 4]
+    new_body = bytes(header) + bytes(reordered)
+    new_crc = crc32_mpeg2(new_body).to_bytes(4, 'big')
+    pkt[section_start:section_start + 8] = header
+    pkt[section_start + 8:crc_start] = reordered
+    pkt[crc_start:crc_start + 4] = new_crc
+    data[off:off + 188] = pkt
+    patched += 1
+assert patched > 0, "no PAT packet found to reorder"
+with open(dst, 'wb') as handle:
+    handle.write(bytes(data))
+PYEOF
+
+# `ts_multiprogram_renumbered.ts`: program 2's own program_number is
+# rewritten to 3 in EVERY PAT and PMT occurrence (both sections' CRC32
+# recomputed), leaving program 1 and every PID assignment untouched -- a
+# real topology mismatch (programs {1,2} vs {1,3}) for Test 3's unpaired-
+# program topology-fail case.
+python3 - "$OUT_DIR/ts_multiprogram.ts" "$OUT_DIR/ts_multiprogram_renumbered.ts" <<'PYEOF'
+import sys
+
+CRC_POLY = 0x04C11DB7
+OLD_NUM, NEW_NUM = 2, 3
+
+def crc32_mpeg2(data):
+    crc = 0xFFFFFFFF
+    for b in data:
+        crc ^= (b << 24)
+        for _ in range(8):
+            if crc & 0x80000000:
+                crc = ((crc << 1) ^ CRC_POLY) & 0xFFFFFFFF
+            else:
+                crc = (crc << 1) & 0xFFFFFFFF
+    return crc
+
+def patch_crc(pkt, section_start, section_total):
+    body = pkt[section_start:section_start + section_total - 4]
+    pkt[section_start + section_total - 4:section_start + section_total] = crc32_mpeg2(bytes(body)).to_bytes(4, 'big')
+
+src, dst = sys.argv[1], sys.argv[2]
+data = bytearray(open(src, 'rb').read())
+assert len(data) % 188 == 0
+n = len(data) // 188
+
+pmt_pid = None
+for i in range(n):
+    off = i * 188
+    pkt = data[off:off + 188]
+    if pkt[0] != 0x47:
+        continue
+    pid = ((pkt[1] & 0x1F) << 8) | pkt[2]
+    pusi = (pkt[1] >> 6) & 1
+    if pid != 0 or not pusi:
+        continue
+    pointer_field = pkt[4]
+    section_start = 5 + pointer_field
+    section_length = ((pkt[section_start + 1] & 0x0F) << 8) | pkt[section_start + 2]
+    entries = pkt[section_start + 8:section_start + 3 + section_length - 4]
+    for e in range(0, len(entries), 4):
+        prog_num = (entries[e] << 8) | entries[e + 1]
+        pid_val = ((entries[e + 2] & 0x1F) << 8) | entries[e + 3]
+        if prog_num == OLD_NUM:
+            pmt_pid = pid_val
+    if pmt_pid is not None:
+        break
+assert pmt_pid is not None, f"program {OLD_NUM} not found in PAT"
+
+patched_pat, patched_pmt = 0, 0
+for i in range(n):
+    off = i * 188
+    pkt = data[off:off + 188]
+    if pkt[0] != 0x47:
+        continue
+    pid = ((pkt[1] & 0x1F) << 8) | pkt[2]
+    pusi = (pkt[1] >> 6) & 1
+    if pid == 0 and pusi:
+        pointer_field = pkt[4]
+        section_start = 5 + pointer_field
+        section_length = ((pkt[section_start + 1] & 0x0F) << 8) | pkt[section_start + 2]
+        section_total = 3 + section_length
+        entries_start = section_start + 8
+        entries_end = section_start + section_total - 4
+        for e in range(entries_start, entries_end, 4):
+            prog_num = (pkt[e] << 8) | pkt[e + 1]
+            if prog_num == OLD_NUM:
+                pkt[e] = (NEW_NUM >> 8) & 0xFF
+                pkt[e + 1] = NEW_NUM & 0xFF
+        patch_crc(pkt, section_start, section_total)
+        data[off:off + 188] = pkt
+        patched_pat += 1
+    elif pid == pmt_pid and pusi:
+        pointer_field = pkt[4]
+        section_start = 5 + pointer_field
+        section_length = ((pkt[section_start + 1] & 0x0F) << 8) | pkt[section_start + 2]
+        section_total = 3 + section_length
+        pn_off = section_start + 3
+        cur = (pkt[pn_off] << 8) | pkt[pn_off + 1]
+        assert cur == OLD_NUM
+        pkt[pn_off] = (NEW_NUM >> 8) & 0xFF
+        pkt[pn_off + 1] = NEW_NUM & 0xFF
+        patch_crc(pkt, section_start, section_total)
+        data[off:off + 188] = pkt
+        patched_pmt += 1
+
+assert patched_pat > 0 and patched_pmt > 0, "renumbering touched no PAT/PMT occurrence"
+with open(dst, 'wb') as handle:
+    handle.write(bytes(data))
+PYEOF
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts."

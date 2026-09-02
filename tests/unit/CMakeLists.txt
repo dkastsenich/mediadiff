@@ -88,6 +88,12 @@ add_executable(mediadiff_unit_tests
   # proven as a nine-case hand-verified table directly against
   # detail::step_continuity (03-07-PLAN.md Task 3).
   test_ts_continuity.cpp
+  # CONT-07: the six container.ts.* checks -- cc_errors/cc_discontinuities
+  # (kept independent), pcr_interval/psi_interval (D-03 estimated-measurement
+  # widening, program-scoped), pmt_version_churn, null_ratio (exact
+  # RationalValue), the incomplete-walk skip, and cross-format skip
+  # correctness (03-08-PLAN.md Tasks 1-2).
+  test_ts_analyzer.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

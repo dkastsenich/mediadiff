@@ -162,6 +162,7 @@ add_library(libmediadiff STATIC
   src/analyzers/container/meta.cpp
   src/analyzers/container/mp4.cpp
   src/analyzers/container/mkv.cpp
+  src/analyzers/container/ts.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

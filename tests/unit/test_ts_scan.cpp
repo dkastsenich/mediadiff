@@ -440,7 +440,13 @@ TEST_CASE("ts_scan - the mux-rate estimate matches the exact integer formula fro
   const std::int64_t pcr_delta = s1.ticks - s0.ticks;
   const std::int64_t offset_delta = s1.offset - s0.offset;
   REQUIRE(pcr_delta > 0);
-  const std::int64_t expected_num = offset_delta * 8 * 27000000;
+  // 03-08-PLAN.md Rule 1 fix: this formula previously carried an erroneous
+  // `* 8` bytes-to-bits factor, contradicting the field's own name and
+  // ts_scan.h's documented bytes/sec contract (which 03-08-PLAN.md's own
+  // byte-offset-to-milliseconds conversion consumes directly as bytes/sec)
+  // -- caught when a real fixture's independently-computed PCR spacing
+  // came back exactly 8x this scanner's own reported value.
+  const std::int64_t expected_num = offset_delta * 27000000;
   REQUIRE(result->mux_rate->bytes_per_second_num == expected_num);
   REQUIRE(result->mux_rate->bytes_per_second_den == pcr_delta);
 }
