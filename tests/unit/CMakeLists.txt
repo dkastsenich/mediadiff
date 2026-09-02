@@ -36,6 +36,9 @@ add_executable(mediadiff_unit_tests
   # fingerprint_input's snapshot-first fallthrough, the wall-clock budget,
   # and the libav log-capture mechanism (03-02-PLAN.md Tasks 1-2).
   test_demux_session.cpp
+  # PROBE-08: the pass union runs each pass exactly once per file and
+  # scopes analyzers by container family (03-02-PLAN.md Task 3).
+  test_pass_union.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp
