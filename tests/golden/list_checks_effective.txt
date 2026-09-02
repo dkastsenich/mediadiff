@@ -6,3 +6,5 @@ container.track_count  severity=fail  tolerance=<none>
 container.track_types  severity=fail  tolerance=<none>
 container.track_order  severity=warn  tolerance=<none>
 container.chapters  severity=info  tolerance=<none>
+meta.tags  severity=warn  tolerance=<none>
+meta.tags.language  severity=warn  tolerance=<none>

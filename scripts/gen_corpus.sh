@@ -247,4 +247,74 @@ META
   -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
   -f mpegts "$OUT_DIR/topo_ts.ts"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts."
+# --- 03-04-PLAN.md Task 2: meta.tags fixtures (CONT-03) ---------------------
+# A pair differing ONLY in the two demonstrated built-in volatile keys (the
+# clean half), a pair differing in a non-volatile key (`title`, the
+# triggering half), and a per-stream variant scoping the same kind of
+# change to one audio stream instead of the container (behavior 4: a
+# per-stream tag change is attributed to that stream, not the whole file).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata creation_time=2020-01-01T00:00:00 -metadata encoder="Encoder Build A" \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tags_volatile_a.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata creation_time=2021-06-15T12:30:00 -metadata encoder="Encoder Build B" \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tags_volatile_b.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata title="Title A" \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tags_title_a.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata title="Title B" \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tags_title_b.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata:s:a:0 title="Stream Title A" \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tags_stream_title_a.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata:s:a:0 title="Stream Title B" \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tags_stream_title_b.mp4"
+
+# --- 03-04-PLAN.md Task 3: meta.tags.language fixtures (CONT-04) -----------
+# `und` versus no language tag at all (the clean pair -- CONT-04's own
+# muxer-artifact-not-a-regression case), and eng versus fra (the triggering
+# pair -- a real language change).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata:s:a:0 language=und \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/lang_und.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/lang_absent.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata:s:a:0 language=eng \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/lang_eng.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -metadata:s:a:0 language=fra \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/lang_fra.mp4"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4."

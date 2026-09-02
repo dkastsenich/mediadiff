@@ -155,6 +155,7 @@ add_library(libmediadiff STATIC
   src/probe/packet_scan.cpp
   src/probe/orchestrator.cpp
   src/analyzers/container/topology.cpp
+  src/analyzers/container/meta.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

@@ -64,6 +64,8 @@ bool looks_like_json_document(const std::string& utf8_path) {
 const std::vector<AnalyzerSpec>& all_analyzers() {
   static const std::vector<AnalyzerSpec> registry = {
       container_topology_analyzer(),
+      // 03-04-PLAN.md Tasks 2-3: meta.tags/meta.tags.language.
+      container_meta_analyzer(),
   };
   return registry;
 }

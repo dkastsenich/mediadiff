@@ -15,6 +15,10 @@ add_executable(mediadiff_integration_tests
   # `compare` and `inspect`; the wall-clock budget's CLI surface
   # (03-02-PLAN.md Tasks 1-2).
   test_probe_tracer.cpp
+  # DOC-03: a real triggering and a real clean CLI invocation for each of
+  # the six checks 03-04-PLAN.md registers -- container.track_count/
+  # track_types/track_order/chapters, meta.tags, meta.tags.language.
+  test_container_topology.cpp
   test_determinism.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp

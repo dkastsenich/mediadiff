@@ -152,3 +152,31 @@ semantic = "set"
 unit = "none"
 value_kind = "string_set"
 severity = "info"
+
+# 03-04-PLAN.md Tasks 2-3 (CONT-03, CONT-04), src/analyzers/container/meta.cpp.
+
+# Container- and per-stream metadata dictionaries compared as a StringSet
+# of "key=value" entries, with the four built-in volatile keys
+# (creation_time, encoder, handler_name, encoding_tool) excluded from the
+# compared value but retained in evidence (CONT-03) -- doc 02 section 2's
+# own row.
+[[check]]
+id = "meta.tags"
+group = "meta"
+semantic = "set"
+unit = "none"
+value_kind = "string_set"
+severity = "warn"
+
+# Per-stream `language` tag, normalized so an absent tag and the literal
+# `und` compare equal (CONT-04: a muxer artifact, not a regression) --
+# normalization happens at measurement construction (meta.cpp), never in
+# the `exact` comparator, so a stored snapshot already carries the
+# normalized form.
+[[check]]
+id = "meta.tags.language"
+group = "meta"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"

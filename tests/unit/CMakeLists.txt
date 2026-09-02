@@ -53,6 +53,10 @@ add_executable(mediadiff_unit_tests
   # -- the four remaining container-agnostic topology checks, expanding the
   # tracer's own container.format (03-04-PLAN.md Task 1).
   test_topology_analyzer.cpp
+  # CONT-03/CONT-04: meta.tags (volatile-key exclusion, evidence retention,
+  # per-stream scoping, UTF-8 sanitization) and meta.tags.language
+  # (und-equals-absent normalization) (03-04-PLAN.md Tasks 2-3).
+  test_meta_tags.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp
