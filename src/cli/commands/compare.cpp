@@ -145,8 +145,9 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   // Doc 01 section 6: mediadiff.toml is read exactly once here, before
   // any worker starts (a `dir` run's later plan reuses this same
   // resolved Policy per file rather than re-reading the config).
+  const std::string config_path_text = opt_string(policy_args.config_path);
   const std::optional<std::string> explicit_config_path =
-      policy_args.config_path->empty() ? std::nullopt : std::make_optional(*policy_args.config_path);
+      config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
   auto config = discover_and_load(explicit_config_path);
   if (!config) {
     const Error& err = config.error();
@@ -154,14 +155,14 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     std::exit(exit_code_for(err.kind));
   }
 
-  auto cli_overrides = parse_cli_overrides(*policy_args.set_flags, *policy_args.tol_flags);
+  auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
   if (!cli_overrides) {
     const Error& err = cli_overrides.error();
     std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
     std::exit(exit_code_for(err.kind));
   }
 
-  auto profile = resolve_profile_selection(*policy_args.profile, *config);
+  auto profile = resolve_profile_selection(opt_string(policy_args.profile), *config);
   if (!profile) {
     const Error& err = profile.error();
     std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -187,7 +188,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   // expensive) compare itself: a malformed --report argument or a path
   // collision is a usage error the user should see immediately, not
   // after paying for a compare whose report never gets written.
-  auto report_destinations = parse_report_destinations(*report_args.report_flags);
+  auto report_destinations = parse_report_destinations(opt_strings(report_args.report_flags));
   if (!report_destinations) {
     const Error& err = report_destinations.error();
     std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -196,12 +197,13 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   // report_args.json_option is nullptr on the implicit-compare route
   // (src/cli/options.h's default_report_args() -- there is no CLI::Option
   // to point at when no App ever registered --json), which trivially means
-  // "not requested".
-  const bool json_requested = report_args.json_option != nullptr && report_args.json_option->count() > 0;
-  const bool json_to_file = json_requested && !report_args.json_path->empty();
+  // "not requested"; opt_flag/opt_string both tolerate that null.
+  const bool json_requested = opt_flag(report_args.json_option);
+  const std::string json_path = opt_string(report_args.json_option);
+  const bool json_to_file = json_requested && !json_path.empty();
   if (json_to_file) {
     for (const ReportDestination& dest : *report_destinations) {
-      if (dest.path == *report_args.json_path) {
+      if (dest.path == json_path) {
         std::fputs(("mediadiff: --json and --report name the same path '" + dest.path + "'\n").c_str(), stderr);
         std::exit(kExitUsage);
       }
@@ -275,7 +277,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   if (json_requested) {
     const std::string report = render_json(model, registry, policy, verbose);
     if (json_to_file) {
-      auto write_result = write_report_file(*report_args.json_path, report);
+      auto write_result = write_report_file(json_path, report);
       if (!write_result) {
         const Error& err = write_result.error();
         std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);

@@ -35,23 +35,34 @@ std::vector<std::string> opt_strings(const CLI::Option* o) {
 
 PolicyArgs add_policy_flags(CLI::App& cmd) {
   PolicyArgs args;
-  args.profile = std::make_shared<std::string>();
-  args.config_path = std::make_shared<std::string>();
-  args.set_flags = std::make_shared<std::vector<std::string>>();
-  args.tol_flags = std::make_shared<std::vector<std::string>>();
 
-  cmd.add_option("--profile", *args.profile, "Select a shipped profile (default: sw-encoder)");
-  cmd.add_option("--config", *args.config_path, "Path to mediadiff.toml (default: ./mediadiff.toml if present)");
-  // Deliberately no ->take_all(): that call forces a SINGLE occurrence to
-  // swallow every remaining token, which is the wrong shape for a flag
-  // meant to be repeated once per override. CLI11's own default behavior
-  // for a std::vector<std::string>-bound option already accumulates one
-  // value per occurrence, in encounter order, across as many repetitions
-  // as argv contains (02-RESEARCH.md Pattern 2) -- exactly doc 01 section
-  // 6's `--set`/`--tol` repeatable-flag contract, with no further
-  // configuration needed.
-  cmd.add_option("--set", *args.set_flags, "Override a check's severity: <glob>=<ignore|info|warn|fail>");
-  cmd.add_option("--tol", *args.tol_flags, "Override a check's tolerance: <glob>=<tolerance text>");
+  args.profile = cmd.add_option("--profile", "Select a shipped profile (default: sw-encoder)");
+  args.config_path = cmd.add_option("--config", "Path to mediadiff.toml (default: ./mediadiff.toml if present)");
+  // The templated add_option(name, vector<string>&, desc) overload this
+  // file used before D-05 inferred BOTH "one value per occurrence"
+  // (type_size(1, 1)) AND "unlimited occurrences"
+  // (expected(detail::expected_count<vector<string>>::value), which
+  // resolves to CLI11's expected_max_vector_size) from the bound
+  // variable's type. The untargeted add_option(name, desc) overload used
+  // here (D-05) does NOT run that type inference -- a freshly-constructed
+  // Option defaults to expected_min_/expected_max_ == 1, i.e. "the flag
+  // may be given at most once". Confirmed against the pinned CLI11:
+  // without the explicit ->expected(-1, -1) below, a second `--set`
+  // occurrence throws ArgumentMismatch::AtMost ("At most 1 required but
+  // received 2") instead of accumulating -- a genuine behavior change
+  // this migration must not introduce. `->expected(-1, -1)` is CLI11's
+  // own public, documented shorthand for "at least 1 value if given at
+  // all, unlimited repetitions" (Option_inl.hpp's expected(min, max):
+  // a negative min takes its absolute value, a negative max resolves to
+  // expected_max_vector_size) -- deliberately NOT ->take_all(), which
+  // forces a SINGLE occurrence to swallow every remaining token, the
+  // wrong shape for a flag meant to be repeated once per override
+  // (02-RESEARCH.md Pattern 2). This is what restores doc 01 section 6's
+  // `--set`/`--tol` repeatable-flag contract exactly.
+  args.set_flags =
+      cmd.add_option("--set", "Override a check's severity: <glob>=<ignore|info|warn|fail>")->expected(-1, -1);
+  args.tol_flags =
+      cmd.add_option("--tol", "Override a check's tolerance: <glob>=<tolerance text>")->expected(-1, -1);
 
   return args;
 }
@@ -129,15 +140,18 @@ mediadiff::expected<std::vector<CliOverride>, Error> parse_cli_overrides(const s
 
 ReportArgs add_report_flags(CLI::App& cmd) {
   ReportArgs args;
-  args.json_path = std::make_shared<std::string>();
-  args.report_flags = std::make_shared<std::vector<std::string>>();
 
-  args.json_option = cmd.add_option("--json", *args.json_path,
+  args.json_option = cmd.add_option("--json",
                                      "Render the report as JSON: bare '--json' writes stdout, "
                                      "'--json=PATH' writes PATH")
                           ->expected(0, 1);
-  cmd.add_option("--report", *args.report_flags,
-                  "Write a file-bound report: '--report md=PATH' or '--report junit=PATH' (repeatable)");
+  // Same ->expected(-1, -1) requirement as --set/--tol above (add_policy_flags'
+  // own comment carries the full rationale): a freshly-constructed untargeted
+  // Option defaults to at-most-one occurrence, which would reject a second
+  // `--report` flag that the pre-D-05 vector<string> binding accepted.
+  args.report_flags =
+      cmd.add_option("--report", "Write a file-bound report: '--report md=PATH' or '--report junit=PATH' (repeatable)")
+          ->expected(-1, -1);
 
   return args;
 }
@@ -202,53 +216,30 @@ mediadiff::expected<std::vector<ReportDestination>, Error> parse_report_destinat
 
 ColorArgs add_color_flags(CLI::App& cmd) {
   ColorArgs args;
-  args.no_color = std::make_shared<bool>(false);
-  args.ascii = std::make_shared<bool>(false);
 
-  cmd.add_flag("--no-color", *args.no_color, "Disable ANSI colour output regardless of environment");
-  cmd.add_flag("--ascii", *args.ascii,
-               "Use ASCII status words (OK/WARN/FAIL/INFO) instead of Unicode glyphs");
+  args.no_color = cmd.add_flag("--no-color", "Disable ANSI colour output regardless of environment");
+  args.ascii =
+      cmd.add_flag("--ascii", "Use ASCII status words (OK/WARN/FAIL/INFO) instead of Unicode glyphs");
 
   return args;
 }
 
-PolicyArgs default_policy_args() {
-  PolicyArgs args;
-  args.profile = std::make_shared<std::string>();
-  args.config_path = std::make_shared<std::string>();
-  args.set_flags = std::make_shared<std::vector<std::string>>();
-  args.tol_flags = std::make_shared<std::vector<std::string>>();
-  return args;
-}
+PolicyArgs default_policy_args() { return {}; }
 
-ReportArgs default_report_args() {
-  ReportArgs args;
-  args.json_path = std::make_shared<std::string>();
-  args.json_option = nullptr;
-  args.report_flags = std::make_shared<std::vector<std::string>>();
-  return args;
-}
+ReportArgs default_report_args() { return {}; }
 
-ColorArgs default_color_args() {
-  ColorArgs args;
-  args.no_color = std::make_shared<bool>(false);
-  args.ascii = std::make_shared<bool>(false);
-  return args;
-}
+ColorArgs default_color_args() { return {}; }
 
 CliOptions add_common_options(CLI::App& cmd) {
   CliOptions options;
   options.policy = add_policy_flags(cmd);
   options.report = add_report_flags(cmd);
   options.color = add_color_flags(cmd);
-  options.strict = std::make_shared<bool>(false);
-  options.quiet = std::make_shared<bool>(false);
-  options.verbose = std::make_shared<bool>(false);
 
-  cmd.add_flag("--strict", *options.strict, "A worst-warn finding also fails the run (exit 2)");
-  cmd.add_flag("-q,--quiet", *options.quiet, "Suppress non-error output");
-  cmd.add_flag("-v,--verbose", *options.verbose,
-               "Also render each finding's severity_chain / resolution chain");
+  options.strict = cmd.add_flag("--strict", "A worst-warn finding also fails the run (exit 2)");
+  options.quiet = cmd.add_flag("-q,--quiet", "Suppress non-error output");
+  options.verbose =
+      cmd.add_flag("-v,--verbose", "Also render each finding's severity_chain / resolution chain");
 
   return options;
 }
@@ -285,8 +276,8 @@ ColorInputs read_color_inputs(const ColorArgs& args) {
   inputs.no_color = getenv_utf8("NO_COLOR");
   inputs.ci = getenv_utf8("CI");
   inputs.github_actions = getenv_utf8("GITHUB_ACTIONS");
-  inputs.flag_no_color = *args.no_color;
-  inputs.flag_ascii = *args.ascii;
+  inputs.flag_no_color = opt_flag(args.no_color);
+  inputs.flag_ascii = opt_flag(args.ascii);
   return inputs;
 }
 

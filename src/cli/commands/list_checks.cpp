@@ -111,8 +111,9 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
     // runs (T-2-23) -- discover_and_load once, parse_cli_overrides once,
     // resolve_profile_selection, then resolve_policy itself. No parallel
     // reimplementation of any of these steps.
+    const std::string config_path_text = opt_string(policy_args.config_path);
     const std::optional<std::string> explicit_config_path =
-        policy_args.config_path->empty() ? std::nullopt : std::make_optional(*policy_args.config_path);
+        config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
     auto config = discover_and_load(explicit_config_path);
     if (!config) {
       const Error& err = config.error();
@@ -120,14 +121,14 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
       std::exit(exit_code_for(err.kind));
     }
 
-    auto cli_overrides = parse_cli_overrides(*policy_args.set_flags, *policy_args.tol_flags);
+    auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
     if (!cli_overrides) {
       const Error& err = cli_overrides.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }
 
-    auto profile = resolve_profile_selection(*policy_args.profile, *config);
+    auto profile = resolve_profile_selection(opt_string(policy_args.profile), *config);
     if (!profile) {
       const Error& err = profile.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);

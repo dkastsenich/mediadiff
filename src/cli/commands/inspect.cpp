@@ -159,8 +159,9 @@ void register_inspect_command(CLI::App& app) {
     // compare/list-checks already run (T-2-23) -- never a parallel
     // reimplementation -- so `inspect -v`'s chain can never drift from
     // what those two surfaces would show for the same check.
+    const std::string config_path_text = opt_string(options.policy.config_path);
     const std::optional<std::string> explicit_config_path =
-        options.policy.config_path->empty() ? std::nullopt : std::make_optional(*options.policy.config_path);
+        config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
     auto config = discover_and_load(explicit_config_path);
     if (!config) {
       const Error& err = config.error();
@@ -168,14 +169,14 @@ void register_inspect_command(CLI::App& app) {
       std::exit(exit_code_for(err.kind));
     }
 
-    auto cli_overrides = parse_cli_overrides(*options.policy.set_flags, *options.policy.tol_flags);
+    auto cli_overrides = parse_cli_overrides(opt_strings(options.policy.set_flags), opt_strings(options.policy.tol_flags));
     if (!cli_overrides) {
       const Error& err = cli_overrides.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }
 
-    auto profile = resolve_profile_selection(*options.policy.profile, *config);
+    auto profile = resolve_profile_selection(opt_string(options.policy.profile), *config);
     if (!profile) {
       const Error& err = profile.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -189,9 +190,10 @@ void register_inspect_command(CLI::App& app) {
       std::exit(exit_code_for(err.kind));
     }
 
-    const bool json_requested = options.report.json_option != nullptr && options.report.json_option->count() > 0;
-    const std::string out = json_requested ? render_inspect_json(*fp, registry)
-                                            : render_inspect_text(*fp, registry, *resolved_policy, *options.verbose);
+    const bool json_requested = opt_flag(options.report.json_option);
+    const std::string out = json_requested
+                                 ? render_inspect_json(*fp, registry)
+                                 : render_inspect_text(*fp, registry, *resolved_policy, opt_flag(options.verbose));
     std::fputs(out.c_str(), stdout);
     std::exit(kExitClean);
   });

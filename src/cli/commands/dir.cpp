@@ -149,8 +149,9 @@ void register_dir_command(CLI::App& app) {
     // any worker starts -- every job below shares the SAME loaded
     // ConfigFile (and, for path-independent layers, the SAME resolved
     // base Policy) by const reference; no job re-reads the config.
+    const std::string config_path_text = opt_string(options.policy.config_path);
     const std::optional<std::string> explicit_config_path =
-        options.policy.config_path->empty() ? std::nullopt : std::make_optional(*options.policy.config_path);
+        config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
     auto config_result = discover_and_load(explicit_config_path);
     if (!config_result) {
       const Error& err = config_result.error();
@@ -159,7 +160,8 @@ void register_dir_command(CLI::App& app) {
     }
     const std::optional<ConfigFile>& config = *config_result;
 
-    auto cli_overrides_result = parse_cli_overrides(*options.policy.set_flags, *options.policy.tol_flags);
+    auto cli_overrides_result =
+        parse_cli_overrides(opt_strings(options.policy.set_flags), opt_strings(options.policy.tol_flags));
     if (!cli_overrides_result) {
       const Error& err = cli_overrides_result.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -167,7 +169,7 @@ void register_dir_command(CLI::App& app) {
     }
     const std::vector<CliOverride>& cli_overrides = *cli_overrides_result;
 
-    auto profile_result = resolve_profile_selection(*options.policy.profile, config);
+    auto profile_result = resolve_profile_selection(opt_string(options.policy.profile), config);
     if (!profile_result) {
       const Error& err = profile_result.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -197,18 +199,19 @@ void register_dir_command(CLI::App& app) {
     // expensive) corpus pass -- mirrors src/cli/commands/compare.cpp's own
     // "fail fast on a malformed --report before paying for the work"
     // ordering.
-    auto report_destinations_result = parse_report_destinations(*options.report.report_flags);
+    auto report_destinations_result = parse_report_destinations(opt_strings(options.report.report_flags));
     if (!report_destinations_result) {
       const Error& err = report_destinations_result.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }
     const std::vector<ReportDestination>& report_destinations = *report_destinations_result;
-    const bool json_requested = options.report.json_option != nullptr && options.report.json_option->count() > 0;
-    const bool json_to_file = json_requested && !options.report.json_path->empty();
+    const bool json_requested = opt_flag(options.report.json_option);
+    const std::string json_path = opt_string(options.report.json_option);
+    const bool json_to_file = json_requested && !json_path.empty();
     if (json_to_file) {
       for (const ReportDestination& dest : report_destinations) {
-        if (dest.path == *options.report.json_path) {
+        if (dest.path == json_path) {
           std::fputs(("mediadiff: --json and --report name the same path '" + dest.path + "'\n").c_str(), stderr);
           std::exit(kExitUsage);
         }
@@ -381,7 +384,7 @@ void register_dir_command(CLI::App& app) {
     }
 
     const RenderOptions render_options{/*show_pass=*/true, /*show_ignored=*/true, /*ascii=*/false,
-                                        /*strict=*/*options.strict};
+                                        /*strict=*/opt_flag(options.strict)};
     CorpusModel model = build_corpus_model(results, registry, render_options);
     model.envelope.schema_version = std::string(kSchemaVersion);
     model.envelope.tool_version = tool_version();
@@ -393,11 +396,11 @@ void register_dir_command(CLI::App& app) {
       }
     }
 
-    if (!json_requested && !*options.quiet) {
+    if (!json_requested && !opt_flag(options.quiet)) {
       const ColorInputs color_inputs = read_color_inputs(options.color);
       const ColorDecision color = decide_color(color_inputs);
-      const RenderOptions tty_options{/*show_pass=*/*options.verbose, /*show_ignored=*/*options.verbose,
-                                       /*ascii=*/color.ascii_glyphs, /*strict=*/*options.strict};
+      const RenderOptions tty_options{/*show_pass=*/opt_flag(options.verbose), /*show_ignored=*/opt_flag(options.verbose),
+                                       /*ascii=*/color.ascii_glyphs, /*strict=*/opt_flag(options.strict)};
       const CorpusModel tty_model = build_corpus_model(results, registry, tty_options);
       const TerminalSize terminal = query_terminal_size();
       const std::string tty_report = render_tty(tty_model, registry, color, terminal.width, terminal.height);
@@ -405,11 +408,11 @@ void register_dir_command(CLI::App& app) {
     }
 
     if (json_requested) {
-      const std::string report = render_json(model, registry, base_policy, *options.verbose);
+      const std::string report = render_json(model, registry, base_policy, opt_flag(options.verbose));
       if (json_to_file) {
-        FILE* handle = fopen_utf8(*options.report.json_path, "wb");
+        FILE* handle = fopen_utf8(json_path, "wb");
         if (handle == nullptr) {
-          std::fputs(("mediadiff: could not open report destination for writing: " + *options.report.json_path + "\n")
+          std::fputs(("mediadiff: could not open report destination for writing: " + json_path + "\n")
                          .c_str(),
                      stderr);
           std::exit(kExitUsage);
@@ -417,7 +420,7 @@ void register_dir_command(CLI::App& app) {
         const std::size_t written = std::fwrite(report.data(), 1, report.size(), handle);
         const bool close_ok = std::fclose(handle) == 0;
         if (written != report.size() || !close_ok) {
-          std::fputs(("mediadiff: failed writing report destination: " + *options.report.json_path + "\n").c_str(),
+          std::fputs(("mediadiff: failed writing report destination: " + json_path + "\n").c_str(),
                      stderr);
           std::exit(kExitUsage);
         }
@@ -430,10 +433,10 @@ void register_dir_command(CLI::App& app) {
       std::string rendered;
       switch (dest.kind) {
         case ReportDestination::Kind::md:
-          rendered = render_markdown(model, registry, *options.strict);
+          rendered = render_markdown(model, registry, opt_flag(options.strict));
           break;
         case ReportDestination::Kind::junit:
-          rendered = render_junit(model, registry, *options.strict);
+          rendered = render_junit(model, registry, opt_flag(options.strict));
           break;
       }
       FILE* handle = fopen_utf8(dest.path, "wb");
@@ -455,7 +458,7 @@ void register_dir_command(CLI::App& app) {
     if (any_partial) {
       std::exit(kExitDecode);
     }
-    std::exit(exit_code_for_findings(model.totals, *options.strict));
+    std::exit(exit_code_for_findings(model.totals, opt_flag(options.strict)));
   });
 }
 
