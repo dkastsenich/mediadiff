@@ -7,6 +7,7 @@
 
 #include "analyzers/container/analyzers.h"
 #include "core/snapshot.h"
+#include "probe/bmff_scan.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
 #include "probe/pass.h"
@@ -66,6 +67,15 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       container_topology_analyzer(),
       // 03-04-PLAN.md Tasks 2-3: meta.tags/meta.tags.language.
       container_meta_analyzer(),
+      // 03-05-PLAN.md Task 2 (CONT-05): the six container.mp4.* checks --
+      // real data ONLY for an actual MP4 input (ContainerFamily::mp4
+      // scope, so Pass::bmff_scan never runs for a non-MP4 file), plus a
+      // family-agnostic sibling (below) that emits the
+      // skipped:not_applicable_container half on every OTHER container.
+      // Listed before that sibling so a stable, hand-written analyzer
+      // order (TRUST-05) has the "real" producer first.
+      container_mp4_analyzer(),
+      container_mp4_not_applicable_analyzer(),
   };
   return registry;
 }
@@ -106,9 +116,25 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
 
   ProbeResults results;
   mediadiff::expected<void, Error> packet_scan_error;
+  mediadiff::expected<void, Error> bmff_scan_error;
   union_passes.for_each([&](Pass pass) {
     if (pass == Pass::demux_header) {
       results.demux = &session;
+    } else if (pass == Pass::bmff_scan) {
+      // PROBE-04 (03-05-PLAN.md Task 1): this pass is only ever in the
+      // union when an applicable analyzer's scope is ContainerFamily::mp4
+      // (container_mp4_analyzer(), src/analyzers/container/mp4.cpp) --
+      // never for an MKV/TS input, matching this plan's own prohibition
+      // that the scanner never runs on bytes it cannot interpret.
+      // run_bmff_scan opens `utf8_path` itself (it is deliberately
+      // libav-free, independent of DemuxSession) rather than reading
+      // through the already-open session.
+      auto scan_result = run_bmff_scan(utf8_path);
+      if (scan_result) {
+        results.bmff = std::move(*scan_result);
+      } else {
+        bmff_scan_error = mediadiff::unexpected(scan_result.error());
+      }
     } else if (pass == Pass::packet_scan) {
       // PROBE-02/PROBE-10 (03-03-PLAN.md Task 1): one av_read_frame sweep,
       // stored once in ProbeResults and handed to every applicable
@@ -142,6 +168,13 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     // instead of a later, less informative "no packet_scan data" surprise
     // from whichever analyzer needed it.
     return mediadiff::unexpected(packet_scan_error.error());
+  }
+  if (!bmff_scan_error) {
+    // Reserved for "the file could not be opened at all" (ErrorKind::
+    // input_open) -- every STRUCTURAL box-tree problem is instead carried
+    // in a successful BmffScanResult with complete=false, per bmff_scan.h's
+    // own contract, and never reaches this branch.
+    return mediadiff::unexpected(bmff_scan_error.error());
   }
 
   Fingerprint fp;

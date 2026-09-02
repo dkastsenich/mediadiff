@@ -180,3 +180,80 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "warn"
+
+# 03-05-PLAN.md Tasks 1-2 (PROBE-04, CONT-05), src/analyzers/container/
+# mp4.cpp, src/probe/bmff_scan.{h,cpp}. Every one of the six ids below
+# auto-skips as `skipped:not_applicable_container` on a non-MP4 container
+# (src/analyzers/container/mp4.cpp's own family-agnostic sibling analyzer),
+# and as `skipped:unparsed_mechanism` (carrying `stop_offset` in evidence)
+# when the bmff_scan walk itself did not complete (03-CHECK-ROSTER.md).
+
+# `moov` offset vs the first `mdat` offset, from the SAME bmff_scan
+# top-level walk -- moov-before-mdat vs moov-after-mdat. Auto-skips (also
+# as not_applicable_container) on a fragmented file, per doc 02 section 3's
+# own note that init-segment layout governs instead there.
+[[check]]
+id = "container.mp4.faststart"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# ftyp's major brand plus every compatible brand, as one StringSet --
+# evidence separately names major_brand/minor_version so a major-brand
+# change is distinguishable from compatible-set churn.
+[[check]]
+id = "container.mp4.brands"
+group = "container"
+semantic = "set"
+unit = "none"
+value_kind = "string_set"
+severity = "warn"
+
+# progressive vs fragmented mode, derived from bmff_scan's own moof_count
+# -- 03-CHECK-ROSTER.md's own deliberate split of doc 02's single
+# `fragmentation` row: this half keeps the exact/fail mode signal.
+[[check]]
+id = "container.mp4.fragmentation"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# Split counterpart above -- the MEDIAN fragment duration (a RationalValue)
+# at a ±20% tolerance, warn severity. Emits nothing (skips as
+# not_applicable_container) on a progressive file.
+[[check]]
+id = "container.mp4.fragment_duration"
+group = "container"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "warn"
+tolerance = "20%"
+
+# One measurement per track, at that track's own scope: the canonical
+# string of that track's elst entries verbatim. `[check.profile_severity]`
+# below matches doc 02 section 3's own "fail in remux/strict, warn in
+# encoders" note (03-CHECK-ROSTER.md).
+[[check]]
+id = "container.mp4.edit_list"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+[check.profile_severity]
+strict_bitexact = "fail"
+remux = "fail"
+
+[[check]]
+id = "container.mp4.timescale"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "int64"
+severity = "warn"

@@ -153,9 +153,11 @@ add_library(libmediadiff STATIC
   src/report/junit.cpp
   src/probe/demux_session.cpp
   src/probe/packet_scan.cpp
+  src/probe/bmff_scan.cpp
   src/probe/orchestrator.cpp
   src/analyzers/container/topology.cpp
   src/analyzers/container/meta.cpp
+  src/analyzers/container/mp4.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -204,6 +206,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/pass.h
   src/probe/demux_session.h
   src/probe/packet_scan.h
+  src/probe/bmff_scan.h
   src/probe/orchestrator.h
   src/analyzers/container/analyzers.h
 )

@@ -57,6 +57,18 @@ add_executable(mediadiff_unit_tests
   # per-stream scoping, UTF-8 sanitization) and meta.tags.language
   # (und-equals-absent normalization) (03-04-PLAN.md Tasks 2-3).
   test_meta_tags.cpp
+  # PROBE-04: bmff_scan's bounded top-level box walk and minimal moov
+  # descent -- largesize/size-zero/uuid handling, oversize/undersize
+  # bounds violations with exact stop_offset, ftyp/mvhd/tkhd/mdhd/elst
+  # field parsing at both FullBox versions, moof/sidx counting, and
+  # truncation at 10%/50%/90% (03-05-PLAN.md Task 1).
+  test_bmff_scan.cpp
+  # CONT-05: the six container.mp4.* checks -- faststart, brands,
+  # fragmentation, fragment_duration (median via compare_ticks_checked),
+  # edit_list (empty-edit vs trim classification, profile severity), and
+  # timescale, plus the incomplete-walk skip and the family-agnostic
+  # not-applicable sibling analyzer (03-05-PLAN.md Task 2).
+  test_mp4_analyzer.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

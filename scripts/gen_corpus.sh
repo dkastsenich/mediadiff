@@ -317,4 +317,78 @@ META
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/lang_fra.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4."
+# --- 03-05-PLAN.md: container.mp4.* fixtures (PROBE-04, CONT-05) ----------
+# `container.mp4.faststart`: an explicit +faststart mux (moov before mdat)
+# vs the default single-pass layout (moov after mdat) -- confirmed by
+# direct box-offset inspection, not assumed from the flag's name.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -movflags +faststart -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_faststart.mp4"
+
+cp "$OUT_DIR/mp4_faststart.mp4" "$OUT_DIR/mp4_faststart_copy.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_nofaststart.mp4"
+
+# `container.mp4.fragmentation`/`container.mp4.fragment_duration`: three
+# `frag_keyframe+empty_moov` fragmented files whose video keyframe
+# interval (`-g`, in frames at 25fps) directly controls the actual
+# fragment duration -- `-frag_duration` alone was tried first and found to
+# only round up to the NEXT keyframe rather than reliably setting the
+# interval itself, so `-g` is the mechanism these three recipes rely on
+# (confirmed via direct keyframe-DTS inspection: -g 20 -> ~0.8s fragments,
+# -g 22 -> ~0.88s (~10% drift from the base file, under the 20% tolerance),
+# -g 10 -> ~0.4s (~50% drift, over the 20% tolerance)).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -g 20 -movflags frag_keyframe+empty_moov \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_fragmented.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -g 22 -movflags frag_keyframe+empty_moov \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_fragmented_close.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -g 10 -movflags frag_keyframe+empty_moov \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_fragmented_far.mp4"
+
+# `container.mp4.edit_list`: an empty-edit (media_time=-1 delay) pair via
+# `-itsoffset` on the audio input (confirmed via direct elst inspection --
+# `-af adelay` alone does NOT produce an empty edit, it just adds silence
+# samples) and a trim-edit pair via B-frames (`-bf 2`), whose reordering
+# gives the video track a nonzero, non-delay media_time.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2.5" -itsoffset 0.5 \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_editdelay.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -bf 2 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_edittrim.mp4"
+
+# `container.mp4.timescale`: a pair differing ONLY in the video track's own
+# `-video_track_timescale` (confirmed via direct mdhd inspection: the
+# global mvhd timescale is unaffected, only the video trak's own mdhd
+# timescale changes).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -video_track_timescale 12800 \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_ts_a.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -video_track_timescale 25000 \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/mp4_ts_b.mp4"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4."

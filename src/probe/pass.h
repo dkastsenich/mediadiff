@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "core/model.h"
+#include "probe/bmff_scan.h"
 #include "probe/packet_scan.h"
 
 namespace mediadiff {
@@ -114,6 +115,12 @@ ContainerFamily container_family_from_format_name(std::string_view format_name);
 struct ProbeResults {
   const DemuxSession* demux = nullptr;
   std::optional<PacketScanResult> packet_scan;
+  // 03-05-PLAN.md Task 1 (PROBE-04): the bounded ISO-BMFF box walk, held
+  // once and shared by every applicable analyzer -- populated ONLY when
+  // `Pass::bmff_scan` was requested, which only ever happens for an
+  // analyzer scoped to `ContainerFamily::mp4` (this plan's own
+  // prohibition: the scanner never runs on bytes it cannot interpret).
+  std::optional<BmffScanResult> bmff;
 };
 
 // One analyzer family's registration (PROBE-08): the passes it needs, the

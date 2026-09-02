@@ -31,6 +31,32 @@ const AnalyzerSpec& container_topology_analyzer();
 // Scoped to ContainerFamily::other -- both checks apply to every container.
 const AnalyzerSpec& container_meta_analyzer();
 
+// 03-05-PLAN.md Tasks 1-2 (PROBE-04, CONT-05): the six container.mp4.*
+// checks, emitted from ProbeResults::bmff (src/probe/bmff_scan.h). Scoped
+// to ContainerFamily::mp4 -- required_passes includes Pass::bmff_scan, so
+// this analyzer (and therefore the scanner) is never even considered for
+// an MKV/TS input (the orchestrator's own family-scoped union computation,
+// PROBE-08, filters it out before Pass::bmff_scan ever enters the union).
+const AnalyzerSpec& container_mp4_analyzer();
+
+// The family-agnostic sibling of the analyzer above: scoped to
+// ContainerFamily::other (runs for EVERY container, including MP4), but
+// its own run() is a no-op whenever the file IS actually MP4 (the analyzer
+// above already produced real measurements for that case). For every
+// OTHER family it emits all six container.mp4.* checks as an explicit
+// skipped:not_applicable_container Measurement (core/model.h's
+// Measurement::skip_reason -- the same mechanism 03-04-PLAN.md's
+// container.chapters established). This split exists because
+// `inspect`/`compare` only ever render a check that has a real Measurement
+// (src/cli/commands/inspect.cpp iterates Fingerprint::measurements, never
+// the full CheckRegistry) -- a single analyzer scoped only to
+// ContainerFamily::mp4 would leave container.mp4.* entirely ABSENT from a
+// non-MP4 file's report rather than explicitly skipped, and declaring
+// Pass::bmff_scan on a family-agnostic analyzer would run the scanner on
+// every container, violating this plan's own prohibition. Two narrowly-
+// scoped AnalyzerSpecs is what lets both requirements hold at once.
+const AnalyzerSpec& container_mp4_not_applicable_analyzer();
+
 namespace detail {
 
 // Test-only extraction seam (03-04-PLAN.md Task 2, T-3-15): exposes
