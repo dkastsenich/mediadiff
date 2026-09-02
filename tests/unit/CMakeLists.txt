@@ -16,8 +16,13 @@ add_executable(mediadiff_unit_tests
   # D-14/D-15/D-16 fail-first meta-infrastructure (02-03-PLAN.md Task 2).
   test_fail_first_coverage.cpp
   test_canary.cpp
-  # ENG-05/CLI-10 tolerance grammar (02-04-PLAN.md Task 1).
+  # ENG-05/CLI-10 tolerance grammar (02-04-PLAN.md Task 1), extended by
+  # 03-01-PLAN.md Task 3 with D-03's estimated-measurement tolerance
+  # widening.
   test_tolerance.cpp
+  # core/rational.h's detail::checked_div, added alongside its four
+  # siblings for SIZE-01's window-boundary math (03-01-PLAN.md Task 3).
+  test_rational.cpp
   # Table-driven edge-value coverage for all seven semantics (02-04-PLAN.md
   # Task 3), distinct from test_fail_first_coverage.cpp's (semantic,
   # status) gate.

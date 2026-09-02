@@ -5,18 +5,37 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
+#include "compare/semantics.h"
 #include "core/error.h"
+#include "core/model.h"
+#include "core/policy.h"
+#include "core/rational.h"
 #include "core/registry.h"
 #include "core/tolerance.h"
+#include "core/value.h"
 
+using mediadiff::CheckDef;
 using mediadiff::Error;
 using mediadiff::ErrorKind;
+using mediadiff::Finding;
+using mediadiff::Measurement;
 using mediadiff::parse_tolerance;
+using mediadiff::Policy;
+using mediadiff::ProfileId;
+using mediadiff::Rational;
+using mediadiff::RationalValue;
+using mediadiff::Scope;
+using mediadiff::Semantic;
+using mediadiff::Severity;
+using mediadiff::Status;
 using mediadiff::Tolerance;
 using mediadiff::Unit;
+using mediadiff::ValueKind;
+using mediadiff::compare_tol;
 
 TEST_CASE("tolerance: every valid suffix parses with the expected unit and integer magnitude", "[tolerance]") {
   struct Case {
@@ -193,4 +212,104 @@ TEST_CASE("tolerance: a warn threshold's suffix may be omitted or must match the
   auto mismatched = parse_tolerance("3%,5ms", Unit::ms);
   REQUIRE_FALSE(mismatched.has_value());
   CHECK(mismatched.error().kind == ErrorKind::usage);
+}
+
+// D-03 (03-CONTEXT.md): compare_tol widens the effective threshold by
+// kEstimatedToleranceFactor (3x) when either side of a comparison carries
+// Measurement::estimated. compare_tol is called directly here, with a
+// hand-built CheckDef, rather than through a registered check id -- lets
+// Test 5 (below) exercise a tolerance magnitude no real registered check
+// declares, without adding a synthetic check solely to reach it.
+
+namespace {
+
+RationalValue ms(std::int64_t value) { return RationalValue{value, 1, Rational{1, 1}}; }
+
+Measurement measurement_at(std::int64_t value_ms, bool estimated) {
+  Measurement m;
+  m.check_index = 0;
+  m.scope = Scope{Scope::Kind::global, 0};
+  m.value = mediadiff::Value{ms(value_ms)};
+  m.estimated = estimated;
+  return m;
+}
+
+// A single-threshold "tol" check: unit=ms, tolerance text supplied by the
+// caller, no profile overrides. `tolerance_text` must be a string literal
+// (static storage duration) -- the returned CheckDef's default_tolerance
+// is a non-owning string_view over it, matching tests/unit/test_glob.cpp's
+// own make_def convention for a hand-built CheckDef.
+CheckDef make_tol_check(std::string_view tolerance_text, Severity severity = Severity::info) {
+  return CheckDef{
+      .id = "t.synthetic_tol_widen",
+      .group = "t",
+      .semantic = Semantic::tol,
+      .unit = Unit::ms,
+      .value_kind = ValueKind::rational,
+      .default_severity = severity,
+      .default_tolerance = tolerance_text,
+      .is_volatile = false,
+      .requires_pass = false,
+      .profile_severity_overrides = nullptr,
+      .profile_severity_override_count = 0,
+      .profile_tolerance_overrides = nullptr,
+      .profile_tolerance_override_count = 0,
+  };
+}
+
+const Policy kWidenPolicy{ProfileId::sw_encoder};
+
+}  // namespace
+
+TEST_CASE("tolerance widening: a non-estimated comparison uses the declared tolerance unchanged", "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms");
+  const Measurement baseline = measurement_at(0, /*estimated=*/false);
+  const Measurement candidate = measurement_at(6, /*estimated=*/false);
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::info);  // 6ms exceeds the unwidened 5ms threshold
+  CHECK(finding->message.find("estimated") == std::string::npos);
+}
+
+TEST_CASE("tolerance widening: an estimated measurement passes at a delta beyond the declared tolerance but within "
+          "3x it, and the message names the widening",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms");
+  const Measurement baseline = measurement_at(0, /*estimated=*/true);
+  const Measurement candidate = measurement_at(12, /*estimated=*/false);  // beyond 5ms, within 15ms (3x)
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+  CHECK(finding->message.find("estimated") != std::string::npos);
+}
+
+TEST_CASE("tolerance widening: a delta beyond 3x the declared tolerance still fails even when both sides are "
+          "estimated -- widening is bounded, not a bypass",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms");
+  const Measurement baseline = measurement_at(0, /*estimated=*/true);
+  const Measurement candidate = measurement_at(20, /*estimated=*/true);  // beyond 15ms (3x)
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::info);  // escalate(Severity::info) for this check's severity
+  CHECK(finding->message.find("estimated") != std::string::npos);
+}
+
+TEST_CASE("tolerance widening: a tolerance magnitude large enough that the 3x multiply would overflow int64 "
+          "returns the existing overflow finding, never a silently wrapped threshold",
+          "[tolerance]") {
+  // 4e18 comfortably fits int64_t alone (max is ~9.223e18), but 4e18 * 3 =
+  // 1.2e19 does not.
+  const CheckDef check = make_tol_check("4000000000000000000ms");
+
+  const Measurement baseline = measurement_at(0, /*estimated=*/true);
+  const Measurement candidate = measurement_at(1, /*estimated=*/true);
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::error);
+  CHECK(finding->message.find("overflow") != std::string::npos);
 }
