@@ -171,7 +171,21 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: TBD
+**Plans**: 11 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Core-model prerequisites: extend `SkipReason` across all four consuming sites, add `Measurement.estimated` and `Finding.evidence`, add `checked_div`, approve the 27-id check roster
+- [ ] 03-02-PLAN.md — TRACER: `DemuxSession` + pass seam + `fingerprint_input`, `container.format` end-to-end through all four CLI commands
+- [ ] 03-03-PLAN.md — `PacketScan` sweep, D-01 memory budget divided by threads, PROBE-10 shared primitive, `--threads` ceiling
+- [ ] 03-04-PLAN.md — Topology expansion (`track_count`/`track_types`/`track_order`/`chapters`) plus `meta.tags` and `meta.tags.language`
+- [ ] 03-05-PLAN.md — `bmff_scan` bounded box walk and the six `container.mp4.*` checks
+- [ ] 03-06-PLAN.md — `ebml_scan` vint walk, the four `container.mkv.*` checks, and CONT-02 cross-container demotion
+- [ ] 03-07-PLAN.md — `ts_scan`: stride autodetect, bounded PID table, PCR/PSI parsing, mux-rate estimate, ISO 13818-1 continuity carve-outs
+- [ ] 03-08-PLAN.md — The six `container.ts.*` checks, D-03's estimated marker, and CONT-08 program-number scoping
+- [ ] 03-09-PLAN.md — The four `size.*` checks with DTS-in-ticks windowing and D-02's truncated-scan refusal
+- [ ] 03-10-PLAN.md — PROBE-09 deterministic degradation smoke across every scanner, plus TRUST-09's TSDuck goldens
+- [ ] 03-11-PLAN.md — Close T-2-33, render the `inspect` container section, TRUST-06 release blocker, DOC-03 coverage gate
+
 **Source doc**: `claude_docs/02-container-analysis.md` (design-doc phase 2), plus `size.*` from `claude_docs/06-content-and-size-analysis.md` §4
 
 ### Phase 4: Video Analysis
