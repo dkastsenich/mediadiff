@@ -79,12 +79,12 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **DIR-03**: `dir` output rolls up per-file summaries, corpus totals, and a worst-N table in TTY, with a `files[]` layer in JSON using the same finding schema
 - [x] **DIR-04**: File processing order is deterministic (sorted relative paths) so reports diff cleanly across runs
 - [x] **DIR-05**: `--threads N` bounds a worker pool across files while analyzer code stays single-file-synchronous
-- [ ] **DIR-06**: **[R]** Peak memory per in-flight file is bounded and asserted, since `--threads` is simultaneously the concurrency and the memory knob (research: ARCHITECTURE)
+- [x] **DIR-06**: **[R]** Peak memory per in-flight file is bounded and asserted, since `--threads` is simultaneously the concurrency and the memory knob (research: ARCHITECTURE)
 
 ### Probe Layer
 
 - [x] **PROBE-01**: `DemuxSession` opens any supported input with `AVFMT_FLAG_GENPTS` **off**, a hard wall-clock budget via interrupt callback, and captures libav warnings into fingerprint diagnostics
-- [ ] **PROBE-02**: `PacketScan` performs one `av_read_frame` sweep with no decode, recording per-stream `{pts, dts, duration, size, flags, pos}` and byte totals, capping at 5M packets/stream with `partial:true` beyond
+- [x] **PROBE-02**: `PacketScan` performs one `av_read_frame` sweep with no decode, recording per-stream `{pts, dts, duration, size, flags, pos}` and byte totals, capping at 5M packets/stream with `partial:true` beyond
 - [ ] **PROBE-03**: `ParserScan` extends the same sweep to record per-access-unit `pict_type`, `key_frame`, `repeat_pict`, `field_order`, plus NAL-type sequences for H.264/HEVC, at under 10% overhead over plain PacketScan
 - [ ] **PROBE-04**: `bmff_scan` reads MP4/MOV top-level box order and offsets, `ftyp` brands, `mvhd`/`mdhd` timescales, `elst` entries, and `moof`/`sidx` presence without loading payloads
 - [ ] **PROBE-05**: `ebml_scan` reads Matroska/WebM element offsets (SeekHead, Info, Tracks, first Cluster, Cues), `TimestampScale`, `Duration` presence, and per-track `CodecDelay`/`SeekPreRoll`
@@ -92,7 +92,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **PROBE-07**: **[R]** `ts_scan` implements the ISO 13818-1 §2.4.3.3 continuity-counter carve-outs explicitly — increment only on payload-carrying packets, one duplicate allowed, `discontinuity_indicator` resets counted separately (research: PITFALLS — hand-rolled CC logic false-alarms without these)
 - [x] **PROBE-08**: Every analyzer declares which passes it needs and the orchestrator runs the union exactly once per file — no analyzer re-reads the file
 - [x] **PROBE-09**: Unparseable structure degrades to `skipped:unparsed_mechanism` with a byte offset in evidence — never a crash, never a silent pass; truncated and garbage inputs exit `65` cleanly
-- [ ] **PROBE-10**: **[R]** Packet-interval statistics are computed once as a shared probe-level primitive consumed by both `video.frame_rate.measured` and `timeline.*`, resolving the phase-3-depends-on-phase-4 inversion (research: ARCHITECTURE hazard A)
+- [x] **PROBE-10**: **[R]** Packet-interval statistics are computed once as a shared probe-level primitive consumed by both `video.frame_rate.measured` and `timeline.*`, resolving the phase-3-depends-on-phase-4 inversion (research: ARCHITECTURE hazard A)
 
 ### Container & Metadata Checks
 
@@ -299,9 +299,9 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | DIR-03 | Phase 2 | Complete |
 | DIR-04 | Phase 2 | Complete |
 | DIR-05 | Phase 2 | Complete |
-| DIR-06 | Phase 3 | Pending |
+| DIR-06 | Phase 3 | Complete |
 | PROBE-01 | Phase 3 | Complete |
-| PROBE-02 | Phase 3 | Pending |
+| PROBE-02 | Phase 3 | Complete |
 | PROBE-03 | Phase 4 | Pending |
 | PROBE-04 | Phase 3 | Pending |
 | PROBE-05 | Phase 3 | Pending |
@@ -309,7 +309,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | PROBE-07 | Phase 3 | Pending |
 | PROBE-08 | Phase 3 | Complete |
 | PROBE-09 | Phase 3 | Complete |
-| PROBE-10 | Phase 3 | Pending |
+| PROBE-10 | Phase 3 | Complete |
 | CONT-01 | Phase 3 | Complete |
 | CONT-02 | Phase 3 | Pending |
 | CONT-03 | Phase 3 | Pending |

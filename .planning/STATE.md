@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-09-02T18:32:47.019Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-09-02T19:08:54.669Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 26
+  completed_plans: 27
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 3 of 11
+Plan: 4 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [███████░░░] 74%
+Progress: [████████░░] 77%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [███████░░░] 74%
 | Phase 02 P11 | 3h10min | 3 tasks | 30 files |
 | Phase 03 P01 | 50min | 4 tasks | 13 files |
 | Phase 03 P02 | 110min | 3 tasks | 37 files |
+| Phase 03 P03 | 100min | 3 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,9 @@ Recent decisions affecting current work:
 - [Phase ?]: fingerprint_input distinguishes JSON-shaped-but-rejected snapshots from non-JSON via a first-non-whitespace-byte peek (looks_like_json_document), so a real probe never masks read_snapshot's own diagnostic
 - [Phase ?]: DemuxOptions::wall_clock_budget_ms defaults from a runtime-mutable atomic (default_wall_clock_budget_ms), so --probe-timeout reaches DemuxSession::open without orchestrator.cpp's frozen 2-arg fingerprint_input call site ever changing
 - [Phase ?]: Fixed report/model.cpp accumulate(): Summary.worst_gating no longer gates on a Status::pass finding's own declared severity -- only Status::warn/fail/error gate, restoring a clean exit on a routinely-passing fail-severity check
+- [Phase ?]: 03-03: Rule-1 fix — DemuxSession's AVIOInterruptCB heap-owned (std::unique_ptr) and disarmed in place, not by clearing the AVFormatContext field, since ffmpeg's avio layer copies the callback into its own URLContext at avio_open2() time independent of AVFormatContext::interrupt_callback thereafter (found via AddressSanitizer stack-use-after-return).
+- [Phase ?]: 03-03: D-01 byte budget accounted globally across all of one file's streams (a single running total), not per-stream — matches 'peak accounted bytes per in-flight file'; doc 02's per-stream 5M-packet ceiling stays a separate, independently-scoped mitigation.
+- [Phase ?]: 03-03: kMaxDirThreads(=32) relocated to src/config/toml_load.h as one named constant shared by dir.cpp's --threads path and toml_load.cpp's [dir] threads path, closing T-2-41.
 
 ### Pending Todos
 
@@ -165,6 +169,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T18:32:47.005Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-09-02T19:08:54.652Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
