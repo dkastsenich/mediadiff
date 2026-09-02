@@ -91,7 +91,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **PROBE-06**: `ts_scan` resyncs on 0x47 with 188/192/204 autodetect and extracts per-PID counts, continuity-counter state, PCR values, PAT/PMT parsing with version tracking, and null-packet counts
 - [ ] **PROBE-07**: **[R]** `ts_scan` implements the ISO 13818-1 §2.4.3.3 continuity-counter carve-outs explicitly — increment only on payload-carrying packets, one duplicate allowed, `discontinuity_indicator` resets counted separately (research: PITFALLS — hand-rolled CC logic false-alarms without these)
 - [ ] **PROBE-08**: Every analyzer declares which passes it needs and the orchestrator runs the union exactly once per file — no analyzer re-reads the file
-- [ ] **PROBE-09**: Unparseable structure degrades to `skipped:unparsed_mechanism` with a byte offset in evidence — never a crash, never a silent pass; truncated and garbage inputs exit `65` cleanly
+- [x] **PROBE-09**: Unparseable structure degrades to `skipped:unparsed_mechanism` with a byte offset in evidence — never a crash, never a silent pass; truncated and garbage inputs exit `65` cleanly
 - [ ] **PROBE-10**: **[R]** Packet-interval statistics are computed once as a shared probe-level primitive consumed by both `video.frame_rate.measured` and `timeline.*`, resolving the phase-3-depends-on-phase-4 inversion (research: ARCHITECTURE hazard A)
 
 ### Container & Metadata Checks
@@ -102,7 +102,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **CONT-04**: `meta.tags.language` treats `und` and absent as equal, since that divergence is a muxer artifact and not a regression
 - [ ] **CONT-05**: MP4/MOV checks work: `faststart`, `brands`, `fragmentation`, `edit_list`, `timescale`
 - [ ] **CONT-06**: Matroska/WebM checks work: `cues_placement`, `codec_delay`, `timestamp_scale`, `duration_element`
-- [ ] **CONT-07**: MPEG-TS checks work: `cc_errors`, `pcr_interval`, `psi_interval`, `null_ratio`
+- [x] **CONT-07**: MPEG-TS checks work: `cc_errors`, `pcr_interval`, `psi_interval`, `null_ratio`
 - [ ] **CONT-08**: Multi-program TS emits program-scoped measurements paired by `program_number`, with unpaired programs reported as a topology failure
 - [ ] **CONT-09**: **[R]** Subtitle and caption track presence is explicitly covered and tested, not merely assumed to fall out of generic stream-presence checks (research: FEATURES gap 4)
 
@@ -150,7 +150,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Content, Quality & Size Checks
 
-- [ ] **SIZE-01**: `size.file`, `size.stream_bitrate`, `size.peak_bitrate`, and `size.overhead` work, with peak windowing defined on DTS in ticks and rational bounds for cross-platform identity
+- [x] **SIZE-01**: `size.file`, `size.stream_bitrate`, `size.peak_bitrate`, and `size.overhead` work, with peak windowing defined on DTS in ticks and rational bounds for cross-platform identity
 - [ ] **CONTENT-01**: `content.video.frame_hash` hashes exactly `bytes_per_row(width) × height` per plane — never `linesize` — chained with PTS, pix_fmt and dimensions
 - [ ] **CONTENT-02**: A hash mismatch reports the first divergent frame (index + PTS), contiguous divergent ranges merged at 1-frame gaps, and the total differing count
 - [ ] **CONTENT-03**: `--sample N` marks the fingerprint `sampled:N` and only equal-N fingerprints compare; mismatched sampling reports `skipped:sampling_mismatch`
@@ -308,7 +308,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | PROBE-06 | Phase 3 | Pending |
 | PROBE-07 | Phase 3 | Pending |
 | PROBE-08 | Phase 3 | Pending |
-| PROBE-09 | Phase 3 | Pending |
+| PROBE-09 | Phase 3 | Complete |
 | PROBE-10 | Phase 3 | Pending |
 | CONT-01 | Phase 3 | Pending |
 | CONT-02 | Phase 3 | Pending |
@@ -316,7 +316,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONT-04 | Phase 3 | Pending |
 | CONT-05 | Phase 3 | Pending |
 | CONT-06 | Phase 3 | Pending |
-| CONT-07 | Phase 3 | Pending |
+| CONT-07 | Phase 3 | Complete |
 | CONT-08 | Phase 3 | Pending |
 | CONT-09 | Phase 3 | Pending |
 | VIDEO-01 | Phase 4 | Pending |
@@ -352,7 +352,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | AUDIO-08 | Phase 6 | Pending |
 | AUDIO-09 | Phase 6 | Pending |
 | AUDIO-10 | Phase 6 | Pending |
-| SIZE-01 | Phase 3 | Pending |
+| SIZE-01 | Phase 3 | Complete |
 | CONTENT-01 | Phase 7 | Pending |
 | CONTENT-02 | Phase 7 | Pending |
 | CONTENT-03 | Phase 7 | Pending |
