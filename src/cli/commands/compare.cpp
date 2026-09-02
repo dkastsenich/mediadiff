@@ -94,26 +94,33 @@ void register_compare_command(CLI::App& app) {
       "To compare a file literally named 'compare', path-qualify it (e.g. './compare') or use "
       "'mediadiff compare ./compare <candidate>'.");
 
-  auto baseline_path = std::make_shared<std::string>();
-  auto candidate_path = std::make_shared<std::string>();
-  cmp->add_option("baseline", *baseline_path, "Baseline artifact or *.snap.json")->required();
-  cmp->add_option("candidate", *candidate_path, "Candidate artifact or *.snap.json")->required();
+  // ->type_name("TEXT") restores the help-text type annotation CLI11's own
+  // type inference set for the templated add_option(name, string&, desc)
+  // overload this replaces (D-05) -- the untargeted overload used here has
+  // no bound variable to infer a type from. See options.cpp's
+  // add_policy_flags for the fully worked rationale, confirmed against the
+  // pinned CLI11.
+  CLI::Option* baseline_path =
+      cmp->add_option("baseline", "Baseline artifact or *.snap.json")->type_name("TEXT")->required();
+  CLI::Option* candidate_path =
+      cmp->add_option("candidate", "Candidate artifact or *.snap.json")->type_name("TEXT")->required();
 
-  auto strict_flag = std::make_shared<bool>(false);
-  auto verbose_flag = std::make_shared<bool>(false);
-  auto quiet_flag = std::make_shared<bool>(false);
-  cmp->add_flag("--strict", *strict_flag, "A worst-warn finding also fails the run (exit 2)");
-  cmp->add_flag("-v,--verbose", *verbose_flag, "Under --json, also render each finding's severity_chain");
-  cmp->add_flag("-q,--quiet", *quiet_flag, "Suppress the human-readable TTY report on success");
+  CLI::Option* strict_flag = cmp->add_flag("--strict", "A worst-warn finding also fails the run (exit 2)");
+  CLI::Option* verbose_flag =
+      cmp->add_flag("-v,--verbose", "Under --json, also render each finding's severity_chain");
+  CLI::Option* quiet_flag = cmp->add_flag("-q,--quiet", "Suppress the human-readable TTY report on success");
 
   ReportArgs report_args = add_report_flags(*cmp);
   PolicyArgs policy_args = add_policy_flags(*cmp);
   ColorArgs color_args = add_color_flags(*cmp);
 
+  // Capturing raw Option*s by value is exactly as safe as the shared_ptrs
+  // they replace (D-05): the App owns every Option for the whole program
+  // lifetime, and this callback only runs during app.parse().
   cmp->callback([baseline_path, candidate_path, strict_flag, verbose_flag, quiet_flag, report_args, policy_args,
                  color_args]() {
-    run_compare(*baseline_path, *candidate_path, *strict_flag, *verbose_flag, *quiet_flag, report_args, policy_args,
-                color_args);
+    run_compare(opt_string(baseline_path), opt_string(candidate_path), opt_flag(strict_flag), opt_flag(verbose_flag),
+                opt_flag(quiet_flag), report_args, policy_args, color_args);
   });
 }
 
@@ -145,8 +152,9 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   // Doc 01 section 6: mediadiff.toml is read exactly once here, before
   // any worker starts (a `dir` run's later plan reuses this same
   // resolved Policy per file rather than re-reading the config).
+  const std::string config_path_text = opt_string(policy_args.config_path);
   const std::optional<std::string> explicit_config_path =
-      policy_args.config_path->empty() ? std::nullopt : std::make_optional(*policy_args.config_path);
+      config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
   auto config = discover_and_load(explicit_config_path);
   if (!config) {
     const Error& err = config.error();
@@ -154,14 +162,14 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     std::exit(exit_code_for(err.kind));
   }
 
-  auto cli_overrides = parse_cli_overrides(*policy_args.set_flags, *policy_args.tol_flags);
+  auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
   if (!cli_overrides) {
     const Error& err = cli_overrides.error();
     std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
     std::exit(exit_code_for(err.kind));
   }
 
-  auto profile = resolve_profile_selection(*policy_args.profile, *config);
+  auto profile = resolve_profile_selection(opt_string(policy_args.profile), *config);
   if (!profile) {
     const Error& err = profile.error();
     std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -187,7 +195,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   // expensive) compare itself: a malformed --report argument or a path
   // collision is a usage error the user should see immediately, not
   // after paying for a compare whose report never gets written.
-  auto report_destinations = parse_report_destinations(*report_args.report_flags);
+  auto report_destinations = parse_report_destinations(opt_strings(report_args.report_flags));
   if (!report_destinations) {
     const Error& err = report_destinations.error();
     std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -196,12 +204,13 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   // report_args.json_option is nullptr on the implicit-compare route
   // (src/cli/options.h's default_report_args() -- there is no CLI::Option
   // to point at when no App ever registered --json), which trivially means
-  // "not requested".
-  const bool json_requested = report_args.json_option != nullptr && report_args.json_option->count() > 0;
-  const bool json_to_file = json_requested && !report_args.json_path->empty();
+  // "not requested"; opt_flag/opt_string both tolerate that null.
+  const bool json_requested = opt_flag(report_args.json_option);
+  const std::string json_path = opt_string(report_args.json_option);
+  const bool json_to_file = json_requested && !json_path.empty();
   if (json_to_file) {
     for (const ReportDestination& dest : *report_destinations) {
-      if (dest.path == *report_args.json_path) {
+      if (dest.path == json_path) {
         std::fputs(("mediadiff: --json and --report name the same path '" + dest.path + "'\n").c_str(), stderr);
         std::exit(kExitUsage);
       }
@@ -275,7 +284,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   if (json_requested) {
     const std::string report = render_json(model, registry, policy, verbose);
     if (json_to_file) {
-      auto write_result = write_report_file(*report_args.json_path, report);
+      auto write_result = write_report_file(json_path, report);
       if (!write_result) {
         const Error& err = write_result.error();
         std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);

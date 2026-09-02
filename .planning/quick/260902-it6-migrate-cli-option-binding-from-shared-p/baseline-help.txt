@@ -1,0 +1,1128 @@
+===== help: root =====
+media-aware regression diff
+
+
+mediadiff [OPTIONS] [baseline] [candidate] [SUBCOMMAND]
+
+
+POSITIONALS:
+  baseline TEXT               Baseline artifact or *.snap.json (implicit compare)
+  candidate TEXT              Candidate artifact or *.snap.json (implicit compare)
+
+OPTIONS:
+  -h,     --help              Print this help message and exit
+          --version           Display program version information and exit
+
+SUBCOMMANDS:
+  compare                     Compare two artifacts (or snapshots)
+  snapshot                    Write a *.snap.json fingerprint (or re-materialize an existing
+                              one)
+  dir                         Compare two directories of media artifacts (corpus diff,
+                              DIR-01..05)
+  inspect                     Render every implemented check family for a single *.snap.json
+                              (UC8)
+  list-checks                 List registered checks, or the resolved effective policy
+  explain                     Print compiled-in documentation for a check (ENG-13, DOC-02)
+===== help: compare =====
+Compare two artifacts (or snapshots)
+
+
+mediadiff compare [OPTIONS] baseline candidate
+
+
+POSITIONALS:
+  baseline TEXT REQUIRED      Baseline artifact or *.snap.json
+  candidate TEXT REQUIRED     Candidate artifact or *.snap.json
+
+OPTIONS:
+  -h,     --help              Print this help message and exit
+          --strict            A worst-warn finding also fails the run (exit 2)
+  -v,     --verbose           Under --json, also render each finding's severity_chain
+  -q,     --quiet             Suppress the human-readable TTY report on success
+          --json TEXT         Render the report as JSON: bare '--json' writes stdout,
+                              '--json=PATH' writes PATH
+          --report TEXT ...   Write a file-bound report: '--report md=PATH' or '--report
+                              junit=PATH' (repeatable)
+          --profile TEXT      Select a shipped profile (default: sw-encoder)
+          --config TEXT       Path to mediadiff.toml (default: ./mediadiff.toml if present)
+          --set TEXT ...      Override a check's severity: <glob>=<ignore|info|warn|fail>
+          --tol TEXT ...      Override a check's tolerance: <glob>=<tolerance text>
+          --no-color          Disable ANSI colour output regardless of environment
+          --ascii             Use ASCII status words (OK/WARN/FAIL/INFO) instead of Unicode
+                              glyphs
+
+Note: a bare positional named exactly 'compare' is always parsed as this
+subcommand. To compare a file literally named 'compare', path-qualify it (e.g.
+'./compare') or use 'mediadiff compare ./compare <candidate>'.
+===== help: inspect =====
+Render every implemented check family for a single *.snap.json (UC8)
+
+
+mediadiff inspect [OPTIONS] file
+
+
+POSITIONALS:
+  file TEXT REQUIRED          A *.snap.json to inspect
+
+OPTIONS:
+  -h,     --help              Print this help message and exit
+          --profile TEXT      Select a shipped profile (default: sw-encoder)
+          --config TEXT       Path to mediadiff.toml (default: ./mediadiff.toml if present)
+          --set TEXT ...      Override a check's severity: <glob>=<ignore|info|warn|fail>
+          --tol TEXT ...      Override a check's tolerance: <glob>=<tolerance text>
+          --json TEXT         Render the report as JSON: bare '--json' writes stdout,
+                              '--json=PATH' writes PATH
+          --report TEXT ...   Write a file-bound report: '--report md=PATH' or '--report
+                              junit=PATH' (repeatable)
+          --no-color          Disable ANSI colour output regardless of environment
+          --ascii             Use ASCII status words (OK/WARN/FAIL/INFO) instead of Unicode
+                              glyphs
+          --strict            A worst-warn finding also fails the run (exit 2)
+  -q,     --quiet             Suppress non-error output
+  -v,     --verbose           Also render each finding's severity_chain / resolution chain
+===== help: explain =====
+Print compiled-in documentation for a check (ENG-13, DOC-02)
+
+
+mediadiff explain [OPTIONS] check_id
+
+
+POSITIONALS:
+  check_id TEXT REQUIRED      The check id to explain, e.g. meta.tool_version
+
+OPTIONS:
+  -h,     --help              Print this help message and exit
+===== help: list-checks =====
+List registered checks, or the resolved effective policy
+
+
+mediadiff list-checks [OPTIONS]
+
+
+OPTIONS:
+  -h,     --help              Print this help message and exit
+          --effective         Resolve and print the full policy (profile/config/CLI merged)
+                              instead of the bare registry
+  -v,     --verbose           Under --effective, also print each check's resolution chain
+          --profile TEXT      Select a shipped profile (default: sw-encoder)
+          --config TEXT       Path to mediadiff.toml (default: ./mediadiff.toml if present)
+          --set TEXT ...      Override a check's severity: <glob>=<ignore|info|warn|fail>
+          --tol TEXT ...      Override a check's tolerance: <glob>=<tolerance text>
+===== help: snapshot =====
+Write a *.snap.json fingerprint (or re-materialize an existing one)
+
+
+mediadiff snapshot [OPTIONS] file
+
+
+POSITIONALS:
+  file TEXT REQUIRED          Media file to fingerprint, or an existing *.snap.json to rewrite
+
+OPTIONS:
+  -h,     --help              Print this help message and exit
+          --out TEXT          Output path (default: <file> if it already ends in .snap.json,
+                              else <file>.snap.json)
+          --force             Overwrite an existing git-tracked or CI-protected target
+===== help: dir =====
+Compare two directories of media artifacts (corpus diff, DIR-01..05)
+
+
+mediadiff dir [OPTIONS] baseline_dir candidate_dir
+
+
+POSITIONALS:
+  baseline_dir TEXT REQUIRED  Baseline directory
+  candidate_dir TEXT REQUIRED Candidate directory
+
+OPTIONS:
+  -h,     --help              Print this help message and exit
+          --threads INT       Bounded worker-pool size (default: hardware concurrency)
+          --content           Enable the decode-pass content checks (opt-in for dir mode)
+          --no-content        Explicitly disable the decode-pass content checks (dir mode's own
+                              default)
+          --profile TEXT      Select a shipped profile (default: sw-encoder)
+          --config TEXT       Path to mediadiff.toml (default: ./mediadiff.toml if present)
+          --set TEXT ...      Override a check's severity: <glob>=<ignore|info|warn|fail>
+          --tol TEXT ...      Override a check's tolerance: <glob>=<tolerance text>
+          --json TEXT         Render the report as JSON: bare '--json' writes stdout,
+                              '--json=PATH' writes PATH
+          --report TEXT ...   Write a file-bound report: '--report md=PATH' or '--report
+                              junit=PATH' (repeatable)
+          --no-color          Disable ANSI colour output regardless of environment
+          --ascii             Use ASCII status words (OK/WARN/FAIL/INFO) instead of Unicode
+                              glyphs
+          --strict            A worst-warn finding also fails the run (exit 2)
+  -q,     --quiet             Suppress non-error output
+  -v,     --verbose           Also render each finding's severity_chain / resolution chain
+
+Note: by default `dir` runs the header-plus-packet pass set only (no decode).
+--content additionally requests the decode-pass content checks, which trades
+corpus speed for coverage -- expect a `dir` run to take substantially longer per
+file with --content set.
+===== ctest baseline =====
+Internal ctest changing into directory: /home/dzka/projects/mediadiff/.claude/worktrees/agent-a908ab7ff0b6e7fa3/build/x64-linux
+Test project /home/dzka/projects/mediadiff/.claude/worktrees/agent-a908ab7ff0b6e7fa3/build/x64-linux
+        Start   1: unit.Linked FFmpeg reports the expected LGPL license
+  1/303 Test   #1: unit.Linked FFmpeg reports the expected LGPL license ......................................................................................................................................................................................................   Passed    0.00 sec
+        Start   2: unit.a check with a profile_severity entry reports the override for that profile and the baseline for every other profile
+  2/303 Test   #2: unit.a check with a profile_severity entry reports the override for that profile and the baseline for every other profile .................................................................................................................................   Passed    0.00 sec
+        Start   3: unit.a check with no profile_severity entry reports the baseline for every profile
+  3/303 Test   #3: unit.a check with no profile_severity entry reports the baseline for every profile ........................................................................................................................................................................   Passed    0.00 sec
+        Start   4: unit.and_then on a value propagates and transforms
+  4/303 Test   #4: unit.and_then on a value propagates and transforms ........................................................................................................................................................................................................   Passed    0.00 sec
+        Start   5: unit.and_then on an error short-circuits and preserves the original error
+  5/303 Test   #5: unit.and_then on an error short-circuits and preserves the original error .................................................................................................................................................................................   Passed    0.00 sec
+        Start   6: unit.builtin_registry size matches the number of records in checks.def
+  6/303 Test   #6: unit.builtin_registry size matches the number of records in checks.def ....................................................................................................................................................................................   Passed    0.00 sec
+        Start   7: unit.canary: the permanent divergent fixture pair always reports exactly one fail finding
+  7/303 Test   #7: unit.canary: the permanent divergent fixture pair always reports exactly one fail finding .................................................................................................................................................................   Passed    0.00 sec
+        Start   8: unit.color - --ascii sets ascii_glyphs in both colour-enabled and colour-disabled rows
+  8/303 Test   #8: unit.color - --ascii sets ascii_glyphs in both colour-enabled and colour-disabled rows ....................................................................................................................................................................   Passed    0.00 sec
+        Start   9: unit.color - --no-color beats GITHUB_ACTIONS=true
+  9/303 Test   #9: unit.color - --no-color beats GITHUB_ACTIONS=true .........................................................................................................................................................................................................   Passed    0.00 sec
+        Start  10: unit.color - CI=false does not disable colour
+ 10/303 Test  #10: unit.color - CI=false does not disable colour .............................................................................................................................................................................................................   Passed    0.00 sec
+        Start  11: unit.color - CI=true disables colour
+ 11/303 Test  #11: unit.color - CI=true disables colour ......................................................................................................................................................................................................................   Passed    0.00 sec
+        Start  12: unit.color - CI=true together with GITHUB_ACTIONS=true keeps colour enabled
+ 12/303 Test  #12: unit.color - CI=true together with GITHUB_ACTIONS=true keeps colour enabled ...............................................................................................................................................................................   Passed    0.00 sec
+        Start  13: unit.color - NO_COLOR set to a non-empty value disables colour
+ 13/303 Test  #13: unit.color - NO_COLOR set to a non-empty value disables colour ............................................................................................................................................................................................   Passed    0.00 sec
+        Start  14: unit.color - NO_COLOR set to the empty string disables colour
+ 14/303 Test  #14: unit.color - NO_COLOR set to the empty string disables colour .............................................................................................................................................................................................   Passed    0.00 sec
+        Start  15: unit.color - WR-02: NO_COLOR (environment) beats GITHUB_ACTIONS=true
+ 15/303 Test  #15: unit.color - WR-02: NO_COLOR (environment) beats GITHUB_ACTIONS=true ......................................................................................................................................................................................   Passed    0.00 sec
+        Start  16: unit.color - WR-02: NO_COLOR set to the empty string still beats GITHUB_ACTIONS=true
+ 16/303 Test  #16: unit.color - WR-02: NO_COLOR set to the empty string still beats GITHUB_ACTIONS=true ......................................................................................................................................................................   Passed    0.00 sec
+        Start  17: unit.color - non-tty stdout disables colour
+ 17/303 Test  #17: unit.color - non-tty stdout disables colour ...............................................................................................................................................................................................................   Passed    0.00 sec
+        Start  18: unit.color - stdout is a tty with nothing else set enables colour
+ 18/303 Test  #18: unit.color - stdout is a tty with nothing else set enables colour .........................................................................................................................................................................................   Passed    0.00 sec
+        Start  19: unit.config: a UTF-8 override path glob survives byte-for-byte
+ 19/303 Test  #19: unit.config: a UTF-8 override path glob survives byte-for-byte ............................................................................................................................................................................................   Passed    0.00 sec
+        Start  20: unit.config: a [severity] value outside the four severities is ErrorKind::usage
+ 20/303 Test  #20: unit.config: a [severity] value outside the four severities is ErrorKind::usage ...........................................................................................................................................................................   Passed    0.00 sec
+        Start  21: unit.config: a [tolerance] value whose unit contradicts the check is ErrorKind::usage
+ 21/303 Test  #21: unit.config: a [tolerance] value whose unit contradicts the check is ErrorKind::usage .....................................................................................................................................................................   Passed    0.00 sec
+        Start  22: unit.config: a complete valid config populates every section
+ 22/303 Test  #22: unit.config: a complete valid config populates every section ..............................................................................................................................................................................................   Passed    0.00 sec
+        Start  23: unit.config: a config declaring only profile leaves every other field unset
+ 23/303 Test  #23: unit.config: a config declaring only profile leaves every other field unset ...............................................................................................................................................................................   Passed    0.00 sec
+        Start  24: unit.config: a malformed TOML document returns an Error rather than throwing
+ 24/303 Test  #24: unit.config: a malformed TOML document returns an Error rather than throwing ..............................................................................................................................................................................   Passed    0.00 sec
+        Start  25: unit.config: an empty file is valid and leaves every field unset
+ 25/303 Test  #25: unit.config: an empty file is valid and leaves every field unset ..........................................................................................................................................................................................   Passed    0.00 sec
+        Start  26: unit.config: an explicit --config path that does not exist is ErrorKind::input_open
+ 26/303 Test  #26: unit.config: an explicit --config path that does not exist is ErrorKind::input_open .......................................................................................................................................................................   Passed    0.00 sec
+        Start  27: unit.config: an unrecognized top-level key is ErrorKind::usage naming it
+ 27/303 Test  #27: unit.config: an unrecognized top-level key is ErrorKind::usage naming it ..................................................................................................................................................................................   Passed    0.00 sec
+        Start  28: unit.config: no --config and no ./mediadiff.toml in the working directory yields nullopt, not an error
+ 28/303 Test  #28: unit.config: no --config and no ./mediadiff.toml in the working directory yields nullopt, not an error ....................................................................................................................................................   Passed    0.00 sec
+        Start  29: unit.config: two [severity] entries carry ascending file_order matching write order
+ 29/303 Test  #29: unit.config: two [severity] entries carry ascending file_order matching write order .......................................................................................................................................................................   Passed    0.00 sec
+        Start  30: unit.console_vt - virtual-terminal processing is enabled on a real console
+ 30/303 Test  #30: unit.console_vt - virtual-terminal processing is enabled on a real console ................................................................................................................................................................................***Skipped   0.00 sec
+        Start  31: unit.dir_pairing: a file only in baseline sets in_baseline alone
+ 31/303 Test  #31: unit.dir_pairing: a file only in baseline sets in_baseline alone ..........................................................................................................................................................................................   Passed    0.00 sec
+        Start  32: unit.dir_pairing: a file only in candidate sets in_candidate alone
+ 32/303 Test  #32: unit.dir_pairing: a file only in candidate sets in_candidate alone ........................................................................................................................................................................................   Passed    0.00 sec
+        Start  33: unit.dir_pairing: a nonexistent root returns ErrorKind::input_open
+ 33/303 Test  #33: unit.dir_pairing: a nonexistent root returns ErrorKind::input_open ........................................................................................................................................................................................   Passed    0.00 sec
+        Start  34: unit.dir_pairing: a root that is a file, not a directory, returns ErrorKind::input_open
+ 34/303 Test  #34: unit.dir_pairing: a root that is a file, not a directory, returns ErrorKind::input_open ...................................................................................................................................................................   Passed    0.00 sec
+        Start  35: unit.dir_pairing: a symbolic link is not followed and never paired as a leaf
+ 35/303 Test  #35: unit.dir_pairing: a symbolic link is not followed and never paired as a leaf ..............................................................................................................................................................................   Passed    0.00 sec
+        Start  36: unit.dir_pairing: a tree containing a non-ASCII filename pairs correctly
+ 36/303 Test  #36: unit.dir_pairing: a tree containing a non-ASCII filename pairs correctly ..................................................................................................................................................................................   Passed    0.00 sec
+        Start  37: unit.dir_pairing: identical trees pair every file with both flags set
+ 37/303 Test  #37: unit.dir_pairing: identical trees pair every file with both flags set .....................................................................................................................................................................................   Passed    0.00 sec
+        Start  38: unit.dir_pairing: nested subdirectories pair by their full relative path
+ 38/303 Test  #38: unit.dir_pairing: nested subdirectories pair by their full relative path ..................................................................................................................................................................................   Passed    0.00 sec
+        Start  39: unit.dir_pairing: separators are normalised to forward slash in the returned relative paths
+ 39/303 Test  #39: unit.dir_pairing: separators are normalised to forward slash in the returned relative paths ...............................................................................................................................................................   Passed    0.00 sec
+        Start  40: unit.dir_pairing: the returned order is byte-wise sorted
+ 40/303 Test  #40: unit.dir_pairing: the returned order is byte-wise sorted ..................................................................................................................................................................................................   Passed    0.00 sec
+        Start  41: unit.dir_pairing: two empty roots return an empty vector and no error
+ 41/303 Test  #41: unit.dir_pairing: two empty roots return an empty vector and no error .....................................................................................................................................................................................   Passed    0.00 sec
+        Start  42: unit.every CheckDef's default_severity matches checks.def's declared severity
+ 42/303 Test  #42: unit.every CheckDef's default_severity matches checks.def's declared severity .............................................................................................................................................................................   Passed    0.00 sec
+        Start  43: unit.fail_first coverage: every implemented semantic has a fixture for every status it can emit
+ 43/303 Test  #43: unit.fail_first coverage: every implemented semantic has a fixture for every status it can emit ...........................................................................................................................................................   Passed    0.00 sec
+        Start  44: unit.fail_first coverage: the not-yet-implemented allow list cannot rot silently
+ 44/303 Test  #44: unit.fail_first coverage: the not-yet-implemented allow list cannot rot silently ..........................................................................................................................................................................   Passed    0.00 sec
+        Start  45: unit.find returns nullopt for an unregistered id
+ 45/303 Test  #45: unit.find returns nullopt for an unregistered id ..........................................................................................................................................................................................................   Passed    0.00 sec
+        Start  46: unit.find returns the declaration index for each seed id
+ 46/303 Test  #46: unit.find returns the declaration index for each seed id ..................................................................................................................................................................................................   Passed    0.00 sec
+        Start  47: unit.glob_matches: * matches exactly one whole segment
+ 47/303 Test  #47: unit.glob_matches: * matches exactly one whole segment ....................................................................................................................................................................................................   Passed    0.00 sec
+        Start  48: unit.glob_matches: * refuses a partial segment
+ 48/303 Test  #48: unit.glob_matches: * refuses a partial segment ............................................................................................................................................................................................................   Passed    0.00 sec
+        Start  49: unit.glob_matches: * refuses to match across a dot, and never matches the parent or a longer sibling
+ 49/303 Test  #49: unit.glob_matches: * refuses to match across a dot, and never matches the parent or a longer sibling ......................................................................................................................................................   Passed    0.00 sec
+        Start  50: unit.glob_matches: ** in a non-final position is rejected as malformed
+ 50/303 Test  #50: unit.glob_matches: ** in a non-final position is rejected as malformed ....................................................................................................................................................................................   Passed    0.00 sec
+        Start  51: unit.glob_matches: ** matches two trailing segments
+ 51/303 Test  #51: unit.glob_matches: ** matches two trailing segments .......................................................................................................................................................................................................   Passed    0.00 sec
+        Start  52: unit.glob_matches: ** refuses to match zero trailing segments
+ 52/303 Test  #52: unit.glob_matches: ** refuses to match zero trailing segments .............................................................................................................................................................................................   Passed    0.00 sec
+        Start  53: unit.glob_matches: a doubled-dot pattern matches nothing
+ 53/303 Test  #53: unit.glob_matches: a doubled-dot pattern matches nothing ..................................................................................................................................................................................................   Passed    0.00 sec
+        Start  54: unit.glob_matches: exact literal match
+ 54/303 Test  #54: unit.glob_matches: exact literal match ....................................................................................................................................................................................................................   Passed    0.00 sec
+        Start  55: unit.glob_matches: the empty pattern matches nothing
+ 55/303 Test  #55: unit.glob_matches: the empty pattern matches nothing ......................................................................................................................................................................................................   Passed    0.00 sec
+        Start  56: unit.glob_select on an empty pattern returns no matches
+ 56/303 Test  #56: unit.glob_select on an empty pattern returns no matches ...................................................................................................................................................................................................   Passed    0.00 sec
+        Start  57: unit.glob_select on container.ts.* selects only the two ts checks, not the mp4 sibling
+ 57/303 Test  #57: unit.glob_select on container.ts.* selects only the two ts checks, not the mp4 sibling ....................................................................................................................................................................   Passed    0.00 sec
+        Start  58: unit.glob_select returns indices in registry declaration order, deterministically
+ 58/303 Test  #58: unit.glob_select returns indices in registry declaration order, deterministically .........................................................................................................................................................................   Passed    0.00 sec
+        Start  59: unit.golden: UPDATE_GOLDENS creates/refreshes the file, and the next read matches byte-for-byte
+ 59/303 Test  #59: unit.golden: UPDATE_GOLDENS creates/refreshes the file, and the next read matches byte-for-byte ...........................................................................................................................................................   Passed    0.00 sec
+        Start  60: unit.golden: a missing golden file fails when UPDATE_GOLDENS is unset
+ 60/303 Test  #60: unit.golden: a missing golden file fails when UPDATE_GOLDENS is unset .....................................................................................................................................................................................   Passed    0.00 sec
+        Start  61: unit.junit - a Status::error finding renders as an <error> element
+ 61/303 Test  #61: unit.junit - a Status::error finding renders as an <error> element ........................................................................................................................................................................................   Passed    0.00 sec
+        Start  62: unit.junit - a Status::skipped finding renders <skipped> carrying its reason, never a bare testcase
+ 62/303 Test  #62: unit.junit - a Status::skipped finding renders <skipped> carrying its reason, never a bare testcase .......................................................................................................................................................   Passed    0.00 sec
+        Start  63: unit.junit - a finding message containing <, > and & is escaped and re-parses cleanly
+ 63/303 Test  #63: unit.junit - a finding message containing <, > and & is escaped and re-parses cleanly .....................................................................................................................................................................   Passed    0.00 sec
+        Start  64: unit.junit - a passing gating-capable finding renders a bare testcase with no child element
+ 64/303 Test  #64: unit.junit - a passing gating-capable finding renders a bare testcase with no child element ...............................................................................................................................................................   Passed    0.00 sec
+        Start  65: unit.junit - a run with zero gating-capable findings emits a well-formed document declaring zero tests
+ 65/303 Test  #65: unit.junit - a run with zero gating-capable findings emits a well-formed document declaring zero tests ....................................................................................................................................................   Passed    0.00 sec
+        Start  66: unit.junit - a warn finding is a failure under --strict and a skipped element otherwise
+ 66/303 Test  #66: unit.junit - a warn finding is a failure under --strict and a skipped element otherwise ...................................................................................................................................................................   Passed    0.00 sec
+        Start  67: unit.junit - golden: suites appear in group order and testcases in registry order
+ 67/303 Test  #67: unit.junit - golden: suites appear in group order and testcases in registry order .........................................................................................................................................................................   Passed    0.00 sec
+        Start  68: unit.junit - two findings for one check at two scopes produce two testcases with distinct names
+ 68/303 Test  #68: unit.junit - two findings for one check at two scopes produce two testcases with distinct names ...........................................................................................................................................................   Passed    0.00 sec
+        Start  69: unit.markdown_budget - a body of exactly kMarkdownBudgetBytes is emitted unchanged with no fold line
+ 69/303 Test  #69: unit.markdown_budget - a body of exactly kMarkdownBudgetBytes is emitted unchanged with no fold line ......................................................................................................................................................   Passed    0.00 sec
+        Start  70: unit.markdown_budget - a body one byte over the budget folds and the fold line names the real withheld count
+ 70/303 Test  #70: unit.markdown_budget - a body one byte over the budget folds and the fold line names the real withheld count ..............................................................................................................................................   Passed    0.00 sec
+        Start  71: unit.markdown_budget - a group with exactly one finding still gets its own details block
+ 71/303 Test  #71: unit.markdown_budget - a group with exactly one finding still gets its own details block ..................................................................................................................................................................   Passed    0.00 sec
+        Start  72: unit.markdown_budget - a zero-finding model renders the summary table with explicit zeros and no details
+ 72/303 Test  #72: unit.markdown_budget - a zero-finding model renders the summary table with explicit zeros and no details ..................................................................................................................................................   Passed    0.00 sec
+        Start  73: unit.markdown_budget - every fail finding survives folding on an oversized model
+ 73/303 Test  #73: unit.markdown_budget - every fail finding survives folding on an oversized model ..........................................................................................................................................................................   Passed    0.01 sec
+        Start  74: unit.markdown_budget - folding on multi-byte content lands on a UTF-8 character boundary
+ 74/303 Test  #74: unit.markdown_budget - folding on multi-byte content lands on a UTF-8 character boundary ..................................................................................................................................................................   Passed    0.00 sec
+        Start  75: unit.markdown_budget - golden: a fixed small model renders byte-identical Markdown
+ 75/303 Test  #75: unit.markdown_budget - golden: a fixed small model renders byte-identical Markdown ........................................................................................................................................................................   Passed    0.00 sec
+        Start  76: unit.mediadiff::expected holding a value is truthy and yields it
+ 76/303 Test  #76: unit.mediadiff::expected holding a value is truthy and yields it ..........................................................................................................................................................................................   Passed    0.00 sec
+        Start  77: unit.mediadiff::expected holding an error is falsy and yields it
+ 77/303 Test  #77: unit.mediadiff::expected holding an error is falsy and yields it ..........................................................................................................................................................................................   Passed    0.00 sec
+        Start  78: unit.mediadiff::unexpected constructs an error-state expected
+ 78/303 Test  #78: unit.mediadiff::unexpected constructs an error-state expected .............................................................................................................................................................................................   Passed    0.00 sec
+        Start  79: unit.policy_merge: --set and --tol interleaved in every order produce the same resolved policy
+ 79/303 Test  #79: unit.policy_merge: --set and --tol interleaved in every order produce the same resolved policy ............................................................................................................................................................   Passed    0.00 sec
+        Start  80: unit.policy_merge: Policy exposes no non-const accessor to per_check
+ 80/303 Test  #80: unit.policy_merge: Policy exposes no non-const accessor to per_check ......................................................................................................................................................................................   Passed    0.00 sec
+        Start  81: unit.policy_merge: a --tol whose unit contradicts the target check is ErrorKind::usage naming the expected unit
+ 81/303 Test  #81: unit.policy_merge: a --tol whose unit contradicts the target check is ErrorKind::usage naming the expected unit ...........................................................................................................................................   Passed    0.00 sec
+        Start  82: unit.policy_merge: a CLI override applies over an [override.*] block
+ 82/303 Test  #82: unit.policy_merge: a CLI override applies over an [override.*] block ......................................................................................................................................................................................   Passed    0.00 sec
+        Start  83: unit.policy_merge: an [override.*] block applies over a [severity] entry
+ 83/303 Test  #83: unit.policy_merge: an [override.*] block applies over a [severity] entry ..................................................................................................................................................................................   Passed    0.00 sec
+        Start  84: unit.policy_merge: permuting non-overlapping [severity] entries yields an identical resolved policy
+ 84/303 Test  #84: unit.policy_merge: permuting non-overlapping [severity] entries yields an identical resolved policy .......................................................................................................................................................   Passed    0.00 sec
+        Start  85: unit.policy_merge: permuting overlapping [severity] entries changes only the overlapping index
+ 85/303 Test  #85: unit.policy_merge: permuting overlapping [severity] entries changes only the overlapping index ............................................................................................................................................................   Passed    0.00 sec
+        Start  86: unit.policy_merge: two overlapping --set globs resolve last-writer-wins in argv order
+ 86/303 Test  #86: unit.policy_merge: two overlapping --set globs resolve last-writer-wins in argv order .....................................................................................................................................................................   Passed    0.00 sec
+        Start  87: unit.policy_merge: with no config and no CLI overrides every chain has exactly one builtin entry
+ 87/303 Test  #87: unit.policy_merge: with no config and no CLI overrides every chain has exactly one builtin entry ..........................................................................................................................................................   Passed    0.00 sec
+        Start  88: unit.policy_merge: zero --set and zero --tol leave the policy identical to the profile-plus-config result
+ 88/303 Test  #88: unit.policy_merge: zero --set and zero --tol leave the policy identical to the profile-plus-config result .................................................................................................................................................   Passed    0.00 sec
+        Start  89: unit.pool - a peak in-flight counter never exceeds the configured thread count
+ 89/303 Test  #89: unit.pool - a peak in-flight counter never exceeds the configured thread count ............................................................................................................................................................................   Passed    0.02 sec
+        Start  90: unit.pool - a thread count of one creates no thread
+ 90/303 Test  #90: unit.pool - a thread count of one creates no thread .......................................................................................................................................................................................................   Passed    0.00 sec
+        Start  91: unit.pool - a thread count of zero also creates no thread
+ 91/303 Test  #91: unit.pool - a thread count of zero also creates no thread .................................................................................................................................................................................................   Passed    0.00 sec
+        Start  92: unit.pool - a throwing job is contained, the remaining jobs still run, and the failure stays attributed to its own index
+ 92/303 Test  #92: unit.pool - a throwing job is contained, the remaining jobs still run, and the failure stays attributed to its own index ..................................................................................................................................   Passed    0.01 sec
+        Start  93: unit.pool - results written by index are in submission order despite inverted completion order
+ 93/303 Test  #93: unit.pool - results written by index are in submission order despite inverted completion order ............................................................................................................................................................   Passed    0.01 sec
+        Start  94: unit.pool - run_indexed runs every index exactly once across a range of job/thread counts
+ 94/303 Test  #94: unit.pool - run_indexed runs every index exactly once across a range of job/thread counts .................................................................................................................................................................   Passed    0.01 sec
+        Start  95: unit.process_spawn: captures more than one pipe buffer's worth of stdout and stderr exactly
+ 95/303 Test  #95: unit.process_spawn: captures more than one pipe buffer's worth of stdout and stderr exactly ...............................................................................................................................................................   Passed    0.02 sec
+        Start  96: unit.profiles: a check declaring a tolerance has that tolerance parsed into per_check when unresolved by profile
+ 96/303 Test  #96: unit.profiles: a check declaring a tolerance has that tolerance parsed into per_check when unresolved by profile ..........................................................................................................................................   Passed    0.00 sec
+        Start  97: unit.profiles: a check with no profile_severity table resolves to its checks.def baseline under every profile
+ 97/303 Test  #97: unit.profiles: a check with no profile_severity table resolves to its checks.def baseline under every profile .............................................................................................................................................   Passed    0.00 sec
+        Start  98: unit.profiles: every resolved chain begins with a builtin entry
+ 98/303 Test  #98: unit.profiles: every resolved chain begins with a builtin entry ...........................................................................................................................................................................................   Passed    0.00 sec
+        Start  99: unit.profiles: profile_from_string accepts each of the five exact spellings
+ 99/303 Test  #99: unit.profiles: profile_from_string accepts each of the five exact spellings ...............................................................................................................................................................................   Passed    0.00 sec
+        Start 100: unit.profiles: profile_from_string rejects anything that is not one of the five exact spellings
+100/303 Test #100: unit.profiles: profile_from_string rejects anything that is not one of the five exact spellings ...........................................................................................................................................................   Passed    0.00 sec
+        Start 101: unit.profiles: profile_to_string round-trips profile_from_string for every profile
+101/303 Test #101: unit.profiles: profile_to_string round-trips profile_from_string for every profile ........................................................................................................................................................................   Passed    0.00 sec
+        Start 102: unit.profiles: resolve_policy called twice with the same arguments produces equal results
+102/303 Test #102: unit.profiles: resolve_policy called twice with the same arguments produces equal results .................................................................................................................................................................   Passed    0.00 sec
+        Start 103: unit.profiles: the default profile absent any selection is sw-encoder (ENG-09)
+103/303 Test #103: unit.profiles: the default profile absent any selection is sw-encoder (ENG-09) ............................................................................................................................................................................   Passed    0.00 sec
+        Start 104: unit.profiles: two profiles differing in exactly one check's severity differ at exactly that one per_check index
+104/303 Test #104: unit.profiles: two profiles differing in exactly one check's severity differ at exactly that one per_check index ..........................................................................................................................................   Passed    0.00 sec
+        Start 105: unit.registry generator: bad_dangling_alias exits non-zero and names the offending alias id
+105/303 Test #105: unit.registry generator: bad_dangling_alias exits non-zero and names the offending alias id ...............................................................................................................................................................   Passed    0.04 sec
+        Start 106: unit.registry generator: bad_empty_doc exits non-zero and names the offending id
+106/303 Test #106: unit.registry generator: bad_empty_doc exits non-zero and names the offending id ..........................................................................................................................................................................   Passed    0.03 sec
+        Start 107: unit.registry generator: bad_grammar exits non-zero and names the offending id
+107/303 Test #107: unit.registry generator: bad_grammar exits non-zero and names the offending id ............................................................................................................................................................................   Passed    0.03 sec
+        Start 108: unit.registry generator: bad_missing_doc exits non-zero and names the offending id
+108/303 Test #108: unit.registry generator: bad_missing_doc exits non-zero and names the offending id ........................................................................................................................................................................   Passed    0.03 sec
+        Start 109: unit.registry generator: good fixture exits 0 and produces a non-empty check_id.h
+109/303 Test #109: unit.registry generator: good fixture exits 0 and produces a non-empty check_id.h .........................................................................................................................................................................   Passed    0.03 sec
+        Start 110: unit.report_model - a finding whose id the registry does not recognize sorts after every resolved one
+110/303 Test #110: unit.report_model - a finding whose id the registry does not recognize sorts after every resolved one .....................................................................................................................................................   Passed    0.00 sec
+        Start 111: unit.report_model - a group with exactly one finding retains it, and default options hide nothing
+111/303 Test #111: unit.report_model - a group with exactly one finding retains it, and default options hide nothing .........................................................................................................................................................   Passed    0.00 sec
+        Start 112: unit.report_model - build_report_model with zero findings keeps all seven groups with explicit zero counts
+112/303 Test #112: unit.report_model - build_report_model with zero findings keeps all seven groups with explicit zero counts ................................................................................................................................................   Passed    0.00 sec
+        Start 113: unit.report_model - envelope diagnostics are flattened into one line per top-level key
+113/303 Test #113: unit.report_model - envelope diagnostics are flattened into one line per top-level key ....................................................................................................................................................................   Passed    0.00 sec
+        Start 114: unit.report_model - findings within a group are ordered by registry declaration index, not input order
+114/303 Test #114: unit.report_model - findings within a group are ordered by registry declaration index, not input order ....................................................................................................................................................   Passed    0.00 sec
+        Start 115: unit.report_model - group_for maps every fixed group and defaults an unrecognized segment to meta
+115/303 Test #115: unit.report_model - group_for maps every fixed group and defaults an unrecognized segment to meta .........................................................................................................................................................   Passed    0.00 sec
+        Start 116: unit.report_model - group_to_string round-trips every enumerator through group_for
+116/303 Test #116: unit.report_model - group_to_string round-trips every enumerator through group_for ........................................................................................................................................................................   Passed    0.00 sec
+        Start 117: unit.report_model - is_gating is true only for warn and fail severities
+117/303 Test #117: unit.report_model - is_gating is true only for warn and fail severities ...................................................................................................................................................................................   Passed    0.00 sec
+        Start 118: unit.report_model - show_ignored=false hides a Severity::ignore finding from display but still counts it
+118/303 Test #118: unit.report_model - show_ignored=false hides a Severity::ignore finding from display but still counts it ..................................................................................................................................................   Passed    0.00 sec
+        Start 119: unit.report_model - summary counts a finding the display filter hides, but the group's own list omits it
+119/303 Test #119: unit.report_model - summary counts a finding the display filter hides, but the group's own list omits it ..................................................................................................................................................   Passed    0.00 sec
+        Start 120: unit.report_model - worst_gating is the maximum severity across all findings, independent of status
+120/303 Test #120: unit.report_model - worst_gating is the maximum severity across all findings, independent of status .......................................................................................................................................................   Passed    0.00 sec
+        Start 121: unit.resolve_alias resolves a direct id without reporting it as aliased
+121/303 Test #121: unit.resolve_alias resolves a direct id without reporting it as aliased ...................................................................................................................................................................................   Passed    0.00 sec
+        Start 122: unit.resolve_alias returns nullopt for a string that is neither an id nor an alias
+122/303 Test #122: unit.resolve_alias returns nullopt for a string that is neither an id nor an alias ........................................................................................................................................................................   Passed    0.00 sec
+        Start 123: unit.resolve_alias returns the owning check for a declared alias and reports it was aliased
+123/303 Test #123: unit.resolve_alias returns the owning check for a declared alias and reports it was aliased ...............................................................................................................................................................   Passed    0.00 sec
+        Start 124: unit.semantics: CR-03 dist comparator returns Status::error on bin-total overflow, never a fabricated verdict
+124/303 Test #124: unit.semantics: CR-03 dist comparator returns Status::error on bin-total overflow, never a fabricated verdict .............................................................................................................................................   Passed    0.00 sec
+        Start 125: unit.semantics: CR-03 tol comparator returns Status::error on cross-multiplication overflow, never a fabricated verdict
+125/303 Test #125: unit.semantics: CR-03 tol comparator returns Status::error on cross-multiplication overflow, never a fabricated verdict ...................................................................................................................................   Passed    0.00 sec
+        Start 126: unit.semantics: WR-03 span comparator returns Status::error on tick-comparison overflow, never a fabricated verdict
+126/303 Test #126: unit.semantics: WR-03 span comparator returns Status::error on tick-comparison overflow, never a fabricated verdict .......................................................................................................................................   Passed    0.00 sec
+        Start 127: unit.semantics: a measurement holding a std::string for a check whose declared value_kind is int64 yields status error (D-09)
+127/303 Test #127: unit.semantics: a measurement holding a std::string for a check whose declared value_kind is int64 yields status error (D-09) .............................................................................................................................   Passed    0.00 sec
+        Start 128: unit.semantics: dist boundary -- worst-bin delta exactly at tolerance passes, one point beyond warns
+128/303 Test #128: unit.semantics: dist boundary -- worst-bin delta exactly at tolerance passes, one point beyond warns ......................................................................................................................................................   Passed    0.00 sec
+        Start 129: unit.semantics: hash preconditions differing produces skipped:hash_incomparable, never a fabricated verdict
+129/303 Test #129: unit.semantics: hash preconditions differing produces skipped:hash_incomparable, never a fabricated verdict ...............................................................................................................................................   Passed    0.00 sec
+        Start 130: unit.semantics: reordering a baseline StringSet's construction produces a byte-identical finding
+130/303 Test #130: unit.semantics: reordering a baseline StringSet's construction produces a byte-identical finding ..........................................................................................................................................................   Passed    0.00 sec
+        Start 131: unit.semantics: shuffling a SpanList's element order produces the same merged output
+131/303 Test #131: unit.semantics: shuffling a SpanList's element order produces the same merged output ......................................................................................................................................................................   Passed    0.00 sec
+        Start 132: unit.semantics: tol boundary -- delta exactly at the threshold passes, one tick beyond does not
+132/303 Test #132: unit.semantics: tol boundary -- delta exactly at the threshold passes, one tick beyond does not ...........................................................................................................................................................   Passed    0.00 sec
+        Start 133: unit.semantics: two empty Histograms pass
+133/303 Test #133: unit.semantics: two empty Histograms pass .................................................................................................................................................................................................................   Passed    0.00 sec
+        Start 134: unit.semantics: two empty SpanLists pass
+134/303 Test #134: unit.semantics: two empty SpanLists pass ..................................................................................................................................................................................................................   Passed    0.00 sec
+        Start 135: unit.semantics: two empty StringSets pass
+135/303 Test #135: unit.semantics: two empty StringSets pass .................................................................................................................................................................................................................   Passed    0.00 sec
+        Start 136: unit.semantics: two empty fingerprints yield zero findings and no error
+136/303 Test #136: unit.semantics: two empty fingerprints yield zero findings and no error ...................................................................................................................................................................................   Passed    0.00 sec
+        Start 137: unit.serializer - 0.0 and -0.0 serialize to different text and each round-trips separately
+137/303 Test #137: unit.serializer - 0.0 and -0.0 serialize to different text and each round-trips separately ................................................................................................................................................................   Passed    0.00 sec
+        Start 138: unit.serializer - Absent round-trips as JSON null, byte-identically
+138/303 Test #138: unit.serializer - Absent round-trips as JSON null, byte-identically .......................................................................................................................................................................................   Passed    0.00 sec
+        Start 139: unit.serializer - HashChain round-trips byte-identically
+139/303 Test #139: unit.serializer - HashChain round-trips byte-identically ..................................................................................................................................................................................................   Passed    0.00 sec
+        Start 140: unit.serializer - RationalValue round-trips byte-identically and ignores a wrong 'ms' field on read
+140/303 Test #140: unit.serializer - RationalValue round-trips byte-identically and ignores a wrong 'ms' field on read .......................................................................................................................................................   Passed    0.00 sec
+        Start 141: unit.serializer - a fingerprint built from all nine Value alternatives serializes with one changed line per changed value
+141/303 Test #141: unit.serializer - a fingerprint built from all nine Value alternatives serializes with one changed line per changed value .................................................................................................................................   Passed    0.00 sec
+        Start 142: unit.serializer - a populated Histogram round-trips byte-identically
+142/303 Test #142: unit.serializer - a populated Histogram round-trips byte-identically ......................................................................................................................................................................................   Passed    0.00 sec
+        Start 143: unit.serializer - a populated SpanList round-trips byte-identically
+143/303 Test #143: unit.serializer - a populated SpanList round-trips byte-identically .......................................................................................................................................................................................   Passed    0.00 sec
+        Start 144: unit.serializer - a populated StringSet round-trips byte-identically, sorted
+144/303 Test #144: unit.serializer - a populated StringSet round-trips byte-identically, sorted ..............................................................................................................................................................................   Passed    0.00 sec
+        Start 145: unit.serializer - an empty Histogram reads back as Histogram, not Absent
+145/303 Test #145: unit.serializer - an empty Histogram reads back as Histogram, not Absent ..................................................................................................................................................................................   Passed    0.00 sec
+        Start 146: unit.serializer - an empty SpanList reads back as SpanList, not Absent
+146/303 Test #146: unit.serializer - an empty SpanList reads back as SpanList, not Absent ....................................................................................................................................................................................   Passed    0.00 sec
+        Start 147: unit.serializer - an empty StringSet reads back as StringSet, not Absent
+147/303 Test #147: unit.serializer - an empty StringSet reads back as StringSet, not Absent ..................................................................................................................................................................................   Passed    0.00 sec
+        Start 148: unit.serializer - double round-trips byte-identically
+148/303 Test #148: unit.serializer - double round-trips byte-identically .....................................................................................................................................................................................................   Passed    0.00 sec
+        Start 149: unit.serializer - int64 round-trips byte-identically
+149/303 Test #149: unit.serializer - int64 round-trips byte-identically ......................................................................................................................................................................................................   Passed    0.00 sec
+        Start 150: unit.serializer - line count still equals scalar count when a leading sibling is an empty container
+150/303 Test #150: unit.serializer - line count still equals scalar count when a leading sibling is an empty container .......................................................................................................................................................   Passed    0.00 sec
+        Start 151: unit.serializer - serialize_document places exactly one scalar per line
+151/303 Test #151: unit.serializer - serialize_document places exactly one scalar per line ...................................................................................................................................................................................   Passed    0.00 sec
+        Start 152: unit.serializer - std::to_chars floating-point overload is available on this toolchain
+152/303 Test #152: unit.serializer - std::to_chars floating-point overload is available on this toolchain ....................................................................................................................................................................   Passed    0.00 sec
+        Start 153: unit.serializer - string round-trips byte-identically
+153/303 Test #153: unit.serializer - string round-trips byte-identically .....................................................................................................................................................................................................   Passed    0.00 sec
+        Start 154: unit.serializer - the smallest normal and the largest finite double round-trip exactly
+154/303 Test #154: unit.serializer - the smallest normal and the largest finite double round-trip exactly ....................................................................................................................................................................   Passed    0.00 sec
+        Start 155: unit.serializer - two doubles differing by one ULP produce different text
+155/303 Test #155: unit.serializer - two doubles differing by one ULP produce different text .................................................................................................................................................................................   Passed    0.00 sec
+        Start 156: unit.serializer - value_from_json refuses a kind mismatch rather than coercing (D-09)
+156/303 Test #156: unit.serializer - value_from_json refuses a kind mismatch rather than coercing (D-09) .....................................................................................................................................................................   Passed    0.00 sec
+        Start 157: unit.serializer - value_from_json rejects a Histogram bin with a negative count
+157/303 Test #157: unit.serializer - value_from_json rejects a Histogram bin with a negative count ...........................................................................................................................................................................   Passed    0.00 sec
+        Start 158: unit.serializer - value_from_json rejects a RationalValue with den <= 0
+158/303 Test #158: unit.serializer - value_from_json rejects a RationalValue with den <= 0 ...................................................................................................................................................................................   Passed    0.00 sec
+        Start 159: unit.serializer - value_from_json rejects a RationalValue with tb.den <= 0
+159/303 Test #159: unit.serializer - value_from_json rejects a RationalValue with tb.den <= 0 ................................................................................................................................................................................   Passed    0.00 sec
+        Start 160: unit.serializer - value_from_json still accepts a Histogram bin with a zero count
+160/303 Test #160: unit.serializer - value_from_json still accepts a Histogram bin with a zero count .........................................................................................................................................................................   Passed    0.00 sec
+        Start 161: unit.serializer - value_from_json still accepts a RationalValue with positive den/tb.den
+161/303 Test #161: unit.serializer - value_from_json still accepts a RationalValue with positive den/tb.den ..................................................................................................................................................................   Passed    0.00 sec
+        Start 162: unit.snapshot_roundtrip - a fingerprint covering all nine Value alternatives round-trips byte-identically
+162/303 Test #162: unit.snapshot_roundtrip - a fingerprint covering all nine Value alternatives round-trips byte-identically .................................................................................................................................................   Passed    0.00 sec
+        Start 163: unit.snapshot_roundtrip - a zero-measurement fingerprint serializes a complete envelope with an empty measurements container
+163/303 Test #163: unit.snapshot_roundtrip - a zero-measurement fingerprint serializes a complete envelope with an empty measurements container ..............................................................................................................................   Passed    0.00 sec
+        Start 164: unit.test_fs_utf8 - getenv_utf8 separates unset from set-to-empty
+164/303 Test #164: unit.test_fs_utf8 - getenv_utf8 separates unset from set-to-empty .........................................................................................................................................................................................   Passed    0.00 sec
+        Start 165: unit.test_fs_utf8 - non-ASCII filename round trip and empty-path rejection
+165/303 Test #165: unit.test_fs_utf8 - non-ASCII filename round trip and empty-path rejection ................................................................................................................................................................................   Passed    0.00 sec
+        Start 166: unit.test_registry: every Semantic enumerator is declared by at least one check
+166/303 Test #166: unit.test_registry: every Semantic enumerator is declared by at least one check ...........................................................................................................................................................................   Passed    0.00 sec
+        Start 167: unit.test_registry: find resolves each declared test check id
+167/303 Test #167: unit.test_registry: find resolves each declared test check id .............................................................................................................................................................................................   Passed    0.00 sec
+        Start 168: unit.test_registry: flags and alias round-trip through the generated CheckDef table
+168/303 Test #168: unit.test_registry: flags and alias round-trip through the generated CheckDef table .......................................................................................................................................................................   Passed    0.00 sec
+        Start 169: unit.test_registry: size matches the number of records in test_checks.def
+169/303 Test #169: unit.test_registry: size matches the number of records in test_checks.def .................................................................................................................................................................................   Passed    0.00 sec
+        Start 170: unit.tolerance: a Unicode minus sign is rejected as non-ASCII rather than normalised
+170/303 Test #170: unit.tolerance: a Unicode minus sign is rejected as non-ASCII rather than normalised ......................................................................................................................................................................   Passed    0.00 sec
+        Start 171: unit.tolerance: a decimal point with no following digits is rejected
+171/303 Test #171: unit.tolerance: a decimal point with no following digits is rejected ......................................................................................................................................................................................   Passed    0.00 sec
+        Start 172: unit.tolerance: a fractional magnitude produces the exact rational, never a rounded one
+172/303 Test #172: unit.tolerance: a fractional magnitude produces the exact rational, never a rounded one ...................................................................................................................................................................   Passed    0.00 sec
+        Start 173: unit.tolerance: a fractional magnitude too large for int64_t is rejected, never silently wrapped
+173/303 Test #173: unit.tolerance: a fractional magnitude too large for int64_t is rejected, never silently wrapped ..........................................................................................................................................................   Passed    0.00 sec
+        Start 174: unit.tolerance: a full-width digit is rejected as non-ASCII rather than normalised
+174/303 Test #174: unit.tolerance: a full-width digit is rejected as non-ASCII rather than normalised ........................................................................................................................................................................   Passed    0.00 sec
+        Start 175: unit.tolerance: a magnitude too large for int64_t is rejected, never silently wrapped
+175/303 Test #175: unit.tolerance: a magnitude too large for int64_t is rejected, never silently wrapped .....................................................................................................................................................................   Passed    0.00 sec
+        Start 176: unit.tolerance: a magnitude with no digits is rejected
+176/303 Test #176: unit.tolerance: a magnitude with no digits is rejected ....................................................................................................................................................................................................   Passed    0.00 sec
+        Start 177: unit.tolerance: a negative magnitude is rejected
+177/303 Test #177: unit.tolerance: a negative magnitude is rejected ..........................................................................................................................................................................................................   Passed    0.00 sec
+        Start 178: unit.tolerance: a suffix not in the grammar is rejected
+178/303 Test #178: unit.tolerance: a suffix not in the grammar is rejected ...................................................................................................................................................................................................   Passed    0.00 sec
+        Start 179: unit.tolerance: a suffix whose unit does not match the check's declared unit is rejected naming that unit
+179/303 Test #179: unit.tolerance: a suffix whose unit does not match the check's declared unit is rejected naming that unit .................................................................................................................................................   Passed    0.00 sec
+        Start 180: unit.tolerance: a warn threshold exceeding the fail threshold is rejected
+180/303 Test #180: unit.tolerance: a warn threshold exceeding the fail threshold is rejected .................................................................................................................................................................................   Passed    0.00 sec
+        Start 181: unit.tolerance: a warn threshold's suffix may be omitted or must match the fail threshold's
+181/303 Test #181: unit.tolerance: a warn threshold's suffix may be omitted or must match the fail threshold's ...............................................................................................................................................................   Passed    0.00 sec
+        Start 182: unit.tolerance: an empty value is rejected as a usage error naming the expected unit, never parsed as zero
+182/303 Test #182: unit.tolerance: an empty value is rejected as a usage error naming the expected unit, never parsed as zero ................................................................................................................................................   Passed    0.00 sec
+        Start 183: unit.tolerance: every valid suffix parses with the expected unit and integer magnitude
+183/303 Test #183: unit.tolerance: every valid suffix parses with the expected unit and integer magnitude ....................................................................................................................................................................   Passed    0.00 sec
+        Start 184: unit.tolerance: more than one comma is rejected
+184/303 Test #184: unit.tolerance: more than one comma is rejected ...........................................................................................................................................................................................................   Passed    0.00 sec
+        Start 185: unit.tolerance: the plus-minus prefix is accepted in both spellings and does not change the value
+185/303 Test #185: unit.tolerance: the plus-minus prefix is accepted in both spellings and does not change the value .........................................................................................................................................................   Passed    0.00 sec
+        Start 186: unit.tolerance: the two-threshold form parses warn and fail onto a shared denominator
+186/303 Test #186: unit.tolerance: the two-threshold form parses warn and fail onto a shared denominator .....................................................................................................................................................................   Passed    0.00 sec
+        Start 187: unit.tolerance: the two-threshold form rescales differing fractional precision onto a common denominator
+187/303 Test #187: unit.tolerance: the two-threshold form rescales differing fractional precision onto a common denominator ..................................................................................................................................................   Passed    0.00 sec
+        Start 188: unit.tolerance: whitespace-only is rejected the same as empty
+188/303 Test #188: unit.tolerance: whitespace-only is rejected the same as empty .............................................................................................................................................................................................   Passed    0.00 sec
+        Start 189: unit.transform: a 2x scale factor against a 1920x1080 baseline expects 3840x2160
+189/303 Test #189: unit.transform: a 2x scale factor against a 1920x1080 baseline expects 3840x2160 ..........................................................................................................................................................................   Passed    0.00 sec
+        Start 190: unit.transform: a check without transform_affected compares by baseline equality even under transform
+190/303 Test #190: unit.transform: a check without transform_affected compares by baseline equality even under transform .....................................................................................................................................................   Passed    0.00 sec
+        Start 191: unit.transform: a scale factor deriving a fractional dimension is a usage error, not a rounded pass
+191/303 Test #191: unit.transform: a scale factor deriving a fractional dimension is a usage error, not a rounded pass .......................................................................................................................................................   Passed    0.00 sec
+        Start 192: unit.transform: a scale factor of 1.5x against 1920x1080 derives exactly 2880x1620
+192/303 Test #192: unit.transform: a scale factor of 1.5x against 1920x1080 derives exactly 2880x1620 ........................................................................................................................................................................   Passed    0.00 sec
+        Start 193: unit.transform: an absolute expectation compares the candidate directly, ignoring the baseline value
+193/303 Test #193: unit.transform: an absolute expectation compares the candidate directly, ignoring the baseline value ......................................................................................................................................................   Passed    0.00 sec
+        Start 194: unit.transform: parse_dimensions parses a plain WIDTHxHEIGHT pair
+194/303 Test #194: unit.transform: parse_dimensions parses a plain WIDTHxHEIGHT pair .........................................................................................................................................................................................   Passed    0.00 sec
+        Start 195: unit.transform: parse_dimensions rejects a width too large for int64_t rather than wrapping
+195/303 Test #195: unit.transform: parse_dimensions rejects a width too large for int64_t rather than wrapping ...............................................................................................................................................................   Passed    0.00 sec
+        Start 196: unit.transform: parse_resolution_expectation accepts a bare scale factor
+196/303 Test #196: unit.transform: parse_resolution_expectation accepts a bare scale factor ..................................................................................................................................................................................   Passed    0.00 sec
+        Start 197: unit.transform: parse_resolution_expectation accepts a decimal scale factor exactly
+197/303 Test #197: unit.transform: parse_resolution_expectation accepts a decimal scale factor exactly .......................................................................................................................................................................   Passed    0.00 sec
+        Start 198: unit.transform: parse_resolution_expectation accepts an absolute WIDTHxHEIGHT pair
+198/303 Test #198: unit.transform: parse_resolution_expectation accepts an absolute WIDTHxHEIGHT pair ........................................................................................................................................................................   Passed    0.00 sec
+        Start 199: unit.transform: parse_resolution_expectation rejects a malformed string naming both accepted forms
+199/303 Test #199: unit.transform: parse_resolution_expectation rejects a malformed string naming both accepted forms ........................................................................................................................................................   Passed    0.00 sec
+        Start 200: unit.transform: parse_resolution_expectation rejects a scale factor too large for int64_t
+200/303 Test #200: unit.transform: parse_resolution_expectation rejects a scale factor too large for int64_t .................................................................................................................................................................   Passed    0.00 sec
+        Start 201: unit.tty - a check whose tune sub-section states none applies still prints the tune label
+201/303 Test #201: unit.tty - a check whose tune sub-section states none applies still prints the tune label .................................................................................................................................................................   Passed    0.00 sec
+        Start 202: unit.tty - a gating finding prints its accept/tune/silence triple and a non-gating one prints none
+202/303 Test #202: unit.tty - a gating finding prints its accept/tune/silence triple and a non-gating one prints none ........................................................................................................................................................   Passed    0.00 sec
+        Start 203: unit.tty - a pass finding is hidden without -v and shown with it
+203/303 Test #203: unit.tty - a pass finding is hidden without -v and shown with it ..........................................................................................................................................................................................   Passed    0.00 sec
+        Start 204: unit.tty - a value wider than its column is elided rather than wrapped, and no line exceeds the given width
+204/303 Test #204: unit.tty - a value wider than its column is elided rather than wrapped, and no line exceeds the given width ...............................................................................................................................................   Passed    0.00 sec
+        Start 205: unit.tty - color_enabled true emits an ESC byte for the status glyph
+205/303 Test #205: unit.tty - color_enabled true emits an ESC byte for the status glyph ......................................................................................................................................................................................   Passed    0.00 sec
+        Start 206: unit.tty - golden: a fixed model at a fixed width matches the recorded golden
+206/303 Test #206: unit.tty - golden: a fixed model at a fixed width matches the recorded golden .............................................................................................................................................................................   Passed    0.00 sec
+        Start 207: unit.tty - groups render in the fixed container/video/timeline/audio/content/size/meta order
+207/303 Test #207: unit.tty - groups render in the fixed container/video/timeline/audio/content/size/meta order ..............................................................................................................................................................   Passed    0.00 sec
+        Start 208: unit.tty - the triple's three labels appear in accept, tune, silence order
+208/303 Test #208: unit.tty - the triple's three labels appear in accept, tune, silence order ................................................................................................................................................................................   Passed    0.00 sec
+        Start 209: unit.tty - two adjacent gating findings each print their own triple
+209/303 Test #209: unit.tty - two adjacent gating findings each print their own triple .......................................................................................................................................................................................   Passed    0.00 sec
+        Start 210: unit.tty - with ascii_glyphs true the output uses ASCII status words and no symbol glyphs
+210/303 Test #210: unit.tty - with ascii_glyphs true the output uses ASCII status words and no symbol glyphs .................................................................................................................................................................   Passed    0.00 sec
+        Start 211: unit.tty - with color_enabled false the output contains no ESC byte
+211/303 Test #211: unit.tty - with color_enabled false the output contains no ESC byte .......................................................................................................................................................................................   Passed    0.00 sec
+        Start 212: unit.validate_glob reports why a malformed pattern is malformed
+212/303 Test #212: unit.validate_glob reports why a malformed pattern is malformed ...........................................................................................................................................................................................   Passed    0.00 sec
+        Start 213: unit.volatile: a differing value under t.volatile_tag is still computed, adds a finding, and never gates
+213/303 Test #213: unit.volatile: a differing value under t.volatile_tag is still computed, adds a finding, and never gates ..................................................................................................................................................   Passed    0.00 sec
+        Start 214: unit.volatile: a profile declaring no override for the volatile check does not promote it
+214/303 Test #214: unit.volatile: a profile declaring no override for the volatile check does not promote it .................................................................................................................................................................   Passed    0.00 sec
+        Start 215: unit.volatile: an explicit later-layer override to fail makes t.volatile_tag gate
+215/303 Test #215: unit.volatile: an explicit later-layer override to fail makes t.volatile_tag gate .........................................................................................................................................................................   Passed    0.00 sec
+        Start 216: unit.volatile: equal values under t.volatile_tag report pass
+216/303 Test #216: unit.volatile: equal values under t.volatile_tag report pass ..............................................................................................................................................................................................   Passed    0.00 sec
+        Start 217: unit.volatile: t.volatile_tag resolves to Severity::ignore under every shipped profile
+217/303 Test #217: unit.volatile: t.volatile_tag resolves to Severity::ignore under every shipped profile ....................................................................................................................................................................   Passed    0.00 sec
+        Start 218: integration.compare_tracer - CLI-06: unrecognized flag exits 64, not CLI11's own range
+218/303 Test #218: integration.compare_tracer - CLI-06: unrecognized flag exits 64, not CLI11's own range ....................................................................................................................................................................   Passed    0.00 sec
+        Start 219: integration.compare_tracer - SNAP-02: clean compare exits 0 with one pass finding
+219/303 Test #219: integration.compare_tracer - SNAP-02: clean compare exits 0 with one pass finding .........................................................................................................................................................................   Passed    0.00 sec
+        Start 220: integration.compare_tracer - TRUST-05: identical runs produce byte-identical JSON
+220/303 Test #220: integration.compare_tracer - TRUST-05: identical runs produce byte-identical JSON .........................................................................................................................................................................   Passed    0.01 sec
+        Start 221: integration.compare_tracer - TRUST-05: skew compare with --strict exits 2 on meta.tool_version
+221/303 Test #221: integration.compare_tracer - TRUST-05: skew compare with --strict exits 2 on meta.tool_version ............................................................................................................................................................   Passed    0.00 sec
+        Start 222: integration.determinism - D-13/TRUST-05: registry declaration order governs report output, not measurement insertion order
+222/303 Test #222: integration.determinism - D-13/TRUST-05: registry declaration order governs report output, not measurement insertion order ................................................................................................................................   Passed    0.00 sec
+        Start 223: integration.determinism - D-13/TRUST-05: two runs over the full test registry produce byte-identical --json
+223/303 Test #223: integration.determinism - D-13/TRUST-05: two runs over the full test registry produce byte-identical --json ...............................................................................................................................................   Passed    0.00 sec
+        Start 224: integration.dir_mode - --threads 1 and --threads 8 produce byte-identical --json on a multi-file corpus
+224/303 Test #224: integration.dir_mode - --threads 1 and --threads 8 produce byte-identical --json on a multi-file corpus ...................................................................................................................................................   Passed    0.01 sec
+        Start 225: integration.dir_mode - JUnit emits one testsuite per file named by relative path
+225/303 Test #225: integration.dir_mode - JUnit emits one testsuite per file named by relative path ..........................................................................................................................................................................   Passed    0.01 sec
+        Start 226: integration.dir_mode - corpus totals equal the element-wise sum of the per-file summaries
+226/303 Test #226: integration.dir_mode - corpus totals equal the element-wise sum of the per-file summaries .................................................................................................................................................................   Passed    0.01 sec
+        Start 227: integration.dir_mode - files[] is in byte-wise sorted relative-path order
+227/303 Test #227: integration.dir_mode - files[] is in byte-wise sorted relative-path order .................................................................................................................................................................................   Passed    0.01 sec
+        Start 228: integration.dir_mode - identical trees exit 0 with zero non-pass findings
+228/303 Test #228: integration.dir_mode - identical trees exit 0 with zero non-pass findings .................................................................................................................................................................................   Passed    0.01 sec
+        Start 229: integration.dir_mode - one unpaired file each way exits 1 and the files[] array contains both meta findings under the right relative paths
+229/303 Test #229: integration.dir_mode - one unpaired file each way exits 1 and the files[] array contains both meta findings under the right relative paths ................................................................................................................   Passed    0.01 sec
+        Start 230: integration.dir_mode - the TTY worst-N table lists the worst-severity file first with ties broken by path
+230/303 Test #230: integration.dir_mode - the TTY worst-N table lists the worst-severity file first with ties broken by path .................................................................................................................................................   Passed    0.01 sec
+        Start 231: integration.dir_mode - the corpus JSON document validates against docs/schema/report-1.0.json
+231/303 Test #231: integration.dir_mode - the corpus JSON document validates against docs/schema/report-1.0.json .............................................................................................................................................................   Passed    0.01 sec
+        Start 232: integration.dir_mode - two empty roots exit 0 with an empty files[] array
+232/303 Test #232: integration.dir_mode - two empty roots exit 0 with an empty files[] array .................................................................................................................................................................................   Passed    0.00 sec
+        Start 233: integration.exit_codes - 0: a clean compare exits exactly 0
+233/303 Test #233: integration.exit_codes - 0: a clean compare exits exactly 0 ...............................................................................................................................................................................................   Passed    0.00 sec
+        Start 234: integration.exit_codes - 0: the same worst-warn compare WITHOUT --strict exits exactly 0
+234/303 Test #234: integration.exit_codes - 0: the same worst-warn compare WITHOUT --strict exits exactly 0 ..................................................................................................................................................................   Passed    0.00 sec
+        Start 235: integration.exit_codes - 1: a compare producing a fail-severity finding exits exactly 1
+235/303 Test #235: integration.exit_codes - 1: a compare producing a fail-severity finding exits exactly 1 ...................................................................................................................................................................   Passed    0.00 sec
+        Start 236: integration.exit_codes - 2: a worst-warn compare with --strict exits exactly 2
+236/303 Test #236: integration.exit_codes - 2: a worst-warn compare with --strict exits exactly 2 ............................................................................................................................................................................   Passed    0.00 sec
+        Start 237: integration.exit_codes - 64: a --tol in the wrong unit for its check exits 64 and names the expected unit (CLI-10)
+237/303 Test #237: integration.exit_codes - 64: a --tol in the wrong unit for its check exits 64 and names the expected unit (CLI-10) ........................................................................................................................................   Passed    0.01 sec
+        Start 238: integration.exit_codes - 64: a malformed --tol value (no unit digits) exits exactly 64
+238/303 Test #238: integration.exit_codes - 64: a malformed --tol value (no unit digits) exits exactly 64 ....................................................................................................................................................................   Passed    0.01 sec
+        Start 239: integration.exit_codes - 64: an unknown flag exits exactly 64
+239/303 Test #239: integration.exit_codes - 64: an unknown flag exits exactly 64 .............................................................................................................................................................................................   Passed    0.01 sec
+        Start 240: integration.exit_codes - 64: an unknown subcommand exits exactly 64
+240/303 Test #240: integration.exit_codes - 64: an unknown subcommand exits exactly 64 .......................................................................................................................................................................................   Passed    0.01 sec
+        Start 241: integration.exit_codes - 65: a nonexistent input path exits exactly 65
+241/303 Test #241: integration.exit_codes - 65: a nonexistent input path exits exactly 65 ....................................................................................................................................................................................   Passed    0.01 sec
+        Start 242: integration.exit_codes - 65: a snapshot with an incompatible schema_version major exits exactly 65
+242/303 Test #242: integration.exit_codes - 65: a snapshot with an incompatible schema_version major exits exactly 65 ........................................................................................................................................................   Passed    0.01 sec
+        Start 243: integration.exit_codes - 66: a partial fingerprint exits exactly 66 and still emits a parseable JSON report carrying the partial marker
+243/303 Test #243: integration.exit_codes - 66: a partial fingerprint exits exactly 66 and still emits a parseable JSON report carrying the partial marker ...................................................................................................................   Passed    0.01 sec
+        Start 244: integration.exit_codes - 70: a `dir` invocation whose pairing succeeds but whose per-file work hits an injected internal failure exits exactly 70 (02-11-PLAN.md Task 3, re-pointing 02-10's own stub-callback assertion at a real internal-error path)
+244/303 Test #244: integration.exit_codes - 70: a `dir` invocation whose pairing succeeds but whose per-file work hits an injected internal failure exits exactly 70 (02-11-PLAN.md Task 3, re-pointing 02-10's own stub-callback assertion at a real internal-error path) ...   Passed    0.01 sec
+        Start 245: integration.explain_inspect - ENG-06: inspect -v --set shows the resolved severity chain, ending with cli and carrying the overridden value; without -v the same command prints strictly fewer lines
+245/303 Test #245: integration.explain_inspect - ENG-06: inspect -v --set shows the resolved severity chain, ending with cli and carrying the overridden value; without -v the same command prints strictly fewer lines ......................................................   Passed    0.01 sec
+        Start 246: integration.explain_inspect - ENG-13/ENG-03: explain on a declared alias exits 0 and prints the deprecation line naming the current id
+246/303 Test #246: integration.explain_inspect - ENG-13/ENG-03: explain on a declared alias exits 0 and prints the deprecation line naming the current id ....................................................................................................................   Passed    0.01 sec
+        Start 247: integration.explain_inspect - ENG-13: explain meta.tool_version exits 0 and carries all five expected labels
+247/303 Test #247: integration.explain_inspect - ENG-13: explain meta.tool_version exits 0 and carries all five expected labels ..............................................................................................................................................   Passed    0.01 sec
+        Start 248: integration.explain_inspect - ENG-13: explain on an unresolvable id exits exactly 64 and names the id
+248/303 Test #248: integration.explain_inspect - ENG-13: explain on an unresolvable id exits exactly 64 and names the id .....................................................................................................................................................   Passed    0.01 sec
+        Start 249: integration.explain_inspect - ENG-13: explain resolves for every registered check id, none left undocumented
+249/303 Test #249: integration.explain_inspect - ENG-13: explain resolves for every registered check id, none left undocumented ..............................................................................................................................................   Passed    0.01 sec
+        Start 250: integration.explain_inspect - REPORT-07: inspect on a fixture snapshot exits 0 and names every Group exactly once
+250/303 Test #250: integration.explain_inspect - REPORT-07: inspect on a fixture snapshot exits 0 and names every Group exactly once .........................................................................................................................................   Passed    0.01 sec
+        Start 251: integration.explain_inspect - REPORT-07: inspect on a non-snapshot file exits exactly 65
+251/303 Test #251: integration.explain_inspect - REPORT-07: inspect on a non-snapshot file exits exactly 65 ..................................................................................................................................................................   Passed    0.01 sec
+        Start 252: integration.explain_inspect - REPORT-07: inspect on a snapshot with no meta measurements still names meta with the no-measurements line
+252/303 Test #252: integration.explain_inspect - REPORT-07: inspect on a snapshot with no meta measurements still names meta with the no-measurements line ...................................................................................................................   Passed    0.01 sec
+        Start 253: integration.explain_inspect - REPORT-07: two inspect runs produce byte-identical stdout, checked against a golden
+253/303 Test #253: integration.explain_inspect - REPORT-07: two inspect runs produce byte-identical stdout, checked against a golden .........................................................................................................................................   Passed    0.01 sec
+        Start 254: integration.idempotence - SNAP-06: mediadiff snapshot f && mediadiff compare f f.snap.json is clean
+254/303 Test #254: integration.idempotence - SNAP-06: mediadiff snapshot f && mediadiff compare f f.snap.json is clean .......................................................................................................................................................   Passed    0.01 sec
+        Start 255: integration.idempotence - TRUST-08: a present baseline is compared byte-for-byte, and this frozen baseline matches
+255/303 Test #255: integration.idempotence - TRUST-08: a present baseline is compared byte-for-byte, and this frozen baseline matches ........................................................................................................................................   Passed    0.00 sec
+        Start 256: integration.idempotence - TRUST-08: an absent baseline reports skipped:no_prior_release, never pass
+256/303 Test #256: integration.idempotence - TRUST-08: an absent baseline reports skipped:no_prior_release, never pass .......................................................................................................................................................   Passed    0.01 sec
+        Start 257: integration.implicit_compare - CLI-01: --profile is order-independent among a subcommand's own arguments
+257/303 Test #257: integration.implicit_compare - CLI-01: --profile is order-independent among a subcommand's own arguments ..................................................................................................................................................   Passed    0.01 sec
+        Start 258: integration.implicit_compare - CLI-01: a positional whose basename is exactly 'compare' is usable when path-qualified
+258/303 Test #258: integration.implicit_compare - CLI-01: a positional whose basename is exactly 'compare' is usable when path-qualified .....................................................................................................................................   Passed    0.01 sec
+        Start 259: integration.implicit_compare - CLI-01: a single operand exits exactly 64
+259/303 Test #259: integration.implicit_compare - CLI-01: a single operand exits exactly 64 ..................................................................................................................................................................................   Passed    0.01 sec
+        Start 260: integration.implicit_compare - CLI-01: mediadiff <a> <b> and mediadiff compare <a> <b> produce byte-identical stdout
+260/303 Test #260: integration.implicit_compare - CLI-01: mediadiff <a> <b> and mediadiff compare <a> <b> produce byte-identical stdout ......................................................................................................................................   Passed    0.01 sec
+        Start 261: integration.implicit_compare - CLI-01: mediadiff compare <a> <b> <c> exits exactly 64 (fallthrough guard)
+261/303 Test #261: integration.implicit_compare - CLI-01: mediadiff compare <a> <b> <c> exits exactly 64 (fallthrough guard) .................................................................................................................................................   Passed    0.01 sec
+        Start 262: integration.implicit_compare - CLI-01: mediadiff compare with no operands exits exactly 64
+262/303 Test #262: integration.implicit_compare - CLI-01: mediadiff compare with no operands exits exactly 64 ................................................................................................................................................................   Passed    0.01 sec
+        Start 263: integration.implicit_compare - CLI-01: mediadiff with no arguments exits exactly 64 and prints help
+263/303 Test #263: integration.implicit_compare - CLI-01: mediadiff with no arguments exits exactly 64 and prints help .......................................................................................................................................................   Passed    0.01 sec
+        Start 264: integration.implicit_compare - CLI-02: each of the six subcommands accepts --help and exits 0
+264/303 Test #264: integration.implicit_compare - CLI-02: each of the six subcommands accepts --help and exits 0 .............................................................................................................................................................   Passed    0.02 sec
+        Start 265: integration.implicit_compare - T-2-36: a near-miss subcommand name (comparex) exits 64 with empty stdout
+265/303 Test #265: integration.implicit_compare - T-2-36: a near-miss subcommand name (comparex) exits 64 with empty stdout ..................................................................................................................................................   Passed    0.01 sec
+        Start 266: integration.implicit_compare - T-2-36: allow_subcommand_prefix_matching(false) is set explicitly
+266/303 Test #266: integration.implicit_compare - T-2-36: allow_subcommand_prefix_matching(false) is set explicitly ..........................................................................................................................................................   Passed    0.00 sec
+        Start 267: integration.json_schema - TRUST-05: --json to stdout and --json=<path> produce identical bytes
+267/303 Test #267: integration.json_schema - TRUST-05: --json to stdout and --json=<path> produce identical bytes ............................................................................................................................................................   Passed    0.01 sec
+        Start 268: integration.json_schema - a check overridden at config and cli layers carries the exact chain builtin, config, cli, and the final value equals the finding's own severity
+268/303 Test #268: integration.json_schema - a check overridden at config and cli layers carries the exact chain builtin, config, cli, and the final value equals the finding's own severity .................................................................................   Passed    0.01 sec
+        Start 269: integration.json_schema - a compare --json run's skip_reason key is present on every finding, even when none
+269/303 Test #269: integration.json_schema - a compare --json run's skip_reason key is present on every finding, even when none ..............................................................................................................................................   Passed    0.01 sec
+        Start 270: integration.json_schema - a document with an unknown status value FAILS validation, proving the schema has teeth
+270/303 Test #270: integration.json_schema - a document with an unknown status value FAILS validation, proving the schema has teeth ..........................................................................................................................................   Passed    0.01 sec
+        Start 271: integration.json_schema - a real compare --json report validates against docs/schema/report-1.0.json
+271/303 Test #271: integration.json_schema - a real compare --json report validates against docs/schema/report-1.0.json ......................................................................................................................................................   Passed    0.01 sec
+        Start 272: integration.json_schema - compare --json -v also validates, proving the optional severity_chain declaration works
+272/303 Test #272: integration.json_schema - compare --json -v also validates, proving the optional severity_chain declaration works .........................................................................................................................................   Passed    0.01 sec
+        Start 273: integration.json_schema - two identical compare --json runs produce byte-identical stdout
+273/303 Test #273: integration.json_schema - two identical compare --json runs produce byte-identical stdout .................................................................................................................................................................   Passed    0.01 sec
+        Start 274: integration.list_checks - ENG-01: list-checks with no flags prints exactly registry.size() non-empty lines
+274/303 Test #274: integration.list_checks - ENG-01: list-checks with no flags prints exactly registry.size() non-empty lines ................................................................................................................................................   Passed    0.01 sec
+        Start 275: integration.list_checks - ENG-01: row order matches registry declaration order
+275/303 Test #275: integration.list_checks - ENG-01: row order matches registry declaration order ............................................................................................................................................................................   Passed    0.01 sec
+        Start 276: integration.list_checks - ENG-06: -v strictly increases line count over the non-verbose --effective output
+276/303 Test #276: integration.list_checks - ENG-06: -v strictly increases line count over the non-verbose --effective output ................................................................................................................................................   Passed    0.01 sec
+        Start 277: integration.list_checks - ENG-06: the resolved chain under -v names builtin, config, then cli in resolution order, with every field non-empty
+277/303 Test #277: integration.list_checks - ENG-06: the resolved chain under -v names builtin, config, then cli in resolution order, with every field non-empty .............................................................................................................   Passed    0.01 sec
+        Start 278: integration.list_checks - ENG-12: --effective is byte-identical across two runs, checked against a golden
+278/303 Test #278: integration.list_checks - ENG-12: --effective is byte-identical across two runs, checked against a golden .................................................................................................................................................   Passed    0.01 sec
+        Start 279: integration.list_checks - ENG-12: --effective with no config prints one row per check, each carrying a severity
+279/303 Test #279: integration.list_checks - ENG-12: --effective with no config prints one row per check, each carrying a severity ...........................................................................................................................................   Passed    0.01 sec
+        Start 280: integration.report_flags - --json and --report naming the same path exit 64
+280/303 Test #280: integration.report_flags - --json and --report naming the same path exit 64 ...............................................................................................................................................................................   Passed    0.01 sec
+        Start 281: integration.report_flags - --json=path, --report md=path and --report junit=path write three distinct files
+281/303 Test #281: integration.report_flags - --json=path, --report md=path and --report junit=path write three distinct files ...............................................................................................................................................   Passed    0.01 sec
+        Start 282: integration.report_flags - a malformed --report argument (no '=') exits 64
+282/303 Test #282: integration.report_flags - a malformed --report argument (no '=') exits 64 ................................................................................................................................................................................   Passed    0.01 sec
+        Start 283: integration.report_flags - an unrecognized --report kind exits 64
+283/303 Test #283: integration.report_flags - an unrecognized --report kind exits 64 .........................................................................................................................................................................................   Passed    0.01 sec
+        Start 284: integration.report_flags - bare --json writes the report to stdout
+284/303 Test #284: integration.report_flags - bare --json writes the report to stdout ........................................................................................................................................................................................   Passed    0.01 sec
+        Start 285: integration.report_flags - two --report flags naming the same path exit 64
+285/303 Test #285: integration.report_flags - two --report flags naming the same path exit 64 ................................................................................................................................................................................   Passed    0.01 sec
+        Start 286: integration.schema_version - a differing MINOR component is accepted
+286/303 Test #286: integration.schema_version - a differing MINOR component is accepted ......................................................................................................................................................................................   Passed    0.00 sec
+        Start 287: integration.schema_version - a differing tool_version at an equal schema major is accepted and recorded as a diagnostic, not an error
+287/303 Test #287: integration.schema_version - a differing tool_version at an equal schema major is accepted and recorded as a diagnostic, not an error .....................................................................................................................   Passed    0.00 sec
+        Start 288: integration.schema_version - a schema_version MAJOR mismatch exits exactly 65 through the real CLI, naming both versions
+288/303 Test #288: integration.schema_version - a schema_version MAJOR mismatch exits exactly 65 through the real CLI, naming both versions ..................................................................................................................................   Passed    0.01 sec
+        Start 289: integration.schema_version - a snapshot missing schema_version entirely is rejected with exit 65, never defaulted
+289/303 Test #289: integration.schema_version - a snapshot missing schema_version entirely is rejected with exit 65, never defaulted .........................................................................................................................................   Passed    0.01 sec
+        Start 290: integration.schema_version - a written snapshot's text never contains the input file's absolute directory (T-2-07)
+290/303 Test #290: integration.schema_version - a written snapshot's text never contains the input file's absolute directory (T-2-07) ........................................................................................................................................   Passed    0.00 sec
+        Start 291: integration.schema_version - a zero-measurement fingerprint writes a complete envelope with an empty measurements container
+291/303 Test #291: integration.schema_version - a zero-measurement fingerprint writes a complete envelope with an empty measurements container ...............................................................................................................................   Passed    0.00 sec
+        Start 292: integration.schema_version - compose_decode_path_signature composes three distinct version triples
+292/303 Test #292: integration.schema_version - compose_decode_path_signature composes three distinct version triples ........................................................................................................................................................   Passed    0.00 sec
+        Start 293: integration.snapshot_safe_write - SNAP-07: --force overwrites a tracked target
+293/303 Test #293: integration.snapshot_safe_write - SNAP-07: --force overwrites a tracked target ............................................................................................................................................................................   Passed    0.03 sec
+        Start 294: integration.snapshot_safe_write - SNAP-07: CI=true refuses an existing untracked target without --force
+294/303 Test #294: integration.snapshot_safe_write - SNAP-07: CI=true refuses an existing untracked target without --force ...................................................................................................................................................   Passed    0.01 sec
+        Start 295: integration.snapshot_safe_write - SNAP-07: a tracked target is refused without --force (exit 64, names --force)
+295/303 Test #295: integration.snapshot_safe_write - SNAP-07: a tracked target is refused without --force (exit 64, names --force) ...........................................................................................................................................   Passed    0.03 sec
+        Start 296: integration.snapshot_safe_write - SNAP-07: a tracked, zero-byte target is refused
+296/303 Test #296: integration.snapshot_safe_write - SNAP-07: a tracked, zero-byte target is refused .........................................................................................................................................................................   Passed    0.03 sec
+        Start 297: integration.snapshot_safe_write - SNAP-07: an untracked target is overwritten
+297/303 Test #297: integration.snapshot_safe_write - SNAP-07: an untracked target is overwritten .............................................................................................................................................................................   Passed    0.01 sec
+        Start 298: integration.snapshot_safe_write - SNAP-07: two --force runs are byte-identical and leave git status clean
+298/303 Test #298: integration.snapshot_safe_write - SNAP-07: two --force runs are byte-identical and leave git status clean .................................................................................................................................................   Passed    0.04 sec
+        Start 299: integration.type_poisoned_snapshot - CR-01 half 1: compare exits a clean input-error code, never crashes
+299/303 Test #299: integration.type_poisoned_snapshot - CR-01 half 1: compare exits a clean input-error code, never crashes ..................................................................................................................................................   Passed    0.01 sec
+        Start 300: integration.type_poisoned_snapshot - CR-01 half 2: dir mode never reports a corrupted pair as an empty-findings clean pass
+300/303 Test #300: integration.type_poisoned_snapshot - CR-01 half 2: dir mode never reports a corrupted pair as an empty-findings clean pass ................................................................................................................................   Passed    0.01 sec
+        Start 301: integration.version_output - CLI-05 fields present in real binary output
+301/303 Test #301: integration.version_output - CLI-05 fields present in real binary output ..................................................................................................................................................................................   Passed    0.01 sec
+        Start 302: integration.vmaf_absent - BUILD-09 optional feature not advertised by default
+302/303 Test #302: integration.vmaf_absent - BUILD-09 optional feature not advertised by default .............................................................................................................................................................................   Passed    0.01 sec
+        Start 303: integration.static_link
+303/303 Test #303: integration.static_link ...................................................................................................................................................................................................................................   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 303
+
+Total Test time (real) =   1.44 sec
+
+The following tests did not run:
+	 30 - unit.console_vt - virtual-terminal processing is enabled on a real console (Skipped)
+Internal ctest changing into directory: /home/dzka/projects/mediadiff/.claude/worktrees/agent-a908ab7ff0b6e7fa3/build/x64-linux
+Test project /home/dzka/projects/mediadiff/.claude/worktrees/agent-a908ab7ff0b6e7fa3/build/x64-linux
+  Test   #1: unit.Linked FFmpeg reports the expected LGPL license
+  Test   #2: unit.a check with a profile_severity entry reports the override for that profile and the baseline for every other profile
+  Test   #3: unit.a check with no profile_severity entry reports the baseline for every profile
+  Test   #4: unit.and_then on a value propagates and transforms
+  Test   #5: unit.and_then on an error short-circuits and preserves the original error
+  Test   #6: unit.builtin_registry size matches the number of records in checks.def
+  Test   #7: unit.canary: the permanent divergent fixture pair always reports exactly one fail finding
+  Test   #8: unit.color - --ascii sets ascii_glyphs in both colour-enabled and colour-disabled rows
+  Test   #9: unit.color - --no-color beats GITHUB_ACTIONS=true
+  Test  #10: unit.color - CI=false does not disable colour
+  Test  #11: unit.color - CI=true disables colour
+  Test  #12: unit.color - CI=true together with GITHUB_ACTIONS=true keeps colour enabled
+  Test  #13: unit.color - NO_COLOR set to a non-empty value disables colour
+  Test  #14: unit.color - NO_COLOR set to the empty string disables colour
+  Test  #15: unit.color - WR-02: NO_COLOR (environment) beats GITHUB_ACTIONS=true
+  Test  #16: unit.color - WR-02: NO_COLOR set to the empty string still beats GITHUB_ACTIONS=true
+  Test  #17: unit.color - non-tty stdout disables colour
+  Test  #18: unit.color - stdout is a tty with nothing else set enables colour
+  Test  #19: unit.config: a UTF-8 override path glob survives byte-for-byte
+  Test  #20: unit.config: a [severity] value outside the four severities is ErrorKind::usage
+  Test  #21: unit.config: a [tolerance] value whose unit contradicts the check is ErrorKind::usage
+  Test  #22: unit.config: a complete valid config populates every section
+  Test  #23: unit.config: a config declaring only profile leaves every other field unset
+  Test  #24: unit.config: a malformed TOML document returns an Error rather than throwing
+  Test  #25: unit.config: an empty file is valid and leaves every field unset
+  Test  #26: unit.config: an explicit --config path that does not exist is ErrorKind::input_open
+  Test  #27: unit.config: an unrecognized top-level key is ErrorKind::usage naming it
+  Test  #28: unit.config: no --config and no ./mediadiff.toml in the working directory yields nullopt, not an error
+  Test  #29: unit.config: two [severity] entries carry ascending file_order matching write order
+  Test  #30: unit.console_vt - virtual-terminal processing is enabled on a real console
+  Test  #31: unit.dir_pairing: a file only in baseline sets in_baseline alone
+  Test  #32: unit.dir_pairing: a file only in candidate sets in_candidate alone
+  Test  #33: unit.dir_pairing: a nonexistent root returns ErrorKind::input_open
+  Test  #34: unit.dir_pairing: a root that is a file, not a directory, returns ErrorKind::input_open
+  Test  #35: unit.dir_pairing: a symbolic link is not followed and never paired as a leaf
+  Test  #36: unit.dir_pairing: a tree containing a non-ASCII filename pairs correctly
+  Test  #37: unit.dir_pairing: identical trees pair every file with both flags set
+  Test  #38: unit.dir_pairing: nested subdirectories pair by their full relative path
+  Test  #39: unit.dir_pairing: separators are normalised to forward slash in the returned relative paths
+  Test  #40: unit.dir_pairing: the returned order is byte-wise sorted
+  Test  #41: unit.dir_pairing: two empty roots return an empty vector and no error
+  Test  #42: unit.every CheckDef's default_severity matches checks.def's declared severity
+  Test  #43: unit.fail_first coverage: every implemented semantic has a fixture for every status it can emit
+  Test  #44: unit.fail_first coverage: the not-yet-implemented allow list cannot rot silently
+  Test  #45: unit.find returns nullopt for an unregistered id
+  Test  #46: unit.find returns the declaration index for each seed id
+  Test  #47: unit.glob_matches: * matches exactly one whole segment
+  Test  #48: unit.glob_matches: * refuses a partial segment
+  Test  #49: unit.glob_matches: * refuses to match across a dot, and never matches the parent or a longer sibling
+  Test  #50: unit.glob_matches: ** in a non-final position is rejected as malformed
+  Test  #51: unit.glob_matches: ** matches two trailing segments
+  Test  #52: unit.glob_matches: ** refuses to match zero trailing segments
+  Test  #53: unit.glob_matches: a doubled-dot pattern matches nothing
+  Test  #54: unit.glob_matches: exact literal match
+  Test  #55: unit.glob_matches: the empty pattern matches nothing
+  Test  #56: unit.glob_select on an empty pattern returns no matches
+  Test  #57: unit.glob_select on container.ts.* selects only the two ts checks, not the mp4 sibling
+  Test  #58: unit.glob_select returns indices in registry declaration order, deterministically
+  Test  #59: unit.golden: UPDATE_GOLDENS creates/refreshes the file, and the next read matches byte-for-byte
+  Test  #60: unit.golden: a missing golden file fails when UPDATE_GOLDENS is unset
+  Test  #61: unit.junit - a Status::error finding renders as an <error> element
+  Test  #62: unit.junit - a Status::skipped finding renders <skipped> carrying its reason, never a bare testcase
+  Test  #63: unit.junit - a finding message containing <, > and & is escaped and re-parses cleanly
+  Test  #64: unit.junit - a passing gating-capable finding renders a bare testcase with no child element
+  Test  #65: unit.junit - a run with zero gating-capable findings emits a well-formed document declaring zero tests
+  Test  #66: unit.junit - a warn finding is a failure under --strict and a skipped element otherwise
+  Test  #67: unit.junit - golden: suites appear in group order and testcases in registry order
+  Test  #68: unit.junit - two findings for one check at two scopes produce two testcases with distinct names
+  Test  #69: unit.markdown_budget - a body of exactly kMarkdownBudgetBytes is emitted unchanged with no fold line
+  Test  #70: unit.markdown_budget - a body one byte over the budget folds and the fold line names the real withheld count
+  Test  #71: unit.markdown_budget - a group with exactly one finding still gets its own details block
+  Test  #72: unit.markdown_budget - a zero-finding model renders the summary table with explicit zeros and no details
+  Test  #73: unit.markdown_budget - every fail finding survives folding on an oversized model
+  Test  #74: unit.markdown_budget - folding on multi-byte content lands on a UTF-8 character boundary
+  Test  #75: unit.markdown_budget - golden: a fixed small model renders byte-identical Markdown
+  Test  #76: unit.mediadiff::expected holding a value is truthy and yields it
+  Test  #77: unit.mediadiff::expected holding an error is falsy and yields it
+  Test  #78: unit.mediadiff::unexpected constructs an error-state expected
+  Test  #79: unit.policy_merge: --set and --tol interleaved in every order produce the same resolved policy
+  Test  #80: unit.policy_merge: Policy exposes no non-const accessor to per_check
+  Test  #81: unit.policy_merge: a --tol whose unit contradicts the target check is ErrorKind::usage naming the expected unit
+  Test  #82: unit.policy_merge: a CLI override applies over an [override.*] block
+  Test  #83: unit.policy_merge: an [override.*] block applies over a [severity] entry
+  Test  #84: unit.policy_merge: permuting non-overlapping [severity] entries yields an identical resolved policy
+  Test  #85: unit.policy_merge: permuting overlapping [severity] entries changes only the overlapping index
+  Test  #86: unit.policy_merge: two overlapping --set globs resolve last-writer-wins in argv order
+  Test  #87: unit.policy_merge: with no config and no CLI overrides every chain has exactly one builtin entry
+  Test  #88: unit.policy_merge: zero --set and zero --tol leave the policy identical to the profile-plus-config result
+  Test  #89: unit.pool - a peak in-flight counter never exceeds the configured thread count
+  Test  #90: unit.pool - a thread count of one creates no thread
+  Test  #91: unit.pool - a thread count of zero also creates no thread
+  Test  #92: unit.pool - a throwing job is contained, the remaining jobs still run, and the failure stays attributed to its own index
+  Test  #93: unit.pool - results written by index are in submission order despite inverted completion order
+  Test  #94: unit.pool - run_indexed runs every index exactly once across a range of job/thread counts
+  Test  #95: unit.process_spawn: captures more than one pipe buffer's worth of stdout and stderr exactly
+  Test  #96: unit.profiles: a check declaring a tolerance has that tolerance parsed into per_check when unresolved by profile
+  Test  #97: unit.profiles: a check with no profile_severity table resolves to its checks.def baseline under every profile
+  Test  #98: unit.profiles: every resolved chain begins with a builtin entry
+  Test  #99: unit.profiles: profile_from_string accepts each of the five exact spellings
+  Test #100: unit.profiles: profile_from_string rejects anything that is not one of the five exact spellings
+  Test #101: unit.profiles: profile_to_string round-trips profile_from_string for every profile
+  Test #102: unit.profiles: resolve_policy called twice with the same arguments produces equal results
+  Test #103: unit.profiles: the default profile absent any selection is sw-encoder (ENG-09)
+  Test #104: unit.profiles: two profiles differing in exactly one check's severity differ at exactly that one per_check index
+  Test #105: unit.registry generator: bad_dangling_alias exits non-zero and names the offending alias id
+  Test #106: unit.registry generator: bad_empty_doc exits non-zero and names the offending id
+  Test #107: unit.registry generator: bad_grammar exits non-zero and names the offending id
+  Test #108: unit.registry generator: bad_missing_doc exits non-zero and names the offending id
+  Test #109: unit.registry generator: good fixture exits 0 and produces a non-empty check_id.h
+  Test #110: unit.report_model - a finding whose id the registry does not recognize sorts after every resolved one
+  Test #111: unit.report_model - a group with exactly one finding retains it, and default options hide nothing
+  Test #112: unit.report_model - build_report_model with zero findings keeps all seven groups with explicit zero counts
+  Test #113: unit.report_model - envelope diagnostics are flattened into one line per top-level key
+  Test #114: unit.report_model - findings within a group are ordered by registry declaration index, not input order
+  Test #115: unit.report_model - group_for maps every fixed group and defaults an unrecognized segment to meta
+  Test #116: unit.report_model - group_to_string round-trips every enumerator through group_for
+  Test #117: unit.report_model - is_gating is true only for warn and fail severities
+  Test #118: unit.report_model - show_ignored=false hides a Severity::ignore finding from display but still counts it
+  Test #119: unit.report_model - summary counts a finding the display filter hides, but the group's own list omits it
+  Test #120: unit.report_model - worst_gating is the maximum severity across all findings, independent of status
+  Test #121: unit.resolve_alias resolves a direct id without reporting it as aliased
+  Test #122: unit.resolve_alias returns nullopt for a string that is neither an id nor an alias
+  Test #123: unit.resolve_alias returns the owning check for a declared alias and reports it was aliased
+  Test #124: unit.semantics: CR-03 dist comparator returns Status::error on bin-total overflow, never a fabricated verdict
+  Test #125: unit.semantics: CR-03 tol comparator returns Status::error on cross-multiplication overflow, never a fabricated verdict
+  Test #126: unit.semantics: WR-03 span comparator returns Status::error on tick-comparison overflow, never a fabricated verdict
+  Test #127: unit.semantics: a measurement holding a std::string for a check whose declared value_kind is int64 yields status error (D-09)
+  Test #128: unit.semantics: dist boundary -- worst-bin delta exactly at tolerance passes, one point beyond warns
+  Test #129: unit.semantics: hash preconditions differing produces skipped:hash_incomparable, never a fabricated verdict
+  Test #130: unit.semantics: reordering a baseline StringSet's construction produces a byte-identical finding
+  Test #131: unit.semantics: shuffling a SpanList's element order produces the same merged output
+  Test #132: unit.semantics: tol boundary -- delta exactly at the threshold passes, one tick beyond does not
+  Test #133: unit.semantics: two empty Histograms pass
+  Test #134: unit.semantics: two empty SpanLists pass
+  Test #135: unit.semantics: two empty StringSets pass
+  Test #136: unit.semantics: two empty fingerprints yield zero findings and no error
+  Test #137: unit.serializer - 0.0 and -0.0 serialize to different text and each round-trips separately
+  Test #138: unit.serializer - Absent round-trips as JSON null, byte-identically
+  Test #139: unit.serializer - HashChain round-trips byte-identically
+  Test #140: unit.serializer - RationalValue round-trips byte-identically and ignores a wrong 'ms' field on read
+  Test #141: unit.serializer - a fingerprint built from all nine Value alternatives serializes with one changed line per changed value
+  Test #142: unit.serializer - a populated Histogram round-trips byte-identically
+  Test #143: unit.serializer - a populated SpanList round-trips byte-identically
+  Test #144: unit.serializer - a populated StringSet round-trips byte-identically, sorted
+  Test #145: unit.serializer - an empty Histogram reads back as Histogram, not Absent
+  Test #146: unit.serializer - an empty SpanList reads back as SpanList, not Absent
+  Test #147: unit.serializer - an empty StringSet reads back as StringSet, not Absent
+  Test #148: unit.serializer - double round-trips byte-identically
+  Test #149: unit.serializer - int64 round-trips byte-identically
+  Test #150: unit.serializer - line count still equals scalar count when a leading sibling is an empty container
+  Test #151: unit.serializer - serialize_document places exactly one scalar per line
+  Test #152: unit.serializer - std::to_chars floating-point overload is available on this toolchain
+  Test #153: unit.serializer - string round-trips byte-identically
+  Test #154: unit.serializer - the smallest normal and the largest finite double round-trip exactly
+  Test #155: unit.serializer - two doubles differing by one ULP produce different text
+  Test #156: unit.serializer - value_from_json refuses a kind mismatch rather than coercing (D-09)
+  Test #157: unit.serializer - value_from_json rejects a Histogram bin with a negative count
+  Test #158: unit.serializer - value_from_json rejects a RationalValue with den <= 0
+  Test #159: unit.serializer - value_from_json rejects a RationalValue with tb.den <= 0
+  Test #160: unit.serializer - value_from_json still accepts a Histogram bin with a zero count
+  Test #161: unit.serializer - value_from_json still accepts a RationalValue with positive den/tb.den
+  Test #162: unit.snapshot_roundtrip - a fingerprint covering all nine Value alternatives round-trips byte-identically
+  Test #163: unit.snapshot_roundtrip - a zero-measurement fingerprint serializes a complete envelope with an empty measurements container
+  Test #164: unit.test_fs_utf8 - getenv_utf8 separates unset from set-to-empty
+  Test #165: unit.test_fs_utf8 - non-ASCII filename round trip and empty-path rejection
+  Test #166: unit.test_registry: every Semantic enumerator is declared by at least one check
+  Test #167: unit.test_registry: find resolves each declared test check id
+  Test #168: unit.test_registry: flags and alias round-trip through the generated CheckDef table
+  Test #169: unit.test_registry: size matches the number of records in test_checks.def
+  Test #170: unit.tolerance: a Unicode minus sign is rejected as non-ASCII rather than normalised
+  Test #171: unit.tolerance: a decimal point with no following digits is rejected
+  Test #172: unit.tolerance: a fractional magnitude produces the exact rational, never a rounded one
+  Test #173: unit.tolerance: a fractional magnitude too large for int64_t is rejected, never silently wrapped
+  Test #174: unit.tolerance: a full-width digit is rejected as non-ASCII rather than normalised
+  Test #175: unit.tolerance: a magnitude too large for int64_t is rejected, never silently wrapped
+  Test #176: unit.tolerance: a magnitude with no digits is rejected
+  Test #177: unit.tolerance: a negative magnitude is rejected
+  Test #178: unit.tolerance: a suffix not in the grammar is rejected
+  Test #179: unit.tolerance: a suffix whose unit does not match the check's declared unit is rejected naming that unit
+  Test #180: unit.tolerance: a warn threshold exceeding the fail threshold is rejected
+  Test #181: unit.tolerance: a warn threshold's suffix may be omitted or must match the fail threshold's
+  Test #182: unit.tolerance: an empty value is rejected as a usage error naming the expected unit, never parsed as zero
+  Test #183: unit.tolerance: every valid suffix parses with the expected unit and integer magnitude
+  Test #184: unit.tolerance: more than one comma is rejected
+  Test #185: unit.tolerance: the plus-minus prefix is accepted in both spellings and does not change the value
+  Test #186: unit.tolerance: the two-threshold form parses warn and fail onto a shared denominator
+  Test #187: unit.tolerance: the two-threshold form rescales differing fractional precision onto a common denominator
+  Test #188: unit.tolerance: whitespace-only is rejected the same as empty
+  Test #189: unit.transform: a 2x scale factor against a 1920x1080 baseline expects 3840x2160
+  Test #190: unit.transform: a check without transform_affected compares by baseline equality even under transform
+  Test #191: unit.transform: a scale factor deriving a fractional dimension is a usage error, not a rounded pass
+  Test #192: unit.transform: a scale factor of 1.5x against 1920x1080 derives exactly 2880x1620
+  Test #193: unit.transform: an absolute expectation compares the candidate directly, ignoring the baseline value
+  Test #194: unit.transform: parse_dimensions parses a plain WIDTHxHEIGHT pair
+  Test #195: unit.transform: parse_dimensions rejects a width too large for int64_t rather than wrapping
+  Test #196: unit.transform: parse_resolution_expectation accepts a bare scale factor
+  Test #197: unit.transform: parse_resolution_expectation accepts a decimal scale factor exactly
+  Test #198: unit.transform: parse_resolution_expectation accepts an absolute WIDTHxHEIGHT pair
+  Test #199: unit.transform: parse_resolution_expectation rejects a malformed string naming both accepted forms
+  Test #200: unit.transform: parse_resolution_expectation rejects a scale factor too large for int64_t
+  Test #201: unit.tty - a check whose tune sub-section states none applies still prints the tune label
+  Test #202: unit.tty - a gating finding prints its accept/tune/silence triple and a non-gating one prints none
+  Test #203: unit.tty - a pass finding is hidden without -v and shown with it
+  Test #204: unit.tty - a value wider than its column is elided rather than wrapped, and no line exceeds the given width
+  Test #205: unit.tty - color_enabled true emits an ESC byte for the status glyph
+  Test #206: unit.tty - golden: a fixed model at a fixed width matches the recorded golden
+  Test #207: unit.tty - groups render in the fixed container/video/timeline/audio/content/size/meta order
+  Test #208: unit.tty - the triple's three labels appear in accept, tune, silence order
+  Test #209: unit.tty - two adjacent gating findings each print their own triple
+  Test #210: unit.tty - with ascii_glyphs true the output uses ASCII status words and no symbol glyphs
+  Test #211: unit.tty - with color_enabled false the output contains no ESC byte
+  Test #212: unit.validate_glob reports why a malformed pattern is malformed
+  Test #213: unit.volatile: a differing value under t.volatile_tag is still computed, adds a finding, and never gates
+  Test #214: unit.volatile: a profile declaring no override for the volatile check does not promote it
+  Test #215: unit.volatile: an explicit later-layer override to fail makes t.volatile_tag gate
+  Test #216: unit.volatile: equal values under t.volatile_tag report pass
+  Test #217: unit.volatile: t.volatile_tag resolves to Severity::ignore under every shipped profile
+  Test #218: integration.compare_tracer - CLI-06: unrecognized flag exits 64, not CLI11's own range
+  Test #219: integration.compare_tracer - SNAP-02: clean compare exits 0 with one pass finding
+  Test #220: integration.compare_tracer - TRUST-05: identical runs produce byte-identical JSON
+  Test #221: integration.compare_tracer - TRUST-05: skew compare with --strict exits 2 on meta.tool_version
+  Test #222: integration.determinism - D-13/TRUST-05: registry declaration order governs report output, not measurement insertion order
+  Test #223: integration.determinism - D-13/TRUST-05: two runs over the full test registry produce byte-identical --json
+  Test #224: integration.dir_mode - --threads 1 and --threads 8 produce byte-identical --json on a multi-file corpus
+  Test #225: integration.dir_mode - JUnit emits one testsuite per file named by relative path
+  Test #226: integration.dir_mode - corpus totals equal the element-wise sum of the per-file summaries
+  Test #227: integration.dir_mode - files[] is in byte-wise sorted relative-path order
+  Test #228: integration.dir_mode - identical trees exit 0 with zero non-pass findings
+  Test #229: integration.dir_mode - one unpaired file each way exits 1 and the files[] array contains both meta findings under the right relative paths
+  Test #230: integration.dir_mode - the TTY worst-N table lists the worst-severity file first with ties broken by path
+  Test #231: integration.dir_mode - the corpus JSON document validates against docs/schema/report-1.0.json
+  Test #232: integration.dir_mode - two empty roots exit 0 with an empty files[] array
+  Test #233: integration.exit_codes - 0: a clean compare exits exactly 0
+  Test #234: integration.exit_codes - 0: the same worst-warn compare WITHOUT --strict exits exactly 0
+  Test #235: integration.exit_codes - 1: a compare producing a fail-severity finding exits exactly 1
+  Test #236: integration.exit_codes - 2: a worst-warn compare with --strict exits exactly 2
+  Test #237: integration.exit_codes - 64: a --tol in the wrong unit for its check exits 64 and names the expected unit (CLI-10)
+  Test #238: integration.exit_codes - 64: a malformed --tol value (no unit digits) exits exactly 64
+  Test #239: integration.exit_codes - 64: an unknown flag exits exactly 64
+  Test #240: integration.exit_codes - 64: an unknown subcommand exits exactly 64
+  Test #241: integration.exit_codes - 65: a nonexistent input path exits exactly 65
+  Test #242: integration.exit_codes - 65: a snapshot with an incompatible schema_version major exits exactly 65
+  Test #243: integration.exit_codes - 66: a partial fingerprint exits exactly 66 and still emits a parseable JSON report carrying the partial marker
+  Test #244: integration.exit_codes - 70: a `dir` invocation whose pairing succeeds but whose per-file work hits an injected internal failure exits exactly 70 (02-11-PLAN.md Task 3, re-pointing 02-10's own stub-callback assertion at a real internal-error path)
+  Test #245: integration.explain_inspect - ENG-06: inspect -v --set shows the resolved severity chain, ending with cli and carrying the overridden value; without -v the same command prints strictly fewer lines
+  Test #246: integration.explain_inspect - ENG-13/ENG-03: explain on a declared alias exits 0 and prints the deprecation line naming the current id
+  Test #247: integration.explain_inspect - ENG-13: explain meta.tool_version exits 0 and carries all five expected labels
+  Test #248: integration.explain_inspect - ENG-13: explain on an unresolvable id exits exactly 64 and names the id
+  Test #249: integration.explain_inspect - ENG-13: explain resolves for every registered check id, none left undocumented
+  Test #250: integration.explain_inspect - REPORT-07: inspect on a fixture snapshot exits 0 and names every Group exactly once
+  Test #251: integration.explain_inspect - REPORT-07: inspect on a non-snapshot file exits exactly 65
+  Test #252: integration.explain_inspect - REPORT-07: inspect on a snapshot with no meta measurements still names meta with the no-measurements line
+  Test #253: integration.explain_inspect - REPORT-07: two inspect runs produce byte-identical stdout, checked against a golden
+  Test #254: integration.idempotence - SNAP-06: mediadiff snapshot f && mediadiff compare f f.snap.json is clean
+  Test #255: integration.idempotence - TRUST-08: a present baseline is compared byte-for-byte, and this frozen baseline matches
+  Test #256: integration.idempotence - TRUST-08: an absent baseline reports skipped:no_prior_release, never pass
+  Test #257: integration.implicit_compare - CLI-01: --profile is order-independent among a subcommand's own arguments
+  Test #258: integration.implicit_compare - CLI-01: a positional whose basename is exactly 'compare' is usable when path-qualified
+  Test #259: integration.implicit_compare - CLI-01: a single operand exits exactly 64
+  Test #260: integration.implicit_compare - CLI-01: mediadiff <a> <b> and mediadiff compare <a> <b> produce byte-identical stdout
+  Test #261: integration.implicit_compare - CLI-01: mediadiff compare <a> <b> <c> exits exactly 64 (fallthrough guard)
+  Test #262: integration.implicit_compare - CLI-01: mediadiff compare with no operands exits exactly 64
+  Test #263: integration.implicit_compare - CLI-01: mediadiff with no arguments exits exactly 64 and prints help
+  Test #264: integration.implicit_compare - CLI-02: each of the six subcommands accepts --help and exits 0
+  Test #265: integration.implicit_compare - T-2-36: a near-miss subcommand name (comparex) exits 64 with empty stdout
+  Test #266: integration.implicit_compare - T-2-36: allow_subcommand_prefix_matching(false) is set explicitly
+  Test #267: integration.json_schema - TRUST-05: --json to stdout and --json=<path> produce identical bytes
+  Test #268: integration.json_schema - a check overridden at config and cli layers carries the exact chain builtin, config, cli, and the final value equals the finding's own severity
+  Test #269: integration.json_schema - a compare --json run's skip_reason key is present on every finding, even when none
+  Test #270: integration.json_schema - a document with an unknown status value FAILS validation, proving the schema has teeth
+  Test #271: integration.json_schema - a real compare --json report validates against docs/schema/report-1.0.json
+  Test #272: integration.json_schema - compare --json -v also validates, proving the optional severity_chain declaration works
+  Test #273: integration.json_schema - two identical compare --json runs produce byte-identical stdout
+  Test #274: integration.list_checks - ENG-01: list-checks with no flags prints exactly registry.size() non-empty lines
+  Test #275: integration.list_checks - ENG-01: row order matches registry declaration order
+  Test #276: integration.list_checks - ENG-06: -v strictly increases line count over the non-verbose --effective output
+  Test #277: integration.list_checks - ENG-06: the resolved chain under -v names builtin, config, then cli in resolution order, with every field non-empty
+  Test #278: integration.list_checks - ENG-12: --effective is byte-identical across two runs, checked against a golden
+  Test #279: integration.list_checks - ENG-12: --effective with no config prints one row per check, each carrying a severity
+  Test #280: integration.report_flags - --json and --report naming the same path exit 64
+  Test #281: integration.report_flags - --json=path, --report md=path and --report junit=path write three distinct files
+  Test #282: integration.report_flags - a malformed --report argument (no '=') exits 64
+  Test #283: integration.report_flags - an unrecognized --report kind exits 64
+  Test #284: integration.report_flags - bare --json writes the report to stdout
+  Test #285: integration.report_flags - two --report flags naming the same path exit 64
+  Test #286: integration.schema_version - a differing MINOR component is accepted
+  Test #287: integration.schema_version - a differing tool_version at an equal schema major is accepted and recorded as a diagnostic, not an error
+  Test #288: integration.schema_version - a schema_version MAJOR mismatch exits exactly 65 through the real CLI, naming both versions
+  Test #289: integration.schema_version - a snapshot missing schema_version entirely is rejected with exit 65, never defaulted
+  Test #290: integration.schema_version - a written snapshot's text never contains the input file's absolute directory (T-2-07)
+  Test #291: integration.schema_version - a zero-measurement fingerprint writes a complete envelope with an empty measurements container
+  Test #292: integration.schema_version - compose_decode_path_signature composes three distinct version triples
+  Test #293: integration.snapshot_safe_write - SNAP-07: --force overwrites a tracked target
+  Test #294: integration.snapshot_safe_write - SNAP-07: CI=true refuses an existing untracked target without --force
+  Test #295: integration.snapshot_safe_write - SNAP-07: a tracked target is refused without --force (exit 64, names --force)
+  Test #296: integration.snapshot_safe_write - SNAP-07: a tracked, zero-byte target is refused
+  Test #297: integration.snapshot_safe_write - SNAP-07: an untracked target is overwritten
+  Test #298: integration.snapshot_safe_write - SNAP-07: two --force runs are byte-identical and leave git status clean
+  Test #299: integration.type_poisoned_snapshot - CR-01 half 1: compare exits a clean input-error code, never crashes
+  Test #300: integration.type_poisoned_snapshot - CR-01 half 2: dir mode never reports a corrupted pair as an empty-findings clean pass
+  Test #301: integration.version_output - CLI-05 fields present in real binary output
+  Test #302: integration.vmaf_absent - BUILD-09 optional feature not advertised by default
+  Test #303: integration.static_link
+
+Total Tests: 303
+===== make_shared baseline =====
+src/cli/provenance_render.cpp:0
+src/cli/commands/list_checks.cpp:2
+src/cli/commands/inspect.cpp:1
+src/cli/commands/compare.cpp:5
+src/cli/commands/snapshot.cpp:3
+src/cli/commands/dir.cpp:5
+src/cli/commands/explain.cpp:1
+src/cli/worker_pool.cpp:0
+src/cli/color_policy.cpp:0
+src/cli/main.cpp:2
+src/cli/options.cpp:19
+src/cli/dir_pairing.cpp:0
+src/cli/exit_code.cpp:0
+src/cli/tty_render.cpp:0
+===== make_shared after =====
+src/cli/provenance_render.cpp:0
+src/cli/commands/list_checks.cpp:0
+src/cli/commands/inspect.cpp:0
+src/cli/commands/compare.cpp:0
+src/cli/commands/snapshot.cpp:0
+src/cli/commands/dir.cpp:1
+src/cli/commands/explain.cpp:0
+src/cli/worker_pool.cpp:0
+src/cli/color_policy.cpp:0
+src/cli/main.cpp:0
+src/cli/options.cpp:0
+src/cli/dir_pairing.cpp:0
+src/cli/exit_code.cpp:0
+src/cli/tty_render.cpp:0
+
+Total: 1 (down from 38).
+
+src/cli/commands/dir.cpp -- 1 site: the --threads bound int, retained per
+D-05's typed-numeric exception so that a non-integer argument keeps
+failing as a parse-time CLI::ParseError (exit 64) rather than throwing
+from inside the callback. Manually verified: `mediadiff dir a b --threads
+abc` and `mediadiff dir a b --threads 0` both still exit 64, with
+byte-identical diagnostic text to the pre-migration binary.
+
+MSVC /W4 /WX is the sole CI-only verification criterion for this task --
+every other criterion (help diff, test count, tests/ untouched, four
+lints, GCC -Wall -Wextra -Werror, make_shared census) was proven locally
+against a clean rebuild.

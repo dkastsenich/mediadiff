@@ -92,12 +92,17 @@ int run(int argc, char** argv) {
   // never "steal" a real subcommand invocation; see register_compare_command's
   // own footer text for the one edge case this implies (a file literally
   // named "compare").
-  auto implicit_baseline = std::make_shared<std::string>();
-  auto implicit_candidate = std::make_shared<std::string>();
+  // D-05: borrowed CLI::Option*, not a shared_ptr-per-flag -- the App
+  // owns the Option for the whole program lifetime, so the pointer read
+  // below (after app.parse() returns) is always valid. ->type_name("TEXT")
+  // restores the help-text type annotation the templated
+  // add_option(name, string&, desc) overload used to infer automatically
+  // (see src/cli/options.cpp's add_policy_flags for the fully worked
+  // rationale, confirmed against the pinned CLI11).
   CLI::Option* implicit_baseline_opt =
-      app.add_option("baseline", *implicit_baseline, "Baseline artifact or *.snap.json (implicit compare)");
+      app.add_option("baseline", "Baseline artifact or *.snap.json (implicit compare)")->type_name("TEXT");
   CLI::Option* implicit_candidate_opt =
-      app.add_option("candidate", *implicit_candidate, "Candidate artifact or *.snap.json (implicit compare)");
+      app.add_option("candidate", "Candidate artifact or *.snap.json (implicit compare)")->type_name("TEXT");
 
   register_compare_command(app);
   register_snapshot_command(app);
@@ -167,8 +172,9 @@ int run(int argc, char** argv) {
     // flags (--profile/--json/--strict/...), matching "mediadiff a b"
     // behaving exactly like "mediadiff compare a b" with none of them
     // given.
-    run_compare(*implicit_baseline, *implicit_candidate, /*strict=*/false, /*verbose=*/false, /*quiet=*/false,
-                default_report_args(), default_policy_args(), default_color_args());
+    run_compare(opt_string(implicit_baseline_opt), opt_string(implicit_candidate_opt), /*strict=*/false,
+                /*verbose=*/false, /*quiet=*/false, default_report_args(), default_policy_args(),
+                default_color_args());
   }
 
   // Fewer than two positionals (including bare `mediadiff` with none):

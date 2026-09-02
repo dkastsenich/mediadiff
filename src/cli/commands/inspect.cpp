@@ -137,18 +137,22 @@ std::string render_inspect_json(const Fingerprint& fp, const CheckRegistry& regi
 void register_inspect_command(CLI::App& app) {
   auto* cmd = app.add_subcommand("inspect", "Render every implemented check family for a single *.snap.json (UC8)");
 
-  auto file_path = std::make_shared<std::string>();
-  cmd->add_option("file", *file_path, "A *.snap.json to inspect")->required();
+  // ->type_name("TEXT"): see src/cli/options.cpp's add_policy_flags for the
+  // fully worked rationale (D-05).
+  CLI::Option* file_path = cmd->add_option("file", "A *.snap.json to inspect")->type_name("TEXT")->required();
 
   CliOptions options = add_common_options(*cmd);
 
   // ENG-16: exit()/stdout/stderr are the CLI's prerogative -- this
   // callback is the one place in the `inspect` path permitted to call
-  // std::exit() directly.
+  // std::exit() directly. Capturing a raw Option* by value is exactly as
+  // safe as the shared_ptr it replaces (D-05): the App owns the Option
+  // for the whole program lifetime, and this callback only runs during
+  // app.parse().
   cmd->callback([file_path, options]() {
     const CheckRegistry& registry = builtin_registry();
 
-    auto fp = read_snapshot(*file_path, registry);
+    auto fp = read_snapshot(opt_string(file_path), registry);
     if (!fp) {
       const Error& err = fp.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -159,8 +163,9 @@ void register_inspect_command(CLI::App& app) {
     // compare/list-checks already run (T-2-23) -- never a parallel
     // reimplementation -- so `inspect -v`'s chain can never drift from
     // what those two surfaces would show for the same check.
+    const std::string config_path_text = opt_string(options.policy.config_path);
     const std::optional<std::string> explicit_config_path =
-        options.policy.config_path->empty() ? std::nullopt : std::make_optional(*options.policy.config_path);
+        config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
     auto config = discover_and_load(explicit_config_path);
     if (!config) {
       const Error& err = config.error();
@@ -168,14 +173,14 @@ void register_inspect_command(CLI::App& app) {
       std::exit(exit_code_for(err.kind));
     }
 
-    auto cli_overrides = parse_cli_overrides(*options.policy.set_flags, *options.policy.tol_flags);
+    auto cli_overrides = parse_cli_overrides(opt_strings(options.policy.set_flags), opt_strings(options.policy.tol_flags));
     if (!cli_overrides) {
       const Error& err = cli_overrides.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }
 
-    auto profile = resolve_profile_selection(*options.policy.profile, *config);
+    auto profile = resolve_profile_selection(opt_string(options.policy.profile), *config);
     if (!profile) {
       const Error& err = profile.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -189,9 +194,10 @@ void register_inspect_command(CLI::App& app) {
       std::exit(exit_code_for(err.kind));
     }
 
-    const bool json_requested = options.report.json_option != nullptr && options.report.json_option->count() > 0;
-    const std::string out = json_requested ? render_inspect_json(*fp, registry)
-                                            : render_inspect_text(*fp, registry, *resolved_policy, *options.verbose);
+    const bool json_requested = opt_flag(options.report.json_option);
+    const std::string out = json_requested
+                                 ? render_inspect_json(*fp, registry)
+                                 : render_inspect_text(*fp, registry, *resolved_policy, opt_flag(options.verbose));
     std::fputs(out.c_str(), stdout);
     std::exit(kExitClean);
   });

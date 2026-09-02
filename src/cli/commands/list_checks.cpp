@@ -84,18 +84,17 @@ std::string render_tolerance(const std::optional<Tolerance>& tolerance) {
 }
 
 void register_list_checks_flags_and_callback(CLI::App& cmd) {
-  auto effective_flag = std::make_shared<bool>(false);
-  auto verbose_flag = std::make_shared<bool>(false);
-  cmd.add_flag("--effective", *effective_flag,
-               "Resolve and print the full policy (profile/config/CLI merged) instead of the bare registry");
-  cmd.add_flag("-v,--verbose", *verbose_flag, "Under --effective, also print each check's resolution chain");
+  CLI::Option* effective_flag = cmd.add_flag(
+      "--effective", "Resolve and print the full policy (profile/config/CLI merged) instead of the bare registry");
+  CLI::Option* verbose_flag =
+      cmd.add_flag("-v,--verbose", "Under --effective, also print each check's resolution chain");
 
   PolicyArgs policy_args = add_policy_flags(cmd);
 
   cmd.callback([effective_flag, verbose_flag, policy_args]() {
     const CheckRegistry& registry = builtin_registry();
 
-    if (!*effective_flag) {
+    if (!opt_flag(effective_flag)) {
       std::string out;
       for (std::uint32_t i = 0; i < registry.size(); ++i) {
         const CheckDef& check = registry.at(i);
@@ -111,8 +110,9 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
     // runs (T-2-23) -- discover_and_load once, parse_cli_overrides once,
     // resolve_profile_selection, then resolve_policy itself. No parallel
     // reimplementation of any of these steps.
+    const std::string config_path_text = opt_string(policy_args.config_path);
     const std::optional<std::string> explicit_config_path =
-        policy_args.config_path->empty() ? std::nullopt : std::make_optional(*policy_args.config_path);
+        config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
     auto config = discover_and_load(explicit_config_path);
     if (!config) {
       const Error& err = config.error();
@@ -120,14 +120,14 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
       std::exit(exit_code_for(err.kind));
     }
 
-    auto cli_overrides = parse_cli_overrides(*policy_args.set_flags, *policy_args.tol_flags);
+    auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
     if (!cli_overrides) {
       const Error& err = cli_overrides.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }
 
-    auto profile = resolve_profile_selection(*policy_args.profile, *config);
+    auto profile = resolve_profile_selection(opt_string(policy_args.profile), *config);
     if (!profile) {
       const Error& err = profile.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -147,7 +147,7 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
       const ResolvedCheck& resolved = resolved_policy->per_check[i];
       out += fmt::format("{}  severity={}  tolerance={}\n", check.id, severity_to_string(resolved.severity),
                           render_tolerance(resolved.tolerance));
-      if (*verbose_flag) {
+      if (opt_flag(verbose_flag)) {
         out += render_provenance_chain(resolved.chain, 2);
       }
     }

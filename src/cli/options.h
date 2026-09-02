@@ -27,16 +27,21 @@
 
 namespace mediadiff {
 
-// Shared option storage for the four policy-resolution flags, populated by
-// CLI11 once `cmd->callback` fires -- the same shared_ptr-per-flag shape
-// src/cli/commands/compare.cpp's pre-02-06 --json/--strict flags already
-// use, so a callback lambda captures this struct by value and reads through
-// each pointer once CLI11 has parsed argv.
+// Shared option storage for the four policy-resolution flags (D-05):
+// borrowed `CLI::Option*`s, each defaulted to nullptr. The `App` owns its
+// options for the whole program lifetime (`std::vector<Option_p>
+// options_`), so a pointer captured into a callback outlives the
+// registration function for free -- no heap allocation, no refcount. A
+// callback lambda captures this struct by value and reads each member
+// through opt_string/opt_strings once CLI11 has parsed argv.
+// default_policy_args() leaves every member nullptr (no App ever
+// registered an option to point at); opt_string/opt_strings already
+// tolerate a null Option*, so a caller never dereferences one directly.
 struct PolicyArgs {
-  std::shared_ptr<std::string> profile;
-  std::shared_ptr<std::string> config_path;
-  std::shared_ptr<std::vector<std::string>> set_flags;
-  std::shared_ptr<std::vector<std::string>> tol_flags;
+  CLI::Option* profile = nullptr;
+  CLI::Option* config_path = nullptr;
+  CLI::Option* set_flags = nullptr;
+  CLI::Option* tol_flags = nullptr;
 };
 
 // Registers `--profile`, `--config`, `--set` (repeatable) and `--tol`
@@ -48,16 +53,16 @@ struct PolicyArgs {
 PolicyArgs add_policy_flags(CLI::App& cmd);
 
 // Shared option storage for CLI-04's report-destination flags: `--json`
-// (optionally `=path`) and repeatable `--report`. `json_option` is the raw
-// CLI11 Option*, kept alongside the bound string so a caller can
-// distinguish "the flag was never given" (json_option->count() == 0) from
-// "the flag was given with no path, meaning stdout" (count() > 0,
-// *json_path empty) -- a shared_ptr<std::string> alone cannot make that
-// distinction, since both cases leave the string empty.
+// (optionally `=path`) and repeatable `--report`, both borrowed
+// `CLI::Option*`s per D-05. `json_option` alone now answers both questions
+// that previously took two members to answer: "was the flag given"
+// (`json_option->count() > 0`, i.e. `opt_flag(json_option)`) and "with what
+// path" (`opt_string(json_option)`, empty meaning stdout) -- a bare pointer
+// to the Option carries both, so the separate `json_path` member this
+// struct used to need is gone.
 struct ReportArgs {
-  std::shared_ptr<std::string> json_path;
   CLI::Option* json_option = nullptr;
-  std::shared_ptr<std::vector<std::string>> report_flags;
+  CLI::Option* report_flags = nullptr;
 };
 
 // Registers `--json` (an optionally-valued flag: `--json` alone means
@@ -116,26 +121,27 @@ mediadiff::expected<std::vector<ReportDestination>, Error> parse_report_destinat
     const std::vector<std::string>& report_flags);
 
 // Shared option storage for CLI-08's two colour-affecting flags. Mirrors
-// PolicyArgs/ReportArgs's own shared_ptr-per-flag shape so a callback
-// lambda captures this struct by value and reads through each pointer once
-// CLI11 has parsed argv.
+// PolicyArgs/ReportArgs's own borrowed-`CLI::Option*` shape (D-05) so a
+// callback lambda captures this struct by value and reads through
+// opt_flag once CLI11 has parsed argv.
 struct ColorArgs {
-  std::shared_ptr<bool> no_color;
-  std::shared_ptr<bool> ascii;
+  CLI::Option* no_color = nullptr;
+  CLI::Option* ascii = nullptr;
 };
 
 // Registers `--no-color` and `--ascii` on `cmd`.
 ColorArgs add_color_flags(CLI::App& cmd);
 
-// Default-valued PolicyArgs/ReportArgs/ColorArgs, with no CLI11 flags
-// registered on any App -- used by main.cpp's implicit two-positional
-// dispatch (CLI-01), which intentionally carries none of `compare`'s own
-// optional flags: "mediadiff a b" behaves exactly like
-// "mediadiff compare a b" with none of them given, dispatched through the
-// SAME run_compare (src/cli/commands/compare.h) rather than a parallel
-// code path. `ReportArgs::json_option` stays nullptr here (there is no
-// CLI::Option to point at); a caller reading it must check for null before
-// dereferencing, which src/cli/commands/compare.cpp's run_compare does.
+// All-null PolicyArgs/ReportArgs/ColorArgs, with no CLI11 flags registered
+// on any App -- used by main.cpp's implicit two-positional dispatch
+// (CLI-01), which intentionally carries none of `compare`'s own optional
+// flags: "mediadiff a b" behaves exactly like "mediadiff compare a b" with
+// none of them given, dispatched through the SAME run_compare
+// (src/cli/commands/compare.h) rather than a parallel code path. Every
+// member of every struct returned here is nullptr (there is no App and
+// therefore no CLI::Option to point at); opt_string/opt_flag/opt_strings
+// all tolerate a null Option*, which is what makes `return {};` a correct,
+// complete implementation for all three factories.
 PolicyArgs default_policy_args();
 ReportArgs default_report_args();
 ColorArgs default_color_args();
@@ -155,6 +161,30 @@ ColorArgs default_color_args();
 // exactly once per compare invocation, after CLI11 has finished parsing.
 ColorInputs read_color_inputs(const ColorArgs& args);
 
+// D-05's three borrowed-Option* read accessors. Each tolerates a null
+// `o` (the all-null default_*_args() case, see below) as well as an `o`
+// that is non-null but was never given on the command line
+// (`o->count() == 0`) -- the untargeted `add_option`/`add_flag` overloads
+// this migration adopts do not bind a variable CLI11 can default-populate
+// for us, so every reader must ask the Option itself.
+//
+// opt_strings' `count() == 0` early return is NOT defensive padding -- it
+// is mandatory. CLI11 2.6.2's Option::results(T&) (Option.hpp:735-741)
+// does `res.emplace_back()` when `results_` is empty and no default string
+// is set, so an unguarded `o->as<std::vector<std::string>>()` on an unset
+// option returns a ONE-ELEMENT vector holding a single empty string, not
+// an empty vector. For a vector-valued option like `--set`/`--tol`/
+// `--report`, that `{""}` would reach parse_cli_overrides/
+// parse_report_destinations as a malformed `<glob>=<value>` argument with
+// no `=`, which append_overrides (options.cpp) rejects as ErrorKind::usage
+// -- i.e. every unset `--set`/`--tol`/`--report` would turn into a usage
+// error on every invocation. Guarding on count() first is what keeps
+// "the flag was never given" mapping to the empty vector every existing
+// caller already expects.
+std::string opt_string(const CLI::Option* o);
+bool opt_flag(const CLI::Option* o);
+std::vector<std::string> opt_strings(const CLI::Option* o);
+
 // The shared bundle of every flag more than one subcommand needs
 // (`--profile`, `--config`, `--set`, `--tol`, `--json`, `--report`,
 // `--strict`, `-q`, `-v`, `--no-color`, `--ascii` -- 02-10-PLAN.md Task 1)
@@ -168,9 +198,9 @@ struct CliOptions {
   PolicyArgs policy;
   ReportArgs report;
   ColorArgs color;
-  std::shared_ptr<bool> strict;
-  std::shared_ptr<bool> quiet;
-  std::shared_ptr<bool> verbose;
+  CLI::Option* strict = nullptr;
+  CLI::Option* quiet = nullptr;
+  CLI::Option* verbose = nullptr;
 };
 
 // Registers every flag CliOptions bundles onto `cmd`.
