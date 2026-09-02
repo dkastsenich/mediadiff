@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "analyzers/container/analyzers.h"
+#include "analyzers/size/analyzers.h"
 #include "core/snapshot.h"
 #include "probe/bmff_scan.h"
 #include "probe/demux_session.h"
@@ -88,6 +89,13 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // ordering as the mp4/mkv pairs above.
       container_ts_analyzer(),
       container_ts_not_applicable_analyzer(),
+      // 03-09-PLAN.md (SIZE-01): the four size.* checks -- family-agnostic
+      // (ContainerFamily::other), so listed once with no not-applicable
+      // sibling (unlike the three container.<family>.* pairs above, every
+      // size.* check applies to every container this project probes).
+      // Declares Pass::packet_scan, PROBE-10's shared array -- no second
+      // sweep, no pre-computed statistics struct.
+      size_analyzer(),
   };
   return registry;
 }

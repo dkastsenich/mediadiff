@@ -24,3 +24,7 @@ container.ts.pcr_interval  severity=fail  tolerance=100/1 ms
 container.ts.psi_interval  severity=warn  tolerance=500/1 ms
 container.ts.pmt_version_churn  severity=warn  tolerance=<none>
 container.ts.null_ratio  severity=info  tolerance=5/1 %
+size.file  severity=fail  tolerance=8/1 % (warn 3/1)
+size.stream_bitrate  severity=fail  tolerance=10/1 % (warn 3/1)
+size.peak_bitrate  severity=fail  tolerance=15/1 % (warn 5/1)
+size.overhead  severity=info  tolerance=5/1 %

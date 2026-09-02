@@ -354,4 +354,22 @@ std::vector<std::pair<std::string, std::string>> DemuxSession::stream_tags(int i
 
 std::int64_t DemuxSession::warning_count() const { return diagnostics_.warning_count; }
 
+// 03-09-PLAN.md Task 1 (SIZE-01): avio_size() reads the underlying
+// protocol's own size (for the file:// protocol this project's fixtures
+// always use, an fstat-equivalent call) -- no bytes are read, no second
+// file open happens. A negative return means "unknown" (libav's own
+// AVERROR convention here, not a distinguishable error code) -- reported
+// as std::nullopt rather than as 0 or a negative int64, so a caller can
+// never mistake "unknown" for "an empty file".
+std::optional<std::int64_t> DemuxSession::file_size_bytes() const {
+  if (ctx_ == nullptr || ctx_->pb == nullptr) {
+    return std::nullopt;
+  }
+  const std::int64_t size = avio_size(ctx_->pb);
+  if (size < 0) {
+    return std::nullopt;
+  }
+  return size;
+}
+
 }  // namespace mediadiff

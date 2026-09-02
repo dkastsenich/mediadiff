@@ -31,6 +31,7 @@
 #include <cstdarg>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -238,6 +239,19 @@ class DemuxSession {
   // The number of AV_LOG_WARNING-and-above lines libav emitted while this
   // session's own open() call was running (Task 2). 0 for a clean file.
   std::int64_t warning_count() const;
+
+  // 03-09-PLAN.md Task 1 (SIZE-01): the container's own byte size, queried
+  // directly from the already-open AVIOContext (avio_size) -- no second
+  // file open, no dependency on PacketScan having completed. This is what
+  // lets size.file (src/analyzers/size/size.cpp) report independently of
+  // PacketScanResult::partial (D-02): the file's size on disk is a
+  // property of the FILE, not of the scan, so it is deliberately read
+  // through this accessor rather than derived from any packet total.
+  // std::nullopt when the underlying protocol cannot report a size (e.g.
+  // a genuinely non-seekable/streamed input) -- no fixture this project
+  // generates produces one, but the accessor stays honest rather than
+  // fabricating 0.
+  std::optional<std::int64_t> file_size_bytes() const;
 
   // Internal borrow of the raw AVFormatContext* for other src/probe/
   // translation units that need to call libav directly against the SAME

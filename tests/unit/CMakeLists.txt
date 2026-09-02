@@ -94,6 +94,21 @@ add_executable(mediadiff_unit_tests
   # RationalValue), the incomplete-walk skip, and cross-format skip
   # correctness (03-08-PLAN.md Tasks 1-2).
   test_ts_analyzer.cpp
+  # SIZE-01: the nine determinism behaviors of
+  # mediadiff::detail::compute_peak_window (window boundary computed fresh
+  # from k, sort-before-window, AV_NOPTS_VALUE exclusion, non-unit-numerator
+  # timebases, overflow-emits-a-skip), driven against hand-built
+  # PacketRecord arrays with human-computed expected peaks (03-09-PLAN.md
+  # Task 2).
+  test_size_windowing.cpp
+  # SIZE-01: size.file/size.overhead/size.stream_bitrate/size.peak_bitrate
+  # wired through mediadiff::size_analyzer()'s own run() -- size.file's
+  # independence from PacketScan's own completeness, the exact overhead
+  # ratio, D-02's partial_scan gating (size.file excepted), and the two
+  # scenarios no real fixture can produce (payload exceeding file size, a
+  # stream whose every packet lacks a DTS) via direct PacketScanResult
+  # construction (03-09-PLAN.md Task 1).
+  test_size_analyzer.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

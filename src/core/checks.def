@@ -403,3 +403,76 @@ unit = "percent"
 value_kind = "rational"
 severity = "info"
 tolerance = "5%"
+
+# 03-09-PLAN.md (SIZE-01, PROBE-10's first size.* consumer), src/analyzers/
+# size/size.cpp. Rate economics derived directly from PacketScan's own
+# shared per-stream packet array (03-03-PLAN.md), plus the container's own
+# on-disk byte size. D-02: size.stream_bitrate/size.peak_bitrate/
+# size.overhead all auto-skip as `skipped:partial_scan` when
+# PacketScanResult::partial is true -- a bitrate or overhead ratio derived
+# from a truncated sweep is a confidently wrong number. size.file is the
+# one exception: it is a property of the FILE, not of the scan, so it
+# reports independently of PacketScan's own completeness.
+
+# The container's byte size on disk, at global scope. `±%` tolerance with a
+# tighter override for `remux`/`strict_bitexact` (03-CHECK-ROSTER.md): a
+# remux or bit-exact re-encode changing size at all is itself suspicious,
+# while ordinary encoder-to-encoder variation is expected within 3%/8%.
+[[check]]
+id = "size.file"
+group = "size"
+semantic = "tol"
+unit = "percent"
+value_kind = "int64"
+severity = "fail"
+tolerance = "3%,8%"
+
+[check.profile_tolerance]
+strict_bitexact = "0.5%"
+remux = "0.5%"
+
+# Per-stream, `byte_total * 8 / dts_span_seconds` kept as an exact
+# RationalValue (never pre-divided) -- a directly measured rate, never
+# `estimated` (unlike container.ts.pcr_interval's mux-rate-derived
+# counterpart). Auto-skips `skipped:partial_scan` under D-02, and
+# `skipped:no_timing_data` when every packet on the stream lacks a DTS.
+[[check]]
+id = "size.stream_bitrate"
+group = "size"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "3%,10%"
+
+# Per-stream, the MAXIMUM byte sum over any 1-second window (100ms step) of
+# a stream's own DTS-in-ticks axis, doubled to bits and kept as an exact
+# RationalValue -- doc 06's own "buffer/VBV compatibility tell". Windowing
+# is pure integer arithmetic (checked_mul/checked_add/checked_div,
+# compare_ticks_checked) so the result is byte-identical across platforms.
+# Auto-skips `skipped:no_timing_data` when every packet lacks a DTS, and
+# `skipped:insufficient_data` when the stream's own DTS span is shorter
+# than one window; `skipped:partial_scan` under D-02.
+[[check]]
+id = "size.peak_bitrate"
+group = "size"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "5%,15%"
+
+# `(file_bytes - Sum of per-stream byte_total) / file_bytes`, kept as an
+# exact RationalValue, global scope -- a muxer efficiency drift tell
+# (`info` severity, doc 06). A payload sum that exceeds the file's own size
+# (a crafted or otherwise inconsistent input) skips `insufficient_data`
+# rather than reporting a negative overhead. Auto-skips
+# `skipped:partial_scan` under D-02.
+[[check]]
+id = "size.overhead"
+group = "size"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "info"
+tolerance = "5%"
