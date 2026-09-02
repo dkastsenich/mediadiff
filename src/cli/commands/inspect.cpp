@@ -137,18 +137,20 @@ std::string render_inspect_json(const Fingerprint& fp, const CheckRegistry& regi
 void register_inspect_command(CLI::App& app) {
   auto* cmd = app.add_subcommand("inspect", "Render every implemented check family for a single *.snap.json (UC8)");
 
-  auto file_path = std::make_shared<std::string>();
-  cmd->add_option("file", *file_path, "A *.snap.json to inspect")->required();
+  CLI::Option* file_path = cmd->add_option("file", "A *.snap.json to inspect")->required();
 
   CliOptions options = add_common_options(*cmd);
 
   // ENG-16: exit()/stdout/stderr are the CLI's prerogative -- this
   // callback is the one place in the `inspect` path permitted to call
-  // std::exit() directly.
+  // std::exit() directly. Capturing a raw Option* by value is exactly as
+  // safe as the shared_ptr it replaces (D-05): the App owns the Option
+  // for the whole program lifetime, and this callback only runs during
+  // app.parse().
   cmd->callback([file_path, options]() {
     const CheckRegistry& registry = builtin_registry();
 
-    auto fp = read_snapshot(*file_path, registry);
+    auto fp = read_snapshot(opt_string(file_path), registry);
     if (!fp) {
       const Error& err = fp.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);

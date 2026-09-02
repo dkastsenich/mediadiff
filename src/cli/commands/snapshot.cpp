@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "cli/exit_code.h"
+#include "cli/options.h"
 #include "core/snapshot.h"
 #include "util/fs.h"
 
@@ -256,17 +257,17 @@ mediadiff::expected<void, Error> write_snapshot_gated(const Fingerprint& fp, con
 void register_snapshot_command(CLI::App& app) {
   auto* cmd = app.add_subcommand("snapshot", "Write a *.snap.json fingerprint (or re-materialize an existing one)");
 
-  auto input_path = std::make_shared<std::string>();
-  auto out_path = std::make_shared<std::string>();
-  auto force_flag = std::make_shared<bool>(false);
-  cmd->add_option("file", *input_path, "Media file to fingerprint, or an existing *.snap.json to rewrite")
-      ->required();
-  cmd->add_option("--out", *out_path,
-                   "Output path (default: <file> if it already ends in .snap.json, else <file>.snap.json)");
-  cmd->add_flag("--force", *force_flag, "Overwrite an existing git-tracked or CI-protected target");
+  CLI::Option* input_path =
+      cmd->add_option("file", "Media file to fingerprint, or an existing *.snap.json to rewrite")->required();
+  CLI::Option* out_path = cmd->add_option(
+      "--out", "Output path (default: <file> if it already ends in .snap.json, else <file>.snap.json)");
+  CLI::Option* force_flag = cmd->add_flag("--force", "Overwrite an existing git-tracked or CI-protected target");
 
   // ENG-16 explicitly reserves exit()/stdout/stderr as "the CLI's
   // prerogative" — see src/cli/commands/compare.cpp's identical rationale.
+  // Capturing a raw Option* by value is exactly as safe as the shared_ptr
+  // it replaces (D-05): the App owns the Option for the whole program
+  // lifetime, and this callback only runs during app.parse().
   cmd->callback([input_path, out_path, force_flag]() {
     const CheckRegistry& registry = builtin_registry();
 
@@ -278,7 +279,8 @@ void register_snapshot_command(CLI::App& app) {
     // Anything that fails to read as a snapshot (including any real media
     // file) gets the honest, actionable reason below rather than
     // read_snapshot's own more generic "not valid JSON" text.
-    auto fp = read_snapshot(*input_path, registry);
+    const std::string input_path_text = opt_string(input_path);
+    auto fp = read_snapshot(input_path_text, registry);
     if (!fp) {
       std::fputs(
           "mediadiff: fingerprinting a media file requires the probe layer, which arrives with Phase 3; pass an "
@@ -287,8 +289,8 @@ void register_snapshot_command(CLI::App& app) {
       std::exit(kExitInput);
     }
 
-    const std::string resolved_out = resolve_out_path(*input_path, *out_path);
-    auto result = write_snapshot_gated(*fp, resolved_out, *force_flag, registry);
+    const std::string resolved_out = resolve_out_path(input_path_text, opt_string(out_path));
+    auto result = write_snapshot_gated(*fp, resolved_out, opt_flag(force_flag), registry);
     if (!result) {
       const Error& err = result.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);

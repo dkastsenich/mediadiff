@@ -84,18 +84,17 @@ std::string render_tolerance(const std::optional<Tolerance>& tolerance) {
 }
 
 void register_list_checks_flags_and_callback(CLI::App& cmd) {
-  auto effective_flag = std::make_shared<bool>(false);
-  auto verbose_flag = std::make_shared<bool>(false);
-  cmd.add_flag("--effective", *effective_flag,
-               "Resolve and print the full policy (profile/config/CLI merged) instead of the bare registry");
-  cmd.add_flag("-v,--verbose", *verbose_flag, "Under --effective, also print each check's resolution chain");
+  CLI::Option* effective_flag = cmd.add_flag(
+      "--effective", "Resolve and print the full policy (profile/config/CLI merged) instead of the bare registry");
+  CLI::Option* verbose_flag =
+      cmd.add_flag("-v,--verbose", "Under --effective, also print each check's resolution chain");
 
   PolicyArgs policy_args = add_policy_flags(cmd);
 
   cmd.callback([effective_flag, verbose_flag, policy_args]() {
     const CheckRegistry& registry = builtin_registry();
 
-    if (!*effective_flag) {
+    if (!opt_flag(effective_flag)) {
       std::string out;
       for (std::uint32_t i = 0; i < registry.size(); ++i) {
         const CheckDef& check = registry.at(i);
@@ -148,7 +147,7 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
       const ResolvedCheck& resolved = resolved_policy->per_check[i];
       out += fmt::format("{}  severity={}  tolerance={}\n", check.id, severity_to_string(resolved.severity),
                           render_tolerance(resolved.tolerance));
-      if (*verbose_flag) {
+      if (opt_flag(verbose_flag)) {
         out += render_provenance_chain(resolved.chain, 2);
       }
     }
