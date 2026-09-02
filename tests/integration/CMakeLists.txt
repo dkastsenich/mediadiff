@@ -19,6 +19,15 @@ add_executable(mediadiff_integration_tests
   # the six checks 03-04-PLAN.md registers -- container.track_count/
   # track_types/track_order/chapters, meta.tags, meta.tags.language.
   test_container_topology.cpp
+  # PROBE-04/PROBE-09/CONT-05: the six container.mp4.* checks proven
+  # through the real CLI (faststart, brands, fragmentation/
+  # fragment_duration tolerance, edit_list profile severity, timescale),
+  # cross-format skip correctness (MKV/TS never run bmff_scan), and the
+  # mp4 half of the fuzz-adjacent degradation pair -- truncated, random and
+  # zero-length inputs degrade to exactly one of exit 65 or
+  # skipped:unparsed_mechanism, with a permanently-red canary
+  # (03-05-PLAN.md Task 3).
+  test_container_mp4.cpp
   test_determinism.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp
