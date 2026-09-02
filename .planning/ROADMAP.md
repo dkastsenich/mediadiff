@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 6/11 plans executed
+**Plans**: 7/11 plans executed
 
 Plans:
 **Wave 1**
@@ -200,7 +200,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 03-07-PLAN.md — `ts_scan`: stride autodetect, bounded PID table, PCR/PSI parsing, mux-rate estimate, ISO 13818-1 continuity carve-outs
+- [x] 03-07-PLAN.md — `ts_scan`: stride autodetect, bounded PID table, PCR/PSI parsing, mux-rate estimate, ISO 13818-1 continuity carve-outs
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
@@ -297,7 +297,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
-| 3. Probe Layer, Container & Size | 6/11 | In Progress|  |
+| 3. Probe Layer, Container & Size | 7/11 | In Progress|  |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |

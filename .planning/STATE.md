@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-06-PLAN.md
-last_updated: "2026-09-02T20:59:22.382Z"
+stopped_at: Completed 03-07-PLAN.md
+last_updated: "2026-09-02T21:29:46.123Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 30
+  completed_plans: 31
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 7 of 11
+Plan: 8 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -79,6 +79,7 @@ Progress: [█████████░] 86%
 | Phase 03 P04 | 150min | 3 tasks | 27 files |
 | Phase 03 P05 | 140 | 3 tasks | 22 files |
 | Phase 03 P06 | 37min | 3 tasks | 25 files |
+| Phase 03 P07 | 40min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -152,6 +153,9 @@ Recent decisions affecting current work:
 - [Phase ?]: Segment walk stops at first Cluster; a trailing Cues is located exclusively via a guarded single-hop SeekHead-follow (bounds-check + ID-verify, no recursion)
 - [Phase ?]: codec_delay ns-to-samples conversion is exclusively checked-integer arithmetic (checked_mul then checked_div), never floating point
 - [Phase ?]: container_family_token centralized as a shared core primitive so probe's ContainerFamily and compare's cross-container demotion can never disagree
+- [Phase ?]: 03-07: container_family.cpp needed no change -- confirmed empirically (inspect reports container.format==mpegts) that the existing mapping already covers this scanner's fixtures
+- [Phase ?]: 03-07: mux-rate estimate derived from the first valid consecutive same-PID PCR pair only (not averaged), kept as an unreduced exact rational, never divided in this scanner
+- [Phase ?]: 03-07: PSI section reassembly across packet boundaries is explicitly out of scope (T-3-33) -- a PAT/PMT section not fully contained in one packet is discarded and counted, never parsed from a truncated buffer
 
 ### Pending Todos
 
@@ -181,6 +185,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T20:59:22.365Z
-Stopped at: Completed 03-06-PLAN.md
+Last session: 2026-09-02T21:29:46.104Z
+Stopped at: Completed 03-07-PLAN.md
 Resume file: None

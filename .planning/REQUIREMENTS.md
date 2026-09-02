@@ -88,8 +88,8 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **PROBE-03**: `ParserScan` extends the same sweep to record per-access-unit `pict_type`, `key_frame`, `repeat_pict`, `field_order`, plus NAL-type sequences for H.264/HEVC, at under 10% overhead over plain PacketScan
 - [x] **PROBE-04**: `bmff_scan` reads MP4/MOV top-level box order and offsets, `ftyp` brands, `mvhd`/`mdhd` timescales, `elst` entries, and `moof`/`sidx` presence without loading payloads
 - [x] **PROBE-05**: `ebml_scan` reads Matroska/WebM element offsets (SeekHead, Info, Tracks, first Cluster, Cues), `TimestampScale`, `Duration` presence, and per-track `CodecDelay`/`SeekPreRoll`
-- [ ] **PROBE-06**: `ts_scan` resyncs on 0x47 with 188/192/204 autodetect and extracts per-PID counts, continuity-counter state, PCR values, PAT/PMT parsing with version tracking, and null-packet counts
-- [ ] **PROBE-07**: **[R]** `ts_scan` implements the ISO 13818-1 §2.4.3.3 continuity-counter carve-outs explicitly — increment only on payload-carrying packets, one duplicate allowed, `discontinuity_indicator` resets counted separately (research: PITFALLS — hand-rolled CC logic false-alarms without these)
+- [x] **PROBE-06**: `ts_scan` resyncs on 0x47 with 188/192/204 autodetect and extracts per-PID counts, continuity-counter state, PCR values, PAT/PMT parsing with version tracking, and null-packet counts
+- [x] **PROBE-07**: **[R]** `ts_scan` implements the ISO 13818-1 §2.4.3.3 continuity-counter carve-outs explicitly — increment only on payload-carrying packets, one duplicate allowed, `discontinuity_indicator` resets counted separately (research: PITFALLS — hand-rolled CC logic false-alarms without these)
 - [x] **PROBE-08**: Every analyzer declares which passes it needs and the orchestrator runs the union exactly once per file — no analyzer re-reads the file
 - [x] **PROBE-09**: Unparseable structure degrades to `skipped:unparsed_mechanism` with a byte offset in evidence — never a crash, never a silent pass; truncated and garbage inputs exit `65` cleanly
 - [x] **PROBE-10**: **[R]** Packet-interval statistics are computed once as a shared probe-level primitive consumed by both `video.frame_rate.measured` and `timeline.*`, resolving the phase-3-depends-on-phase-4 inversion (research: ARCHITECTURE hazard A)
@@ -305,8 +305,8 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | PROBE-03 | Phase 4 | Pending |
 | PROBE-04 | Phase 3 | Complete |
 | PROBE-05 | Phase 3 | Complete |
-| PROBE-06 | Phase 3 | Pending |
-| PROBE-07 | Phase 3 | Pending |
+| PROBE-06 | Phase 3 | Complete |
+| PROBE-07 | Phase 3 | Complete |
 | PROBE-08 | Phase 3 | Complete |
 | PROBE-09 | Phase 3 | Complete |
 | PROBE-10 | Phase 3 | Complete |
