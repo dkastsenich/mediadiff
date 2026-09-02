@@ -36,3 +36,6 @@ tests/fixtures/*
 # above.
 !tests/fixtures/config/
 !tests/fixtures/config/**
+
+# GSD runtime sentinels (dispatch isolation state) — machine-local, never committed
+/.gsd/
