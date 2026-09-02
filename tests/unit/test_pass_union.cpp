@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -104,4 +105,140 @@ TEST_CASE("pass_union - all_analyzers() order is stable across calls", "[unit]")
   for (std::size_t i = 0; i < first.size(); ++i) {
     REQUIRE(first[i].name == second[i].name);
   }
+}
+
+// --- PROBE-10 (03-03-PLAN.md Task 3): two independent consumers derive
+// different statistics from ONE shared, read-only packet array produced
+// by exactly one sweep -- the actual phase-3-depends-on-phase-4 inversion
+// PROBE-10 exists to resolve (a byte-sum consumer standing in for this
+// phase's size.stream_bitrate; a pts-delta consumer standing in for
+// Phase 4's video.frame_rate.measured). Deliberately does NOT introduce
+// an IntervalStats-shaped struct -- both consumers derive their own
+// statistic as a pure function over StreamPacketScan::packets, the raw
+// array itself (src/probe/packet_scan.h's own header comment records why
+// a pre-computed struct was rejected).
+
+namespace {
+
+// One analyzer's own observation of the shared PacketScanResult, written
+// from inside its run() (a raw function pointer -- no captures -- so
+// static storage is the only channel back to the test body, matching
+// this file's own g_marker_ran precedent above).
+struct SharedObservation {
+  const void* packets_data_ptr = nullptr;
+  std::int64_t byte_sum = 0;
+  std::int64_t packet_count = 0;
+  std::int64_t read_frame_call_count = 0;
+};
+
+SharedObservation g_obs_byte_sum;
+SharedObservation g_obs_pts_delta;
+
+// Derives BOTH stats independently (a byte sum, standing in for
+// size.stream_bitrate's own windowed byte accumulation, and a packet
+// count, a cheap proxy for a pts-delta-based stat like
+// video.frame_rate.measured) from `results.packet_scan`'s shared array --
+// never mutates it (const ProbeResults&), so two analyzers computing the
+// SAME two stats independently must agree exactly regardless of which
+// one ran first (Test 3's own "no consumer mutated the shared state"
+// proof).
+void observe_shared_packet_scan(SharedObservation& obs, const ProbeResults& results) {
+  if (!results.packet_scan.has_value()) {
+    return;
+  }
+  const auto& per_stream = results.packet_scan->per_stream;
+  if (!per_stream.empty() && !per_stream[0].packets.empty()) {
+    obs.packets_data_ptr = per_stream[0].packets.data();
+  }
+  std::int64_t byte_sum = 0;
+  std::int64_t packet_count = 0;
+  for (const auto& stream : per_stream) {
+    packet_count += static_cast<std::int64_t>(stream.packets.size());
+    for (const auto& record : stream.packets) {
+      byte_sum += record.size;
+    }
+  }
+  obs.byte_sum = byte_sum;
+  obs.packet_count = packet_count;
+  obs.read_frame_call_count = results.packet_scan->read_frame_call_count;
+}
+
+void byte_sum_analyzer_run(const ProbeResults& results, Fingerprint& /*fp*/) {
+  observe_shared_packet_scan(g_obs_byte_sum, results);
+}
+
+void pts_delta_analyzer_run(const ProbeResults& results, Fingerprint& /*fp*/) {
+  observe_shared_packet_scan(g_obs_pts_delta, results);
+}
+
+std::vector<AnalyzerSpec> two_packet_scan_analyzers() {
+  return {
+      AnalyzerSpec{"synthetic.byte_sum", PassSet{Pass::demux_header, Pass::packet_scan}, ContainerFamily::other,
+                   &byte_sum_analyzer_run},
+      AnalyzerSpec{"synthetic.pts_delta", PassSet{Pass::demux_header, Pass::packet_scan}, ContainerFamily::other,
+                   &pts_delta_analyzer_run},
+  };
+}
+
+}  // namespace
+
+TEST_CASE("pass_union - two analyzers both declaring packet_scan cause it to run exactly once", "[unit]") {
+  g_obs_byte_sum = SharedObservation{};
+  g_obs_pts_delta = SharedObservation{};
+
+  PassExecutionLog log;
+  auto result = mediadiff::detail::run_probe(tracer_mp4(), two_packet_scan_analyzers(), &log);
+
+  REQUIRE(result.has_value());
+  int packet_scan_occurrences = 0;
+  for (Pass p : log) {
+    if (p == Pass::packet_scan) {
+      ++packet_scan_occurrences;
+    }
+  }
+  REQUIRE(packet_scan_occurrences == 1);
+}
+
+TEST_CASE("pass_union - both analyzers receive const references to the SAME PacketScanResult object", "[unit]") {
+  g_obs_byte_sum = SharedObservation{};
+  g_obs_pts_delta = SharedObservation{};
+
+  auto result = mediadiff::detail::run_probe(tracer_mp4(), two_packet_scan_analyzers(), nullptr);
+
+  REQUIRE(result.has_value());
+  REQUIRE(g_obs_byte_sum.packets_data_ptr != nullptr);
+  // Pointer identity, not value equality -- the actual PROBE-10 proof.
+  REQUIRE(g_obs_byte_sum.packets_data_ptr == g_obs_pts_delta.packets_data_ptr);
+}
+
+TEST_CASE("pass_union - each analyzer's independently-derived statistic agrees exactly with the other's",
+          "[unit]") {
+  g_obs_byte_sum = SharedObservation{};
+  g_obs_pts_delta = SharedObservation{};
+
+  auto result = mediadiff::detail::run_probe(tracer_mp4(), two_packet_scan_analyzers(), nullptr);
+
+  REQUIRE(result.has_value());
+  REQUIRE(g_obs_byte_sum.byte_sum > 0);
+  REQUIRE(g_obs_byte_sum.byte_sum == g_obs_pts_delta.byte_sum);
+  REQUIRE(g_obs_byte_sum.packet_count > 0);
+  REQUIRE(g_obs_byte_sum.packet_count == g_obs_pts_delta.packet_count);
+}
+
+TEST_CASE("pass_union - neither analyzer opens the input file; the whole call makes exactly one sweep",
+          "[unit]") {
+  g_obs_byte_sum = SharedObservation{};
+  g_obs_pts_delta = SharedObservation{};
+
+  auto result = mediadiff::detail::run_probe(tracer_mp4(), two_packet_scan_analyzers(), nullptr);
+
+  REQUIRE(result.has_value());
+  // Exact equality against the single sweep's own read_frame_call_count
+  // (packets read plus the terminating AVERROR_EOF call) -- neither
+  // analyzer has any libav access at all (their own run() signature is
+  // `const ProbeResults&, Fingerprint&`, with no file handle reachable
+  // from either), so this count can only ever reflect the orchestrator's
+  // own single run_packet_scan call.
+  REQUIRE(g_obs_byte_sum.read_frame_call_count == g_obs_byte_sum.packet_count + 1);
+  REQUIRE(g_obs_pts_delta.read_frame_call_count == g_obs_byte_sum.read_frame_call_count);
 }
