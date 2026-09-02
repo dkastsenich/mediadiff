@@ -37,5 +37,12 @@ tests/fixtures/*
 !tests/fixtures/config/
 !tests/fixtures/config/**
 
+# Hand-authored probe-layer fixtures (03-02-PLAN.md Task 1) are also text,
+# not media — a deliberately-not-a-media-file fixture proving
+# DemuxSession::open's ErrorKind::input_unsupported path, tracked for the
+# same reason snapshots/ is above.
+!tests/fixtures/probe/
+!tests/fixtures/probe/**
+
 # GSD runtime sentinels (dispatch isolation state) — machine-local, never committed
 /.gsd/

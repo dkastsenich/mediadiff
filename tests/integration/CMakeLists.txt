@@ -10,6 +10,11 @@ find_package(nlohmann_json_schema_validator CONFIG REQUIRED)
 add_executable(mediadiff_integration_tests
   test_version_output.cpp
   test_compare_tracer.cpp
+  # PROBE-01/PROBE-08/CONT-01: real media flowing through fingerprint_input
+  # -> DemuxSession -> the pass union -> topology.cpp -> compare, from both
+  # `compare` and `inspect`; the wall-clock budget's CLI surface
+  # (03-02-PLAN.md Tasks 1-2).
+  test_probe_tracer.cpp
   test_determinism.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp

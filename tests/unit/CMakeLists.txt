@@ -32,6 +32,10 @@ add_executable(mediadiff_unit_tests
   # trip, and Finding.evidence's single propagation seam (03-01-PLAN.md
   # Tasks 1-2, closes Broken Window #1).
   test_measurement_provenance.cpp
+  # PROBE-01: DemuxSession's format_name()/stream_count()/error mapping,
+  # fingerprint_input's snapshot-first fallthrough, the wall-clock budget,
+  # and the libav log-capture mechanism (03-02-PLAN.md Tasks 1-2).
+  test_demux_session.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

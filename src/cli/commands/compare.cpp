@@ -21,6 +21,8 @@
 #include "core/profiles.h"
 #include "core/registry.h"
 #include "core/snapshot.h"
+#include "probe/demux_session.h"
+#include "probe/orchestrator.h"
 #include "report/json.h"
 #include "report/junit.h"
 #include "report/markdown.h"
@@ -113,14 +115,15 @@ void register_compare_command(CLI::App& app) {
   ReportArgs report_args = add_report_flags(*cmp);
   PolicyArgs policy_args = add_policy_flags(*cmp);
   ColorArgs color_args = add_color_flags(*cmp);
+  ProbeArgs probe_args = add_probe_flags(*cmp);
 
   // Capturing raw Option*s by value is exactly as safe as the shared_ptrs
   // they replace (D-05): the App owns every Option for the whole program
   // lifetime, and this callback only runs during app.parse().
   cmp->callback([baseline_path, candidate_path, strict_flag, verbose_flag, quiet_flag, report_args, policy_args,
-                 color_args]() {
+                 color_args, probe_args]() {
     run_compare(opt_string(baseline_path), opt_string(candidate_path), opt_flag(strict_flag), opt_flag(verbose_flag),
-                opt_flag(quiet_flag), report_args, policy_args, color_args);
+                opt_flag(quiet_flag), report_args, policy_args, color_args, probe_args);
   });
 }
 
@@ -133,31 +136,43 @@ void register_compare_command(CLI::App& app) {
 // comment in compare.h.
 void run_compare(const std::string& baseline_path, const std::string& candidate_path, bool strict, bool verbose,
                   bool quiet, const ReportArgs& report_args, const PolicyArgs& policy_args,
-                  const ColorArgs& color_args) {
+                  const ColorArgs& color_args, const ProbeArgs& probe_args) {
   const CheckRegistry& registry = builtin_registry();
 
-  auto baseline = read_snapshot(baseline_path, registry);
-  if (!baseline) {
-    const Error& err = baseline.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
-    std::exit(exit_code_for(err.kind));
-  }
-  auto candidate = read_snapshot(candidate_path, registry);
-  if (!candidate) {
-    const Error& err = candidate.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
-    std::exit(exit_code_for(err.kind));
-  }
-
   // Doc 01 section 6: mediadiff.toml is read exactly once here, before
-  // any worker starts (a `dir` run's later plan reuses this same
-  // resolved Policy per file rather than re-reading the config).
+  // any worker starts -- now also the source of --probe-timeout's own
+  // `[probe] timeout_seconds` fallback, resolved and applied below,
+  // BEFORE either fingerprint_input call, so a configured budget governs
+  // both the baseline's and the candidate's probe.
   const std::string config_path_text = opt_string(policy_args.config_path);
   const std::optional<std::string> explicit_config_path =
       config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
   auto config = discover_and_load(explicit_config_path);
   if (!config) {
     const Error& err = config.error();
+    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    std::exit(exit_code_for(err.kind));
+  }
+
+  auto probe_timeout_ms = resolve_probe_timeout_ms(probe_args, *config);
+  if (!probe_timeout_ms) {
+    const Error& err = probe_timeout_ms.error();
+    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    std::exit(exit_code_for(err.kind));
+  }
+  if (probe_timeout_ms->has_value()) {
+    set_default_wall_clock_budget_ms(**probe_timeout_ms);
+  }
+
+  auto baseline = fingerprint_input(baseline_path, registry);
+  if (!baseline) {
+    const Error& err = baseline.error();
+    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    std::exit(exit_code_for(err.kind));
+  }
+  auto candidate = fingerprint_input(candidate_path, registry);
+  if (!candidate) {
+    const Error& err = candidate.error();
     std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
     std::exit(exit_code_for(err.kind));
   }

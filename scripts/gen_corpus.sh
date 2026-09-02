@@ -89,15 +89,31 @@ cat > "$MANIFEST" <<EOF
 }
 EOF
 
-# --- Fixture recipes (Phase 1: none yet) -----------------------------------
-# Every future recipe added in a later phase follows this convention:
+# --- Fixture recipes ---------------------------------------------------
+# Every recipe follows the convention established in Phase 1:
 #   "$FFMPEG_BIN" -flags +bitexact -fflags +bitexact -y \
 #     -f lavfi -i <source-filter> ... "$OUT_DIR/<fixture-name>.<ext>"
 # Write only into $OUT_DIR, and never commit the result — .gitignore keeps
 # generated media out of git while this manifest stays tracked as provenance.
 # ----------------------------------------------------------------------------
 
-# Exiting 0 with zero fixtures generated is the success case in this phase,
-# not a degenerate one — a script that treated "nothing to generate" as an
-# error would be red for the entire phase.
-echo "gen_corpus: manifest written to ${MANIFEST}. No fixtures generated in Phase 1 (skeleton only)."
+# Phase 3 tracer fixtures (03-02-PLAN.md Task 1): a synthesized MP4 and the
+# same lavfi content muxed to Matroska, plus a byte-identical second copy
+# of the MP4 for the clean-pair (no-change) integration test. `-c:v mpeg4
+# -c:a aac` picks encoders FFmpeg always builds in (never libx264/GPL),
+# matching this project's own decode-only LGPL constraint even though this
+# script's *generating* ffmpeg is a separate system binary, not the linked
+# vcpkg FFmpeg the shipped mediadiff binary decodes with.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tracer_a.mp4"
+
+cp "$OUT_DIR/tracer_a.mp4" "$OUT_DIR/tracer_a_copy.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tracer_a.mkv"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv."

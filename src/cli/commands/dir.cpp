@@ -27,6 +27,8 @@
 #include "core/registry.h"
 #include "core/snapshot.h"
 #include "core/value.h"
+#include "probe/demux_session.h"
+#include "probe/orchestrator.h"
 #include "report/json.h"
 #include "report/junit.h"
 #include "report/markdown.h"
@@ -188,6 +190,22 @@ void register_dir_command(CLI::App& app) {
     }
     const std::optional<ConfigFile>& config = *config_result;
 
+    // Resolved once, here, before the worker pool starts (the same
+    // "resolved once, read many times across worker threads" pattern this
+    // command already applies to the base Policy below) -- every job's
+    // own DemuxSession::open call reads DemuxOptions{}'s default member
+    // initializer, which reads this global, so a single --probe-timeout
+    // governs every file in the corpus identically.
+    auto probe_timeout_result = resolve_probe_timeout_ms(options.probe, config);
+    if (!probe_timeout_result) {
+      const Error& err = probe_timeout_result.error();
+      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      std::exit(exit_code_for(err.kind));
+    }
+    if (probe_timeout_result->has_value()) {
+      set_default_wall_clock_budget_ms(**probe_timeout_result);
+    }
+
     auto cli_overrides_result =
         parse_cli_overrides(opt_strings(options.policy.set_flags), opt_strings(options.policy.tol_flags));
     if (!cli_overrides_result) {
@@ -334,12 +352,12 @@ void register_dir_command(CLI::App& app) {
         const std::string baseline_path = join_relative(baseline_dir_text, pair.relative_path);
         const std::string candidate_path = join_relative(candidate_dir_text, pair.relative_path);
 
-        auto baseline_fp = read_snapshot(baseline_path, registry);
+        auto baseline_fp = fingerprint_input(baseline_path, registry);
         if (!baseline_fp) {
           outcomes[i].hard_error = baseline_fp.error();
           return;
         }
-        auto candidate_fp = read_snapshot(candidate_path, registry);
+        auto candidate_fp = fingerprint_input(candidate_path, registry);
         if (!candidate_fp) {
           outcomes[i].hard_error = candidate_fp.error();
           return;

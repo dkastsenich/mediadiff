@@ -236,17 +236,67 @@ ColorArgs add_color_flags(CLI::App& cmd) {
   return args;
 }
 
+ProbeArgs add_probe_flags(CLI::App& cmd) {
+  ProbeArgs args;
+
+  // D-05's typed-numeric exception: ->check() rather than a bound
+  // variable, so a malformed value is a CLI::ValidationError at parse
+  // time (exit 64 via main.cpp's own catch), not a runtime surprise.
+  // CLI::NonNegativeNumber accepts 0 -- a 0-second budget is a valid,
+  // deliberately-immediate-timeout value (this plan's own acceptance
+  // criterion), not a usage error.
+  args.timeout_seconds = cmd.add_option("--probe-timeout", "Per-file wall-clock probe budget, in seconds (default: 30)")
+                              ->type_name("SECONDS")
+                              ->check(CLI::NonNegativeNumber);
+  // Registered, accepted, and validated here; left unconsumed for plan
+  // 03-03 to wire into D-01's global memory-budget model (03-02-PLAN.md
+  // Task 2's own instruction).
+  args.memory_budget_mb =
+      cmd.add_option("--probe-memory-budget-mb",
+                      "Global probe memory budget, in MB (accepted now; not yet consumed -- arrives with a "
+                      "later plan)")
+          ->type_name("MB")
+          ->check(CLI::PositiveNumber);
+
+  return args;
+}
+
+mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms(const ProbeArgs& args,
+                                                                                    const std::optional<ConfigFile>& config) {
+  if (args.timeout_seconds != nullptr && args.timeout_seconds->count() > 0) {
+    const std::string text = opt_string(args.timeout_seconds);
+    try {
+      const long long seconds = std::stoll(text);
+      return static_cast<std::int64_t>(seconds) * 1000;
+    } catch (const std::exception&) {
+      // Unreachable in practice -- ->check(CLI::NonNegativeNumber) already
+      // rejected anything std::stoll could not parse, at CLI11 parse time.
+      // Caught here (never crossing the lib boundary) as a defensive
+      // backstop only.
+      return mediadiff::unexpected(
+          Error{ErrorKind::usage, "--probe-timeout must be a non-negative integer number of seconds: '" + text + "'"});
+    }
+  }
+  if (config.has_value() && config->probe.has_value() && config->probe->timeout_seconds.has_value()) {
+    return static_cast<std::int64_t>(*config->probe->timeout_seconds) * 1000;
+  }
+  return std::nullopt;
+}
+
 PolicyArgs default_policy_args() { return {}; }
 
 ReportArgs default_report_args() { return {}; }
 
 ColorArgs default_color_args() { return {}; }
 
+ProbeArgs default_probe_args() { return {}; }
+
 CliOptions add_common_options(CLI::App& cmd) {
   CliOptions options;
   options.policy = add_policy_flags(cmd);
   options.report = add_report_flags(cmd);
   options.color = add_color_flags(cmd);
+  options.probe = add_probe_flags(cmd);
 
   options.strict = cmd.add_flag("--strict", "A worst-warn finding also fails the run (exit 2)");
   options.quiet = cmd.add_flag("-q,--quiet", "Suppress non-error output");

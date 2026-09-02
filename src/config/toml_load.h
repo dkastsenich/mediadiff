@@ -59,6 +59,18 @@ struct DirBlock {
   std::optional<int> threads;
 };
 
+// The `[probe]` block (doc 02 section 1.1, 03-02-PLAN.md Task 2): today,
+// just the per-file wall-clock probe budget in seconds. `timeout_seconds`
+// is std::nullopt when the key was absent -- resolution precedence
+// (`--probe-timeout` above this, above src/probe/demux_session.h's own
+// kDefaultProbeBudgetMs) is src/cli/options.cpp's
+// resolve_probe_timeout_ms's job, not this parser's; this struct only
+// carries what the table said, validated for shape (a non-negative
+// integer) at load time.
+struct ProbeBlock {
+  std::optional<int> timeout_seconds;
+};
+
 // One `[override."<glob-on-relative-path>"]` block (doc 01 section 6, dir
 // mode only): the path glob naming which files it applies to, plus its own
 // nested `[severity]`/`[tolerance]` tables of check-id glob rules -- the
@@ -86,6 +98,7 @@ struct ConfigFile {
   std::vector<GlobRule> tolerance;
   std::optional<TransformBlock> transform;
   std::optional<DirBlock> dir;
+  std::optional<ProbeBlock> probe;
   std::vector<OverrideBlock> overrides;
   std::string source_path;
 };

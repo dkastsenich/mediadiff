@@ -25,6 +25,8 @@
 #include "core/registry.h"
 #include "core/serializer.h"
 #include "core/snapshot.h"
+#include "probe/demux_session.h"
+#include "probe/orchestrator.h"
 #include "report/model.h"
 
 namespace mediadiff {
@@ -110,6 +112,11 @@ std::string render_inspect_json(const Fingerprint& fp, const CheckRegistry& regi
   nlohmann::ordered_json doc;
   doc["schema_version"] = fp.envelope.schema_version;
   doc["tool_version"] = fp.envelope.tool_version;
+  // Task 2 (PROBE-01 completion): always present, even when empty, so a
+  // caller can rely on the key's presence rather than its absence meaning
+  // "no diagnostics API exists" -- mirrors ENG-14's existing
+  // skip_reason-always-present discipline for findings.
+  doc["diagnostics"] = fp.envelope.diagnostics;
 
   nlohmann::ordered_json groups = nlohmann::ordered_json::object();
   for (Group group : kGroupOrder) {
@@ -152,23 +159,35 @@ void register_inspect_command(CLI::App& app) {
   cmd->callback([file_path, options]() {
     const CheckRegistry& registry = builtin_registry();
 
-    auto fp = read_snapshot(opt_string(file_path), registry);
-    if (!fp) {
-      const Error& err = fp.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
-      std::exit(exit_code_for(err.kind));
-    }
-
     // Policy resolution, through the SAME resolve_policy sequence
     // compare/list-checks already run (T-2-23) -- never a parallel
     // reimplementation -- so `inspect -v`'s chain can never drift from
-    // what those two surfaces would show for the same check.
+    // what those two surfaces would show for the same check. Loaded
+    // before fingerprint_input runs so --probe-timeout's own `[probe]
+    // timeout_seconds` config fallback can be resolved and applied first.
     const std::string config_path_text = opt_string(options.policy.config_path);
     const std::optional<std::string> explicit_config_path =
         config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
     auto config = discover_and_load(explicit_config_path);
     if (!config) {
       const Error& err = config.error();
+      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      std::exit(exit_code_for(err.kind));
+    }
+
+    auto probe_timeout_ms = resolve_probe_timeout_ms(options.probe, *config);
+    if (!probe_timeout_ms) {
+      const Error& err = probe_timeout_ms.error();
+      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      std::exit(exit_code_for(err.kind));
+    }
+    if (probe_timeout_ms->has_value()) {
+      set_default_wall_clock_budget_ms(**probe_timeout_ms);
+    }
+
+    auto fp = fingerprint_input(opt_string(file_path), registry);
+    if (!fp) {
+      const Error& err = fp.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }

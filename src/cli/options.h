@@ -132,6 +132,44 @@ struct ColorArgs {
 // Registers `--no-color` and `--ascii` on `cmd`.
 ColorArgs add_color_flags(CLI::App& cmd);
 
+// Shared option storage for the probe layer's two CLI flags (03-02-PLAN.md
+// Task 2, PROBE-01 completion): `--probe-timeout` (consumed this plan) and
+// `--probe-memory-budget-mb` (registered here, accepted, left unconsumed
+// for plan 03-03 to wire up -- D-01's global memory-budget model). Both are
+// typed numerics, D-05's stated exception: bound via `->check()` rather
+// than the untargeted add_option/opt_string pattern, so a malformed value
+// is a parse-time exit-64 usage error rather than a runtime surprise.
+struct ProbeArgs {
+  CLI::Option* timeout_seconds = nullptr;
+  CLI::Option* memory_budget_mb = nullptr;
+};
+
+// Registers `--probe-timeout SECONDS` and `--probe-memory-budget-mb MB` on
+// `cmd`.
+ProbeArgs add_probe_flags(CLI::App& cmd);
+
+// Resolves the wall-clock probe budget, in milliseconds, from
+// `--probe-timeout` (when given) else `[probe] timeout_seconds` (when
+// `config` declared one) else std::nullopt -- meaning "no override; leave
+// src/probe/demux_session.h's own default_wall_clock_budget_ms() in
+// force", the same three-way precedence shape src/cli/commands/dir.cpp
+// already established for `--threads`/`[dir] threads`. A caller that gets
+// an engaged value is expected to call set_default_wall_clock_budget_ms
+// with it before the first DemuxSession::open of this invocation; a
+// std::nullopt result means the caller should not call the setter at all.
+// `--probe-timeout`'s own text is re-parsed here even though CLI11's
+// ->check(CLI::NonNegativeNumber) already validated it at parse time,
+// mirroring resolve_profile_selection's own "re-validate, don't trust
+// blindly" convention.
+mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms(const ProbeArgs& args,
+                                                                                    const std::optional<ConfigFile>& config);
+
+// All-null ProbeArgs, matching default_policy_args()/default_report_args()/
+// default_color_args()'s own contract -- used by main.cpp's implicit
+// two-positional dispatch, which carries none of `compare`'s own optional
+// flags.
+ProbeArgs default_probe_args();
+
 // All-null PolicyArgs/ReportArgs/ColorArgs, with no CLI11 flags registered
 // on any App -- used by main.cpp's implicit two-positional dispatch
 // (CLI-01), which intentionally carries none of `compare`'s own optional
@@ -198,6 +236,7 @@ struct CliOptions {
   PolicyArgs policy;
   ReportArgs report;
   ColorArgs color;
+  ProbeArgs probe;
   CLI::Option* strict = nullptr;
   CLI::Option* quiet = nullptr;
   CLI::Option* verbose = nullptr;

@@ -81,3 +81,17 @@ semantic = "presence"
 unit = "none"
 value_kind = "string"
 severity = "warn"
+
+# Phase 3's tracer check (03-02-PLAN.md, 03-CHECK-ROSTER.md): the
+# container family's own name, extracted from AVInputFormat.name's first
+# comma-delimited token (doc 02 section 2) by src/analyzers/container/
+# topology.cpp. A baseline/candidate container mismatch (e.g. "mov" vs
+# "matroska") is almost always intentional and blocking -- hence `fail`,
+# not `warn`.
+[[check]]
+id = "container.format"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"

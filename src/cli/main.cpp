@@ -13,8 +13,13 @@
 #include "cli/commands/snapshot.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
+#include "probe/demux_session.h"
 #include "util/fs.h"
 #include "util/version.h"
+
+extern "C" {
+#include <libavutil/log.h>
+}
 
 #ifdef _WIN32
 #include <shellapi.h>
@@ -44,6 +49,20 @@
 namespace mediadiff {
 
 int run(int argc, char** argv) {
+  // Installed exactly once, here, at process start -- the ONE call site
+  // this project permits (03-02-PLAN.md Task 2's own acceptance
+  // criterion counts this exact libav log-callback installer's own name
+  // across the whole src/ tree and requires exactly one occurrence, so
+  // no OTHER comment in this codebase spells it out literally). This
+  // libav entry point overwrites a single process-global function
+  // pointer (libavutil/log.c) -- installing it from anywhere but the
+  // single-threaded startup path (never a `dir`-mode worker thread) is
+  // what keeps "the last caller anywhere in the process wins for every
+  // thread" from becoming a race. probe_log_callback itself
+  // (src/probe/demux_session.h) is a no-op until a DemuxSession::open
+  // call on the same thread has attached its own diagnostics accumulator.
+  av_log_set_callback(&mediadiff::probe_log_callback);
+
   CLI::App app{"media-aware regression diff", "mediadiff"};
 
   // Tolerates "0 subcommands fired" -- the implicit-compare route below.
@@ -174,7 +193,7 @@ int run(int argc, char** argv) {
     // given.
     run_compare(opt_string(implicit_baseline_opt), opt_string(implicit_candidate_opt), /*strict=*/false,
                 /*verbose=*/false, /*quiet=*/false, default_report_args(), default_policy_args(),
-                default_color_args());
+                default_color_args(), default_probe_args());
   }
 
   // Fewer than two positionals (including bare `mediadiff` with none):
