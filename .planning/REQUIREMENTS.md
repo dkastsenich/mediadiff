@@ -98,13 +98,13 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 
 - [x] **CONT-01**: Container-agnostic topology checks work: `container.format`, `track_count`, `track_types`, `track_order`, `chapters`
 - [ ] **CONT-02**: A cross-container migration demotes cleanly â€” `container.<fmt>.*` on both sides becomes `skipped:cross_container` and comparison proceeds at the semantic layer
-- [ ] **CONT-03**: `meta.tags` compares as a set with a volatile ignore list (`creation_time`, `encoder`, `handler_name`, `encoding_tool`), showing ignored-but-differing values under `-v`
-- [ ] **CONT-04**: `meta.tags.language` treats `und` and absent as equal, since that divergence is a muxer artifact and not a regression
+- [x] **CONT-03**: `meta.tags` compares as a set with a volatile ignore list (`creation_time`, `encoder`, `handler_name`, `encoding_tool`), showing ignored-but-differing values under `-v`
+- [x] **CONT-04**: `meta.tags.language` treats `und` and absent as equal, since that divergence is a muxer artifact and not a regression
 - [ ] **CONT-05**: MP4/MOV checks work: `faststart`, `brands`, `fragmentation`, `edit_list`, `timescale`
 - [ ] **CONT-06**: Matroska/WebM checks work: `cues_placement`, `codec_delay`, `timestamp_scale`, `duration_element`
 - [x] **CONT-07**: MPEG-TS checks work: `cc_errors`, `pcr_interval`, `psi_interval`, `null_ratio`
 - [ ] **CONT-08**: Multi-program TS emits program-scoped measurements paired by `program_number`, with unpaired programs reported as a topology failure
-- [ ] **CONT-09**: **[R]** Subtitle and caption track presence is explicitly covered and tested, not merely assumed to fall out of generic stream-presence checks (research: FEATURES gap 4)
+- [x] **CONT-09**: **[R]** Subtitle and caption track presence is explicitly covered and tested, not merely assumed to fall out of generic stream-presence checks (research: FEATURES gap 4)
 
 ### Video Checks
 
@@ -312,13 +312,13 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | PROBE-10 | Phase 3 | Complete |
 | CONT-01 | Phase 3 | Complete |
 | CONT-02 | Phase 3 | Pending |
-| CONT-03 | Phase 3 | Pending |
-| CONT-04 | Phase 3 | Pending |
+| CONT-03 | Phase 3 | Complete |
+| CONT-04 | Phase 3 | Complete |
 | CONT-05 | Phase 3 | Pending |
 | CONT-06 | Phase 3 | Pending |
 | CONT-07 | Phase 3 | Complete |
 | CONT-08 | Phase 3 | Pending |
-| CONT-09 | Phase 3 | Pending |
+| CONT-09 | Phase 3 | Complete |
 | VIDEO-01 | Phase 4 | Pending |
 | VIDEO-02 | Phase 4 | Pending |
 | VIDEO-03 | Phase 4 | Pending |

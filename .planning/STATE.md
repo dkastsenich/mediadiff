@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-09-02T19:08:54.669Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-09-02T19:43:43.931Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 27
+  completed_plans: 28
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 4 of 11
+Plan: 5 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [████████░░] 77%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Progress: [████████░░] 77%
 | Phase 03 P01 | 50min | 4 tasks | 13 files |
 | Phase 03 P02 | 110min | 3 tasks | 37 files |
 | Phase 03 P03 | 100min | 3 tasks | 23 files |
+| Phase 03 P04 | 150min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-03: Rule-1 fix — DemuxSession's AVIOInterruptCB heap-owned (std::unique_ptr) and disarmed in place, not by clearing the AVFormatContext field, since ffmpeg's avio layer copies the callback into its own URLContext at avio_open2() time independent of AVFormatContext::interrupt_callback thereafter (found via AddressSanitizer stack-use-after-return).
 - [Phase ?]: 03-03: D-01 byte budget accounted globally across all of one file's streams (a single running total), not per-stream — matches 'peak accounted bytes per in-flight file'; doc 02's per-stream 5M-packet ceiling stays a separate, independently-scoped mitigation.
 - [Phase ?]: 03-03: kMaxDirThreads(=32) relocated to src/config/toml_load.h as one named constant shared by dir.cpp's --threads path and toml_load.cpp's [dir] threads path, closing T-2-41.
+- [Phase ?]: [Phase 3, 03-04]: Measurement.skip_reason added (mirrors 03-01's Measurement.estimated) so an analyzer can explicitly mark a check not-applicable-here; compare/engine.cpp short-circuits to skipped ahead of normal dispatch, inspect.cpp renders it -- the engine's pre-existing unpaired-measurement path was verified (not assumed) to drop such a check with no Finding at all
+- [Phase ?]: [Phase 3, 03-04]: container.track_types/track_order canonical string encodings locked (comma-joined type tokens; comma-joined media_type:codec_name using avcodec_get_name) -- costly to change, enters committed snapshots
+- [Phase ?]: [Phase 3, 03-04]: per-stream meta.tags/meta.tags.language Scope.index is the stream's rank among same-media-type streams, not raw stream-array position (Claude's Discretion, mirrors CONT-08's program_number stability rationale)
 
 ### Pending Todos
 
@@ -169,6 +173,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T19:08:54.652Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-09-02T19:43:43.915Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None
