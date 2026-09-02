@@ -47,6 +47,10 @@ add_executable(mediadiff_integration_tests
   # sibling and to fail as an unpaired topology mismatch across a
   # renumbered sibling (03-08-PLAN.md Task 3).
   test_multiprogram.cpp
+  # SIZE-01: the cross-platform determinism assertion for the size.*
+  # family -- a committed, read-only golden of the extracted size.*
+  # findings, compared on every CI leg (03-09-PLAN.md Task 3).
+  test_size_checks.cpp
   test_determinism.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp
