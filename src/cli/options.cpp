@@ -22,6 +22,17 @@
 
 namespace mediadiff {
 
+std::string opt_string(const CLI::Option* o) { return (o != nullptr && o->count() > 0) ? o->as<std::string>() : std::string{}; }
+
+bool opt_flag(const CLI::Option* o) { return o != nullptr && o->count() > 0; }
+
+std::vector<std::string> opt_strings(const CLI::Option* o) {
+  // Mandatory guard -- see this function's declaration comment in
+  // options.h (Landmine 1): an unguarded as<std::vector<std::string>>()
+  // on an unset option returns {""} , not {}.
+  return (o != nullptr && o->count() > 0) ? o->as<std::vector<std::string>>() : std::vector<std::string>{};
+}
+
 PolicyArgs add_policy_flags(CLI::App& cmd) {
   PolicyArgs args;
   args.profile = std::make_shared<std::string>();

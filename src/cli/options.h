@@ -155,6 +155,30 @@ ColorArgs default_color_args();
 // exactly once per compare invocation, after CLI11 has finished parsing.
 ColorInputs read_color_inputs(const ColorArgs& args);
 
+// D-05's three borrowed-Option* read accessors. Each tolerates a null
+// `o` (the all-null default_*_args() case, see below) as well as an `o`
+// that is non-null but was never given on the command line
+// (`o->count() == 0`) -- the untargeted `add_option`/`add_flag` overloads
+// this migration adopts do not bind a variable CLI11 can default-populate
+// for us, so every reader must ask the Option itself.
+//
+// opt_strings' `count() == 0` early return is NOT defensive padding -- it
+// is mandatory. CLI11 2.6.2's Option::results(T&) (Option.hpp:735-741)
+// does `res.emplace_back()` when `results_` is empty and no default string
+// is set, so an unguarded `o->as<std::vector<std::string>>()` on an unset
+// option returns a ONE-ELEMENT vector holding a single empty string, not
+// an empty vector. For a vector-valued option like `--set`/`--tol`/
+// `--report`, that `{""}` would reach parse_cli_overrides/
+// parse_report_destinations as a malformed `<glob>=<value>` argument with
+// no `=`, which append_overrides (options.cpp) rejects as ErrorKind::usage
+// -- i.e. every unset `--set`/`--tol`/`--report` would turn into a usage
+// error on every invocation. Guarding on count() first is what keeps
+// "the flag was never given" mapping to the empty vector every existing
+// caller already expects.
+std::string opt_string(const CLI::Option* o);
+bool opt_flag(const CLI::Option* o);
+std::vector<std::string> opt_strings(const CLI::Option* o);
+
 // The shared bundle of every flag more than one subcommand needs
 // (`--profile`, `--config`, `--set`, `--tol`, `--json`, `--report`,
 // `--strict`, `-q`, `-v`, `--no-color`, `--ascii` -- 02-10-PLAN.md Task 1)
