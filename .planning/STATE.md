@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v0.6.1
 milestone_name: milestone
-current_phase: 02
-current_phase_name: core-engine
-status: "Phase 02 shipped — PR #2"
+current_phase: 03
+current_phase_name: probe-layer-container-size
+status: executing
 stopped_at: Completed 02-11-PLAN.md (final plan of phase 02-core-engine)
-last_updated: "2026-09-02T14:08:39.119Z"
+last_updated: "2026-09-02T17:26:27.307Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 35
-  completed_plans: 21
+  completed_plans: 24
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 02 — core-engine
+**Current focus:** Phase 03 — probe-layer-container-size
 
 ## Current Position
 
-Phase: 02 (core-engine) — EXECUTING
-Plan: 1 of 19
-Status: Phase 02 shipped — PR #2
-Last activity: 2026-09-02 — Phase 03 planning complete
+Phase: 03 (probe-layer-container-size) — EXECUTING
+Plan: 1 of 11
+Status: Executing Phase 03
+Last activity: 2026-09-02 — Phase 03 execution started
 
 Progress: [██████████] 100%
 
