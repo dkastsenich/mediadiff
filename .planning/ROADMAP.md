@@ -174,16 +174,48 @@ Plans:
 **Plans**: 11 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 03-01-PLAN.md — Core-model prerequisites: extend `SkipReason` across all four consuming sites, add `Measurement.estimated` and `Finding.evidence`, add `checked_div`, approve the 27-id check roster
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-02-PLAN.md — TRACER: `DemuxSession` + pass seam + `fingerprint_input`, `container.format` end-to-end through all four CLI commands
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 03-03-PLAN.md — `PacketScan` sweep, D-01 memory budget divided by threads, PROBE-10 shared primitive, `--threads` ceiling
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 03-04-PLAN.md — Topology expansion (`track_count`/`track_types`/`track_order`/`chapters`) plus `meta.tags` and `meta.tags.language`
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 03-05-PLAN.md — `bmff_scan` bounded box walk and the six `container.mp4.*` checks
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 03-06-PLAN.md — `ebml_scan` vint walk, the four `container.mkv.*` checks, and CONT-02 cross-container demotion
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 03-07-PLAN.md — `ts_scan`: stride autodetect, bounded PID table, PCR/PSI parsing, mux-rate estimate, ISO 13818-1 continuity carve-outs
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 03-08-PLAN.md — The six `container.ts.*` checks, D-03's estimated marker, and CONT-08 program-number scoping
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
 - [ ] 03-09-PLAN.md — The four `size.*` checks with DTS-in-ticks windowing and D-02's truncated-scan refusal
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
 - [ ] 03-10-PLAN.md — PROBE-09 deterministic degradation smoke across every scanner, plus TRUST-09's TSDuck goldens
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
 - [ ] 03-11-PLAN.md — Close T-2-33, render the `inspect` container section, TRUST-06 release blocker, DOC-03 coverage gate
 
 **Source doc**: `claude_docs/02-container-analysis.md` (design-doc phase 2), plus `size.*` from `claude_docs/06-content-and-size-analysis.md` §4
