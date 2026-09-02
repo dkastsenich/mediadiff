@@ -37,8 +37,18 @@ add_executable(mediadiff_unit_tests
   # and the libav log-capture mechanism (03-02-PLAN.md Tasks 1-2).
   test_demux_session.cpp
   # PROBE-08: the pass union runs each pass exactly once per file and
-  # scopes analyzers by container family (03-02-PLAN.md Task 3).
+  # scopes analyzers by container family (03-02-PLAN.md Task 3); extended
+  # by 03-03-PLAN.md Task 3 with PROBE-10's shared-PacketScan proof.
   test_pass_union.cpp
+  # PROBE-02: PacketScan's one av_read_frame sweep, the doc 02 record
+  # shape, the 5,000,000-packet-per-stream ceiling, sentinel preservation,
+  # per-stream timebase conversion, and the zero-packet case
+  # (03-03-PLAN.md Task 1).
+  test_packet_scan.cpp
+  # D-01: the accounted (never OS-measured) probe-memory budget, its
+  # budget/threads derivation, and the T-2-41 --threads/[dir] threads
+  # ceiling (03-03-PLAN.md Task 2).
+  test_packet_budget.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

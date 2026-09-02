@@ -10,10 +10,12 @@
 
 #include <cstdint>
 #include <initializer_list>
+#include <optional>
 #include <string_view>
 #include <vector>
 
 #include "core/model.h"
+#include "probe/packet_scan.h"
 
 namespace mediadiff {
 
@@ -92,12 +94,26 @@ enum class ContainerFamily : std::uint8_t {
 // the direct counterpart of.
 ContainerFamily container_family_from_format_name(std::string_view format_name);
 
-// The outputs of whichever passes the orchestrator ran for one file. This
-// plan populates only `demux`; later plans (03-03 PacketScan, 03-05..08's
-// raw scanners) add members here without any existing consumer's declared
-// PassSet or run() signature having to change.
+// The outputs of whichever passes the orchestrator ran for one file.
+// 03-02-PLAN.md populated only `demux`; 03-03-PLAN.md (PacketScan) adds
+// `packet_scan`; later plans (the three raw scanners) add further members
+// here without any existing consumer's declared PassSet or run()
+// signature having to change.
+//
+// `packet_scan` is held by value inside the std::optional (never a
+// pointer into some other owner), and ProbeResults is itself held by
+// value inside src/probe/orchestrator.cpp's own local `results` for the
+// duration of one file's analyzer run -- every applicable analyzer's
+// `run(const ProbeResults&, Fingerprint&)` receives a const reference to
+// the SAME object (PROBE-10's structural, not conventional, sharing: two
+// analyzers that both declared Pass::packet_scan read the identical
+// PacketScanResult, proven by pointer identity in
+// tests/unit/test_pass_union.cpp). No analyzer may take a non-const
+// reference or copy `results` or `results.packet_scan` -- a copy would
+// double the accounted footprint D-01's budget just bounded.
 struct ProbeResults {
   const DemuxSession* demux = nullptr;
+  std::optional<PacketScanResult> packet_scan;
 };
 
 // One analyzer family's registration (PROBE-08): the passes it needs, the

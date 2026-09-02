@@ -152,6 +152,7 @@ add_library(libmediadiff STATIC
   src/report/markdown.cpp
   src/report/junit.cpp
   src/probe/demux_session.cpp
+  src/probe/packet_scan.cpp
   src/probe/orchestrator.cpp
   src/analyzers/container/topology.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
@@ -201,6 +202,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/cli/worker_pool.h
   src/probe/pass.h
   src/probe/demux_session.h
+  src/probe/packet_scan.h
   src/probe/orchestrator.h
   src/analyzers/container/analyzers.h
 )

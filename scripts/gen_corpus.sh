@@ -116,4 +116,14 @@ cp "$OUT_DIR/tracer_a.mp4" "$OUT_DIR/tracer_a_copy.mp4"
   -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/tracer_a.mkv"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv."
+# 03-03-PLAN.md Task 1 (PROBE-02, Test 6): a syntactically valid,
+# zero-stream MP4 -- `-frames:v 0` suppresses the only source frame
+# entirely, so avformat_open_input/avformat_find_stream_info succeed but
+# there is nothing to read. Proves PacketScan's own "a zero-packet input
+# returns an empty-but-valid result, not an error" contract without any
+# OS-level trickery.
+"$FFMPEG_BIN" -f lavfi -i "color=size=2x2:rate=25" -frames:v 0 \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/tracer_empty.mp4"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4."

@@ -27,8 +27,10 @@
 // AVFMT_FLAG_AUTO_BSF only), so "never touch AVFormatContext::flags at
 // all" is a stronger, simpler invariant than "clear GENPTS after open".
 
+#include <chrono>
 #include <cstdarg>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -106,6 +108,30 @@ void probe_log_callback(void* avcl, int level, const char* fmt, va_list args);
 // reliably triggering a real libav warning. Passing nullptr detaches.
 void set_current_probe_diagnostics(ProbeDiagnostics* diagnostics);
 
+namespace detail {
+
+// Wall-clock budget state read by the AVIOInterruptCB DemuxSession::open
+// installs. MUST OUTLIVE the AVFormatContext it was installed on: ffmpeg's
+// avio layer captures the AVIOInterruptCB (callback + opaque) into its own
+// URLContext at avio_open2() time -- a copy fully independent of
+// AVFormatContext::interrupt_callback from that point forward. Clearing
+// AVFormatContext::interrupt_callback after open() completes therefore does
+// NOT reach that already-captured URLContext copy; the object this pointer
+// names must instead remain valid memory for as long as reads can happen on
+// this session (confirmed via AddressSanitizer stack-use-after-return
+// against a stack-local InterruptState -- 03-03-PLAN.md Task 1's own
+// Rule 1 fix; see demux_session.cpp's "disarm" comment for the full trace).
+// DemuxSession owns exactly one of these via std::unique_ptr so its ADDRESS
+// stays stable across a DemuxSession move (a member held by value would
+// move to a new address on every move, re-dangling the pointer the io
+// layer already captured at open time).
+struct InterruptState {
+  std::chrono::steady_clock::time_point start;
+  std::int64_t budget_ms;
+};
+
+}  // namespace detail
+
 class DemuxSession {
  public:
   DemuxSession(const DemuxSession&) = delete;
@@ -135,12 +161,31 @@ class DemuxSession {
   // session's own open() call was running (Task 2). 0 for a clean file.
   std::int64_t warning_count() const;
 
+  // Internal borrow of the raw AVFormatContext* for other src/probe/
+  // translation units that need to call libav directly against the SAME
+  // already-open session -- src/probe/packet_scan.cpp's av_read_frame
+  // sweep (03-03-PLAN.md Task 1) is the first caller. NOT part of the
+  // public, analyzer-facing surface documented at the top of this file:
+  // AVFormatContext stays behind its opaque forward declaration, so a
+  // caller outside src/probe/ that somehow obtains this pointer still
+  // cannot dereference it (no complete type in scope) -- only a
+  // translation unit that itself includes libavformat/avformat.h (i.e.
+  // another src/probe/*.cpp) can do anything with it. Analyzers never
+  // call this; they receive an already-populated ProbeResults from the
+  // orchestrator instead (this plan's own prohibition: "no analyzer
+  // opens the input file itself").
+  AVFormatContext* native_context() const { return ctx_; }
+
  private:
-  DemuxSession(AVFormatContext* ctx, std::string format_name);
+  DemuxSession(AVFormatContext* ctx, std::string format_name, std::unique_ptr<detail::InterruptState> interrupt_state);
 
   AVFormatContext* ctx_ = nullptr;
   std::string format_name_;
   ProbeDiagnostics diagnostics_;
+  // Kept alive for this session's whole lifetime -- see detail::InterruptState's
+  // own doc comment for why this cannot be a stack-local temporary scoped
+  // to open() alone.
+  std::unique_ptr<detail::InterruptState> interrupt_state_;
 };
 
 }  // namespace mediadiff

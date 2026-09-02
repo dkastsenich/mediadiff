@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <limits>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -36,23 +38,11 @@ std::atomic<std::int64_t> g_default_wall_clock_budget_ms{kDefaultProbeBudgetMs};
 // test.
 thread_local ProbeDiagnostics* g_current_diagnostics = nullptr;
 
-// Per-open interrupt-callback state: a start timestamp plus the budget
-// this DemuxSession::open call was given. Lives on open()'s own stack for
-// the duration of the call -- AVIOInterruptCB::opaque points at it, and
-// the pointer never escapes open() (it is uninstalled, implicitly, the
-// moment the AVFormatContext it was attached to is either handed back to
-// the caller or torn down on a failure path), so no dangling-pointer
-// concern survives past the call that installed it.
-struct InterruptState {
-  std::chrono::steady_clock::time_point start;
-  std::int64_t budget_ms;
-};
-
 // `>=` rather than `>`: a 0 ms budget must fail on the very first check
 // rather than requiring elapsed time to exceed zero, which it trivially
 // always does except at t=0 itself.
 int check_interrupt(void* opaque) {
-  const auto* state = static_cast<const InterruptState*>(opaque);
+  const auto* state = static_cast<const detail::InterruptState*>(opaque);
   const auto elapsed_ms =
       std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - state->start).count();
   return elapsed_ms >= state->budget_ms ? 1 : 0;
@@ -141,11 +131,15 @@ ContainerFamily container_family_from_format_name(std::string_view format_name) 
   return ContainerFamily::other;
 }
 
-DemuxSession::DemuxSession(AVFormatContext* ctx, std::string format_name)
-    : ctx_(ctx), format_name_(std::move(format_name)) {}
+DemuxSession::DemuxSession(AVFormatContext* ctx, std::string format_name,
+                             std::unique_ptr<detail::InterruptState> interrupt_state)
+    : ctx_(ctx), format_name_(std::move(format_name)), interrupt_state_(std::move(interrupt_state)) {}
 
 DemuxSession::DemuxSession(DemuxSession&& other) noexcept
-    : ctx_(other.ctx_), format_name_(std::move(other.format_name_)) {
+    : ctx_(other.ctx_),
+      format_name_(std::move(other.format_name_)),
+      diagnostics_(other.diagnostics_),
+      interrupt_state_(std::move(other.interrupt_state_)) {
   other.ctx_ = nullptr;
 }
 
@@ -156,6 +150,8 @@ DemuxSession& DemuxSession::operator=(DemuxSession&& other) noexcept {
     }
     ctx_ = other.ctx_;
     format_name_ = std::move(other.format_name_);
+    diagnostics_ = other.diagnostics_;
+    interrupt_state_ = std::move(other.interrupt_state_);
     other.ctx_ = nullptr;
   }
   return *this;
@@ -187,10 +183,18 @@ mediadiff::expected<DemuxSession, Error> DemuxSession::open(const std::string& u
 
   // Installed BEFORE avformat_open_input (doc 02 section 1.1: the field
   // is documented "set by the user before avformat_open_input"; setting
-  // it any later would leave the open call itself unbounded).
-  InterruptState interrupt_state{std::chrono::steady_clock::now(), options.wall_clock_budget_ms};
+  // it any later would leave the open call itself unbounded). Heap-owned
+  // (not a stack-local temporary) -- see detail::InterruptState's own doc
+  // comment in demux_session.h for why: ffmpeg's avio layer captures this
+  // AVIOInterruptCB into its own URLContext at avio_open2() time,
+  // independent of AVFormatContext::interrupt_callback from that point
+  // forward, so the state it points at must remain valid for as long as
+  // reads can happen on this session, not just for the duration of this
+  // open() call.
+  auto interrupt_state = std::make_unique<detail::InterruptState>(
+      detail::InterruptState{std::chrono::steady_clock::now(), options.wall_clock_budget_ms});
   ctx->interrupt_callback.callback = &check_interrupt;
-  ctx->interrupt_callback.opaque = &interrupt_state;
+  ctx->interrupt_callback.opaque = interrupt_state.get();
 
   // avformat_open_input takes a narrow, UTF-8 path directly on every
   // platform mediadiff targets -- src/util/fs.h's own header comment
@@ -214,8 +218,30 @@ mediadiff::expected<DemuxSession, Error> DemuxSession::open(const std::string& u
     return mediadiff::unexpected(map_probe_error(utf8_path, rc));
   }
 
+  // Rule 1 fix (03-03-PLAN.md Task 1, discovered via AddressSanitizer
+  // stack-use-after-return): this budget was only ever documented to
+  // bound avformat_open_input + avformat_find_stream_info (this file's
+  // own header comment) -- disarm it here so a LATER libav call on this
+  // same AVFormatContext (av_read_frame's own internal
+  // ff_check_interrupt calls, among others -- PacketScan, 03-03-PLAN.md
+  // Task 1, is the first caller that ever makes one) never aborts a
+  // mid-sweep read on a stale "budget already exceeded" reading. Earlier
+  // attempt (nulling ctx->interrupt_callback itself) was INSUFFICIENT and
+  // is exactly what ASan caught: ffmpeg's avio layer copies the
+  // AVIOInterruptCB into its own URLContext back at avio_open2() time
+  // (inside avformat_open_input), independent of
+  // AVFormatContext::interrupt_callback from that point on -- so clearing
+  // ctx's own field here never reaches the io layer's already-captured
+  // copy. The correct disarm mutates the SAME InterruptState object that
+  // copy still points at, so it keeps pointing at valid memory for the
+  // rest of this session's lifetime; setting budget_ms to the largest
+  // representable value makes every future `elapsed_ms >= budget_ms`
+  // check false forever, i.e. "never interrupt again" without ever
+  // reading freed/dangling memory.
+  interrupt_state->budget_ms = std::numeric_limits<std::int64_t>::max();
+
   std::string fmt_name = first_token(ctx->iformat != nullptr ? ctx->iformat->name : nullptr);
-  DemuxSession session(ctx, std::move(fmt_name));
+  DemuxSession session(ctx, std::move(fmt_name), std::move(interrupt_state));
   session.diagnostics_ = diagnostics;
   return session;
 }

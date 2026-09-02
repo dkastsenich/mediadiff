@@ -8,6 +8,7 @@
 #include "analyzers/container/analyzers.h"
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
+#include "probe/packet_scan.h"
 #include "probe/pass.h"
 #include "util/fs.h"
 #include "util/version.h"
@@ -102,16 +103,44 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   }
 
   ProbeResults results;
+  mediadiff::expected<void, Error> packet_scan_error;
   union_passes.for_each([&](Pass pass) {
     if (pass == Pass::demux_header) {
       results.demux = &session;
+    } else if (pass == Pass::packet_scan) {
+      // PROBE-02/PROBE-10 (03-03-PLAN.md Task 1): one av_read_frame sweep,
+      // stored once in ProbeResults and handed to every applicable
+      // analyzer as a const reference -- PassSet's own "each pass runs
+      // exactly once" guarantee (PROBE-08) is what makes this a SINGLE
+      // sweep even when more than one analyzer declared Pass::packet_scan.
+      // PacketScanLimits{} default-constructs its own max_bytes from
+      // default_packet_scan_max_bytes() -- the per-file cap this
+      // invocation's own command entry point already resolved and set
+      // (D-01) -- so this call site never has to know that value itself.
+      auto scan_result = run_packet_scan(session, PacketScanLimits{});
+      if (scan_result) {
+        results.packet_scan = std::move(*scan_result);
+      } else {
+        packet_scan_error = mediadiff::unexpected(scan_result.error());
+      }
     }
-    // Later plans (PacketScan, the three raw scanners) add their own pass
-    // bodies as new arms here -- this plan implements only demux_header.
+    // Later plans (the three raw scanners) add their own pass bodies as
+    // new arms here.
     if (pass_log != nullptr) {
       pass_log->push_back(pass);
     }
   });
+
+  if (!packet_scan_error) {
+    // A PacketScan failure is exceptional (e.g. an av_packet_alloc
+    // allocation failure) -- every other outcome, including a truncated
+    // sweep, is a successful (if `partial`) PacketScanResult, not an
+    // Error. Propagated as a hard error rather than silently leaving
+    // results.packet_scan unset, so the caller sees the real cause
+    // instead of a later, less informative "no packet_scan data" surprise
+    // from whichever analyzer needed it.
+    return mediadiff::unexpected(packet_scan_error.error());
+  }
 
   Fingerprint fp;
   fp.envelope.schema_version = std::string(kSchemaVersion);
@@ -121,6 +150,13 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   // integer, 0 for a clean file) so `inspect --json` always shows a
   // `diagnostics` object, per this plan's own acceptance criterion.
   fp.envelope.diagnostics["probe_warnings"] = session.warning_count();
+  // D-01's resolved per-file PacketScan byte cap for THIS invocation --
+  // present unconditionally (not only when Pass::packet_scan actually
+  // ran) so a truncated run is explainable from its own report without
+  // requiring the invocation to be remembered, and so `inspect --json`
+  // always carries it regardless of which analyzers happen to be
+  // registered yet.
+  fp.envelope.diagnostics["probe_memory_cap_bytes"] = default_packet_scan_max_bytes();
 
   for (const AnalyzerSpec* spec : applicable) {
     spec->run(results, fp);
