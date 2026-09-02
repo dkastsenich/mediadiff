@@ -195,15 +195,52 @@ TEST_CASE("report_model - a finding whose id the registry does not recognize sor
   CHECK(meta_block.findings[1].id == "meta.unregistered_probe");
 }
 
-TEST_CASE("report_model - worst_gating is the maximum severity across all findings, independent of status",
+// Corrected by 03-02-PLAN.md (Rule 3, blocking-issue fix -- see that
+// plan's SUMMARY for the full derivation, and report/model.cpp's
+// accumulate() for the in-code rationale): every comparator sets
+// `finding.severity` to the check's own resolved severity unconditionally,
+// regardless of whether the comparison actually differed, so severity
+// alone can never distinguish "this check could gate if it differed" from
+// "this check did." A Status::pass finding must never contribute to
+// worst_gating, even when the check's own declared severity is
+// Severity::fail -- otherwise a routine clean compare against a
+// fail-severity check (container.format, Phase 3's own tracer check)
+// would exit non-zero forever, contradicting PROJECT.md's Core Value ("a
+// no-change re-run under the right profile is clean out of the box").
+TEST_CASE("report_model - worst_gating ignores a Status::pass finding regardless of the check's own severity",
           "[report]") {
   const auto& registry = mediadiff::test_registry();
-  // A tol comparator's two-threshold form can resolve Status::pass while
-  // the check's own severity is Severity::fail -- worst_gating must still
-  // reflect that fail severity.
+  const std::vector<Finding> findings = {
+      make_finding("video.a", Status::pass, Severity::fail),
+  };
+  Envelope env;
+  const ReportModel model = mediadiff::build_report_model(env, findings, registry, RenderOptions{});
+
+  CHECK(model.summary.worst_gating == Severity::ignore);
+}
+
+TEST_CASE("report_model - worst_gating is the maximum severity among findings that actually gate", "[report]") {
+  const auto& registry = mediadiff::test_registry();
+  // A Status::pass finding (however severe its check's own ceiling)
+  // contributes nothing; the genuinely warn/fail findings below still
+  // determine worst_gating exactly as before this fix.
   const std::vector<Finding> findings = {
       make_finding("video.a", Status::pass, Severity::fail),
       make_finding("audio.b", Status::warn, Severity::warn),
+  };
+  Envelope env;
+  const ReportModel model = mediadiff::build_report_model(env, findings, registry, RenderOptions{});
+
+  CHECK(model.summary.worst_gating == Severity::warn);
+}
+
+// CR-03's overflow path (Status::error) must still gate -- "never a
+// fabricated verdict" means an unresolvable comparison stays visible in
+// the exit code, not silently downgraded to clean.
+TEST_CASE("report_model - worst_gating still gates on a Status::error finding", "[report]") {
+  const auto& registry = mediadiff::test_registry();
+  const std::vector<Finding> findings = {
+      make_finding("video.a", Status::error, Severity::fail),
   };
   Envelope env;
   const ReportModel model = mediadiff::build_report_model(env, findings, registry, RenderOptions{});
