@@ -94,26 +94,25 @@ void register_compare_command(CLI::App& app) {
       "To compare a file literally named 'compare', path-qualify it (e.g. './compare') or use "
       "'mediadiff compare ./compare <candidate>'.");
 
-  auto baseline_path = std::make_shared<std::string>();
-  auto candidate_path = std::make_shared<std::string>();
-  cmp->add_option("baseline", *baseline_path, "Baseline artifact or *.snap.json")->required();
-  cmp->add_option("candidate", *candidate_path, "Candidate artifact or *.snap.json")->required();
+  CLI::Option* baseline_path = cmp->add_option("baseline", "Baseline artifact or *.snap.json")->required();
+  CLI::Option* candidate_path = cmp->add_option("candidate", "Candidate artifact or *.snap.json")->required();
 
-  auto strict_flag = std::make_shared<bool>(false);
-  auto verbose_flag = std::make_shared<bool>(false);
-  auto quiet_flag = std::make_shared<bool>(false);
-  cmp->add_flag("--strict", *strict_flag, "A worst-warn finding also fails the run (exit 2)");
-  cmp->add_flag("-v,--verbose", *verbose_flag, "Under --json, also render each finding's severity_chain");
-  cmp->add_flag("-q,--quiet", *quiet_flag, "Suppress the human-readable TTY report on success");
+  CLI::Option* strict_flag = cmp->add_flag("--strict", "A worst-warn finding also fails the run (exit 2)");
+  CLI::Option* verbose_flag =
+      cmp->add_flag("-v,--verbose", "Under --json, also render each finding's severity_chain");
+  CLI::Option* quiet_flag = cmp->add_flag("-q,--quiet", "Suppress the human-readable TTY report on success");
 
   ReportArgs report_args = add_report_flags(*cmp);
   PolicyArgs policy_args = add_policy_flags(*cmp);
   ColorArgs color_args = add_color_flags(*cmp);
 
+  // Capturing raw Option*s by value is exactly as safe as the shared_ptrs
+  // they replace (D-05): the App owns every Option for the whole program
+  // lifetime, and this callback only runs during app.parse().
   cmp->callback([baseline_path, candidate_path, strict_flag, verbose_flag, quiet_flag, report_args, policy_args,
                  color_args]() {
-    run_compare(*baseline_path, *candidate_path, *strict_flag, *verbose_flag, *quiet_flag, report_args, policy_args,
-                color_args);
+    run_compare(opt_string(baseline_path), opt_string(candidate_path), opt_flag(strict_flag), opt_flag(verbose_flag),
+                opt_flag(quiet_flag), report_args, policy_args, color_args);
   });
 }
 

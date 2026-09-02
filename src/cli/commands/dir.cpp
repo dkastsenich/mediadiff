@@ -122,28 +122,52 @@ void register_dir_command(CLI::App& app) {
       "--content additionally requests the decode-pass content checks, which trades corpus speed "
       "for coverage -- expect a `dir` run to take substantially longer per file with --content set.");
 
-  auto baseline_dir = std::make_shared<std::string>();
-  auto candidate_dir = std::make_shared<std::string>();
-  cmd->add_option("baseline_dir", *baseline_dir, "Baseline directory")->required();
-  cmd->add_option("candidate_dir", *candidate_dir, "Candidate directory")->required();
+  CLI::Option* baseline_dir = cmd->add_option("baseline_dir", "Baseline directory")->required();
+  CLI::Option* candidate_dir = cmd->add_option("candidate_dir", "Candidate directory")->required();
 
+  // D-05's explicit numeric exception: `threads` KEEPS its bound shared_ptr<int>
+  // and targeted add_option overload, deliberately NOT migrated to the
+  // untargeted add_option/opt_string pattern the rest of this file adopts.
+  // Verified against the pinned CLI11: the untargeted overload is not
+  // templated, so it drops parse-time type validation -- `--threads abc`
+  // would stop failing as a CLI::ParseError at parse (exit 64 via
+  // main.cpp's own catch) and instead throw from inside this callback with
+  // a worse diagnostic (Landmine 2, 03-CONTEXT.md D-05). threads_opt is
+  // still the raw Option* the targeted overload returns, and still drives
+  // the resolution ladder's count() > 0 branch below unchanged.
   auto threads = std::make_shared<int>(0);
-  auto content_flag = std::make_shared<bool>(false);
-  auto no_content_flag = std::make_shared<bool>(false);
   CLI::Option* threads_opt =
       cmd->add_option("--threads", *threads, "Bounded worker-pool size (default: hardware concurrency)");
-  cmd->add_flag("--content", *content_flag, "Enable the decode-pass content checks (opt-in for dir mode)");
-  cmd->add_flag("--no-content", *no_content_flag,
-                "Explicitly disable the decode-pass content checks (dir mode's own default)");
+  CLI::Option* content_flag = cmd->add_flag("--content", "Enable the decode-pass content checks (opt-in for dir mode)");
+  CLI::Option* no_content_flag = cmd->add_flag(
+      "--no-content", "Explicitly disable the decode-pass content checks (dir mode's own default)");
 
   CliOptions options = add_common_options(*cmd);
 
   // ENG-16: exit()/stdout/stderr are the CLI's prerogative -- this
   // callback is the one place in the `dir` path permitted to call
-  // std::exit() directly.
+  // std::exit() directly. Capturing raw Option*s by value is exactly as
+  // safe as the shared_ptrs they replace (D-05): the App owns every
+  // Option for the whole program lifetime, and this callback only runs
+  // during app.parse().
   cmd->callback([baseline_dir, candidate_dir, threads, threads_opt, content_flag, no_content_flag, options]() {
     (void)no_content_flag;
     const CheckRegistry& registry = builtin_registry();
+
+    // Materialized once, here, rather than called repeatedly at each of
+    // this callback's ~15 downstream read sites (per this plan's own
+    // Task 5 contract). Two reasons: CLI11's Option::results() writes a
+    // mutable proc_results_ cache, so this structurally guarantees no
+    // opt_string/opt_flag call can ever drift into the WorkerPool region
+    // below and become a data race on a shared Option*; and it keeps
+    // every downstream site a simple identifier read instead of a
+    // pointer dereference repeated at each use.
+    const std::string baseline_dir_text = opt_string(baseline_dir);
+    const std::string candidate_dir_text = opt_string(candidate_dir);
+    const bool content_requested = opt_flag(content_flag);
+    const bool strict = opt_flag(options.strict);
+    const bool quiet = opt_flag(options.quiet);
+    const bool verbose = opt_flag(options.verbose);
 
     // Doc 01 section 6: mediadiff.toml is read exactly once here, before
     // any worker starts -- every job below shares the SAME loaded
@@ -222,7 +246,7 @@ void register_dir_command(CLI::App& app) {
     // (Phase 3) is what actually consumes a pass-selection request. A
     // diagnostic, not an error: the corpus run still completes on the
     // default header-plus-packet pass set.
-    if (*content_flag) {
+    if (content_requested) {
       std::fputs(
           "mediadiff: --content is accepted but has no effect yet -- the decode pass arrives with a later phase\n",
           stderr);
@@ -254,7 +278,7 @@ void register_dir_command(CLI::App& app) {
 
     // DIR-01/DIR-04: the full pair list, byte-wise sorted, computed BEFORE
     // any worker starts and never mutated afterward.
-    auto pairs_result = pair_directories(*baseline_dir, *candidate_dir);
+    auto pairs_result = pair_directories(baseline_dir_text, candidate_dir_text);
     if (!pairs_result) {
       const Error& err = pairs_result.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
@@ -303,8 +327,8 @@ void register_dir_command(CLI::App& app) {
       const Policy& per_file_policy = *per_file_policy_result;
 
       if (pair.in_baseline && pair.in_candidate) {
-        const std::string baseline_path = join_relative(*baseline_dir, pair.relative_path);
-        const std::string candidate_path = join_relative(*candidate_dir, pair.relative_path);
+        const std::string baseline_path = join_relative(baseline_dir_text, pair.relative_path);
+        const std::string candidate_path = join_relative(candidate_dir_text, pair.relative_path);
 
         auto baseline_fp = read_snapshot(baseline_path, registry);
         if (!baseline_fp) {
@@ -384,7 +408,7 @@ void register_dir_command(CLI::App& app) {
     }
 
     const RenderOptions render_options{/*show_pass=*/true, /*show_ignored=*/true, /*ascii=*/false,
-                                        /*strict=*/opt_flag(options.strict)};
+                                        /*strict=*/strict};
     CorpusModel model = build_corpus_model(results, registry, render_options);
     model.envelope.schema_version = std::string(kSchemaVersion);
     model.envelope.tool_version = tool_version();
@@ -396,11 +420,11 @@ void register_dir_command(CLI::App& app) {
       }
     }
 
-    if (!json_requested && !opt_flag(options.quiet)) {
+    if (!json_requested && !quiet) {
       const ColorInputs color_inputs = read_color_inputs(options.color);
       const ColorDecision color = decide_color(color_inputs);
-      const RenderOptions tty_options{/*show_pass=*/opt_flag(options.verbose), /*show_ignored=*/opt_flag(options.verbose),
-                                       /*ascii=*/color.ascii_glyphs, /*strict=*/opt_flag(options.strict)};
+      const RenderOptions tty_options{/*show_pass=*/verbose, /*show_ignored=*/verbose,
+                                       /*ascii=*/color.ascii_glyphs, /*strict=*/strict};
       const CorpusModel tty_model = build_corpus_model(results, registry, tty_options);
       const TerminalSize terminal = query_terminal_size();
       const std::string tty_report = render_tty(tty_model, registry, color, terminal.width, terminal.height);
@@ -408,7 +432,7 @@ void register_dir_command(CLI::App& app) {
     }
 
     if (json_requested) {
-      const std::string report = render_json(model, registry, base_policy, opt_flag(options.verbose));
+      const std::string report = render_json(model, registry, base_policy, verbose);
       if (json_to_file) {
         FILE* handle = fopen_utf8(json_path, "wb");
         if (handle == nullptr) {
@@ -433,10 +457,10 @@ void register_dir_command(CLI::App& app) {
       std::string rendered;
       switch (dest.kind) {
         case ReportDestination::Kind::md:
-          rendered = render_markdown(model, registry, opt_flag(options.strict));
+          rendered = render_markdown(model, registry, strict);
           break;
         case ReportDestination::Kind::junit:
-          rendered = render_junit(model, registry, opt_flag(options.strict));
+          rendered = render_junit(model, registry, strict);
           break;
       }
       FILE* handle = fopen_utf8(dest.path, "wb");
@@ -458,7 +482,7 @@ void register_dir_command(CLI::App& app) {
     if (any_partial) {
       std::exit(kExitDecode);
     }
-    std::exit(exit_code_for_findings(model.totals, opt_flag(options.strict)));
+    std::exit(exit_code_for_findings(model.totals, strict));
   });
 }
 
