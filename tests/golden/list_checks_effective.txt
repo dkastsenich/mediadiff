@@ -2,3 +2,7 @@ meta.tool_version  severity=warn  tolerance=<none>
 meta.missing_candidate  severity=fail  tolerance=<none>
 meta.extra_candidate  severity=warn  tolerance=<none>
 container.format  severity=fail  tolerance=<none>
+container.track_count  severity=fail  tolerance=<none>
+container.track_types  severity=fail  tolerance=<none>
+container.track_order  severity=warn  tolerance=<none>
+container.chapters  severity=info  tolerance=<none>

@@ -126,4 +126,125 @@ cp "$OUT_DIR/tracer_a.mp4" "$OUT_DIR/tracer_a_copy.mp4"
   -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/tracer_empty.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4."
+# --- 03-04-PLAN.md Task 1: container-agnostic topology fixtures ------------
+# A three-stream MP4 (video+audio+subtitle) and its subtitle-stripped
+# sibling (CONT-09's own explicit pair requirement -- subtitle presence must
+# be proven by a dedicated fixture pair, never inferred from a generic
+# stream count), a byte-identical copy for the clean half of that pair, a
+# stream-reordered variant with identical membership (two audio streams of
+# DIFFERENT codecs swapped -- this is what makes container.track_order fail
+# while container.track_count/track_types, which don't encode per-stream
+# codec identity, still pass: doc 02's "a move, not add+remove"), a tmcd
+# timecode-track pair, an MKV chapters pair, and a plain MPEG-TS for
+# container.chapters' not-applicable case.
+
+TOPO_SUBS_SRT="$OUT_DIR/.topo_subs.srt"
+cat > "$TOPO_SUBS_SRT" <<'SRT'
+1
+00:00:00,000 --> 00:00:01,000
+mediadiff topology fixture subtitle
+SRT
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -i "$TOPO_SUBS_SRT" \
+  -map 0:v -map 1:a -map 2:s \
+  -c:v mpeg4 -c:a aac -c:s mov_text -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_subs.mp4"
+
+cp "$OUT_DIR/topo_subs.mp4" "$OUT_DIR/topo_subs_copy.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -map 0:v -map 1:a \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_nosubs.mp4"
+
+# Reordered variant: video + audio(aac,440Hz) + audio(flac,880Hz) vs
+# video + audio(flac,880Hz) + audio(aac,440Hz) -- same membership (1 video,
+# 2 audio), same track_types multiset ("video,audio,audio" either way), but
+# a different container.track_order (media_type,codec_name) signature.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -f lavfi -i "sine=frequency=880:duration=2" \
+  -map 0:v -map 1:a -map 2:a \
+  -c:v mpeg4 -c:a:0 aac -c:a:1 flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_order_a.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -f lavfi -i "sine=frequency=880:duration=2" \
+  -map 0:v -map 2:a -map 1:a \
+  -c:v mpeg4 -c:a:0 flac -c:a:1 aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_order_b.mp4"
+
+# A genuine TYPE-order swap (video,audio vs audio,video) -- distinct from
+# topo_order_a/b below (which swap two SAME-type streams' codec identity so
+# track_types stays IDENTICAL, proving the "move, not add+remove" property).
+# This pair instead proves container.track_types itself is order-preserving
+# (Test 2: "two files with the same types in a different order produce
+# DIFFERENT values") -- a property topo_order_a/b, by construction, cannot
+# exercise.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -map 0:v -map 1:a \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_type_order_a.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -map 1:a -map 0:v \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_type_order_b.mp4"
+
+# tmcd timecode-track pair (CONT-09): `-timecode` makes the mov/mp4 muxer
+# add a timecode (tmcd) data track automatically.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -timecode 00:00:00:00 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_tmcd.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_notmcd.mp4"
+
+# MKV chapters pair: an ffmetadata sidecar carrying two chapters, muxed via
+# -map_metadata.
+TOPO_CHAPTERS_META="$OUT_DIR/.topo_chapters.ffmeta"
+cat > "$TOPO_CHAPTERS_META" <<'META'
+;FFMETADATA1
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=1000
+title=Chapter One
+
+[CHAPTER]
+TIMEBASE=1/1000
+START=1000
+END=2000
+title=Chapter Two
+META
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -i "$TOPO_CHAPTERS_META" -map_metadata 2 \
+  -map 0:v -map 1:a \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_chapters.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -map 0:v -map 1:a \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/topo_nochapters.mkv"
+
+# A plain MPEG-TS -- container.chapters' not-applicable-container case.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg2video -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$OUT_DIR/topo_ts.ts"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts."

@@ -269,11 +269,31 @@ mediadiff::expected<Fingerprint, Error> read_snapshot(const std::string& utf8_pa
         estimated = m.at("estimated").get<bool>();
       }
 
+      // 03-04-PLAN.md Task 1: same present-but-invalid-is-rejected shape as
+      // 'estimated' above, but string-valued rather than boolean -- an
+      // absent key defaults to SkipReason::none, a present non-string or an
+      // unrecognized spelling is ErrorKind::input_unsupported naming the
+      // check id, never silently coerced to `none`.
+      SkipReason skip_reason = SkipReason::none;
+      if (m.contains("skip_reason")) {
+        if (!m.at("skip_reason").is_string()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "snapshot measurement 'skip_reason' is not a string: " + id});
+        }
+        const auto parsed = skip_reason_from_string(m.at("skip_reason").get<std::string>());
+        if (!parsed.has_value()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "snapshot measurement has unknown 'skip_reason': " + id});
+        }
+        skip_reason = *parsed;
+      }
+
       Measurement measurement;
       measurement.check_index = *check_index;
       measurement.scope = Scope{*kind, scope_json.at("index").get<int>()};
       measurement.value = std::move(*value);
       measurement.estimated = estimated;
+      measurement.skip_reason = skip_reason;
       if (m.contains("evidence") && m.at("evidence").is_object()) {
         measurement.evidence = m.at("evidence");
       }
@@ -337,6 +357,12 @@ mediadiff::expected<void, Error> write_snapshot(const Fingerprint& fp, const std
     // writer's own comment above already documents.
     if (m->estimated) {
       mj["estimated"] = true;
+    }
+    // 03-04-PLAN.md Task 1: same "emitted only when non-default" rule as
+    // `estimated` above, positioned right after it -- every pre-existing
+    // golden written before this field existed stays byte-identical.
+    if (m->skip_reason != SkipReason::none) {
+      mj["skip_reason"] = std::string(skip_reason_to_string(m->skip_reason));
     }
     if (!m->evidence.is_null()) {
       mj["evidence"] = m->evidence;

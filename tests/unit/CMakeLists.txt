@@ -49,6 +49,10 @@ add_executable(mediadiff_unit_tests
   # budget/threads derivation, and the T-2-41 --threads/[dir] threads
   # ceiling (03-03-PLAN.md Task 2).
   test_packet_budget.cpp
+  # CONT-01/CONT-09: container.track_count/track_types/track_order/chapters
+  # -- the four remaining container-agnostic topology checks, expanding the
+  # tracer's own container.format (03-04-PLAN.md Task 1).
+  test_topology_analyzer.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

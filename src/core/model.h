@@ -98,8 +98,89 @@ struct Measurement {
   // write/read cycle (core/snapshot.cpp) or D-03 silently degrades to an
   // unwidened, measured-tolerance comparison.
   bool estimated = false;
+  // 03-04-PLAN.md Task 1: set to something other than SkipReason::none when
+  // the analyzer deliberately produced no real value for this check on
+  // this file (e.g. container.chapters on an MPEG-TS input, where chapters
+  // are not a concept the container family has at all) -- `value` is
+  // `Absent{}` whenever this is set. Discovered necessary because
+  // src/compare/engine.cpp's unpaired-measurement path silently drops a
+  // check key that is present on NEITHER side of a compare (it never
+  // enters `all_keys` at all), which cannot express "this check ran and
+  // explicitly does not apply here" — doc 02's own required behavior for
+  // container.chapters on TS. compare_fingerprints (src/compare/engine.cpp)
+  // and src/cli/commands/inspect.cpp's JSON renderer both read this field
+  // directly, ahead of the normal comparator dispatch / measurement
+  // listing, to produce Status::skipped with this reason instead. Survives
+  // the snapshot write/read cycle (core/snapshot.cpp), mirroring
+  // `estimated` above.
+  SkipReason skip_reason = SkipReason::none;
   nlohmann::ordered_json evidence;
 };
+
+// SkipReason <-> canonical lowercase_snake_case text. Shared by every seam
+// that needs this mapping: core/snapshot.cpp's Measurement::skip_reason
+// round trip, src/cli/commands/inspect.cpp's skipped-measurement rendering,
+// src/compare/engine.cpp's skip-reason-carrying Finding message, and (as of
+// this same change) src/report/json.cpp's Finding::skip_reason rendering --
+// json.cpp's own former local copy of this exact switch was removed in
+// favor of this one once both had to coexist in the same translation unit
+// (an unqualified name collision inside `namespace mediadiff`, not merely a
+// style choice). src/report/junit.cpp keeps its own differently-named
+// `skip_reason_text` local copy (a distinct rendering convention, not the
+// same function) — left untouched, no collision.
+inline std::string_view skip_reason_to_string(SkipReason reason) {
+  switch (reason) {
+    case SkipReason::none:
+      return "none";
+    case SkipReason::not_applicable_container:
+      return "not_applicable_container";
+    case SkipReason::requires_decode:
+      return "requires_decode";
+    case SkipReason::cross_container:
+      return "cross_container";
+    case SkipReason::sampling_mismatch:
+      return "sampling_mismatch";
+    case SkipReason::hash_incomparable:
+      return "hash_incomparable";
+    case SkipReason::no_parser:
+      return "no_parser";
+    case SkipReason::unparsed_mechanism:
+      return "unparsed_mechanism";
+    case SkipReason::vfr:
+      return "vfr";
+    case SkipReason::requires_media:
+      return "requires_media";
+    case SkipReason::no_prior_release:
+      return "no_prior_release";
+    case SkipReason::partial_scan:
+      return "partial_scan";
+    case SkipReason::insufficient_data:
+      return "insufficient_data";
+    case SkipReason::no_timing_data:
+      return "no_timing_data";
+  }
+  // Unreachable for any valid SkipReason -- see src/cli/exit_code.h's own
+  // no-default:-arm-plus-trailing-return pattern for why this shape.
+  return "none";
+}
+
+inline std::optional<SkipReason> skip_reason_from_string(std::string_view text) {
+  if (text == "none") return SkipReason::none;
+  if (text == "not_applicable_container") return SkipReason::not_applicable_container;
+  if (text == "requires_decode") return SkipReason::requires_decode;
+  if (text == "cross_container") return SkipReason::cross_container;
+  if (text == "sampling_mismatch") return SkipReason::sampling_mismatch;
+  if (text == "hash_incomparable") return SkipReason::hash_incomparable;
+  if (text == "no_parser") return SkipReason::no_parser;
+  if (text == "unparsed_mechanism") return SkipReason::unparsed_mechanism;
+  if (text == "vfr") return SkipReason::vfr;
+  if (text == "requires_media") return SkipReason::requires_media;
+  if (text == "no_prior_release") return SkipReason::no_prior_release;
+  if (text == "partial_scan") return SkipReason::partial_scan;
+  if (text == "insufficient_data") return SkipReason::insufficient_data;
+  if (text == "no_timing_data") return SkipReason::no_timing_data;
+  return std::nullopt;
+}
 
 // The envelope's privacy-safe identity of the fingerprinted input file
 // (T-2-07, this plan's own prohibitions): the file's basename only — never

@@ -189,6 +189,48 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
     const Measurement& baseline_m = *baseline_it->second;
     const Measurement& candidate_m = *candidate_it->second;
 
+    // 03-04-PLAN.md Task 1: an analyzer that deliberately produced no real
+    // value for this check on this file (Measurement::skip_reason != none,
+    // e.g. container.chapters on an MPEG-TS input) short-circuits straight
+    // to a Status::skipped Finding, ahead of both the D-09 mismatch check
+    // and the normal comparator dispatch -- neither would know what to do
+    // with an explicit "this check does not apply here" marker (Absent
+    // alone is ambiguous with "measured and genuinely empty", which is
+    // exactly why this is a separate field rather than reusing Absent).
+    // Checked before value_kind_mismatch below because Absent is already
+    // exempt from that check (D-09) and this path's own Status must win
+    // regardless. Prefers baseline's reason when both sides carry one (the
+    // common case: an asymmetric cross-family pair only ever has one side
+    // set).
+    if (baseline_m.skip_reason != SkipReason::none || candidate_m.skip_reason != SkipReason::none) {
+      const SkipReason reason =
+          baseline_m.skip_reason != SkipReason::none ? baseline_m.skip_reason : candidate_m.skip_reason;
+      Finding finding;
+      finding.id = check.id;
+      finding.scope = candidate_m.scope;
+      finding.status = Status::skipped;
+      finding.severity = resolved_policy.per_check[pair_key.check_index].severity;
+      finding.baseline = baseline_m.value;
+      finding.candidate = candidate_m.value;
+      finding.skip_reason = reason;
+      finding.message =
+          fmt::format("check '{}' skipped: {}", check.id, skip_reason_to_string(reason));
+
+      nlohmann::ordered_json skip_evidence;
+      if (baseline_m.evidence.is_object()) {
+        skip_evidence["baseline"] = baseline_m.evidence;
+      }
+      if (candidate_m.evidence.is_object()) {
+        skip_evidence["candidate"] = candidate_m.evidence;
+      }
+      if (!skip_evidence.empty()) {
+        finding.evidence = std::move(skip_evidence);
+      }
+
+      findings.push_back(std::move(finding));
+      continue;
+    }
+
     std::string observed_kind;
     const bool mismatch = value_kind_mismatch(baseline_m.value, check.value_kind, &observed_kind) ||
                            value_kind_mismatch(candidate_m.value, check.value_kind, &observed_kind);

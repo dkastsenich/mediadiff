@@ -95,3 +95,60 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 03-04-PLAN.md Task 1, 03-CHECK-ROSTER.md: the remaining four
+# container-agnostic topology checks doc 02 section 2's table declares,
+# expanding src/analyzers/container/topology.cpp beyond the tracer's single
+# container.format measurement.
+
+# Five-bin per-type stream Histogram (video/audio/subtitle/data/attachment,
+# a zero-count bin always present) -- fixed bin order is what makes a
+# dropped subtitle track a VALUE difference under `exact`, not a shape
+# difference, and what keeps two consecutive runs' --json byte-identical.
+[[check]]
+id = "container.track_count"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "histogram"
+severity = "fail"
+
+# The ordered multiset of stream media types as one canonical comma-joined
+# string, preserving both order and duplicates -- two files with the same
+# types in a different order compare as a VALUE difference here (doc 02:
+# "timecode and caption data tracks named in the message -- their loss is
+# the headline", CONT-09).
+[[check]]
+id = "container.track_types"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# The ordered (media_type, codec_name) signature string in stream index
+# order -- a reorder with identical membership fails THIS check while
+# track_count/track_types (order-insensitive counts/multisets) still pass
+# (doc 02: "a move, not add+remove"). `warn`, not `fail`: doc 02's own
+# severity for this row.
+[[check]]
+id = "container.track_order"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+# A StringSet of canonicalized chapter entries (start/end ticks, shared
+# timebase, title). `set` semantic: doc 02's own choice, since chapter
+# reordering with identical membership is not itself meaningful the way
+# stream order is. Auto-skips as `skipped:not_applicable_container` on
+# MPEG-TS (03-04-PLAN.md Task 1's own must_have) -- `info` severity per doc
+# 02's table.
+[[check]]
+id = "container.chapters"
+group = "container"
+semantic = "set"
+unit = "none"
+value_kind = "string_set"
+severity = "info"

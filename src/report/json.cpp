@@ -31,39 +31,11 @@ std::string_view status_to_string(Status status) {
   return "error";
 }
 
-std::string_view skip_reason_to_string(SkipReason reason) {
-  switch (reason) {
-    case SkipReason::none:
-      return "none";
-    case SkipReason::not_applicable_container:
-      return "not_applicable_container";
-    case SkipReason::requires_decode:
-      return "requires_decode";
-    case SkipReason::cross_container:
-      return "cross_container";
-    case SkipReason::sampling_mismatch:
-      return "sampling_mismatch";
-    case SkipReason::hash_incomparable:
-      return "hash_incomparable";
-    case SkipReason::no_parser:
-      return "no_parser";
-    case SkipReason::unparsed_mechanism:
-      return "unparsed_mechanism";
-    case SkipReason::vfr:
-      return "vfr";
-    case SkipReason::requires_media:
-      return "requires_media";
-    case SkipReason::no_prior_release:
-      return "no_prior_release";
-    case SkipReason::partial_scan:
-      return "partial_scan";
-    case SkipReason::insufficient_data:
-      return "insufficient_data";
-    case SkipReason::no_timing_data:
-      return "no_timing_data";
-  }
-  return "none";
-}
+// skip_reason_to_string itself now lives in core/model.h (03-04-PLAN.md
+// Task 1) -- centralized there once a THIRD call site (core/snapshot.cpp's
+// Measurement::skip_reason round trip) needed the identical mapping this
+// file already had; this file's own former local copy is removed rather
+// than kept as a second, driftable definition of the same switch.
 
 std::string_view scope_kind_to_string(Scope::Kind kind) {
   switch (kind) {

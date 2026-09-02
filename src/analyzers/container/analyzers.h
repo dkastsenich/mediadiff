@@ -14,6 +14,11 @@ namespace mediadiff {
 // derived from DemuxSession::format_name(), as one exact-semantic
 // `Measurement`. Scoped to ContainerFamily::other ("every container") --
 // this is the phase's tracer check, deliberately family-agnostic.
+//
+// 03-04-PLAN.md Task 1 also expands this same analyzer with
+// container.track_count/track_types/track_order/chapters -- one AnalyzerSpec,
+// still ContainerFamily::other, matching topology.cpp's own doc comment on
+// why these five checks share one analyzer rather than five.
 const AnalyzerSpec& container_topology_analyzer();
 
 }  // namespace mediadiff

@@ -33,8 +33,11 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "core/error.h"
+#include "core/rational.h"
 #include "util/expected.h"
 
 // Opaque forward declaration -- demux_session.cpp is the only translation
@@ -132,6 +135,59 @@ struct InterruptState {
 
 }  // namespace detail
 
+// 03-04-PLAN.md Task 1: the five per-stream media kinds doc 02 section 2's
+// container.track_count histogram fixes bin order over, plus `other` for
+// any AVMediaType this project has no dedicated bin for (folded into the
+// histogram's `data` bin -- doc 02's own table has no sixth bin, and a
+// codec_type this project has never observed in practice is closer to
+// "opaque data" than to any of the other four). Deliberately NOT the same
+// enum as core/model.h's Scope::Kind, which has no `attachment` counterpart
+// at all (03-CHECK-ROSTER.md / 03-PATTERNS.md's own note) -- callers map
+// this enum to Scope::Kind themselves where a scope is needed, folding
+// `attachment`/`other` into whatever the calling analyzer decides (usually:
+// counted at Scope::Kind::global, never given a per-stream scope of their
+// own).
+enum class StreamMediaType : std::uint8_t {
+  video,
+  audio,
+  subtitle,
+  data,
+  attachment,
+  other,
+};
+
+// One probed stream's topology-relevant properties (container.track_count/
+// track_types/track_order, CONT-09's explicit tmcd/caption naming).
+// `codec_name` is libav's own stable string name (avcodec_get_name), never
+// the numeric AVCodecID -- doc 02 section 2's own requirement that a
+// recorded signature not shift when FFmpeg renumbers an enum across a
+// version bump.
+struct StreamInfo {
+  StreamMediaType media_type = StreamMediaType::other;
+  std::string codec_name;
+  // codecpar->codec_tag == MKTAG('t','m','c','d') -- the MOV/MP4 timecode
+  // track marker (confirmed against libavformat/mov.c's own mov_read_tmcd
+  // dispatch, keyed on this exact tag). CONT-09: this is what lets
+  // container.track_types name a dropped tmcd track explicitly rather than
+  // only reflecting it in a generic `data` count.
+  bool is_timecode = false;
+  // codecpar->codec_id == AV_CODEC_ID_EIA_608 -- CEA-608 caption data,
+  // confirmed present in this pinned FFmpeg's libavcodec/codec_id.h.
+  // CONT-09's caption-track counterpart to is_timecode above.
+  bool is_caption = false;
+};
+
+// One chapter's raw fields, straight off AVChapter -- start/end share ONE
+// time_base (doc 02 section 2's own note on container.chapters), converted
+// to mediadiff::Rational at this accessor (the probe edge, D-07) rather
+// than left as AVRational so no analyzer ever needs a libav header.
+struct ChapterInfo {
+  std::int64_t start = 0;
+  std::int64_t end = 0;
+  Rational time_base{0, 1};
+  std::string title;
+};
+
 class DemuxSession {
  public:
   DemuxSession(const DemuxSession&) = delete;
@@ -156,6 +212,28 @@ class DemuxSession {
   std::string_view format_name() const;
 
   int stream_count() const;
+
+  // 03-04-PLAN.md Task 1: one stream's topology-relevant properties.
+  // `index` is trusted to be < stream_count() by every call site (an
+  // analyzer, never end-user input) -- out of range returns a
+  // default-constructed StreamInfo{} rather than reading past the array,
+  // matching CheckRegistry::at's own "caller-trusted index" convention.
+  StreamInfo stream_info(int index) const;
+
+  // 03-04-PLAN.md Task 1: every AVChapter, in AVFormatContext::chapters
+  // array order -- title is that chapter's own "title" metadata key, empty
+  // string if absent.
+  std::vector<ChapterInfo> chapters() const;
+
+  // 03-04-PLAN.md Tasks 2-3 (meta.tags, meta.tags.language): the raw
+  // key/value pairs of the container-level and one stream's own metadata
+  // dictionary, in AVDictionary iteration order. Values are libav's raw
+  // bytes with no encoding guarantee -- meta.cpp, not this accessor, is
+  // responsible for the UTF-8 replacement-character sanitization doc 02's
+  // T-3-15 mitigation requires before any value enters a compared Value or
+  // evidence.
+  std::vector<std::pair<std::string, std::string>> container_tags() const;
+  std::vector<std::pair<std::string, std::string>> stream_tags(int index) const;
 
   // The number of AV_LOG_WARNING-and-above lines libav emitted while this
   // session's own open() call was running (Task 2). 0 for a clean file.

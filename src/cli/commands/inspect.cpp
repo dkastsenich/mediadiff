@@ -97,8 +97,20 @@ std::string render_inspect_text(const Fingerprint& fp, const CheckRegistry& regi
 
     for (const GroupEntry& entry : entries) {
       const CheckDef& check = registry.at(entry.check_index);
-      out += fmt::format("  {} {}: {}\n", check.id, scope_to_text(entry.measurement->scope),
-                          value_to_text(entry.measurement->value));
+      // 03-04-PLAN.md Task 1: a measurement the analyzer explicitly marked
+      // as not applicable here (Measurement::skip_reason != none, e.g.
+      // container.chapters on an MPEG-TS input) renders its skip reason
+      // instead of the (Absent -> "null") value text, so `inspect`'s
+      // single-file view can distinguish "measured nothing" from "this
+      // check does not apply to this file" without going through
+      // compare_fingerprints at all.
+      if (entry.measurement->skip_reason != SkipReason::none) {
+        out += fmt::format("  {} {}: (skipped: {})\n", check.id, scope_to_text(entry.measurement->scope),
+                            skip_reason_to_string(entry.measurement->skip_reason));
+      } else {
+        out += fmt::format("  {} {}: {}\n", check.id, scope_to_text(entry.measurement->scope),
+                            value_to_text(entry.measurement->value));
+      }
       if (verbose && entry.check_index < policy.per_check.size()) {
         out += render_provenance_chain(policy.per_check[entry.check_index].chain, 4);
       }
@@ -124,11 +136,21 @@ std::string render_inspect_json(const Fingerprint& fp, const CheckRegistry& regi
     nlohmann::ordered_json entries_json = nlohmann::ordered_json::array();
     for (const GroupEntry& entry : entries_for_group(fp, registry, group)) {
       const CheckDef& check = registry.at(entry.check_index);
-      entries_json.push_back(nlohmann::ordered_json{
+      nlohmann::ordered_json entry_json{
           {"id", std::string(check.id)},
           {"scope", scope_to_inspect_json(entry.measurement->scope)},
           {"value", value_to_json(entry.measurement->value)},
-      });
+      };
+      // 03-04-PLAN.md Task 1: present only when the analyzer explicitly
+      // marked this measurement as not applicable (see the text renderer's
+      // own comment above for the full rationale) -- every pre-existing
+      // `inspect --json` entry (skip_reason always SkipReason::none) stays
+      // byte-identical, including tests/golden/inspect_basic.txt.
+      if (entry.measurement->skip_reason != SkipReason::none) {
+        entry_json["status"] = "skipped";
+        entry_json["skip_reason"] = std::string(skip_reason_to_string(entry.measurement->skip_reason));
+      }
+      entries_json.push_back(std::move(entry_json));
     }
     groups[std::string(group_to_string(group))] = entries_json;
   }

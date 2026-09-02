@@ -11,13 +11,18 @@
 #include <utility>
 
 extern "C" {
+#include <libavcodec/codec_id.h>
+#include <libavcodec/codec_par.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libavutil/dict.h>
 #include <libavutil/error.h>
 #include <libavutil/log.h>
 }
 
 #include <cerrno>
+#include <utility>
+#include <vector>
 
 #include "probe/pass.h"
 
@@ -116,6 +121,43 @@ void probe_log_callback(void* /*avcl*/, int level, const char* /*fmt*/, va_list 
     return;
   }
   g_current_diagnostics->warning_count++;
+}
+
+// AVMediaType -> StreamMediaType (03-04-PLAN.md Task 1). Every enumerator
+// this project's own StreamMediaType declares maps directly; anything else
+// (AVMEDIA_TYPE_UNKNOWN, AVMEDIA_TYPE_NB, or a future libav addition) folds
+// into `other`, which container.track_count's own histogram construction
+// (topology.cpp) further folds into the `data` bin -- doc 02's table has no
+// sixth bin.
+StreamMediaType stream_media_type(enum AVMediaType type) {
+  switch (type) {
+    case AVMEDIA_TYPE_VIDEO:
+      return StreamMediaType::video;
+    case AVMEDIA_TYPE_AUDIO:
+      return StreamMediaType::audio;
+    case AVMEDIA_TYPE_SUBTITLE:
+      return StreamMediaType::subtitle;
+    case AVMEDIA_TYPE_DATA:
+      return StreamMediaType::data;
+    case AVMEDIA_TYPE_ATTACHMENT:
+      return StreamMediaType::attachment;
+    default:
+      return StreamMediaType::other;
+  }
+}
+
+// Every key/value pair in `dict`, in AVDictionary iteration order --
+// shared by container_tags()/stream_tags() below. av_dict_iterate (not the
+// deprecated av_dict_get(..., AV_DICT_IGNORE_SUFFIX) loop) is this pinned
+// FFmpeg's current iteration API.
+std::vector<std::pair<std::string, std::string>> dict_to_pairs(const AVDictionary* dict) {
+  std::vector<std::pair<std::string, std::string>> pairs;
+  const AVDictionaryEntry* entry = nullptr;
+  while ((entry = av_dict_iterate(dict, entry)) != nullptr) {
+    pairs.emplace_back(std::string(entry->key != nullptr ? entry->key : ""),
+                        std::string(entry->value != nullptr ? entry->value : ""));
+  }
+  return pairs;
 }
 
 ContainerFamily container_family_from_format_name(std::string_view format_name) {
@@ -249,6 +291,56 @@ mediadiff::expected<DemuxSession, Error> DemuxSession::open(const std::string& u
 std::string_view DemuxSession::format_name() const { return format_name_; }
 
 int DemuxSession::stream_count() const { return ctx_ != nullptr ? static_cast<int>(ctx_->nb_streams) : 0; }
+
+StreamInfo DemuxSession::stream_info(int index) const {
+  if (ctx_ == nullptr || index < 0 || static_cast<unsigned>(index) >= ctx_->nb_streams) {
+    return StreamInfo{};
+  }
+  const AVStream* stream = ctx_->streams[index];
+  const AVCodecParameters* codecpar = stream->codecpar;
+
+  StreamInfo info;
+  info.media_type = stream_media_type(codecpar->codec_type);
+  info.codec_name = avcodec_get_name(codecpar->codec_id);
+  // MKTAG('t','m','c','d') -- the MOV/MP4 timecode-track four-character
+  // code (confirmed against libavformat/mov.c's own mov_read_tmcd
+  // dispatch table, keyed on this exact codec_tag).
+  info.is_timecode = codecpar->codec_tag == MKTAG('t', 'm', 'c', 'd');
+  info.is_caption = codecpar->codec_id == AV_CODEC_ID_EIA_608;
+  return info;
+}
+
+std::vector<ChapterInfo> DemuxSession::chapters() const {
+  std::vector<ChapterInfo> result;
+  if (ctx_ == nullptr) {
+    return result;
+  }
+  result.reserve(ctx_->nb_chapters);
+  for (unsigned i = 0; i < ctx_->nb_chapters; ++i) {
+    const AVChapter* chapter = ctx_->chapters[i];
+    ChapterInfo info;
+    info.start = chapter->start;
+    info.end = chapter->end;
+    info.time_base = Rational{chapter->time_base.num, chapter->time_base.den};
+    const AVDictionaryEntry* title_entry = av_dict_get(chapter->metadata, "title", nullptr, 0);
+    if (title_entry != nullptr && title_entry->value != nullptr) {
+      info.title = title_entry->value;
+    }
+    result.push_back(std::move(info));
+  }
+  return result;
+}
+
+std::vector<std::pair<std::string, std::string>> DemuxSession::container_tags() const {
+  return ctx_ != nullptr ? dict_to_pairs(ctx_->metadata) : std::vector<std::pair<std::string, std::string>>{};
+}
+
+std::vector<std::pair<std::string, std::string>> DemuxSession::stream_tags(int index) const {
+  if (ctx_ == nullptr || index < 0 || static_cast<unsigned>(index) >= ctx_->nb_streams) {
+    return {};
+  }
+  return dict_to_pairs(ctx_->streams[index]->metadata);
+}
 
 std::int64_t DemuxSession::warning_count() const { return diagnostics_.warning_count; }
 
