@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-09-02T20:15:55.636Z"
+stopped_at: Completed 03-06-PLAN.md
+last_updated: "2026-09-02T20:59:22.382Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 29
+  completed_plans: 30
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 6 of 11
+Plan: 7 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -78,6 +78,7 @@ Progress: [████████░░] 83%
 | Phase 03 P03 | 100min | 3 tasks | 23 files |
 | Phase 03 P04 | 150min | 3 tasks | 27 files |
 | Phase 03 P05 | 140 | 3 tasks | 22 files |
+| Phase 03 P06 | 37min | 3 tasks | 25 files |
 
 ## Accumulated Context
 
@@ -147,6 +148,10 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 3, 03-04]: per-stream meta.tags/meta.tags.language Scope.index is the stream's rank among same-media-type streams, not raw stream-array position (Claude's Discretion, mirrors CONT-08's program_number stability rationale)
 - [Phase ?]: container.mp4.* split into two AnalyzerSpecs (family-scoped real-data + family-agnostic not-applicable sibling) so bmff_scan never runs on non-MP4 bytes while inspect/compare still show an explicit skipped:not_applicable_container there -- the required pattern for 03-06/03-08's mkv/ts scanners too
 - [Phase ?]: container.mp4.fragment_duration's median always derives from PacketScan keyframe DTS deltas, never sidx -- bmff_scan's approved scope only records sidx presence, not segment durations
+- [Phase ?]: BoundedReader duplicated (not shared) between ebml_scan.cpp and bmff_scan.cpp -- the binary grammars diverge enough that sharing would add indirection without removing real duplication
+- [Phase ?]: Segment walk stops at first Cluster; a trailing Cues is located exclusively via a guarded single-hop SeekHead-follow (bounds-check + ID-verify, no recursion)
+- [Phase ?]: codec_delay ns-to-samples conversion is exclusively checked-integer arithmetic (checked_mul then checked_div), never floating point
+- [Phase ?]: container_family_token centralized as a shared core primitive so probe's ContainerFamily and compare's cross-container demotion can never disagree
 
 ### Pending Todos
 
@@ -176,6 +181,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T20:15:55.620Z
-Stopped at: Completed 03-05-PLAN.md
+Last session: 2026-09-02T20:59:22.365Z
+Stopped at: Completed 03-06-PLAN.md
 Resume file: None
