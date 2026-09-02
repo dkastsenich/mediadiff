@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-09-02T19:43:43.931Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-09-02T20:15:55.636Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 28
+  completed_plans: 29
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 5 of 11
+Plan: 6 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [████████░░] 80%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Progress: [████████░░] 80%
 | Phase 03 P02 | 110min | 3 tasks | 37 files |
 | Phase 03 P03 | 100min | 3 tasks | 23 files |
 | Phase 03 P04 | 150min | 3 tasks | 27 files |
+| Phase 03 P05 | 140 | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 3, 03-04]: Measurement.skip_reason added (mirrors 03-01's Measurement.estimated) so an analyzer can explicitly mark a check not-applicable-here; compare/engine.cpp short-circuits to skipped ahead of normal dispatch, inspect.cpp renders it -- the engine's pre-existing unpaired-measurement path was verified (not assumed) to drop such a check with no Finding at all
 - [Phase ?]: [Phase 3, 03-04]: container.track_types/track_order canonical string encodings locked (comma-joined type tokens; comma-joined media_type:codec_name using avcodec_get_name) -- costly to change, enters committed snapshots
 - [Phase ?]: [Phase 3, 03-04]: per-stream meta.tags/meta.tags.language Scope.index is the stream's rank among same-media-type streams, not raw stream-array position (Claude's Discretion, mirrors CONT-08's program_number stability rationale)
+- [Phase ?]: container.mp4.* split into two AnalyzerSpecs (family-scoped real-data + family-agnostic not-applicable sibling) so bmff_scan never runs on non-MP4 bytes while inspect/compare still show an explicit skipped:not_applicable_container there -- the required pattern for 03-06/03-08's mkv/ts scanners too
+- [Phase ?]: container.mp4.fragment_duration's median always derives from PacketScan keyframe DTS deltas, never sidx -- bmff_scan's approved scope only records sidx presence, not segment durations
 
 ### Pending Todos
 
@@ -173,6 +176,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T19:43:43.915Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-09-02T20:15:55.620Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None
