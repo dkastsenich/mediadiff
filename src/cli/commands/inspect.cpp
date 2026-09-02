@@ -27,6 +27,7 @@
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
 #include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
 #include "report/model.h"
 
 namespace mediadiff {
@@ -184,6 +185,17 @@ void register_inspect_command(CLI::App& app) {
     if (probe_timeout_ms->has_value()) {
       set_default_wall_clock_budget_ms(**probe_timeout_ms);
     }
+
+    // D-01: `inspect` always resolves to a thread count of 1 (a single
+    // file) -- derive_per_file_cap_bytes with threads=1 hands it the
+    // whole resolved budget.
+    auto probe_budget_mb = resolve_probe_memory_budget_mb(options.probe, *config);
+    if (!probe_budget_mb) {
+      const Error& err = probe_budget_mb.error();
+      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      std::exit(exit_code_for(err.kind));
+    }
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_mb * 1024 * 1024, /*threads=*/1));
 
     auto fp = fingerprint_input(opt_string(file_path), registry);
     if (!fp) {

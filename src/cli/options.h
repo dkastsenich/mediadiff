@@ -164,6 +164,23 @@ ProbeArgs add_probe_flags(CLI::App& cmd);
 mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms(const ProbeArgs& args,
                                                                                     const std::optional<ConfigFile>& config);
 
+// Resolves the GLOBAL probe-memory budget, in MEGABYTES, from
+// `--probe-memory-budget-mb` (when given) else `[probe] memory_budget_mb`
+// (when `config` declared one) else src/probe/packet_scan.h's own
+// kDefaultProbeMemoryBudgetMb (D-01) -- the same three-way precedence
+// shape resolve_probe_timeout_ms already established, except this one
+// ALWAYS returns an engaged value (there is no "leave some other default
+// in force" case: D-01's derived per-file cap must be set before the
+// first run_packet_scan call of every invocation). Every caller converts
+// this MB value to bytes, divides by its own resolved thread count via
+// src/probe/packet_scan.h's derive_per_file_cap_bytes, and calls
+// set_default_packet_scan_max_bytes with the result -- `dir` mode passes
+// its resolved `--threads`/`[dir] threads` count; the three single-file
+// commands always pass 1 (their own resolved thread count is always 1,
+// so a single in-flight file gets the whole budget).
+mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_mb(const ProbeArgs& args,
+                                                                           const std::optional<ConfigFile>& config);
+
 // All-null ProbeArgs, matching default_policy_args()/default_report_args()/
 // default_color_args()'s own contract -- used by main.cpp's implicit
 // two-positional dispatch, which carries none of `compare`'s own optional

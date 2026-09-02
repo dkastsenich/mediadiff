@@ -18,6 +18,7 @@
 
 #include "core/glob.h"
 #include "core/registry.h"
+#include "probe/packet_scan.h"
 #include "util/fs.h"
 
 namespace mediadiff {
@@ -281,6 +282,29 @@ mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms
     return static_cast<std::int64_t>(*config->probe->timeout_seconds) * 1000;
   }
   return std::nullopt;
+}
+
+mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_mb(const ProbeArgs& args,
+                                                                           const std::optional<ConfigFile>& config) {
+  if (args.memory_budget_mb != nullptr && args.memory_budget_mb->count() > 0) {
+    const std::string text = opt_string(args.memory_budget_mb);
+    try {
+      const long long mb = std::stoll(text);
+      return static_cast<std::int64_t>(mb);
+    } catch (const std::exception&) {
+      // Unreachable in practice -- ->check(CLI::PositiveNumber) already
+      // rejected anything std::stoll could not parse, at CLI11 parse
+      // time. Caught here (never crossing the lib boundary) as a
+      // defensive backstop only, matching resolve_probe_timeout_ms's own
+      // shape.
+      return mediadiff::unexpected(Error{
+          ErrorKind::usage, "--probe-memory-budget-mb must be a positive integer number of megabytes: '" + text + "'"});
+    }
+  }
+  if (config.has_value() && config->probe.has_value() && config->probe->memory_budget_mb.has_value()) {
+    return static_cast<std::int64_t>(*config->probe->memory_budget_mb);
+  }
+  return static_cast<std::int64_t>(kDefaultProbeMemoryBudgetMb);
 }
 
 PolicyArgs default_policy_args() { return {}; }

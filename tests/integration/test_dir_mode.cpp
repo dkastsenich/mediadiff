@@ -41,6 +41,8 @@ fs::path unique_scratch_dir(const std::string& tag) {
 
 std::string snap_fixture(const std::string& name) { return std::string(MEDIADIFF_FIXTURES_DIR) + "/" + name; }
 
+std::string config_fixture(const std::string& name) { return std::string(MEDIADIFF_FIXTURE_DIR) + "/config/" + name; }
+
 void copy_fixture(const std::string& fixture_name, const fs::path& dest) {
   std::ifstream in(snap_fixture(fixture_name), std::ios::binary);
   REQUIRE(in.is_open());
@@ -137,6 +139,48 @@ TEST_CASE("dir_mode - --threads 1 and --threads 8 produce byte-identical --json 
 
   REQUIRE(result_1.exit_code == result_8.exit_code);
   CHECK(result_1.out == result_8.out);
+}
+
+// --- D-01/T-2-41 (03-03-PLAN.md Task 2): an explicit --threads/[dir]
+// threads above the maximum worker thread count is a usage error, never
+// a silent clamp; exactly at the ceiling still succeeds ------------------
+
+TEST_CASE("dir_mode - --threads above the ceiling exits 64 and names the maximum, spawning no workers",
+          "[integration]") {
+  const fs::path baseline = unique_scratch_dir("threads_over_a");
+  const fs::path candidate = unique_scratch_dir("threads_over_b");
+  copy_fixture("tracer_a.snap.json", baseline / "one.snap.json");
+  copy_fixture("tracer_a.snap.json", candidate / "one.snap.json");
+
+  CliResult result = run_cli({"dir", baseline.string(), candidate.string(), "--threads", "99999"});
+
+  CHECK(result.exit_code == 64);
+  CHECK(result.err.find("32") != std::string::npos);
+}
+
+TEST_CASE("dir_mode - --threads exactly at the ceiling (32) succeeds", "[integration]") {
+  const fs::path baseline = unique_scratch_dir("threads_ceiling_a");
+  const fs::path candidate = unique_scratch_dir("threads_ceiling_b");
+  copy_fixture("tracer_a.snap.json", baseline / "one.snap.json");
+  copy_fixture("tracer_a.snap.json", candidate / "one.snap.json");
+
+  CliResult result = run_cli({"dir", baseline.string(), candidate.string(), "--threads", "32", "--json"});
+
+  CHECK(result.exit_code != 64);
+}
+
+TEST_CASE("dir_mode - '[dir] threads' above the ceiling is rejected at config-load time with the same message",
+          "[integration]") {
+  const fs::path baseline = unique_scratch_dir("threads_cfg_a");
+  const fs::path candidate = unique_scratch_dir("threads_cfg_b");
+  copy_fixture("tracer_a.snap.json", baseline / "one.snap.json");
+  copy_fixture("tracer_a.snap.json", candidate / "one.snap.json");
+
+  CliResult result = run_cli(
+      {"dir", baseline.string(), candidate.string(), "--config", config_fixture("dir_threads_over_ceiling.toml")});
+
+  CHECK(result.exit_code == 64);
+  CHECK(result.err.find("32") != std::string::npos);
 }
 
 TEST_CASE("dir_mode - files[] is in byte-wise sorted relative-path order", "[integration]") {

@@ -13,6 +13,7 @@
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
 #include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
 #include "util/fs.h"
 
 #if defined(_WIN32)
@@ -292,6 +293,18 @@ void register_snapshot_command(CLI::App& app) {
     if (probe_timeout_ms->has_value()) {
       set_default_wall_clock_budget_ms(**probe_timeout_ms);
     }
+
+    // Same std::nullopt-config rationale as the --probe-timeout
+    // resolution just above -- snapshot reads no mediadiff.toml. This
+    // command's own resolved thread count is always 1 (a single file),
+    // so derive_per_file_cap_bytes hands it the whole resolved budget.
+    auto probe_budget_mb = resolve_probe_memory_budget_mb(probe_args, std::nullopt);
+    if (!probe_budget_mb) {
+      const Error& err = probe_budget_mb.error();
+      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      std::exit(exit_code_for(err.kind));
+    }
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_mb * 1024 * 1024, /*threads=*/1));
 
     // fingerprint_input (src/probe/orchestrator.h) tries read_snapshot
     // first -- an input that IS already a valid *.snap.json is re-read

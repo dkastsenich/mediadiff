@@ -252,6 +252,11 @@ mediadiff::expected<std::optional<ConfigFile>, Error> discover_and_load(std::opt
         return usage_error("config file '" + path + "': '[dir] threads' must be a positive integer" +
                             position_suffix(threads_node->source()));
       }
+      if (threads_value > kMaxDirThreads) {
+        return usage_error("config file '" + path + "': '[dir] threads' must not exceed " +
+                            std::to_string(kMaxDirThreads) + " (the maximum worker thread count)" +
+                            position_suffix(threads_node->source()));
+      }
       block.threads = static_cast<int>(threads_value);
     }
     cfg.dir = block;
@@ -273,6 +278,18 @@ mediadiff::expected<std::optional<ConfigFile>, Error> discover_and_load(std::opt
                             position_suffix(timeout_node->source()));
       }
       block.timeout_seconds = static_cast<int>(timeout_value);
+    }
+    if (const toml::node* memory_node = probe_node->as_table()->get("memory_budget_mb")) {
+      if (!memory_node->is_integer()) {
+        return usage_error("config file '" + path + "': '[probe] memory_budget_mb' must be an integer" +
+                            position_suffix(memory_node->source()));
+      }
+      const std::int64_t memory_value = *memory_node->value<std::int64_t>();
+      if (memory_value <= 0) {
+        return usage_error("config file '" + path + "': '[probe] memory_budget_mb' must be a positive integer" +
+                            position_suffix(memory_node->source()));
+      }
+      block.memory_budget_mb = static_cast<int>(memory_value);
     }
     cfg.probe = block;
   }

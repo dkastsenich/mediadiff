@@ -1,0 +1,6 @@
+# 03-03-PLAN.md Task 2 (T-2-41, D-01): '[dir] threads' above the maximum
+# worker thread count (kMaxDirThreads=32, src/config/toml_load.h) must be
+# rejected at config-load time with the same ceiling message the
+# --threads flag path produces -- proves the two entry points agree.
+[dir]
+threads = 99999

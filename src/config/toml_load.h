@@ -44,31 +44,55 @@ struct TransformBlock {
   std::optional<std::string> resolution;
 };
 
+// The maximum worker-thread count `dir` mode will ever create, from ANY
+// source -- an explicit `--threads`, an explicit `[dir] threads`, or the
+// hardware-concurrency-derived default (T-2-41's closed residual, D-01).
+// Each `std::thread` carries a real OS-allocated stack (a multi-megabyte
+// resource `WorkerPool` itself does not bound, src/cli/worker_pool.h's own
+// header comment), so this ceiling is a separate mitigation from D-01's
+// byte-accounted `PacketScan` budget, not a consequence of it. Enforced
+// identically at BOTH entry points -- here (config-load time, for
+// `[dir] threads`) and src/cli/commands/dir.cpp (parse time, for
+// `--threads`) -- so a value above the ceiling is a usage error naming
+// this maximum, exiting 64, from whichever path supplied it. Declared
+// once, here, since src/cli/commands/dir.cpp already includes this
+// header for DirBlock/ProbeBlock and a config-shape ceiling belongs
+// beside the shape it constrains, not duplicated as two separate literal
+// 32s that could silently drift apart.
+inline constexpr int kMaxDirThreads = 32;
+
 // The `[dir]` block (doc 01 section 10, plan 02-11): today, just the
 // worker-pool default thread count. `threads` is std::nullopt when the key
 // was absent from an otherwise-present `[dir]` table -- `[dir] threads`'s
 // own resolution precedence (below `--threads`, above hardware-concurrency
 // autodetection) is `src/cli/commands/dir.cpp`'s job, not this parser's;
 // this struct only carries what the table said, validated for shape (a
-// positive integer) at load time so a malformed value is reported the
-// moment the config is read rather than on the first `dir` invocation that
-// happens to fall through to it. Other `[dir]` fields (include/exclude
-// patterns, ...) remain unspecified by doc 01 section 10 and are left for
-// a future plan to add without walking this one back.
+// positive integer not exceeding kMaxDirThreads, T-2-41) at load time so
+// a malformed value is reported the moment the config is read rather than
+// on the first `dir` invocation that happens to fall through to it. Other
+// `[dir]` fields (include/exclude patterns, ...) remain unspecified by
+// doc 01 section 10 and are left for a future plan to add without
+// walking this one back.
 struct DirBlock {
   std::optional<int> threads;
 };
 
-// The `[probe]` block (doc 02 section 1.1, 03-02-PLAN.md Task 2): today,
-// just the per-file wall-clock probe budget in seconds. `timeout_seconds`
-// is std::nullopt when the key was absent -- resolution precedence
-// (`--probe-timeout` above this, above src/probe/demux_session.h's own
-// kDefaultProbeBudgetMs) is src/cli/options.cpp's
-// resolve_probe_timeout_ms's job, not this parser's; this struct only
-// carries what the table said, validated for shape (a non-negative
-// integer) at load time.
+// The `[probe]` block (doc 02 section 1.1, 03-02-PLAN.md Task 2; extended
+// by 03-03-PLAN.md Task 2, D-01): the per-file wall-clock probe budget in
+// seconds, plus the global probe-memory budget in megabytes. Both are
+// std::nullopt when their key was absent -- resolution precedence
+// (`--probe-timeout`/`--probe-memory-budget-mb` above these, above
+// src/probe/demux_session.h's kDefaultProbeBudgetMs /
+// src/probe/packet_scan.h's kDefaultProbeMemoryBudgetMb) is
+// src/cli/options.cpp's resolve_probe_timeout_ms/
+// resolve_probe_memory_budget_mb's job, not this parser's; this struct
+// only carries what the table said, validated for shape (a non-negative
+// integer for timeout_seconds, a positive integer for
+// memory_budget_mb -- matching --probe-memory-budget-mb's own
+// CLI::PositiveNumber check) at load time.
 struct ProbeBlock {
   std::optional<int> timeout_seconds;
+  std::optional<int> memory_budget_mb;
 };
 
 // One `[override."<glob-on-relative-path>"]` block (doc 01 section 6, dir

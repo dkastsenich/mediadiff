@@ -29,6 +29,7 @@
 #include "core/value.h"
 #include "probe/demux_session.h"
 #include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
 #include "report/json.h"
 #include "report/junit.h"
 #include "report/markdown.h"
@@ -276,27 +277,53 @@ void register_dir_command(CLI::App& app) {
 
     // --threads resolution: explicit --threads > [dir] threads > hardware
     // concurrency (clamped). An explicit value of zero or negative is a
-    // usage error regardless of source (T-2-41: this is simultaneously
-    // the concurrency AND the memory knob).
-    constexpr int kMaxDefaultThreads = 32;
+    // usage error regardless of source; a value above kMaxDirThreads is
+    // ALSO a usage error, from every source (T-2-41's closed residual):
+    // this is simultaneously the concurrency AND the memory knob (D-01),
+    // and a user who asked for a thread count they cannot have must be
+    // told, never silently given a different one.
     int resolved_threads = 0;
     if (threads_opt->count() > 0) {
       if (*threads <= 0) {
         std::fputs("mediadiff: --threads must be a positive integer\n", stderr);
         std::exit(kExitUsage);
       }
+      if (*threads > kMaxDirThreads) {
+        std::fputs(("mediadiff: --threads must not exceed " + std::to_string(kMaxDirThreads) +
+                     " (the maximum worker thread count)\n")
+                        .c_str(),
+                    stderr);
+        std::exit(kExitUsage);
+      }
       resolved_threads = *threads;
     } else if (config.has_value() && config->dir.has_value() && config->dir->threads.has_value()) {
-      // Already validated positive at config-load time
-      // (src/config/toml_load.cpp) -- trusted here.
+      // Already validated positive AND <= kMaxDirThreads at config-load
+      // time (src/config/toml_load.cpp) -- trusted here.
       resolved_threads = *config->dir->threads;
     } else {
       const unsigned hardware = std::thread::hardware_concurrency();
       resolved_threads = hardware == 0 ? 1 : static_cast<int>(hardware);
-      if (resolved_threads > kMaxDefaultThreads) {
-        resolved_threads = kMaxDefaultThreads;
+      if (resolved_threads > kMaxDirThreads) {
+        resolved_threads = kMaxDirThreads;
       }
     }
+
+    // D-01: derive this invocation's per-file PacketScan byte cap from
+    // the resolved global probe-memory budget and the resolved thread
+    // count above, and set it as the process-wide default BEFORE the
+    // worker pool starts -- every job's own run_packet_scan call (inside
+    // fingerprint_input, via the orchestrator) reads
+    // PacketScanLimits{}'s own default member initializer, which reads
+    // this global, so every file in the corpus is bounded by the SAME
+    // per-file cap.
+    auto probe_budget_mb_result = resolve_probe_memory_budget_mb(options.probe, config);
+    if (!probe_budget_mb_result) {
+      const Error& err = probe_budget_mb_result.error();
+      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      std::exit(exit_code_for(err.kind));
+    }
+    const std::int64_t probe_budget_bytes = *probe_budget_mb_result * 1024 * 1024;
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(probe_budget_bytes, resolved_threads));
 
     // DIR-01/DIR-04: the full pair list, byte-wise sorted, computed BEFORE
     // any worker starts and never mutated afterward.

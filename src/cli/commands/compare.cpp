@@ -23,6 +23,7 @@
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
 #include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
 #include "report/json.h"
 #include "report/junit.h"
 #include "report/markdown.h"
@@ -163,6 +164,18 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   if (probe_timeout_ms->has_value()) {
     set_default_wall_clock_budget_ms(**probe_timeout_ms);
   }
+
+  // D-01: this command's own resolved thread count is always 1 (a single
+  // baseline/candidate pair, compared synchronously) -- derive_per_file_cap_bytes
+  // with threads=1 returns the whole resolved budget unchanged, so a
+  // single in-flight file gets it in full.
+  auto probe_budget_mb = resolve_probe_memory_budget_mb(probe_args, *config);
+  if (!probe_budget_mb) {
+    const Error& err = probe_budget_mb.error();
+    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    std::exit(exit_code_for(err.kind));
+  }
+  set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_mb * 1024 * 1024, /*threads=*/1));
 
   auto baseline = fingerprint_input(baseline_path, registry);
   if (!baseline) {
