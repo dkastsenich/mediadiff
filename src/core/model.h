@@ -88,6 +88,16 @@ struct Measurement {
   std::uint32_t check_index;
   Scope scope;
   Value value;
+  // D-03 (03-CONTEXT.md): true when this value was derived from an
+  // estimate (e.g. a TS mux-rate estimate) rather than measured directly.
+  // This is data the comparison layer reads, not evidence prose --
+  // src/compare/tol.cpp widens the resolved tolerance by
+  // kEstimatedToleranceFactor when either side of a comparison carries
+  // this flag, so estimation noise cannot fabricate a false regression
+  // (false positives are P0 in this project). Survives the snapshot
+  // write/read cycle (core/snapshot.cpp) or D-03 silently degrades to an
+  // unwidened, measured-tolerance comparison.
+  bool estimated = false;
   nlohmann::ordered_json evidence;
 };
 
@@ -153,6 +163,13 @@ struct Finding {
   Value candidate;
   std::string message;
   SkipReason skip_reason;
+  // Closes Broken Window #1 (.planning/WINDOWS.md): populated at exactly
+  // one seam, src/compare/engine.cpp's compare_fingerprints, from the
+  // paired Measurements' own `evidence` -- an ordered object with
+  // `baseline`/`candidate` members, each present only when that side's
+  // measurement evidence is a non-null object. Null when neither side
+  // carries any, so every Phase-2 golden stays byte-identical.
+  nlohmann::ordered_json evidence;
 };
 
 }  // namespace mediadiff

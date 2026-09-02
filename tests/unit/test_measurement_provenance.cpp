@@ -1,14 +1,18 @@
-// 03-01-PLAN.md Task 1: the SkipReason extension's own compile-time
+// 03-01-PLAN.md Task 1/2: the SkipReason extension's own compile-time
 // coupling (SkipReason enum -> json.cpp's skip_reason_to_string ->
 // junit.cpp's skip_reason_text -> docs/schema/report-1.0.json's closed
-// enum). skip_reason_to_string/skip_reason_text are file-local (anonymous
-// namespace) by design -- this file proves their behavior through the same
-// public renderer surface a real caller uses (render_json/render_junit),
-// never by declaring a forward reference into either .cpp's anonymous
-// namespace.
+// enum), plus Measurement.estimated's snapshot round-trip and
+// Finding.evidence's single propagation seam (D-02, D-03, closes Broken
+// Window #1). skip_reason_to_string/skip_reason_text are file-local
+// (anonymous namespace) by design -- this file proves their behavior
+// through the same public renderer surface a real caller uses
+// (render_json/render_junit), never by declaring a forward reference into
+// either .cpp's anonymous namespace.
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <set>
 #include <string>
@@ -16,9 +20,12 @@
 
 #include <nlohmann/json.hpp>
 
+#include "compare/engine.h"
 #include "core/model.h"
 #include "core/policy.h"
+#include "core/rational.h"
 #include "core/registry.h"
+#include "core/snapshot.h"
 #include "core/value.h"
 #include "report/json.h"
 #include "report/junit.h"
@@ -27,10 +34,16 @@
 
 using mediadiff::Absent;
 using mediadiff::CheckRegistry;
+using mediadiff::compare_fingerprints;
 using mediadiff::Envelope;
 using mediadiff::Finding;
+using mediadiff::Fingerprint;
+using mediadiff::Measurement;
 using mediadiff::Policy;
 using mediadiff::ProfileId;
+using mediadiff::Rational;
+using mediadiff::RationalValue;
+using mediadiff::read_snapshot;
 using mediadiff::render_json;
 using mediadiff::render_junit;
 using mediadiff::RenderOptions;
@@ -40,6 +53,7 @@ using mediadiff::Severity;
 using mediadiff::SkipReason;
 using mediadiff::Status;
 using mediadiff::test_registry;
+using mediadiff::write_snapshot;
 
 namespace {
 
@@ -165,4 +179,171 @@ TEST_CASE("skip_reason: skip_reason_text (junit) agrees with skip_reason_to_stri
     INFO("reason: " << c.text);
     CHECK(junit_skip_reason_text(c.reason) == json_skip_reason_text(c.reason));
   }
+}
+
+// ---------------------------------------------------------------------
+// Task 2: Measurement.estimated and Finding.evidence.
+// ---------------------------------------------------------------------
+
+namespace {
+
+RationalValue ms(std::int64_t value) { return RationalValue{value, 1, Rational{1, 1}}; }
+
+Fingerprint fingerprint_with(std::vector<Measurement> measurements) {
+  Fingerprint fp;
+  fp.envelope.schema_version = "1.0";
+  fp.envelope.tool_version = "test";
+  fp.measurements = std::move(measurements);
+  return fp;
+}
+
+// Same scratch-directory convention tests/integration/test_schema_version.cpp
+// uses for a real write_snapshot/read_snapshot file round trip: a unique
+// temp directory per call, monotonic counter avoids collisions between the
+// two TEST_CASEs below that write real files.
+std::filesystem::path scratch_dir(const std::string& tag) {
+  static int counter = 0;
+  const std::filesystem::path dir =
+      std::filesystem::temp_directory_path() / ("mediadiff_measurement_provenance_" + tag + "_" + std::to_string(counter++));
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+  std::filesystem::create_directories(dir, ec);
+  return dir;
+}
+
+}  // namespace
+
+TEST_CASE("measurement provenance: Measurement.estimated survives a snapshot write/read round trip",
+          "[measurement_provenance]") {
+  const CheckRegistry& registry = test_registry();
+  const std::uint32_t idx = *registry.find("t.tol_ms");
+
+  Measurement estimated_true;
+  estimated_true.check_index = idx;
+  estimated_true.scope = global0();
+  estimated_true.value = mediadiff::Value{ms(10)};
+  estimated_true.estimated = true;
+
+  Measurement estimated_absent;
+  estimated_absent.check_index = idx;
+  estimated_absent.scope = Scope{Scope::Kind::audio, 0};
+  estimated_absent.value = mediadiff::Value{ms(20)};
+  // estimated left at its default (false).
+
+  const Fingerprint fp = fingerprint_with({estimated_true, estimated_absent});
+
+  const std::string path = (scratch_dir("roundtrip") / "measurement_provenance.snap.json").string();
+  auto written = write_snapshot(fp, path, registry);
+  REQUIRE(written.has_value());
+
+  auto read_back = read_snapshot(path, registry);
+  REQUIRE(read_back.has_value());
+  REQUIRE(read_back->measurements.size() == 2);
+
+  bool found_true = false;
+  bool found_false = false;
+  for (const Measurement& m : read_back->measurements) {
+    if (m.scope.kind == Scope::Kind::global) {
+      CHECK(m.estimated == true);
+      found_true = true;
+    } else {
+      CHECK(m.estimated == false);
+      found_false = true;
+    }
+  }
+  CHECK(found_true);
+  CHECK(found_false);
+}
+
+TEST_CASE("measurement provenance: a snapshot whose 'estimated' key is not a boolean is rejected, never coerced",
+          "[measurement_provenance]") {
+  const std::string poisoned =
+      R"({"schema_version":"1.0","tool_version":"x","measurements":[)"
+      R"({"id":"t.tol_ms","scope":{"kind":"global","index":0},"value":{"num":1,"den":1,"tb":{"num":1,"den":1}},)"
+      R"("estimated":"yes"}]})";
+  const std::string path = (scratch_dir("poisoned") / "measurement_provenance.snap.json").string();
+  {
+    std::ofstream out(path, std::ios::binary);
+    REQUIRE(out.is_open());
+    out << poisoned;
+  }
+
+  auto result = read_snapshot(path, test_registry());
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error().kind == mediadiff::ErrorKind::input_unsupported);
+  CHECK(result.error().message.find("estimated") != std::string::npos);
+  CHECK(result.error().message.find("t.tol_ms") != std::string::npos);
+}
+
+TEST_CASE("measurement provenance: Finding.evidence is populated from both sides' evidence at the compare seam and "
+          "rendered as a JSON object",
+          "[measurement_provenance]") {
+  const CheckRegistry& registry = test_registry();
+  const std::uint32_t idx = *registry.find("t.tol_ms");
+
+  Measurement baseline_m;
+  baseline_m.check_index = idx;
+  baseline_m.scope = global0();
+  baseline_m.value = mediadiff::Value{ms(10)};
+  baseline_m.evidence = nlohmann::ordered_json{{"byte_offset", 100}};
+
+  Measurement candidate_m;
+  candidate_m.check_index = idx;
+  candidate_m.scope = global0();
+  candidate_m.value = mediadiff::Value{ms(10)};
+  candidate_m.evidence = nlohmann::ordered_json{{"byte_offset", 200}};
+
+  const Fingerprint baseline_fp = fingerprint_with({baseline_m});
+  const Fingerprint candidate_fp = fingerprint_with({candidate_m});
+
+  auto findings = compare_fingerprints(baseline_fp, candidate_fp, Policy{ProfileId::sw_encoder}, registry);
+  REQUIRE(findings.has_value());
+  REQUIRE(findings->size() == 1);
+  const Finding& f = (*findings)[0];
+
+  REQUIRE_FALSE(f.evidence.is_null());
+  REQUIRE(f.evidence.is_object());
+  REQUIRE(f.evidence.contains("baseline"));
+  REQUIRE(f.evidence.contains("candidate"));
+  CHECK(f.evidence.at("baseline").at("byte_offset") == 100);
+  CHECK(f.evidence.at("candidate").at("byte_offset") == 200);
+
+  const ReportModel model = model_from({f});
+  const std::string rendered = render_json(model, registry, Policy{ProfileId::sw_encoder}, false);
+  const nlohmann::json parsed = nlohmann::json::parse(rendered, nullptr, false);
+  REQUIRE_FALSE(parsed.is_discarded());
+  const auto& evidence = parsed.at("findings").at(0).at("evidence");
+  CHECK(evidence.is_object());
+  CHECK(evidence.at("baseline").at("byte_offset") == 100);
+  CHECK(evidence.at("candidate").at("byte_offset") == 200);
+}
+
+TEST_CASE("measurement provenance: a comparison where neither side carries evidence still emits evidence:null",
+          "[measurement_provenance]") {
+  const CheckRegistry& registry = test_registry();
+  const std::uint32_t idx = *registry.find("t.tol_ms");
+
+  Measurement baseline_m;
+  baseline_m.check_index = idx;
+  baseline_m.scope = global0();
+  baseline_m.value = mediadiff::Value{ms(10)};
+
+  Measurement candidate_m;
+  candidate_m.check_index = idx;
+  candidate_m.scope = global0();
+  candidate_m.value = mediadiff::Value{ms(10)};
+
+  const Fingerprint baseline_fp = fingerprint_with({baseline_m});
+  const Fingerprint candidate_fp = fingerprint_with({candidate_m});
+
+  auto findings = compare_fingerprints(baseline_fp, candidate_fp, Policy{ProfileId::sw_encoder}, registry);
+  REQUIRE(findings.has_value());
+  REQUIRE(findings->size() == 1);
+  CHECK(findings->at(0).evidence.is_null());
+
+  const ReportModel model = model_from({(*findings)[0]});
+  const std::string rendered = render_json(model, registry, Policy{ProfileId::sw_encoder}, false);
+  const nlohmann::json parsed = nlohmann::json::parse(rendered, nullptr, false);
+  REQUIRE_FALSE(parsed.is_discarded());
+  CHECK(parsed.at("findings").at(0).at("evidence").is_null());
 }

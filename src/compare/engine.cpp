@@ -215,6 +215,23 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
     if (!finding) {
       return mediadiff::unexpected(finding.error());
     }
+
+    // Closes Broken Window #1: the ONE seam Finding::evidence is populated
+    // at (this plan's own must_have) -- no comparator needs to change and
+    // no future comparator can forget. `baseline`/`candidate` members are
+    // present only when that side's measurement evidence is a non-null
+    // object; both absent leaves finding.evidence null.
+    nlohmann::ordered_json evidence;
+    if (baseline_m.evidence.is_object()) {
+      evidence["baseline"] = baseline_m.evidence;
+    }
+    if (candidate_m.evidence.is_object()) {
+      evidence["candidate"] = candidate_m.evidence;
+    }
+    if (!evidence.empty()) {
+      finding->evidence = std::move(evidence);
+    }
+
     findings.push_back(std::move(*finding));
   }
 

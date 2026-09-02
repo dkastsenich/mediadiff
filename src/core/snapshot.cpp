@@ -256,10 +256,24 @@ mediadiff::expected<Fingerprint, Error> read_snapshot(const std::string& utf8_pa
         return mediadiff::unexpected(value.error());
       }
 
+      // D-03: a present-but-non-boolean 'estimated' key is rejected as
+      // ErrorKind::input_unsupported naming the check id, never coerced --
+      // the same shape as the surrounding scope/value rejections (T-3-01).
+      // An absent key defaults to false.
+      bool estimated = false;
+      if (m.contains("estimated")) {
+        if (!m.at("estimated").is_boolean()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "snapshot measurement 'estimated' is not a boolean: " + id});
+        }
+        estimated = m.at("estimated").get<bool>();
+      }
+
       Measurement measurement;
       measurement.check_index = *check_index;
       measurement.scope = Scope{*kind, scope_json.at("index").get<int>()};
       measurement.value = std::move(*value);
+      measurement.estimated = estimated;
       if (m.contains("evidence") && m.at("evidence").is_object()) {
         measurement.evidence = m.at("evidence");
       }
@@ -317,6 +331,13 @@ mediadiff::expected<void, Error> write_snapshot(const Fingerprint& fp, const std
     mj["id"] = std::string(def.id);
     mj["scope"] = scope_to_json(m->scope);
     mj["value"] = value_to_json(m->value);
+    // Emitted only when true, so every pre-existing golden written before
+    // this field existed stays byte-identical (D-03). Positioned after
+    // `value` and before `evidence` -- the canonical key order this
+    // writer's own comment above already documents.
+    if (m->estimated) {
+      mj["estimated"] = true;
+    }
     if (!m->evidence.is_null()) {
       mj["evidence"] = m->evidence;
     }
