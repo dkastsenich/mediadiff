@@ -103,7 +103,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [x] **CONT-05**: MP4/MOV checks work: `faststart`, `brands`, `fragmentation`, `edit_list`, `timescale`
 - [x] **CONT-06**: Matroska/WebM checks work: `cues_placement`, `codec_delay`, `timestamp_scale`, `duration_element`
 - [x] **CONT-07**: MPEG-TS checks work: `cc_errors`, `pcr_interval`, `psi_interval`, `null_ratio`
-- [ ] **CONT-08**: Multi-program TS emits program-scoped measurements paired by `program_number`, with unpaired programs reported as a topology failure
+- [x] **CONT-08**: Multi-program TS emits program-scoped measurements paired by `program_number`, with unpaired programs reported as a topology failure
 - [x] **CONT-09**: **[R]** Subtitle and caption track presence is explicitly covered and tested, not merely assumed to fall out of generic stream-presence checks (research: FEATURES gap 4)
 
 ### Video Checks
@@ -317,7 +317,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONT-05 | Phase 3 | Complete |
 | CONT-06 | Phase 3 | Complete |
 | CONT-07 | Phase 3 | Complete |
-| CONT-08 | Phase 3 | Pending |
+| CONT-08 | Phase 3 | Complete |
 | CONT-09 | Phase 3 | Complete |
 | VIDEO-01 | Phase 4 | Pending |
 | VIDEO-02 | Phase 4 | Pending |

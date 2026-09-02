@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-09-02T21:29:46.123Z"
+stopped_at: Completed 03-08-PLAN.md
+last_updated: "2026-09-02T22:00:34.219Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 31
+  completed_plans: 32
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 8 of 11
+Plan: 9 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -80,6 +80,7 @@ Progress: [█████████░] 89%
 | Phase 03 P05 | 140 | 3 tasks | 22 files |
 | Phase 03 P06 | 37min | 3 tasks | 25 files |
 | Phase 03 P07 | 40min | 3 tasks | 10 files |
+| Phase 03 P08 | 30min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -156,6 +157,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-07: container_family.cpp needed no change -- confirmed empirically (inspect reports container.format==mpegts) that the existing mapping already covers this scanner's fixtures
 - [Phase ?]: 03-07: mux-rate estimate derived from the first valid consecutive same-PID PCR pair only (not averaged), kept as an unreduced exact rational, never divided in this scanner
 - [Phase ?]: 03-07: PSI section reassembly across packet boundaries is explicitly out of scope (T-3-33) -- a PAT/PMT section not fully contained in one packet is discarded and counted, never parsed from a truncated buffer
+- [Phase ?]: 03-08: Rule 1 fix -- ts_scan.cpp's mux-rate estimate carried an erroneous *8 bytes-to-bits factor (bytes_per_second_num/den was actually bits/sec); removed, companion test corrected.
+- [Phase ?]: 03-08: ProgramRateContext derives a per-program, PID-filtered mux-rate estimate in ts.cpp to sidestep ts_scan's flat list-adjacency limitation on interleaved multi-program PCR PIDs (03-07-SUMMARY.md's own flagged '03-08 owns' gap).
+- [Phase ?]: 03-08: CONT-08 unpaired-program topology-fail path added to compare/engine.cpp -- generic over Scope::Kind::program, Status::fail unconditional on severity policy, mirrors the cross_container demotion shape.
 
 ### Pending Todos
 
@@ -185,6 +189,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T21:29:46.104Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-09-02T22:00:34.201Z
+Stopped at: Completed 03-08-PLAN.md
 Resume file: None
