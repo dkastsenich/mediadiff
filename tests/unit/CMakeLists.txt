@@ -114,6 +114,11 @@ add_executable(mediadiff_unit_tests
   # pseudo-random inputs, plus the permanently-broken canary and the
   # missing-fixture-fails-naming-it guard (03-10-PLAN.md Task 1).
   test_probe_fuzz_smoke.cpp
+  # TRUST-09/D-04: ts_scan's own claims (per-PID packet counts, cc_errors,
+  # PAT presence, per-program pmt_pid/version_number, PCR presence) cross-
+  # checked against a committed TSDuck-derived golden, read-only unless
+  # UPDATE_GOLDENS is set (03-10-PLAN.md Task 3).
+  test_ts_scan_golden.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp

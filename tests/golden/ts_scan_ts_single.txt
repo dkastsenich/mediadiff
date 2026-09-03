@@ -1,0 +1,13 @@
+{
+  "pat_present": true,
+  "pids": [
+    {"pid": 0, "packets": 17, "cc_errors": 0, "pcr_present": false},
+    {"pid": 17, "packets": 4, "cc_errors": 0, "pcr_present": false},
+    {"pid": 256, "packets": 693, "cc_errors": 0, "pcr_present": true},
+    {"pid": 257, "packets": 539, "cc_errors": 0, "pcr_present": false},
+    {"pid": 4096, "packets": 17, "cc_errors": 0, "pcr_present": false}
+  ],
+  "programs": [
+    {"program_number": 1, "pmt_pid": 4096, "version_number": 0}
+  ]
+}

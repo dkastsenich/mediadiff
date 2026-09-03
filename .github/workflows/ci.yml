@@ -394,3 +394,6 @@ jobs:
 
       - name: Run fixture case-collision portability lint
         run: bash scripts/lint_fixture_case_collisions.sh
+
+      - name: Run TSDuck golden presence lint (TRUST-09, D-04)
+        run: bash scripts/lint_tsduck_goldens.sh
