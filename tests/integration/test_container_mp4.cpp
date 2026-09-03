@@ -19,13 +19,17 @@
 // directly); this integration test proves the OBSERVABLE consequence --
 // every container.mp4.* finding is skipped:not_applicable_container, never
 // pass -- through the real CLI.
+//
+// 03-10-PLAN.md Task 1: the truncation/random-bytes mutation helpers this
+// file originally defined locally now live in tests/support/mutate.h,
+// shared with tests/unit/test_probe_fuzz_smoke.cpp and
+// tests/integration/test_degradation.cpp -- this file calls them rather
+// than keeping a second copy that could drift.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -33,6 +37,7 @@
 
 #include "cli_harness.h"
 #include "support/fixture_paths.h"
+#include "support/mutate.h"
 
 using mediadiff::test::CliResult;
 using mediadiff::test::run_cli;
@@ -43,26 +48,10 @@ namespace fs = std::filesystem;
 
 std::string fixture(const std::string& name) { return mediadiff::test::fixture_dir() + "/" + name; }
 
-fs::path scratch_dir() {
-  const fs::path dir = fs::temp_directory_path() / "mediadiff_test_container_mp4";
-  std::error_code ec;
-  fs::create_directories(dir, ec);
-  return dir;
-}
-
-std::string read_whole(const std::string& path) {
-  std::ifstream in(path, std::ios::binary);
-  REQUIRE(in.is_open());
-  return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-}
+std::string read_whole(const std::string& path) { return mediadiff::test::read_whole(path); }
 
 std::string write_scratch(const std::string& name, const std::string& bytes) {
-  const fs::path path = scratch_dir() / name;
-  std::ofstream out(path, std::ios::binary);
-  REQUIRE(out.is_open());
-  out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-  out.close();
-  return path.string();
+  return mediadiff::test::write_mutated("test_container_mp4", name, bytes);
 }
 
 const std::vector<std::string> kMp4CheckIds = {
@@ -161,22 +150,24 @@ TEST_CASE("container_mp4 - a truncated MP4 degrades to exactly one of exit 65 or
   require_fixture_present("mp4_faststart.mp4");
   const std::string full_bytes = read_whole(fixture("mp4_faststart.mp4"));
   REQUIRE_FALSE(full_bytes.empty());
-  const auto full_size = full_bytes.size();
 
   SECTION("1 byte") {
-    const std::string path = write_scratch("trunc_1byte.mp4", full_bytes.substr(0, 1));
+    const std::string path = write_scratch("trunc_1byte.mp4", mediadiff::test::truncate_to(full_bytes, 1));
     assert_degrades_cleanly(path);
   }
   SECTION("10%") {
-    const std::string path = write_scratch("trunc_10pct.mp4", full_bytes.substr(0, full_size * 10 / 100));
+    const std::string path =
+        write_scratch("trunc_10pct.mp4", mediadiff::test::truncate_to_fraction(full_bytes, 10, 100));
     assert_degrades_cleanly(path);
   }
   SECTION("50%") {
-    const std::string path = write_scratch("trunc_50pct.mp4", full_bytes.substr(0, full_size * 50 / 100));
+    const std::string path =
+        write_scratch("trunc_50pct.mp4", mediadiff::test::truncate_to_fraction(full_bytes, 50, 100));
     assert_degrades_cleanly(path);
   }
   SECTION("90%") {
-    const std::string path = write_scratch("trunc_90pct.mp4", full_bytes.substr(0, full_size * 90 / 100));
+    const std::string path =
+        write_scratch("trunc_90pct.mp4", mediadiff::test::truncate_to_fraction(full_bytes, 90, 100));
     assert_degrades_cleanly(path);
   }
 }
@@ -185,18 +176,11 @@ TEST_CASE("container_mp4 - a truncated MP4 degrades to exactly one of exit 65 or
 
 TEST_CASE("container_mp4 - a file of entirely random bytes (fixed seed) produces exit 65 cleanly, no crash",
           "[integration]") {
-  // Fixed seed (literal constant, per this plan's own reproducibility
-  // requirement) -- a new-seed-per-run fuzzer would make a red CI leg
-  // unreproducible, which this project treats as worse than not having
-  // the check at all.
-  constexpr std::uint32_t kFixedSeed = 0x4d503403u;  // "MP4\x03", arbitrary but fixed
-  std::mt19937 rng(kFixedSeed);
-  std::uniform_int_distribution<int> byte_dist(0, 255);
-  std::string random_bytes(4096, '\0');
-  for (char& c : random_bytes) {
-    c = static_cast<char>(byte_dist(rng));
-  }
-  const std::string path = write_scratch("random_bytes.mp4", random_bytes);
+  // mediadiff::test::kMutationSeed (tests/support/mutate.h) -- a
+  // new-seed-per-run fuzzer would make a red CI leg unreproducible, which
+  // this project treats as worse than not having the check at all.
+  const std::string path =
+      write_scratch("random_bytes.mp4", mediadiff::test::random_bytes(mediadiff::test::kMutationSeed, 4096));
 
   CliResult result = run_cli({"inspect", path, "--json"});
   REQUIRE(result.exit_code == 65);
