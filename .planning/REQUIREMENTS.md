@@ -173,7 +173,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [ ] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result â€” wired into CI as a release blocker
 - [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains
 - [x] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
-- [ ] **TRUST-09**: `ts_scan` output is cross-checked against TSDuck's analysis of the same fixtures via a manual test jig, without linking TSDuck
+- [x] **TRUST-09**: `ts_scan` output is cross-checked against TSDuck's analysis of the same fixtures via a manual test jig, without linking TSDuck
 
 ### Documentation & Explainability
 
@@ -372,7 +372,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TRUST-06 | Phase 3 | Pending |
 | TRUST-07 | Phase 7 | Pending |
 | TRUST-08 | Phase 2 | Complete |
-| TRUST-09 | Phase 3 | Pending |
+| TRUST-09 | Phase 3 | Complete |
 | DOC-01 | Phase 2 | Complete |
 | DOC-02 | Phase 2 | Complete |
 | DOC-03 | Phase 3 | Pending |

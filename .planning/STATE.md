@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-09-PLAN.md
-last_updated: "2026-09-02T22:31:01.652Z"
+stopped_at: Completed 03-10-PLAN.md
+last_updated: "2026-09-03T21:53:45.364Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 35
-  completed_plans: 33
+  completed_plans: 34
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 10 of 11
+Plan: 11 of 11
 Status: Ready to execute
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [█████████░] 94%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -82,6 +82,7 @@ Progress: [█████████░] 94%
 | Phase 03 P07 | 40min | 3 tasks | 10 files |
 | Phase 03 P08 | 30min | 3 tasks | 22 files |
 | Phase 03 P09 | 90min | 3 tasks | 20 files |
+| Phase 03 P10 | 80min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -164,6 +165,10 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-09: DemuxSession::file_size_bytes() (avio_size on the already-open AVIOContext) added so size.file reads independently of PacketScan's own completeness -- the structural D-02 exemption for the one size.* check that is a property of the file, not the scan.
 - [Phase ?]: 03-09: size.peak_bitrate's window-count bound (T-3-46) is kMaxWindowSteps=10,000,000, checked via one division before the sliding-window sweep starts; the {1001,30000} timebase test found no accumulation-vs-closed-form numeric divergence is constructible for correct all-integer arithmetic -- the static '+= step' grep gate plus the 10,000-window/far-boundary-spike test are what actually gate the architecture.
 - [Phase ?]: 03-09: size_crf20.mp4/size_crf23.mp4 fixtures are -b:v (target-bitrate) driven, never -crf, extending gen_corpus.sh's own established never-libx264/GPL convention; a 13th fixture (size_partial.mp4, 25,000 tiny frames) was added beyond the plan's own fixture list since --probe-memory-budget-mb's 1 MB integer floor exceeds every other size_*.mp4 fixture's real packet-store need.
+- [Phase ?]: 03-10: Mutation offsets derive from raw std::mt19937 output modulo range, never uniform_int_distribution (T-3-52) -- unspecified mapping across standard libraries would make a red CI leg unreproducible cross-platform
+- [Phase ?]: 03-10: PRNG-seeded byte-flip test asserts 'never crashes, stays in bounds' rather than 'always degrades' -- empirically confirmed real scanners correctly tolerate most payload-region single-byte flips as valid (if anomalous) data
+- [Phase ?]: 03-10: TS truncation at 10/50/90% needs truncate_to_fraction_off_stride -- ts_single.ts's 1270-packet count is evenly divisible by 10, so naive byte-fraction truncation coincidentally lands on packet boundaries and produces a validly-short (not corrupt) stream
+- [Phase ?]: 03-10: TSDuck goldens captured via scripts/capture_tsduck_golden.sh (developer-only), compared read-only in CI via scripts/lint_tsduck_goldens.sh -- TSDuck never linked/installed on CI (TRUST-09, D-04 closed)
 
 ### Pending Todos
 
@@ -193,6 +198,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-02T22:30:51.086Z
-Stopped at: Completed 03-09-PLAN.md
+Last session: 2026-09-03T21:53:45.348Z
+Stopped at: Completed 03-10-PLAN.md
 Resume file: None
