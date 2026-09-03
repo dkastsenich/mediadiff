@@ -170,7 +170,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
 - [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
 - [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
-- [ ] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
+- [x] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
 - [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains
 - [x] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
 - [x] **TRUST-09**: `ts_scan` output is cross-checked against TSDuck's analysis of the same fixtures via a manual test jig, without linking TSDuck
@@ -179,7 +179,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 - [x] **DOC-01**: Every registered check has a `docs/checks/<id>.md` file, enforced by the build rather than by review discipline
 - [x] **DOC-02**: Every check's `--explain` text states what the check measures, why it matters, and how to accept, tune, or silence it
-- [ ] **DOC-03**: Every check is demonstrated by at least one fixture pair that triggers it and one that comes back clean
+- [x] **DOC-03**: Every check is demonstrated by at least one fixture pair that triggers it and one that comes back clean
 - [ ] **DOC-04**: Timeline fixtures assert the *no-others* clause — the intended finding fires and nothing else does
 
 ### Performance
@@ -369,13 +369,13 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TRUST-03 | Phase 2 | Complete |
 | TRUST-04 | Phase 7 | Pending |
 | TRUST-05 | Phase 2 | Complete |
-| TRUST-06 | Phase 3 | Pending |
+| TRUST-06 | Phase 3 | Complete |
 | TRUST-07 | Phase 7 | Pending |
 | TRUST-08 | Phase 2 | Complete |
 | TRUST-09 | Phase 3 | Complete |
 | DOC-01 | Phase 2 | Complete |
 | DOC-02 | Phase 2 | Complete |
-| DOC-03 | Phase 3 | Pending |
+| DOC-03 | Phase 3 | Complete |
 | DOC-04 | Phase 5 | Pending |
 | PERF-01 | Phase 5 | Pending |
 | PERF-02 | Phase 7 | Pending |

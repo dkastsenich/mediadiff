@@ -4,16 +4,16 @@ milestone: v0.6.1
 milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
-status: executing
-stopped_at: Completed 03-10-PLAN.md
-last_updated: "2026-09-03T21:53:45.364Z"
+status: verifying
+stopped_at: Completed 03-11-PLAN.md (phase 03 complete, ready_for_verification)
+last_updated: "2026-09-03T22:40:49.890Z"
 last_activity: 2026-09-02
 last_activity_desc: Phase 02 execution started
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 35
-  completed_plans: 34
+  completed_plans: 35
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
 Plan: 11 of 11
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-02 — Phase 03 execution started
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Progress: [██████████] 97%
 | Phase 03 P08 | 30min | 3 tasks | 22 files |
 | Phase 03 P09 | 90min | 3 tasks | 20 files |
 | Phase 03 P10 | 80min | 3 tasks | 20 files |
+| Phase 03 P11 | 45min | 4 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,11 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-10: PRNG-seeded byte-flip test asserts 'never crashes, stays in bounds' rather than 'always degrades' -- empirically confirmed real scanners correctly tolerate most payload-region single-byte flips as valid (if anomalous) data
 - [Phase ?]: 03-10: TS truncation at 10/50/90% needs truncate_to_fraction_off_stride -- ts_single.ts's 1270-packet count is evenly divisible by 10, so naive byte-fraction truncation coincidentally lands on packet boundaries and produces a validly-short (not corrupt) stream
 - [Phase ?]: 03-10: TSDuck goldens captured via scripts/capture_tsduck_golden.sh (developer-only), compared read-only in CI via scripts/lint_tsduck_goldens.sh -- TSDuck never linked/installed on CI (TRUST-09, D-04 closed)
+- [Phase ?]: 03-11: sanitize_for_display sanitizes before elision (never after), so an invisible escape sequence in a truncated tag value cannot corrupt width accounting or reappear unescaped past the ellipsis
+- [Phase ?]: 03-11: inspect_render.h is a deliberate 4th sanitize_for_display call site (inspect's own text render), following Task 2's specific action text over the plan's summary verification line -- grep now shows 4 render call sites, which is correct
+- [Phase ?]: 03-11: json.cpp/junit.cpp deliberately NOT sanitized -- wire-level JSON/XML escaping already applies; double-escaping would corrupt goldens
+- [Phase ?]: 03-11: TRUST-06's corruption-catches-a-regression proof done manually once against a non-committed scratch fixture, per the plan's own acceptance criterion not to commit the corruption
+- [Phase ?]: 03-11: DOC-03's gate calls the real CLI binary for every declared pair, matching every sibling integration test's convention; every trigger/clean pair verified empirically against the real binary before being written into the table
 
 ### Pending Todos
 
@@ -180,6 +186,7 @@ None yet.
 - **Priming extraction spike is open.** Research flagged (v2 EXT-05) whether lightweight audio-priming extraction from container metadata is feasible ahead of the Phase 6 decode path. Until answered, Phase 5's `timeline.av_offset`/`av_drift` ship with `priming: unknown` on the common case — covered by TIME-10 fixtures, not closed.
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
+- scripts/gen_corpus.sh is never invoked in .github/workflows/ci.yml for Linux/macOS -- only the Windows gen_corpus.ps1 check runs; every corpus-dependent integration test would fail on a real CI run on 4 of 5 matrix legs until a fixture-generation step is added (WINDOWS.md #8, predates Phase 3)
 
 ### Quick Tasks Completed
 
@@ -198,6 +205,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-03T21:53:45.348Z
-Stopped at: Completed 03-10-PLAN.md
+Last session: 2026-09-03T22:40:49.874Z
+Stopped at: Completed 03-11-PLAN.md (phase 03 complete, ready_for_verification)
 Resume file: None
