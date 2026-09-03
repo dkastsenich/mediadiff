@@ -274,10 +274,73 @@ std::string render_finding_row(const Finding& finding, const ColorDecision& colo
   return rendered_prefix + elide_value(value_text, remaining) + "\n";
 }
 
+// CONT-03's `-v` half: the ignored-volatile-tag-key entries a `meta.tags`
+// (or any other check's) Finding carries in its own evidence -- populated
+// once, at src/compare/engine.cpp's single seam, from the paired
+// Measurements' own `evidence` (Broken Window #1). Rendered only when
+// `show_evidence` is true (render_tty's own new, defaulted parameter,
+// wired to `-v` by src/cli/commands/compare.cpp) -- WITHOUT it, a finding
+// carrying only ignored-volatile-tag differences resolves Status::pass and
+// is already hidden entirely by RenderOptions::show_pass=false, so the
+// grep-for-zero half of CONT-03's own acceptance criterion holds by
+// construction; WITH it, a gating finding that ALSO carries ignored
+// evidence (e.g. a real title difference alongside an ignored
+// creation_time difference) must not leak that evidence when -v was not
+// given, which is exactly what this explicit gate (rather than "render
+// evidence whenever it exists") prevents.
+//
+// Union of both sides' keys, baseline's own encounter order first (an
+// AVDictionary's own iteration order, doc 02's convention), then any
+// candidate-only key -- every key/value routed through sanitize_for_display,
+// matching render_finding_row's own contract.
+void append_ignored_evidence(std::string& out, const Finding& finding) {
+  if (!finding.evidence.is_object()) {
+    return;
+  }
+  const nlohmann::ordered_json empty_object = nlohmann::ordered_json::object();
+  const nlohmann::ordered_json& baseline_evidence =
+      (finding.evidence.contains("baseline") && finding.evidence.at("baseline").is_object())
+          ? finding.evidence.at("baseline")
+          : empty_object;
+  const nlohmann::ordered_json& candidate_evidence =
+      (finding.evidence.contains("candidate") && finding.evidence.at("candidate").is_object())
+          ? finding.evidence.at("candidate")
+          : empty_object;
+  if (baseline_evidence.empty() && candidate_evidence.empty()) {
+    return;
+  }
+
+  std::vector<std::string> keys;
+  for (auto it = baseline_evidence.begin(); it != baseline_evidence.end(); ++it) {
+    keys.push_back(it.key());
+  }
+  for (auto it = candidate_evidence.begin(); it != candidate_evidence.end(); ++it) {
+    if (std::find(keys.begin(), keys.end(), it.key()) == keys.end()) {
+      keys.push_back(it.key());
+    }
+  }
+
+  for (const std::string& key : keys) {
+    const std::string baseline_text =
+        baseline_evidence.contains(key) && baseline_evidence.at(key).is_string()
+            ? baseline_evidence.at(key).get<std::string>()
+            : std::string("(absent)");
+    const std::string candidate_text =
+        candidate_evidence.contains(key) && candidate_evidence.at(key).is_string()
+            ? candidate_evidence.at(key).get<std::string>()
+            : std::string("(absent)");
+    const std::string sanitized_key = sanitize_for_display(key);
+    const std::string sanitized_baseline = sanitize_for_display(baseline_text);
+    const std::string sanitized_candidate = sanitize_for_display(candidate_text);
+    out += fmt::format("      ignored: {} (baseline={}, candidate={})\n", sanitized_key, sanitized_baseline,
+                        sanitized_candidate);
+  }
+}
+
 }  // namespace
 
 std::string render_tty(const ReportModel& model, const CheckRegistry& registry, const ColorDecision& color,
-                        int terminal_width) {
+                        int terminal_width, bool show_evidence) {
   std::string out = render_summary_line(model.summary, terminal_width);
   out += "\n";
 
@@ -290,6 +353,9 @@ std::string render_tty(const ReportModel& model, const CheckRegistry& registry, 
       out += render_finding_row(finding, color, terminal_width);
       if (is_gating(finding.severity)) {
         append_triple(out, finding, registry, terminal_width);
+      }
+      if (show_evidence) {
+        append_ignored_evidence(out, finding);
       }
     }
     out += "\n";

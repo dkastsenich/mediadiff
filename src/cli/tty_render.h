@@ -46,8 +46,18 @@ namespace mediadiff {
 // queries it once, defaulting to 100 columns when it cannot be
 // interrogated, which is what keeps this function callable at any width a
 // unit test chooses.
+// `show_evidence` (default false, 03-11-PLAN.md Task 2): when true, every
+// finding's ignored-volatile-tag-key evidence (CONT-03's own baseline/
+// candidate map, populated once at src/compare/engine.cpp's single seam)
+// renders as an indented "ignored: <key> (baseline=..., candidate=...)"
+// line directly under that finding's own row. Defaulted so every existing
+// call site (every test in tests/unit/test_tty_render.cpp, `dir` mode's
+// own corpus renderer) keeps compiling unchanged;
+// src/cli/commands/compare.cpp is the one caller that passes `verbose`
+// explicitly, wiring CONT-03's `-v` half to the SAME flag that already
+// controls show_pass/show_ignored for this render.
 std::string render_tty(const ReportModel& model, const CheckRegistry& registry, const ColorDecision& color,
-                        int terminal_width);
+                        int terminal_width, bool show_evidence = false);
 
 // Renders `model` as `dir` mode's own TTY report (doc 01 section 10,
 // DIR-03): a corpus summary line (the SAME shape render_summary_line

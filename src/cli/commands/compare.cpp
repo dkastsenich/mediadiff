@@ -305,7 +305,10 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     const RenderOptions tty_options{/*show_pass=*/verbose, /*show_ignored=*/verbose, /*ascii=*/color.ascii_glyphs,
                                      /*strict=*/strict};
     const ReportModel tty_model = build_report_model(candidate->envelope, findings, registry, tty_options);
-    const std::string tty_report = render_tty(tty_model, registry, color, query_terminal_width());
+    // CONT-03's `-v` half: the same `verbose` flag that already widened
+    // this model to show_pass/show_ignored also reveals each finding's
+    // ignored-volatile-tag-key evidence.
+    const std::string tty_report = render_tty(tty_model, registry, color, query_terminal_width(), verbose);
     std::fputs(tty_report.c_str(), stdout);
   }
 

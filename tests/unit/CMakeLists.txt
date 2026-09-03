@@ -60,6 +60,12 @@ add_executable(mediadiff_unit_tests
   # per-stream scoping, UTF-8 sanitization) and meta.tags.language
   # (und-equals-absent normalization) (03-04-PLAN.md Tasks 2-3).
   test_meta_tags.cpp
+  # The `inspect` container section: generic topology (incl. subtitle/
+  # tmcd evidence), per-format mechanisms, per-program TS entries, legible
+  # skip reasons, CONT-03's -v half, and T-2-33 sanitization -- driven
+  # through src/cli/commands/inspect_render.h directly, no CLI11 linking
+  # needed (03-11-PLAN.md Task 2).
+  test_inspect_container_section.cpp
   # PROBE-04: bmff_scan's bounded top-level box walk and minimal moov
   # descent -- largesize/size-zero/uuid handling, oversize/undersize
   # bounds violations with exact stop_offset, ftyp/mvhd/tkhd/mdhd/elst

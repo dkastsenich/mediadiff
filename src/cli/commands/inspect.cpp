@@ -1,168 +1,23 @@
 #include "cli/commands/inspect.h"
 
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <memory>
 #include <optional>
 #include <string>
-#include <utility>
-#include <vector>
 
-#include <fmt/format.h>
-#include <nlohmann/json.hpp>
-
+#include "cli/commands/inspect_render.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
-#include "cli/provenance_render.h"
 #include "config/toml_load.h"
 #include "core/error.h"
 #include "core/model.h"
-#include "core/policy.h"
 #include "core/profiles.h"
 #include "core/registry.h"
-#include "core/serializer.h"
-#include "core/snapshot.h"
 #include "probe/demux_session.h"
 #include "probe/orchestrator.h"
 #include "probe/packet_scan.h"
-#include "report/model.h"
 
 namespace mediadiff {
-
-namespace {
-
-// One measurement, paired with the registry index it resolved against --
-// collected once per Group so both the text and JSON renderers below sort
-// and iterate identically (registry declaration order, then scope kind,
-// then scope index -- the same ordering src/report/model.cpp's own
-// build_report_model uses for findings, applied here to raw measurements
-// instead).
-struct GroupEntry {
-  std::uint32_t check_index;
-  const Measurement* measurement;
-};
-
-std::vector<GroupEntry> entries_for_group(const Fingerprint& fp, const CheckRegistry& registry, Group group) {
-  std::vector<GroupEntry> entries;
-  for (const Measurement& m : fp.measurements) {
-    const CheckDef& check = registry.at(m.check_index);
-    if (group_for(check.id) == group) {
-      entries.push_back(GroupEntry{m.check_index, &m});
-    }
-  }
-  std::stable_sort(entries.begin(), entries.end(), [](const GroupEntry& a, const GroupEntry& b) {
-    if (a.check_index != b.check_index) {
-      return a.check_index < b.check_index;
-    }
-    if (a.measurement->scope.kind != b.measurement->scope.kind) {
-      return a.measurement->scope.kind < b.measurement->scope.kind;
-    }
-    return a.measurement->scope.index < b.measurement->scope.index;
-  });
-  return entries;
-}
-
-// A Value's canonical text form -- reuses core/serializer.h's value_to_json
-// (D-08's "one canonical place a Value becomes text") rather than a second
-// stringification this file would have to keep in sync with the report
-// renderers' own. CR-02: serialize_value_compact, not nlohmann's own
-// .dump() -- routes any embedded double through the same std::to_chars
-// writer core/serializer.cpp owns, and stays single-line since this text
-// is embedded inline in one "  {id} {scope}: {value}\n" row.
-std::string value_to_text(const Value& value) { return serialize_value_compact(value_to_json(value)); }
-
-// Renders every Group in kGroupOrder order: a heading, then either an
-// explicit no-measurements line or one line per measurement (check id,
-// scope, value), and -- under `verbose` -- the resolved severity chain for
-// that check via the SAME shared renderer `list-checks --effective -v`
-// and `compare --json -v` use (src/cli/provenance_render.h), never a
-// second formatter written here. `policy.per_check` is indexed by
-// registry declaration index by construction (core/policy.h's own
-// resolve_policy comment), so `policy.per_check[check_index]` is a direct
-// lookup, no linear scan needed.
-std::string render_inspect_text(const Fingerprint& fp, const CheckRegistry& registry, const Policy& policy,
-                                 bool verbose) {
-  std::string out;
-  for (Group group : kGroupOrder) {
-    out += fmt::format("{}:\n", group_to_string(group));
-
-    const std::vector<GroupEntry> entries = entries_for_group(fp, registry, group);
-    if (entries.empty()) {
-      out += "  (no measurements)\n";
-      continue;
-    }
-
-    for (const GroupEntry& entry : entries) {
-      const CheckDef& check = registry.at(entry.check_index);
-      // 03-04-PLAN.md Task 1: a measurement the analyzer explicitly marked
-      // as not applicable here (Measurement::skip_reason != none, e.g.
-      // container.chapters on an MPEG-TS input) renders its skip reason
-      // instead of the (Absent -> "null") value text, so `inspect`'s
-      // single-file view can distinguish "measured nothing" from "this
-      // check does not apply to this file" without going through
-      // compare_fingerprints at all.
-      if (entry.measurement->skip_reason != SkipReason::none) {
-        out += fmt::format("  {} {}: (skipped: {})\n", check.id, scope_to_text(entry.measurement->scope),
-                            skip_reason_to_string(entry.measurement->skip_reason));
-      } else {
-        out += fmt::format("  {} {}: {}\n", check.id, scope_to_text(entry.measurement->scope),
-                            value_to_text(entry.measurement->value));
-      }
-      if (verbose && entry.check_index < policy.per_check.size()) {
-        out += render_provenance_chain(policy.per_check[entry.check_index].chain, 4);
-      }
-    }
-  }
-  return out;
-}
-
-nlohmann::ordered_json scope_to_inspect_json(const Scope& scope) { return scope_to_text(scope); }
-
-std::string render_inspect_json(const Fingerprint& fp, const CheckRegistry& registry) {
-  nlohmann::ordered_json doc;
-  doc["schema_version"] = fp.envelope.schema_version;
-  doc["tool_version"] = fp.envelope.tool_version;
-  // Task 2 (PROBE-01 completion): always present, even when empty, so a
-  // caller can rely on the key's presence rather than its absence meaning
-  // "no diagnostics API exists" -- mirrors ENG-14's existing
-  // skip_reason-always-present discipline for findings.
-  doc["diagnostics"] = fp.envelope.diagnostics;
-
-  nlohmann::ordered_json groups = nlohmann::ordered_json::object();
-  for (Group group : kGroupOrder) {
-    nlohmann::ordered_json entries_json = nlohmann::ordered_json::array();
-    for (const GroupEntry& entry : entries_for_group(fp, registry, group)) {
-      const CheckDef& check = registry.at(entry.check_index);
-      nlohmann::ordered_json entry_json{
-          {"id", std::string(check.id)},
-          {"scope", scope_to_inspect_json(entry.measurement->scope)},
-          {"value", value_to_json(entry.measurement->value)},
-      };
-      // 03-04-PLAN.md Task 1: present only when the analyzer explicitly
-      // marked this measurement as not applicable (see the text renderer's
-      // own comment above for the full rationale) -- every pre-existing
-      // `inspect --json` entry (skip_reason always SkipReason::none) stays
-      // byte-identical, including tests/golden/inspect_basic.txt.
-      if (entry.measurement->skip_reason != SkipReason::none) {
-        entry_json["status"] = "skipped";
-        entry_json["skip_reason"] = std::string(skip_reason_to_string(entry.measurement->skip_reason));
-      }
-      entries_json.push_back(std::move(entry_json));
-    }
-    groups[std::string(group_to_string(group))] = entries_json;
-  }
-  doc["groups"] = groups;
-
-  // CR-02: top-level document -- routed through the same canonical
-  // std::to_chars writer report/json.cpp's render_json now uses, not
-  // nlohmann's own doc.dump(2).
-  return serialize_document(doc);
-}
-
-}  // namespace
 
 void register_inspect_command(CLI::App& app) {
   auto* cmd = app.add_subcommand("inspect", "Render every implemented check family for a single *.snap.json (UC8)");

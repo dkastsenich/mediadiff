@@ -209,6 +209,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/cli/exit_code.h
   src/cli/color_policy.h
   src/cli/tty_render.h
+  src/cli/commands/inspect_render.h
   src/cli/dir_pairing.h
   src/cli/worker_pool.h
   src/probe/pass.h
