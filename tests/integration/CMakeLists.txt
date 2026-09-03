@@ -58,6 +58,12 @@ add_executable(mediadiff_integration_tests
   # findings, compared on every CI leg (03-09-PLAN.md Task 3).
   test_size_checks.cpp
   test_determinism.cpp
+  # TRUST-06: encoding a fixture twice with identical settings compares
+  # clean under --profile sw-encoder (and strict-bitexact, when the pair
+  # is genuinely byte-identical) -- an unconditional, non-skippable
+  # release blocker living in this same Test step, never a separate job
+  # or a conditional (03-11-PLAN.md Task 3).
+  test_trust06_idempotence.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp
   # Schema-version major-mismatch refusal, tool_version skew diagnostic,
