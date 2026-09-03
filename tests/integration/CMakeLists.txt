@@ -64,6 +64,12 @@ add_executable(mediadiff_integration_tests
   # release blocker living in this same Test step, never a separate job
   # or a conditional (03-11-PLAN.md Task 3).
   test_trust06_idempotence.cpp
+  # DOC-03: every check the built registry currently registers has a
+  # declared triggering fixture pair and a declared clean one, enumerated
+  # from the real registry rather than a hand-maintained id list; the
+  # verified count must equal the registry's own check count
+  # (03-11-PLAN.md Task 4).
+  test_doc03_coverage.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp
   # Schema-version major-mismatch refusal, tool_version skew diagnostic,
