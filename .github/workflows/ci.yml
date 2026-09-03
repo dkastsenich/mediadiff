@@ -397,3 +397,6 @@ jobs:
 
       - name: Run TSDuck golden presence lint (TRUST-09, D-04)
         run: bash scripts/lint_tsduck_goldens.sh
+
+      - name: Run control-byte escaping choke-point lint (T-2-33)
+        run: bash scripts/lint_control_bytes.sh

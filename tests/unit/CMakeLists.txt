@@ -5,6 +5,9 @@ add_executable(mediadiff_unit_tests
   test_license.cpp
   test_expected.cpp
   test_fs_utf8.cpp
+  # T-2-33's single choke point: sanitize_for_display's own escape/replace
+  # rules, independent of any render path (03-11-PLAN.md Task 1).
+  test_sanitize.cpp
   # Tagged [console]. Skips (never passes) unless stdout is a real console, so
   # CI records it as skipped and a developer running it from a console window
   # exercises it for real — CLI-09's manual checkpoint, made mechanical.

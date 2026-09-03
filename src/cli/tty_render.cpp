@@ -10,8 +10,10 @@
 
 #include <fmt/color.h>
 #include <fmt/format.h>
+#include <nlohmann/json.hpp>
 
 #include "core/serializer.h"
+#include "util/sanitize.h"
 
 namespace mediadiff {
 
@@ -206,7 +208,9 @@ void append_hint(std::string& out, std::string_view label, std::string_view text
 // sort-key comment) prints no triple: there is no compiled-in explain
 // text to show for an id that was never a real check.
 void append_triple(std::string& out, const Finding& finding, const CheckRegistry& registry, int terminal_width) {
-  const std::optional<std::uint32_t> index = registry.find(finding.id);
+  // Registry lookup key, never formatted into output here -- the id text
+  // that DOES reach output is sanitized in render_finding_row.
+  const std::optional<std::uint32_t> index = registry.find(finding.id);  // control-bytes-allow: lookup key, not rendered
   if (!index.has_value()) {
     return;
   }
@@ -235,20 +239,33 @@ std::string render_summary_line(const Summary& summary, int terminal_width) {
 // elided) value column. Only the value column is ever elided -- id and
 // scope always render in full, matching this renderer's own "no wrapping
 // inside value columns, everything else stays intact" contract.
+//
+// T-2-33: `finding.id`, the scope text, `finding.message` and both
+// baseline/candidate values all originate in (or are built from) a
+// file-derived string -- a metadata tag, a filename, a check id doc
+// string -- so every one is routed through sanitize_for_display BEFORE
+// elide_value's width accounting runs, matching this function's own
+// "sanitize before eliding" contract (src/util/sanitize.h's own header
+// comment): an escaped form can be longer than its raw form, and eliding
+// against the wrong length would corrupt the truncation decision.
 std::string render_finding_row(const Finding& finding, const ColorDecision& color, int terminal_width) {
   const Glyph glyph = make_glyph(finding.status, color);
-  const std::string scope_text = scope_to_text(finding.scope);
+  const std::string sanitized_id = sanitize_for_display(finding.id);
+  const std::string sanitized_scope = sanitize_for_display(scope_to_text(finding.scope));
 
-  const std::string plain_prefix = fmt::format("  {} {} {}  ", glyph.plain, finding.id, scope_text);
-  const std::string rendered_prefix = fmt::format("  {} {} {}  ", glyph.rendered, finding.id, scope_text);
+  const std::string plain_prefix = fmt::format("  {} {} {}  ", glyph.plain, sanitized_id, sanitized_scope);
+  const std::string rendered_prefix = fmt::format("  {} {} {}  ", glyph.rendered, sanitized_id, sanitized_scope);
 
   // CR-02: serialize_value_compact, not nlohmann's own .dump() -- see
   // report/junit.cpp's baseline_candidate_detail for the identical
   // rationale (same canonical std::to_chars float formatter, single line
   // because this text is embedded inline in one wrap_text/elide_value row).
-  const std::string value_text = fmt::format("{} (baseline={}, candidate={})", finding.message,
-                                              serialize_value_compact(value_to_json(finding.baseline)),
-                                              serialize_value_compact(value_to_json(finding.candidate)));
+  const std::string sanitized_message = sanitize_for_display(finding.message);
+  const std::string sanitized_baseline = sanitize_for_display(serialize_value_compact(value_to_json(finding.baseline)));
+  const std::string sanitized_candidate =
+      sanitize_for_display(serialize_value_compact(value_to_json(finding.candidate)));
+  const std::string value_text =
+      fmt::format("{} (baseline={}, candidate={})", sanitized_message, sanitized_baseline, sanitized_candidate);
 
   const std::size_t prefix_len = plain_prefix.size();
   const std::size_t width_budget = terminal_width > 0 ? static_cast<std::size_t>(terminal_width) : 0;
@@ -288,8 +305,12 @@ namespace {
 // this is NOT the worst-N ordering below, which is a SEPARATE view over
 // the same data).
 std::string render_file_summary_line(const FileBlock& block, int terminal_width) {
+  // T-2-33: block.relative_path is a real filesystem path -- sanitized
+  // before it enters the format string, matching render_finding_row's own
+  // contract.
+  const std::string sanitized_path = sanitize_for_display(block.relative_path);
   const std::string text =
-      fmt::format("{}: pass:{} info:{} warn:{} fail:{} skipped:{} error:{} (worst: {})", block.relative_path,
+      fmt::format("{}: pass:{} info:{} warn:{} fail:{} skipped:{} error:{} (worst: {})", sanitized_path,
                   block.summary.pass, block.summary.info, block.summary.warn, block.summary.fail,
                   block.summary.skipped, block.summary.error, severity_to_string(block.summary.worst_gating));
   const std::size_t width = terminal_width > 0 ? static_cast<std::size_t>(terminal_width) : 1;
@@ -327,7 +348,7 @@ std::string render_worst_n_table(const std::vector<FileBlock>& files, int termin
     if (a->summary.worst_gating != b->summary.worst_gating) {
       return static_cast<int>(a->summary.worst_gating) > static_cast<int>(b->summary.worst_gating);
     }
-    return a->relative_path < b->relative_path;
+    return a->relative_path < b->relative_path;  // control-bytes-allow: a sort comparison, never rendered
   });
 
   std::string out = fmt::format("worst {} file{}:\n", std::min<std::size_t>(ordered.size(), static_cast<std::size_t>(n)),
@@ -337,8 +358,12 @@ std::string render_worst_n_table(const std::vector<FileBlock>& files, int termin
     if (shown >= static_cast<std::size_t>(n)) {
       break;
     }
+    // T-2-33: sanitized before formatting -- see render_file_summary_line's
+    // identical comment above; the sort key just above stays the RAW path
+    // (sanitization is a display concern only, never an ordering concern).
+    const std::string sanitized_path = sanitize_for_display(block->relative_path);
     out += fmt::format("  {} {} (pass:{} info:{} warn:{} fail:{} skipped:{} error:{})\n",
-                        severity_to_string(block->summary.worst_gating), block->relative_path, block->summary.pass,
+                        severity_to_string(block->summary.worst_gating), sanitized_path, block->summary.pass,
                         block->summary.info, block->summary.warn, block->summary.fail, block->summary.skipped,
                         block->summary.error);
     ++shown;

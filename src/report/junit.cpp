@@ -10,6 +10,16 @@
 
 #include "core/serializer.h"
 
+// T-2-33: this file deliberately does NOT call
+// mediadiff::sanitize_for_display (src/util/sanitize.h) anywhere. XML
+// escaping (xml_escape below) already handles THIS format's own escaping
+// context -- every attribute value and text body this file writes is
+// routed through it. Layering a second, display-oriented escape pass on
+// top would double-escape and silently change every committed JUnit
+// golden for no security benefit. sanitize_for_display's own job is the
+// terminal/Markdown display surface (src/cli/tty_render.cpp, src/cli/
+// provenance_render.cpp, src/report/markdown.cpp), not this one.
+
 namespace mediadiff {
 
 namespace {

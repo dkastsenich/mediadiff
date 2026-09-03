@@ -132,6 +132,7 @@ add_custom_target(generate_test_registry DEPENDS
 # structurally in Plan 04 via a CI lint over this target's sources.
 add_library(libmediadiff STATIC
   src/util/version.cpp
+  src/util/sanitize.cpp
   src/core/serializer.cpp
   src/core/snapshot.cpp
   src/core/glob.cpp

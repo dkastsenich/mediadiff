@@ -9,6 +9,19 @@
 #include "core/profiles.h"
 #include "core/serializer.h"
 
+// T-2-33: this file deliberately does NOT call
+// mediadiff::sanitize_for_display (src/util/sanitize.h) anywhere. JSON
+// already escapes every control byte at the wire level -- nlohmann's own
+// string escaping, applied uniformly by core/serializer.cpp's
+// serialize_document to every scalar this file writes -- so a second,
+// display-oriented escape pass here would double-escape a control byte
+// (e.g. a real ESC in a tag value would become the four visible
+// characters `\`, `u`, `0`, `0`, `1`, `b` escaped a SECOND time inside the
+// JSON string) and silently change every committed JSON golden for no
+// security benefit. sanitize_for_display's own job is the terminal/
+// Markdown display surface (src/cli/tty_render.cpp, src/cli/
+// provenance_render.cpp, src/report/markdown.cpp), not this one.
+
 namespace mediadiff {
 
 namespace {

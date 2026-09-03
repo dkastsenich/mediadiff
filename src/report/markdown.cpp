@@ -7,6 +7,8 @@
 
 #include <fmt/format.h>
 
+#include "util/sanitize.h"
+
 namespace mediadiff {
 
 // GitHub's real PR-comment limit is 65,536 CHARACTERS, not an ambiguous
@@ -82,9 +84,15 @@ std::string render_group_details(const GroupBlock& block) {
   out += "| ID | Scope | Status | Severity | Message |\n";
   out += "| --- | --- | --- | --- | --- |\n";
   for (const Finding& finding : block.findings) {
-    out += fmt::format("| {} | {} | {} | {} | {} |\n", escape_cell(finding.id), scope_to_text(finding.scope),
+    // T-2-33: finding.id/finding.message are (or are built from)
+    // file-derived text -- sanitized BEFORE escape_cell, which only
+    // handles Markdown's own `|`/newline table-structure characters and
+    // has no opinion on a raw control byte or ANSI escape sequence.
+    const std::string sanitized_id = sanitize_for_display(finding.id);
+    const std::string sanitized_message = sanitize_for_display(finding.message);
+    out += fmt::format("| {} | {} | {} | {} | {} |\n", escape_cell(sanitized_id), scope_to_text(finding.scope),
                         status_text(finding.status), severity_to_string(finding.severity),
-                        escape_cell(finding.message));
+                        escape_cell(sanitized_message));
   }
   out += "\n</details>\n";
   return out;
@@ -243,7 +251,10 @@ std::string render_markdown(const CorpusModel& model, const CheckRegistry& regis
       "## Files\n\n| Relative Path | pass | info | warn | fail | skipped | error | worst |\n"
       "| --- | --- | --- | --- | --- | --- | --- | --- |\n";
   for (const FileBlock& block : model.files) {
-    per_file_table += fmt::format("| {} | {} | {} | {} | {} | {} | {} | {} |\n", escape_cell(block.relative_path),
+    // T-2-33: block.relative_path is a real filesystem path -- sanitized
+    // before escape_cell, matching render_group_details' own contract.
+    const std::string sanitized_path = sanitize_for_display(block.relative_path);
+    per_file_table += fmt::format("| {} | {} | {} | {} | {} | {} | {} | {} |\n", escape_cell(sanitized_path),
                                    block.summary.pass, block.summary.info, block.summary.warn, block.summary.fail,
                                    block.summary.skipped, block.summary.error,
                                    severity_to_string(block.summary.worst_gating));
