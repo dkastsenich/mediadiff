@@ -6,6 +6,7 @@
 #include <string>
 
 #include "cli/commands/inspect_render.h"
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "config/toml_load.h"
@@ -49,14 +50,14 @@ void register_inspect_command(CLI::App& app) {
     auto config = discover_and_load(explicit_config_path);
     if (!config) {
       const Error& err = config.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
     auto probe_timeout_ms = resolve_probe_timeout_ms(options.probe, *config);
     if (!probe_timeout_ms) {
       const Error& err = probe_timeout_ms.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     if (probe_timeout_ms->has_value()) {
@@ -71,7 +72,7 @@ void register_inspect_command(CLI::App& app) {
     auto probe_budget_bytes = resolve_probe_memory_budget_bytes(options.probe, *config);
     if (!probe_budget_bytes) {
       const Error& err = probe_budget_bytes.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
@@ -79,28 +80,28 @@ void register_inspect_command(CLI::App& app) {
     auto fp = fingerprint_input(opt_string(file_path), registry);
     if (!fp) {
       const Error& err = fp.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
     auto cli_overrides = parse_cli_overrides(opt_strings(options.policy.set_flags), opt_strings(options.policy.tol_flags));
     if (!cli_overrides) {
       const Error& err = cli_overrides.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
     auto profile = resolve_profile_selection(opt_string(options.policy.profile), *config);
     if (!profile) {
       const Error& err = profile.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
     auto resolved_policy = resolve_policy(registry, *profile, *config, *cli_overrides);
     if (!resolved_policy) {
       const Error& err = resolved_policy.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
@@ -108,7 +109,7 @@ void register_inspect_command(CLI::App& app) {
     const std::string out = json_requested
                                  ? render_inspect_json(*fp, registry)
                                  : render_inspect_text(*fp, registry, *resolved_policy, opt_flag(options.verbose));
-    std::fputs(out.c_str(), stdout);
+    std::fwrite(out.data(), 1, out.size(), stdout);
     std::exit(kExitClean);
   });
 }

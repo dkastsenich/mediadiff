@@ -11,6 +11,7 @@
 #include "cli/commands/inspect.h"
 #include "cli/commands/list_checks.h"
 #include "cli/commands/snapshot.h"
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "probe/demux_session.h"
@@ -29,7 +30,7 @@ extern "C" {
 // MSVC's standard headers pull in less than libstdc++'s, so a translation
 // unit that compiles on GCC purely by inheritance can fail on MSVC — and the
 // Windows leg is the one that cannot be checked from a POSIX host.
-#include <cstdio>       // std::fputs, stderr
+#include <cstdio>       // _fileno, stdout, stderr (for _setmode below)
 #include <string>       // std::string, std::to_string
 #include <string_view>  // std::wstring_view
 #include <utility>      // std::move
@@ -153,7 +154,7 @@ int run(int argc, char** argv) {
     // CR-01 fixed. It deliberately reports internal (a mediadiff bug), not
     // a user-input problem, since a well-formed lib boundary would never
     // let an exception reach here.
-    std::fputs(("mediadiff: internal error (uncaught exception): " + std::string(e.what()) + "\n").c_str(), stderr);
+    report_cli_error("internal error (uncaught exception): " + std::string(e.what()));
     return kExitInternal;
   }
 
@@ -172,7 +173,7 @@ int run(int argc, char** argv) {
     // silently deposit 'c' into implicit_baseline instead of failing; a
     // bare positional is only ever meaningful when no subcommand fired.
     if (implicit_baseline_opt->count() > 0 || implicit_candidate_opt->count() > 0) {
-      std::fputs("mediadiff: unexpected extra argument after a subcommand\n", stderr);
+      report_cli_error("unexpected extra argument after a subcommand");
       return kExitUsage;
     }
     // Unreachable in practice (every registered subcommand's callback
@@ -200,7 +201,8 @@ int run(int argc, char** argv) {
   // CLI-01's own contract is "print help and exit 64", never 0 -- a CI
   // script that invoked the tool with nothing to compare has not
   // succeeded.
-  std::fputs(app.help().c_str(), stdout);
+  const std::string help_text = app.help();
+  std::fwrite(help_text.data(), 1, help_text.size(), stdout);
   return kExitUsage;
 }
 
@@ -292,9 +294,7 @@ int wmain(int /*argc*/, wchar_t** /*argv*/) {
       LocalFree(argv_w);
       // Reported here rather than from the engine: libmediadiff writes to no
       // standard stream and never exits the process (ENG-16 / D-07).
-      std::fputs("mediadiff: argument ", stderr);
-      std::fputs(std::to_string(i).c_str(), stderr);
-      std::fputs(" is not valid UTF-16 and cannot be converted to UTF-8.\n", stderr);
+      report_cli_error("argument " + std::to_string(i) + " is not valid UTF-16 and cannot be converted to UTF-8.");
       return 64;  // usage — the argument is malformed, no input was opened
     }
     argv_utf8.push_back(std::move(utf8_arg));

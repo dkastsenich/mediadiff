@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "cli/color_policy.h"
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "cli/tty_render.h"
@@ -151,14 +152,14 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   auto config = discover_and_load(explicit_config_path);
   if (!config) {
     const Error& err = config.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
 
   auto probe_timeout_ms = resolve_probe_timeout_ms(probe_args, *config);
   if (!probe_timeout_ms) {
     const Error& err = probe_timeout_ms.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
   if (probe_timeout_ms->has_value()) {
@@ -174,7 +175,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   auto probe_budget_bytes = resolve_probe_memory_budget_bytes(probe_args, *config);
   if (!probe_budget_bytes) {
     const Error& err = probe_budget_bytes.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
   set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
@@ -182,34 +183,34 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   auto baseline = fingerprint_input(baseline_path, registry);
   if (!baseline) {
     const Error& err = baseline.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
   auto candidate = fingerprint_input(candidate_path, registry);
   if (!candidate) {
     const Error& err = candidate.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
 
   auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
   if (!cli_overrides) {
     const Error& err = cli_overrides.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
 
   auto profile = resolve_profile_selection(opt_string(policy_args.profile), *config);
   if (!profile) {
     const Error& err = profile.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
 
   auto resolved_policy = resolve_policy(registry, *profile, *config, *cli_overrides);
   if (!resolved_policy) {
     const Error& err = resolved_policy.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
   // The `[transform]` block's declared expectation is read here, once,
@@ -228,7 +229,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   auto report_destinations = parse_report_destinations(opt_strings(report_args.report_flags));
   if (!report_destinations) {
     const Error& err = report_destinations.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
   // report_args.json_option is nullptr on the implicit-compare route
@@ -241,7 +242,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   if (json_to_file) {
     for (const ReportDestination& dest : *report_destinations) {
       if (dest.path == json_path) {
-        std::fputs(("mediadiff: --json and --report name the same path '" + dest.path + "'\n").c_str(), stderr);
+        report_cli_error("--json and --report name the same path '" + dest.path + "'");
         std::exit(kExitUsage);
       }
     }
@@ -265,7 +266,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     if (err.kind == ErrorKind::decode) {
       partial = true;
     } else {
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
   } else {
@@ -311,7 +312,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     // this model to show_pass/show_ignored also reveals each finding's
     // ignored-volatile-tag-key evidence.
     const std::string tty_report = render_tty(tty_model, registry, color, query_terminal_width(), verbose);
-    std::fputs(tty_report.c_str(), stdout);
+    std::fwrite(tty_report.data(), 1, tty_report.size(), stdout);
   }
 
   if (json_requested) {
@@ -320,11 +321,11 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
       auto write_result = write_report_file(json_path, report);
       if (!write_result) {
         const Error& err = write_result.error();
-        std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+        report_cli_error(err.message);
         std::exit(exit_code_for(err.kind));
       }
     } else {
-      std::fputs(report.c_str(), stdout);
+      std::fwrite(report.data(), 1, report.size(), stdout);
     }
   }
 
@@ -341,7 +342,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     auto write_result = write_report_file(dest.path, rendered);
     if (!write_result) {
       const Error& err = write_result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
   }

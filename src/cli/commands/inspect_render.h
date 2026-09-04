@@ -43,7 +43,11 @@ inline std::vector<GroupEntry> entries_for_group(const Fingerprint& fp, const Ch
   std::vector<GroupEntry> entries;
   for (const Measurement& m : fp.measurements) {
     const CheckDef& check = registry.at(m.check_index);
-    if (group_for(check.id) == group) {
+    // check.id here is a registry-defined check identifier (checks.def,
+    // [a-z0-9_.]+ by ENG grammar), never file-derived text -- used only
+    // for group membership comparison, not formatted into any render
+    // output on this line.
+    if (group_for(check.id) == group) {  // control-bytes-allow: registry check id, not rendered
       entries.push_back(GroupEntry{m.check_index, &m});
     }
   }
@@ -169,7 +173,7 @@ inline std::string render_inspect_json(const Fingerprint& fp, const CheckRegistr
     for (const GroupEntry& entry : entries_for_group(fp, registry, group)) {
       const CheckDef& check = registry.at(entry.check_index);
       nlohmann::ordered_json entry_json{
-          {"id", std::string(check.id)},
+          {"id", std::string(check.id)},  // control-bytes-allow: JSON escapes at the wire level (see comment above)
           {"scope", scope_to_inspect_json(entry.measurement->scope)},
           {"value", value_to_json(entry.measurement->value)},
       };

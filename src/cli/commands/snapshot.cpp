@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "core/snapshot.h"
@@ -287,7 +288,7 @@ void register_snapshot_command(CLI::App& app) {
     auto probe_timeout_ms = resolve_probe_timeout_ms(probe_args, std::nullopt);
     if (!probe_timeout_ms) {
       const Error& err = probe_timeout_ms.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     if (probe_timeout_ms->has_value()) {
@@ -306,7 +307,7 @@ void register_snapshot_command(CLI::App& app) {
     auto probe_budget_bytes = resolve_probe_memory_budget_bytes(probe_args, std::nullopt);
     if (!probe_budget_bytes) {
       const Error& err = probe_budget_bytes.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
@@ -321,7 +322,7 @@ void register_snapshot_command(CLI::App& app) {
     auto fp = fingerprint_input(input_path_text, registry);
     if (!fp) {
       const Error& err = fp.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
@@ -329,7 +330,7 @@ void register_snapshot_command(CLI::App& app) {
     auto result = write_snapshot_gated(*fp, resolved_out, opt_flag(force_flag), registry);
     if (!result) {
       const Error& err = result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     std::exit(kExitClean);

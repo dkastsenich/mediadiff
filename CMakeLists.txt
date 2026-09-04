@@ -207,6 +207,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/report/markdown.h
   src/report/junit.h
   src/cli/exit_code.h
+  src/cli/diagnostics.h
   src/cli/color_policy.h
   src/cli/tty_render.h
   src/cli/commands/inspect_render.h
@@ -265,6 +266,7 @@ add_executable(mediadiff
   src/cli/color_policy.cpp
   src/cli/tty_render.cpp
   src/cli/exit_code.cpp
+  src/cli/diagnostics.cpp
   src/cli/commands/compare.cpp
   src/cli/commands/list_checks.cpp
   src/cli/commands/snapshot.cpp
