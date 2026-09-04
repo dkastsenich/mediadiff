@@ -73,11 +73,21 @@ add_executable(mediadiff_unit_tests
   # truncation at 10%/50%/90% (03-05-PLAN.md Task 1).
   test_bmff_scan.cpp
   # CONT-05: the six container.mp4.* checks -- faststart, brands,
-  # fragmentation, fragment_duration (median via compare_ticks_checked),
-  # edit_list (empty-edit vs trim classification, profile severity), and
-  # timescale, plus the incomplete-walk skip and the family-agnostic
-  # not-applicable sibling analyzer (03-05-PLAN.md Task 2).
+  # fragmentation, fragment_duration (median via
+  # detail::compute_median_fragment_duration, 03-13-PLAN.md's checked-sub/
+  # total-order seam), edit_list (empty-edit vs trim classification,
+  # profile severity), and timescale, plus the incomplete-walk skip and the
+  # family-agnostic not-applicable sibling analyzer (03-05-PLAN.md Task 2).
   test_mp4_analyzer.cpp
+  # CONT-05/PROBE-09 (CR-01/CR-02 in 03-REVIEW.md, 03-13-PLAN.md Task 2):
+  # the eight extreme-DTS behaviors of
+  # detail::compute_median_fragment_duration -- checked-subtraction
+  # overflow refusal (CR-01 reproduction), a same-timebase total order that
+  # cannot overflow a comparator (CR-02 reproduction), non-positive
+  # timebase refusal, degenerate input counts, the lower-median rule, and
+  # no-reorder/shuffle-invariance -- driven directly at the seam since no
+  # bitexact fixture (D-08) can carry such DTS values.
+  test_mp4_fragment_duration.cpp
   # PROBE-05: ebml_scan's bounded Segment-level element walk -- the VINT
   # reader across all eight length-descriptor widths (both marker-retained
   # ID mode and marker-stripped size mode), the reserved unknown-size form,
