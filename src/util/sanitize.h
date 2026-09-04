@@ -1,29 +1,48 @@
 #pragma once
 
-// mediadiff's single control-byte escaping choke point (T-2-33, carried
-// from Phase 2's 02-SECURITY.md and closed by this plan). Every
-// file-derived string (a tag value, a filename, a chapter title, or a
-// message/value built from one of those) that reaches a DISPLAY render
-// path -- src/cli/tty_render.cpp, src/cli/provenance_render.cpp,
-// src/report/markdown.cpp, and NOWHERE ELSE -- must be routed through
-// sanitize_for_display before it is formatted into output.
+// mediadiff's single control-byte escaping choke point for the DISPLAY
+// render surface (T-2-33, carried from Phase 2's 02-SECURITY.md, closed
+// across every output format by 03-11 and 03-15). Every file-derived
+// string (a tag value, a filename, a chapter title, or a message/value
+// built from one of those) that reaches a display render path -- the set
+// of files scripts/lint_control_bytes.sh scans, currently
+// src/cli/tty_render.cpp, src/cli/provenance_render.cpp,
+// src/report/markdown.cpp and src/cli/commands/inspect_render.h -- must be
+// routed through sanitize_for_display before it is formatted into output.
+// This list is enforced by the lint's own scan list, not restated here as
+// a fixed count: a future render path is added to the lint's scan list,
+// not to this comment, so the two can never drift against each other the
+// way IN-02 found them to have drifted.
 //
-// src/report/json.cpp and src/report/junit.cpp deliberately do NOT call
-// this function: JSON already escapes control bytes at the wire level
-// (nlohmann's own string escaping, applied by core/serializer.cpp's
-// serialize_document) and JUnit XML escaping (src/report/junit.cpp's own
-// xml_escape) handles its own context. Calling sanitize_for_display in
-// either file would double-escape and silently change every committed
-// JSON/JUnit golden for no security benefit -- both files carry a comment
-// at their own top stating this reasoning explicitly.
+// src/report/json.cpp deliberately does NOT call this function: JSON
+// already escapes control bytes at the wire level (nlohmann's own string
+// escaping, applied by core/serializer.cpp's serialize_document). Calling
+// sanitize_for_display there would double-escape and silently change
+// every committed JSON golden for no security benefit -- the file carries
+// a comment at its own top stating this reasoning explicitly.
+//
+// src/report/junit.cpp also deliberately does NOT call this function, but
+// NOT because "it handles its own context" in some unspecified way: as of
+// T-2-33's completion (03-15), junit.cpp's own xml_escape explicitly
+// escapes every C0 control byte (other than tab/LF/CR) and DEL as a
+// visible "\xHH" sequence in the text itself, in addition to its
+// pre-existing four-metacharacter XML escaping -- a raw control byte
+// cannot reach an emitted JUnit report unescaped. Routing junit.cpp
+// through sanitize_for_display instead would double-escape the four XML
+// metacharacters and put the file outside XML's own escaping rules; fixing
+// xml_escape in place, in its own context, was the correct shape.
+//
+// src/cli/diagnostics.cpp (CLI stderr diagnostics) DOES call this
+// function -- it is a display render path, just not a terminal renderer
+// in src/cli/tty_render.cpp's sense; see its own header comment.
 //
 // scripts/lint_control_bytes.sh enforces the single-choke-point rule: a
-// line in one of the three permitted display-render files that references
-// a risky file-derived field (a Finding's message/id/baseline/candidate, a
-// FileBlock's relative_path, a PolicyProvenance entry's value/detail)
-// without ALSO calling sanitize_for_display on that same line is a lint
-// violation, unless the line carries the `// control-bytes-allow` marker
-// with a stated reason.
+// line in one of the permitted display-render files that references a
+// risky file-derived field (a Finding's message/id/baseline/candidate, a
+// FileBlock's relative_path, a PolicyProvenance entry's value/detail, or
+// an Error's message) without ALSO calling sanitize_for_display on that
+// same line is a lint violation, unless the line carries the
+// `// control-bytes-allow` marker with a stated reason.
 
 #include <string>
 #include <string_view>

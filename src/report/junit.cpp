@@ -12,13 +12,26 @@
 
 // T-2-33: this file deliberately does NOT call
 // mediadiff::sanitize_for_display (src/util/sanitize.h) anywhere. XML
-// escaping (xml_escape below) already handles THIS format's own escaping
-// context -- every attribute value and text body this file writes is
-// routed through it. Layering a second, display-oriented escape pass on
-// top would double-escape and silently change every committed JUnit
-// golden for no security benefit. sanitize_for_display's own job is the
-// terminal/Markdown display surface (src/cli/tty_render.cpp, src/cli/
+// escaping (xml_escape below) is a different context with different rules
+// -- routing through the display escaper would double-escape the four XML
+// metacharacters and silently change every committed JUnit golden for no
+// security benefit. sanitize_for_display's own job is the terminal/
+// Markdown display surface (src/cli/tty_render.cpp, src/cli/
 // provenance_render.cpp, src/report/markdown.cpp), not this one.
+//
+// The four XML metacharacter substitutions alone do NOT make this file's
+// output legal XML 1.0: a raw C0 control byte (other than tab/LF/CR) or
+// DEL is not legal XML 1.0 character data under ANY escaping mechanism --
+// not even an XML numeric character reference (`&#x1B;` is exactly as
+// illegal as the literal byte, so emitting one would move the problem
+// rather than fix it). xml_escape's default branch below therefore emits
+// such a byte as a visible "\xHH" numeric escape IN THE TEXT ITSELF,
+// matching the escape form src/util/sanitize.cpp's sanitize_for_display
+// already uses for the same class of byte, so a reader who has seen one
+// escaped control byte in this codebase recognizes the other. This is
+// this file's own, XML-context-local fix for T-2-33 -- not a call into
+// sanitize_for_display, which would be the wrong context entirely (see
+// above).
 
 namespace mediadiff {
 
@@ -58,14 +71,35 @@ std::string_view skip_reason_text(SkipReason reason) {
   return "none";
 }
 
+constexpr char kHexDigits[] = "0123456789abcdef";
+
+// Appends "\xHH" (lowercase hex, exactly two digits) to `out` for a byte
+// that is illegal as raw XML 1.0 character data -- matches the escape
+// form src/util/sanitize.cpp's sanitize_for_display uses for the same
+// class of byte (see this file's own top-of-file comment for why this is
+// a local fix, not a call into that function).
+void append_control_byte_escape(std::string& out, unsigned char value) {
+  out += "\\x";
+  out += kHexDigits[(value >> 4) & 0xF];
+  out += kHexDigits[value & 0xF];
+}
+
 // Escapes text for both an XML attribute value (double-quoted throughout
-// this renderer) and an XML text body -- the same four substitutions cover
-// both contexts, since `"` only matters inside an attribute and escaping
-// it inside a text body is harmless.
+// this renderer) and an XML text body -- the same four metacharacter
+// substitutions cover both contexts, since `"` only matters inside an
+// attribute and escaping it inside a text body is harmless. Beyond the
+// four metacharacters, any C0 control byte other than tab (0x09), line
+// feed (0x0A) and carriage return (0x0D), plus DEL (0x7F), is not legal
+// XML 1.0 character data in any form -- those bytes are escaped as a
+// visible "\xHH" sequence in the text itself (see append_control_byte_escape
+// and this file's own top comment for why NOT an XML numeric character
+// reference). Every other byte -- ordinary printable ASCII, tab/LF/CR, and
+// valid multi-byte UTF-8 -- passes through unchanged, byte-for-byte, so a
+// committed golden with no such bytes is unaffected.
 std::string xml_escape(std::string_view text) {
   std::string out;
   out.reserve(text.size());
-  for (char c : text) {
+  for (unsigned char c : text) {
     switch (c) {
       case '&':
         out += "&amp;";
@@ -80,7 +114,11 @@ std::string xml_escape(std::string_view text) {
         out += "&quot;";
         break;
       default:
-        out += c;
+        if (c == 0x7F || (c < 0x20 && c != '\t' && c != '\n' && c != '\r')) {
+          append_control_byte_escape(out, c);
+        } else {
+          out += static_cast<char>(c);
+        }
     }
   }
   return out;
