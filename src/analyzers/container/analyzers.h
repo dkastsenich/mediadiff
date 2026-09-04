@@ -6,10 +6,13 @@
 // comment for why this is deliberately not a self-registering-static
 // list.
 
+#include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "core/rational.h"
 #include "probe/pass.h"
 
 namespace mediadiff {
@@ -114,6 +117,63 @@ std::string sanitize_utf8_for_test(std::string_view input);
 // ordinary std::vector so a test can assert on its exact size and exact
 // members without meta.cpp exposing the constexpr array itself.
 std::vector<std::string> volatile_tag_keys_for_test();
+
+// Test-only extraction point (03-13-PLAN.md Task 1, CR-01/CR-02): the
+// pure, checked, totally-ordered median-duration computation
+// container.mp4.fragment_duration's emit_fragment_duration (mp4.cpp)
+// wraps, exposed here so tests/unit/test_mp4_fragment_duration.cpp can
+// drive it directly against hand-built extreme-DTS arrays -- mirroring
+// src/analyzers/size/analyzers.h's own detail::compute_peak_window
+// precedent for the identical problem shape: an overflow-triggering DTS
+// value, or a tick/timebase combination extreme enough to overflow a
+// cross-multiplied comparator, is not practically reachable from a real
+// muxed fixture under this project's bitexact-only fixture discipline
+// (D-08), so the seam is what makes the input reachable at all.
+enum class MedianDurationStatus {
+  ok,
+  // Fewer than two DTS values, a non-positive timebase numerator or
+  // denominator, or an overflow anywhere in the adjacent-delta
+  // computation -- every one of these is "a real median cannot be
+  // computed", collapsed to the one SkipReason the registered check
+  // itself expresses (SkipReason::insufficient_data).
+  cannot_determine,
+};
+
+struct MedianDurationResult {
+  MedianDurationStatus status = MedianDurationStatus::cannot_determine;
+  // The lower-median inter-keyframe duration, valid only when status ==
+  // MedianDurationStatus::ok.
+  Ticks median{};
+};
+
+// Computes the lower median of the adjacent deltas between `keyframe_dts`
+// (in `tb`-timebase ticks). Every delta is built through
+// detail::checked_sub (core/rational.h) -- CR-01: a crafted file's
+// adjacent keyframe DTS values are file-controlled and unbounded, unlike
+// the byte-offset deltas elsewhere in this analyzer family, so this is
+// the one DTS-delta site that must never perform a raw signed
+// subtraction. A single overflowing delta refuses the WHOLE computation
+// rather than skipping the offending pair and continuing: a median
+// computed from a filtered subset is a fabricated answer, which this
+// project treats as worse than refusing.
+//
+// The result is ordered by raw std::int64_t tick value, NEVER through
+// compare_ticks_checked -- CR-02: every duration in this computation
+// shares the SAME timebase `tb` by construction, and `tb`'s numerator and
+// denominator are proven strictly positive before any delta is built, so
+// ordering by tick value is exactly equivalent to ordering by real
+// duration AND is a total order on std::int64_t that cannot overflow.
+// compare_ticks_checked exists for the general two-timebase case and
+// folds an overflowing comparison into "equivalent" (core/rational.h's
+// own WR-03 comment) -- calling std::stable_sort with a comparator whose
+// result can depend on an overflow condition is not a strict weak order,
+// which is undefined behavior during the sort call itself. Do not
+// "restore" compare_ticks_checked here.
+//
+// `keyframe_dts` need not be sorted; the caller's span is never reordered
+// (a local copy is sorted internally instead), mirroring
+// detail::compute_peak_window's own `packets` contract.
+MedianDurationResult compute_median_fragment_duration(std::span<const std::int64_t> keyframe_dts, Rational tb);
 
 }  // namespace detail
 

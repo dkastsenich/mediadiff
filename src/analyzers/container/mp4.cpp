@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -274,46 +275,32 @@ void emit_fragment_duration(const BmffScanResult& bmff, const DemuxSession& demu
       keyframe_dts.push_back(record.dts);
     }
   }
-  std::sort(keyframe_dts.begin(), keyframe_dts.end());
 
-  if (keyframe_dts.size() < 2) {
+  // CR-01/CR-02 (03-13-PLAN.md): the checked-subtraction, overflow-safe-
+  // ordering median computation lives at detail::compute_median_fragment_
+  // duration (analyzers.h) so it is reachable by a direct test call --
+  // see that seam's own header comment for the full CR-01/CR-02
+  // rationale. "cannot determine" (fewer than two keyframe DTS values, a
+  // non-positive timebase, or a checked-subtraction overflow) maps to
+  // this check's existing insufficient_data skip, exactly as every other
+  // refusal branch in this function already does.
+  const detail::MedianDurationResult result = detail::compute_median_fragment_duration(keyframe_dts, video_stream.tb);
+  if (result.status != detail::MedianDurationStatus::ok) {
     push_skip(CheckId::container_mp4_fragment_duration, global, SkipReason::insufficient_data, fp);
     return;
   }
-
-  std::vector<Ticks> durations;
-  durations.reserve(keyframe_dts.size() - 1);
-  for (std::size_t i = 1; i < keyframe_dts.size(); ++i) {
-    durations.push_back(Ticks{keyframe_dts[i] - keyframe_dts[i - 1], video_stream.tb});
-  }
-
-  // Median without floating point: sort via compare_ticks_checked (never
-  // compare_ticks, whose own comment reserves it for cosmetic-only
-  // ordering -- rational.h's WR-03) and, for an even count, take the
-  // LOWER of the two central values rather than their mean, so the result
-  // is exactly one observed duration and needs no division.
-  bool overflowed = false;
-  std::stable_sort(durations.begin(), durations.end(), [&](const Ticks& a, const Ticks& b) {
-    const TickOrder order = compare_ticks_checked(a, b);
-    if (order.overflowed) {
-      overflowed = true;
-    }
-    return order.order < 0;
-  });
-  if (overflowed) {
-    push_skip(CheckId::container_mp4_fragment_duration, global, SkipReason::insufficient_data, fp);
-    return;
-  }
-
-  const std::size_t n = durations.size();
-  const Ticks median = (n % 2 == 1) ? durations[n / 2] : durations[(n / 2) - 1];
 
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::container_mp4_fragment_duration);
   measurement.scope = global;
-  measurement.value = RationalValue{median.value, 1, median.tb};
-  measurement.evidence = nlohmann::ordered_json{
-      {"has_sidx", bmff.has_sidx}, {"source", "packet_scan"}, {"fragment_count", static_cast<std::int64_t>(n) + 1}};
+  measurement.value = RationalValue{result.median.value, 1, result.median.tb};
+  // fragment_count is the collected keyframe count -- deliberately the
+  // same number the previous (delta-count + 1) expression produced, now
+  // computed directly from the collected count rather than derived from
+  // an intermediate delta vector this function no longer builds itself.
+  measurement.evidence = nlohmann::ordered_json{{"has_sidx", bmff.has_sidx},
+                                                  {"source", "packet_scan"},
+                                                  {"fragment_count", static_cast<std::int64_t>(keyframe_dts.size())}};
   fp.measurements.push_back(std::move(measurement));
 }
 
@@ -433,6 +420,58 @@ void run_not_applicable(const ProbeResults& results, Fingerprint& fp) {
 }
 
 }  // namespace
+
+namespace detail {
+
+// 03-13-PLAN.md Task 1 (CR-01, CR-02): see analyzers.h's own header
+// comment on this function for the full checked-subtraction / total-order
+// rationale.
+MedianDurationResult compute_median_fragment_duration(std::span<const std::int64_t> keyframe_dts, Rational tb) {
+  if (keyframe_dts.size() < 2 || tb.num <= 0 || tb.den <= 0) {
+    return MedianDurationResult{MedianDurationStatus::cannot_determine, Ticks{}};
+  }
+
+  // Sort a LOCAL copy -- the caller's span is never reordered, mirroring
+  // detail::compute_peak_window's own `packets` contract
+  // (src/analyzers/size/size.cpp).
+  std::vector<std::int64_t> sorted_dts(keyframe_dts.begin(), keyframe_dts.end());
+  std::sort(sorted_dts.begin(), sorted_dts.end());
+
+  // Every adjacent delta through checked_sub -- CR-01: a crafted file's
+  // adjacent keyframe DTS values are file-controlled and unbounded. A
+  // single overflowing delta refuses the WHOLE computation rather than
+  // skipping the offending pair and continuing: a median computed from a
+  // filtered subset is a fabricated answer, which this project treats as
+  // worse than refusing.
+  std::vector<std::int64_t> deltas;
+  deltas.reserve(sorted_dts.size() - 1);
+  for (std::size_t i = 1; i < sorted_dts.size(); ++i) {
+    std::int64_t delta = 0;
+    if (!checked_sub(sorted_dts[i], sorted_dts[i - 1], &delta)) {
+      return MedianDurationResult{MedianDurationStatus::cannot_determine, Ticks{}};
+    }
+    deltas.push_back(delta);
+  }
+
+  // CR-02: order by raw std::int64_t tick value, NOT compare_ticks_checked
+  // -- every delta here shares the SAME timebase `tb` by construction, and
+  // tb.num/tb.den were already proven strictly positive above, so ordering
+  // by tick value is exactly equivalent to ordering by real duration AND
+  // is a total order on std::int64_t that cannot overflow. Do not
+  // "restore" compare_ticks_checked here (core/rational.h's own WR-03
+  // comment explains why its overflow-folds-to-equivalent behavior is not
+  // a strict weak order).
+  std::sort(deltas.begin(), deltas.end());
+
+  // No division, exactly one observed duration: an odd count takes the
+  // exact middle element; an even count takes the LOWER of the two
+  // central values rather than their mean.
+  const std::size_t n = deltas.size();
+  const std::int64_t median_value = (n % 2 == 1) ? deltas[n / 2] : deltas[(n / 2) - 1];
+  return MedianDurationResult{MedianDurationStatus::ok, Ticks{median_value, tb}};
+}
+
+}  // namespace detail
 
 const AnalyzerSpec& container_mp4_analyzer() {
   static const AnalyzerSpec spec{"container_mp4", PassSet{Pass::demux_header, Pass::bmff_scan, Pass::packet_scan},
