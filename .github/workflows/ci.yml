@@ -125,6 +125,45 @@ jobs:
           choco install nasm -y --no-progress
           echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
 
+      - name: Install system ffmpeg for fixture synthesis (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -n1
+
+      - name: Install system ffmpeg for fixture synthesis (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg
+          ffmpeg -version | head -n1
+
+      - name: Install system ffmpeg for fixture synthesis (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ffmpeg -y --no-progress
+          ffmpeg -version | head -n1
+
+      # Every media fixture is git-ignored and untracked (tests/fixtures/*,
+      # .gitignore), so a fresh checkout has none of them. TRUST-06's
+      # encode-twice release blocker and the DOC-03 per-check fixture-pair
+      # gate both depend on this corpus existing before `ctest` runs.
+      # Placed here, ahead of Configure, so a corpus failure fails fast —
+      # before the 15-40 minute FFmpeg build — and can never be mistaken
+      # for a build or a test failure. Deliberately regenerated on EVERY
+      # run and never restored from a cache: `-flags +bitexact -fflags
+      # +bitexact` guarantees determinism for a GIVEN encoder build, not
+      # across builds, so a cached corpus produced by a different run's
+      # ffmpeg would silently make TRUST-06 compare two encodes that never
+      # shared a binary (03-14-PLAN.md <flagged_assumptions>). Both steps
+      # below are unconditional on every leg — no matrix condition, no
+      # failure tolerance — because a release blocker whose inputs can be
+      # skipped is not a release blocker.
+      - name: Generate media fixture corpus (BUILD-08 / D-08)
+        run: bash scripts/gen_corpus.sh
+
+      - name: Verify the fixture corpus is complete
+        run: bash scripts/check_corpus.sh
+
       - name: Install mono for vcpkg's NuGet client (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get install -y mono-complete
@@ -301,11 +340,9 @@ jobs:
       # generator. Proves the version-gate failure branch (deferred here
       # explicitly by Plan 04, since the shell variant's equivalent branch
       # is already proven) and cross-checks the manifest key order Plan 04
-      # recorded.
-      - name: Install system ffmpeg for the corpus generator's positive-path check (Windows)
-        if: matrix.preset == 'x64-windows-static-md'
-        run: choco install ffmpeg -y --no-progress
-
+      # recorded. ffmpeg is already installed and on PATH from the
+      # "Install system ffmpeg for fixture synthesis (Windows)" step earlier
+      # in this job (03-14-PLAN.md) — no separate install needed here.
       - name: PowerShell corpus generator version-gate and manifest-order cross-check (Windows, owed to Plan 04)
         if: matrix.preset == 'x64-windows-static-md'
         shell: pwsh
