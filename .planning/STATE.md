@@ -1,19 +1,20 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.1
-milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-12-PLAN.md (probe-budget overflow gap closed)
-last_updated: "2026-09-04T19:14:23.128Z"
+stopped_at: Completed 03-13-PLAN.md (mp4 fragment-duration CR-01/CR-02 gap closed, WR-02/WR-03 fixed)
+last_updated: "2026-09-04T19:28:47.237Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 03 execution started
+state_head: 24e9fae2eb6f6d8fdfa5cacd67b97ff913783360
 progress:
-  total_phases: 3
+  total_phases: 7
   completed_phases: 2
   total_plans: 39
-  completed_plans: 36
+  completed_plans: 37
+milestone_name: milestone
 ---
 
 # Project State
@@ -28,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 2 of 15
+Plan: 3 of 15
 Status: Ready to execute
 Last activity: 2026-09-04 — Phase 03 execution started
 
@@ -85,6 +86,7 @@ Progress: [█████████░] 92%
 | Phase 03 P10 | 80min | 3 tasks | 20 files |
 | Phase 03 P11 | 45min | 4 tasks | 23 files |
 | Phase 03 P12 | 55min | 3 tasks | 14 files |
+| Phase 03 P13 | 55min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -177,6 +179,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-11: TRUST-06's corruption-catches-a-regression proof done manually once against a non-committed scratch fixture, per the plan's own acceptance criterion not to commit the corruption
 - [Phase ?]: 03-11: DOC-03's gate calls the real CLI binary for every declared pair, matching every sibling integration test's convention; every trigger/clean pair verified empirically against the real binary before being written into the table
 - [Phase ?]: [03-12]: kMaxProbeMemoryBudgetMb=1048576 MB / kMaxProbeTimeoutSeconds=86400s, bounded at both TOML loader and CLI parse boundary; resolve_probe_memory_budget_bytes is the single MB-to-bytes conversion point for all four command entry points.
+- [Phase 03]: 03-13: Same-timebase tick-value ordering replaces compare_ticks_checked in container.mp4.fragment_duration's median (CR-02) -- valid because every duration compared shares one already-positive-validated timebase by construction, never a general substitute for cross-timebase comparisons
+- [Phase 03]: 03-13: WR-02 (ts.cpp byte-offset checked_sub) and WR-03 (pass.h/orchestrator.cpp stale ts_scan consumer comments) fixed in the same plan as CR-01/CR-02 since both touch files this plan already opened; sanitizer (ASan/UBSan) build remains deferred per this plan's own flagged_assumptions
 
 ### Pending Todos
 
@@ -207,6 +211,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-04T19:14:23.110Z
-Stopped at: Completed 03-12-PLAN.md (probe-budget overflow gap closed)
+Last session: 2026-09-04T19:28:47.124Z
+Stopped at: Completed 03-13-PLAN.md (mp4 fragment-duration CR-01/CR-02 gap closed, WR-02/WR-03 fixed)
 Resume file: None
