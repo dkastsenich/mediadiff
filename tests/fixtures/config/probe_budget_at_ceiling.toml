@@ -1,0 +1,11 @@
+# 03-12-PLAN.md Task 1 (T-3-58/T-3-60, D-01): '[probe] memory_budget_mb'
+# and '[probe] timeout_seconds' both set to EXACTLY their respective
+# ceilings (kMaxProbeMemoryBudgetMb=1048576, kMaxProbeTimeoutSeconds=86400,
+# src/config/toml_load.h) must both load successfully and round-trip --
+# the bound itself is not an overflow, and admits every value a real
+# machine could use. Behaviors 3 and 4 share this one fixture rather than
+# each getting their own, matching this plan's own three-fixture Artifacts
+# list.
+[probe]
+memory_budget_mb = 1048576
+timeout_seconds = 86400

@@ -181,6 +181,20 @@ mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms
 mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_mb(const ProbeArgs& args,
                                                                            const std::optional<ConfigFile>& config);
 
+// 03-12-PLAN.md Task 1 (T-3-58, D-01): wraps resolve_probe_memory_budget_mb
+// and converts its megabyte result to BYTES in exactly ONE place, instead
+// of at four separate command entry points -- each of which used to
+// perform its own raw `mb * 1024 * 1024` multiplication with no overflow
+// check. Rejects a resolved value above kMaxProbeMemoryBudgetMb (src/config/toml_load.h)
+// with ErrorKind::usage naming the offending value and the maximum, then
+// converts to bytes via two successive detail::checked_mul (src/core/rational.h)
+// steps (MB -> KB -> bytes), returning ErrorKind::usage on either overflow.
+// resolve_probe_memory_budget_mb itself stays public -- this function wraps
+// it rather than replacing it, so the plain megabyte value stays available
+// wherever a caller wants it for diagnostics.
+mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_bytes(const ProbeArgs& args,
+                                                                               const std::optional<ConfigFile>& config);
+
 // All-null ProbeArgs, matching default_policy_args()/default_report_args()/
 // default_color_args()'s own contract -- used by main.cpp's implicit
 // two-positional dispatch, which carries none of `compare`'s own optional

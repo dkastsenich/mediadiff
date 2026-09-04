@@ -8,6 +8,7 @@
 // exits the process (ENG-16); every failure returns an Error through
 // mediadiff::expected.
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -60,6 +61,29 @@ struct TransformBlock {
 // beside the shape it constrains, not duplicated as two separate literal
 // 32s that could silently drift apart.
 inline constexpr int kMaxDirThreads = 32;
+
+// 03-12-PLAN.md Task 1 (T-3-58/T-3-59, D-01): the upper bounds on the two
+// `[probe]` magnitudes, enforced here (before the loader's own
+// `static_cast<int>` narrowing) and again at the CLI parse boundary
+// (src/cli/options.cpp's add_probe_flags). Both are `std::int64_t` so the
+// comparison against the loader's own `std::int64_t` node value needs no
+// cast under `-Wall -Wextra -Werror`.
+//
+// kMaxProbeMemoryBudgetMb: one tebibyte, expressed in megabytes
+// (1024*1024) -- far above any machine this tool runs on. Chosen so the
+// megabytes-to-bytes conversion (two successive `* 1024` steps, run
+// through `detail::checked_mul` in resolve_probe_memory_budget_bytes)
+// stays deep inside `int64_t`'s range (well short of ~8.4 * 10^18), and
+// so the value itself stays inside `int` for `ProbeBlock::memory_budget_mb`
+// -- both are what keep this bound from itself becoming an overflow.
+inline constexpr std::int64_t kMaxProbeMemoryBudgetMb = 1'048'576;
+
+// kMaxProbeTimeoutSeconds: twenty-four hours -- a per-file probe budget
+// longer than a day is not a budget. Chosen so the seconds-to-milliseconds
+// conversion (`* 1000`, run through `detail::checked_mul` in
+// resolve_probe_timeout_ms) stays deep inside `int64_t`'s range and the
+// value stays inside `int` for `ProbeBlock::timeout_seconds`.
+inline constexpr std::int64_t kMaxProbeTimeoutSeconds = 86'400;
 
 // The `[dir]` block (doc 01 section 10, plan 02-11): today, just the
 // worker-pool default thread count. `threads` is std::nullopt when the key

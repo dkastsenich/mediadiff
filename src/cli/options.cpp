@@ -1,6 +1,7 @@
 #include "cli/options.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -17,6 +18,7 @@
 #endif
 
 #include "core/glob.h"
+#include "core/rational.h"
 #include "core/registry.h"
 #include "probe/packet_scan.h"
 #include "util/fs.h"
@@ -246,9 +248,20 @@ ProbeArgs add_probe_flags(CLI::App& cmd) {
   // CLI::NonNegativeNumber accepts 0 -- a 0-second budget is a valid,
   // deliberately-immediate-timeout value (this plan's own acceptance
   // criterion), not a usage error.
+  // 03-12-PLAN.md Task 1 (T-3-58/T-3-60, D-05): an upper-bound
+  // ->check(CLI::Range(...)) is ADDED here, chained after the existing
+  // NonNegativeNumber/PositiveNumber validator rather than replacing it --
+  // CLI11 runs every chained ->check() and reports the first one that
+  // fails, so a zero/negative value still produces the existing message
+  // unchanged, and only a value above the new ceiling gets the new one.
+  // This is D-05's own parse-time-validation convention (reject before any
+  // resolver runs); resolve_probe_timeout_ms/resolve_probe_memory_budget_bytes
+  // below keep their own bound anyway, because the config path (`[probe]
+  // timeout_seconds`/`memory_budget_mb`) never passes through CLI11 at all.
   args.timeout_seconds = cmd.add_option("--probe-timeout", "Per-file wall-clock probe budget, in seconds (default: 30)")
                               ->type_name("SECONDS")
-                              ->check(CLI::NonNegativeNumber);
+                              ->check(CLI::NonNegativeNumber)
+                              ->check(CLI::Range(std::int64_t{0}, kMaxProbeTimeoutSeconds));
   // Registered, accepted, and validated here; left unconsumed for plan
   // 03-03 to wire into D-01's global memory-budget model (03-02-PLAN.md
   // Task 2's own instruction).
@@ -257,10 +270,41 @@ ProbeArgs add_probe_flags(CLI::App& cmd) {
                       "Global probe memory budget, in MB (accepted now; not yet consumed -- arrives with a "
                       "later plan)")
           ->type_name("MB")
-          ->check(CLI::PositiveNumber);
+          ->check(CLI::PositiveNumber)
+          ->check(CLI::Range(std::int64_t{1}, kMaxProbeMemoryBudgetMb));
 
   return args;
 }
+
+namespace {
+
+// 03-12-PLAN.md Task 1 (T-3-60, D-01): rejects `seconds` above
+// kMaxProbeTimeoutSeconds with ErrorKind::usage, naming both the offending
+// value and the bound, then converts to milliseconds through
+// detail::checked_mul rather than a raw product -- an overflowed product
+// here used to make a healthy file look like it had already exceeded its
+// wall-clock budget (a false, self-inflicted timeout, T-3-60's own
+// description), which is the exact defect this function repairs. Shared
+// by both the CLI branch (below) and the config branch, which has no
+// CLI11 validator in front of it at all.
+mediadiff::expected<std::int64_t, Error> bound_and_convert_timeout_seconds(std::int64_t seconds,
+                                                                              std::string_view source) {
+  if (seconds > kMaxProbeTimeoutSeconds) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, std::string(source) + " must not exceed " + std::to_string(kMaxProbeTimeoutSeconds) +
+                                     " seconds (twenty-four hours, the maximum probe timeout): '" +
+                                     std::to_string(seconds) + "'"});
+  }
+  std::int64_t ms = 0;
+  if (!detail::checked_mul(seconds, 1000, &ms)) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, std::string(source) + " is too large to convert to milliseconds: '" +
+                                     std::to_string(seconds) + "'"});
+  }
+  return ms;
+}
+
+}  // namespace
 
 mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms(const ProbeArgs& args,
                                                                                     const std::optional<ConfigFile>& config) {
@@ -268,7 +312,11 @@ mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms
     const std::string text = opt_string(args.timeout_seconds);
     try {
       const long long seconds = std::stoll(text);
-      return static_cast<std::int64_t>(seconds) * 1000;
+      auto converted = bound_and_convert_timeout_seconds(static_cast<std::int64_t>(seconds), "--probe-timeout");
+      if (!converted) {
+        return mediadiff::unexpected(converted.error());
+      }
+      return *converted;
     } catch (const std::exception&) {
       // Unreachable in practice -- ->check(CLI::NonNegativeNumber) already
       // rejected anything std::stoll could not parse, at CLI11 parse time.
@@ -279,7 +327,12 @@ mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms
     }
   }
   if (config.has_value() && config->probe.has_value() && config->probe->timeout_seconds.has_value()) {
-    return static_cast<std::int64_t>(*config->probe->timeout_seconds) * 1000;
+    auto converted = bound_and_convert_timeout_seconds(static_cast<std::int64_t>(*config->probe->timeout_seconds),
+                                                          "'[probe] timeout_seconds'");
+    if (!converted) {
+      return mediadiff::unexpected(converted.error());
+    }
+    return *converted;
   }
   return std::nullopt;
 }
@@ -305,6 +358,47 @@ mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_mb(const Pr
     return static_cast<std::int64_t>(*config->probe->memory_budget_mb);
   }
   return static_cast<std::int64_t>(kDefaultProbeMemoryBudgetMb);
+}
+
+// 03-12-PLAN.md Task 1 (T-3-58, D-01): wraps resolve_probe_memory_budget_mb
+// so the megabytes-to-bytes conversion happens in ONE place instead of at
+// four command entry points, each of which used to perform its own raw
+// `mb * 1024 * 1024` product with no overflow check. Both call sites that
+// can feed this function (--probe-memory-budget-mb, already bounded by
+// this plan's ->check(CLI::Range(...)) at parse time; `[probe]
+// memory_budget_mb`, already bounded by src/config/toml_load.cpp's own
+// loader-time ceiling) are pre-validated by the time they reach here --
+// the bound check below is a deliberate backstop, not the primary
+// enforcement point, since the config path never passes through CLI11 at
+// all and a future caller of resolve_probe_memory_budget_mb should not be
+// able to bypass this bound by skipping the loader.
+mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_bytes(const ProbeArgs& args,
+                                                                               const std::optional<ConfigFile>& config) {
+  auto mb = resolve_probe_memory_budget_mb(args, config);
+  if (!mb) {
+    return mediadiff::unexpected(mb.error());
+  }
+  if (*mb > kMaxProbeMemoryBudgetMb) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, "probe memory budget must not exceed " + std::to_string(kMaxProbeMemoryBudgetMb) +
+                                     " MB (one tebibyte, the maximum probe memory budget): '" + std::to_string(*mb) +
+                                     "'"});
+  }
+  // Two successive checked_mul steps (MB -> KB -> bytes) rather than one
+  // `*mb * 1024 * 1024` product: each step is its own overflow-checked
+  // multiplication, so no intermediate value is ever produced by raw,
+  // unchecked arithmetic.
+  std::int64_t kb = 0;
+  if (!detail::checked_mul(*mb, 1024, &kb)) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, "probe memory budget is too large to convert to bytes: '" + std::to_string(*mb) + "'"});
+  }
+  std::int64_t bytes = 0;
+  if (!detail::checked_mul(kb, 1024, &bytes)) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, "probe memory budget is too large to convert to bytes: '" + std::to_string(*mb) + "'"});
+  }
+  return bytes;
 }
 
 PolicyArgs default_policy_args() { return {}; }

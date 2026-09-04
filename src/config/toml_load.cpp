@@ -277,6 +277,11 @@ mediadiff::expected<std::optional<ConfigFile>, Error> discover_and_load(std::opt
         return usage_error("config file '" + path + "': '[probe] timeout_seconds' must be a non-negative integer" +
                             position_suffix(timeout_node->source()));
       }
+      if (timeout_value > kMaxProbeTimeoutSeconds) {
+        return usage_error("config file '" + path + "': '[probe] timeout_seconds' must not exceed " +
+                            std::to_string(kMaxProbeTimeoutSeconds) + " (twenty-four hours, the maximum probe timeout)" +
+                            position_suffix(timeout_node->source()));
+      }
       block.timeout_seconds = static_cast<int>(timeout_value);
     }
     if (const toml::node* memory_node = probe_node->as_table()->get("memory_budget_mb")) {
@@ -287,6 +292,11 @@ mediadiff::expected<std::optional<ConfigFile>, Error> discover_and_load(std::opt
       const std::int64_t memory_value = *memory_node->value<std::int64_t>();
       if (memory_value <= 0) {
         return usage_error("config file '" + path + "': '[probe] memory_budget_mb' must be a positive integer" +
+                            position_suffix(memory_node->source()));
+      }
+      if (memory_value > kMaxProbeMemoryBudgetMb) {
+        return usage_error("config file '" + path + "': '[probe] memory_budget_mb' must not exceed " +
+                            std::to_string(kMaxProbeMemoryBudgetMb) + " (one tebibyte, the maximum probe memory budget)" +
                             position_suffix(memory_node->source()));
       }
       block.memory_budget_mb = static_cast<int>(memory_value);

@@ -1,0 +1,7 @@
+# 03-12-PLAN.md Task 1 (T-3-58/T-3-59, D-01): '[probe] memory_budget_mb'
+# above kMaxProbeMemoryBudgetMb (1048576, src/config/toml_load.h) must be
+# rejected at config-load time, naming the key and the bound, BEFORE any
+# static_cast<int> narrowing -- proves the loader's own upper-bound clause
+# mirrors '[dir] threads' immediately above it in the same file.
+[probe]
+memory_budget_mb = 8796093022208
