@@ -70,6 +70,13 @@ add_executable(mediadiff_integration_tests
   # verified count must equal the registry's own check count
   # (03-11-PLAN.md Task 4).
   test_doc03_coverage.cpp
+  # SIZE-01/DIR-06: the VERIFICATION.md gap-2 reproductions, inverted
+  # permanently -- an extreme but CLI11-legal --probe-memory-budget-mb/
+  # --probe-timeout value exits 64 naming the maximum, across all four
+  # command entry points, and can never silently blank size.stream_bitrate/
+  # size.peak_bitrate/size.overhead to skipped:partial_scan
+  # (03-12-PLAN.md Task 3).
+  test_probe_budget_overflow.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp
   # Schema-version major-mismatch refusal, tool_version skew diagnostic,
