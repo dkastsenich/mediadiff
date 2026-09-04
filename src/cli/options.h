@@ -184,7 +184,7 @@ mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_mb(const Pr
 // 03-12-PLAN.md Task 1 (T-3-58, D-01): wraps resolve_probe_memory_budget_mb
 // and converts its megabyte result to BYTES in exactly ONE place, instead
 // of at four separate command entry points -- each of which used to
-// perform its own raw `mb * 1024 * 1024` multiplication with no overflow
+// perform its own raw megabytes-to-bytes multiplication with no overflow
 // check. Rejects a resolved value above kMaxProbeMemoryBudgetMb (src/config/toml_load.h)
 // with ErrorKind::usage naming the offending value and the maximum, then
 // converts to bytes via two successive detail::checked_mul (src/core/rational.h)

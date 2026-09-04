@@ -298,13 +298,18 @@ void register_snapshot_command(CLI::App& app) {
     // resolution just above -- snapshot reads no mediadiff.toml. This
     // command's own resolved thread count is always 1 (a single file),
     // so derive_per_file_cap_bytes hands it the whole resolved budget.
-    auto probe_budget_mb = resolve_probe_memory_budget_mb(probe_args, std::nullopt);
-    if (!probe_budget_mb) {
-      const Error& err = probe_budget_mb.error();
+    // 03-12-PLAN.md Task 2 (T-3-58): a fifth defect site absent from both
+    // 03-REVIEW.md's CR-04 and 03-VERIFICATION.md's own artifact list --
+    // confirmed by reading this call site directly. The megabytes-to-bytes
+    // conversion is resolve_probe_memory_budget_bytes's own job now -- no
+    // raw megabytes-to-bytes product survives here.
+    auto probe_budget_bytes = resolve_probe_memory_budget_bytes(probe_args, std::nullopt);
+    if (!probe_budget_bytes) {
+      const Error& err = probe_budget_bytes.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }
-    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_mb * 1024 * 1024, /*threads=*/1));
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
 
     // fingerprint_input (src/probe/orchestrator.h) tries read_snapshot
     // first -- an input that IS already a valid *.snap.json is re-read

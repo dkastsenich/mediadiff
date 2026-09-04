@@ -316,14 +316,16 @@ void register_dir_command(CLI::App& app) {
     // PacketScanLimits{}'s own default member initializer, which reads
     // this global, so every file in the corpus is bounded by the SAME
     // per-file cap.
-    auto probe_budget_mb_result = resolve_probe_memory_budget_mb(options.probe, config);
-    if (!probe_budget_mb_result) {
-      const Error& err = probe_budget_mb_result.error();
+    // 03-12-PLAN.md Task 2 (T-3-58): the megabytes-to-bytes conversion is
+    // resolve_probe_memory_budget_bytes's own job now -- no raw
+    // megabytes-to-bytes product survives here.
+    auto probe_budget_bytes_result = resolve_probe_memory_budget_bytes(options.probe, config);
+    if (!probe_budget_bytes_result) {
+      const Error& err = probe_budget_bytes_result.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }
-    const std::int64_t probe_budget_bytes = *probe_budget_mb_result * 1024 * 1024;
-    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(probe_budget_bytes, resolved_threads));
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes_result, resolved_threads));
 
     // DIR-01/DIR-04: the full pair list, byte-wise sorted, computed BEFORE
     // any worker starts and never mutated afterward.

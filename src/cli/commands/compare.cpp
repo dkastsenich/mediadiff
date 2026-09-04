@@ -168,14 +168,16 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   // D-01: this command's own resolved thread count is always 1 (a single
   // baseline/candidate pair, compared synchronously) -- derive_per_file_cap_bytes
   // with threads=1 returns the whole resolved budget unchanged, so a
-  // single in-flight file gets it in full.
-  auto probe_budget_mb = resolve_probe_memory_budget_mb(probe_args, *config);
-  if (!probe_budget_mb) {
-    const Error& err = probe_budget_mb.error();
+  // single in-flight file gets it in full. 03-12-PLAN.md Task 2 (T-3-58):
+  // the megabytes-to-bytes conversion is resolve_probe_memory_budget_bytes's
+  // own job now -- no raw megabytes-to-bytes product survives here.
+  auto probe_budget_bytes = resolve_probe_memory_budget_bytes(probe_args, *config);
+  if (!probe_budget_bytes) {
+    const Error& err = probe_budget_bytes.error();
     std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
     std::exit(exit_code_for(err.kind));
   }
-  set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_mb * 1024 * 1024, /*threads=*/1));
+  set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
 
   auto baseline = fingerprint_input(baseline_path, registry);
   if (!baseline) {

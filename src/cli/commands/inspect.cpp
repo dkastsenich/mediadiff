@@ -65,14 +65,16 @@ void register_inspect_command(CLI::App& app) {
 
     // D-01: `inspect` always resolves to a thread count of 1 (a single
     // file) -- derive_per_file_cap_bytes with threads=1 hands it the
-    // whole resolved budget.
-    auto probe_budget_mb = resolve_probe_memory_budget_mb(options.probe, *config);
-    if (!probe_budget_mb) {
-      const Error& err = probe_budget_mb.error();
+    // whole resolved budget. 03-12-PLAN.md Task 2 (T-3-58): the
+    // megabytes-to-bytes conversion is resolve_probe_memory_budget_bytes's
+    // own job now -- no raw megabytes-to-bytes product survives here.
+    auto probe_budget_bytes = resolve_probe_memory_budget_bytes(options.probe, *config);
+    if (!probe_budget_bytes) {
+      const Error& err = probe_budget_bytes.error();
       std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
       std::exit(exit_code_for(err.kind));
     }
-    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_mb * 1024 * 1024, /*threads=*/1));
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
 
     auto fp = fingerprint_input(opt_string(file_path), registry);
     if (!fp) {

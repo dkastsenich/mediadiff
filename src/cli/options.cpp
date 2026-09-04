@@ -363,7 +363,7 @@ mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_mb(const Pr
 // 03-12-PLAN.md Task 1 (T-3-58, D-01): wraps resolve_probe_memory_budget_mb
 // so the megabytes-to-bytes conversion happens in ONE place instead of at
 // four command entry points, each of which used to perform its own raw
-// `mb * 1024 * 1024` product with no overflow check. Both call sites that
+// raw megabytes-to-bytes product with no overflow check. Both call sites that
 // can feed this function (--probe-memory-budget-mb, already bounded by
 // this plan's ->check(CLI::Range(...)) at parse time; `[probe]
 // memory_budget_mb`, already bounded by src/config/toml_load.cpp's own
@@ -385,7 +385,7 @@ mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_bytes(const
                                      "'"});
   }
   // Two successive checked_mul steps (MB -> KB -> bytes) rather than one
-  // `*mb * 1024 * 1024` product: each step is its own overflow-checked
+  // raw megabytes-to-bytes product: each step is its own overflow-checked
   // multiplication, so no intermediate value is ever produced by raw,
   // unchecked arithmetic.
   std::int64_t kb = 0;
