@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 13/15 plans executed (11/11 executed; 4 gap-closure plans added after verification found 3 blocking gaps)
+**Plans**: 14/15 plans executed (11/11 executed; 4 gap-closure plans added after verification found 3 blocking gaps)
 
 Plans:
 **Wave 1**
@@ -226,7 +226,7 @@ Plans:
 
 - [x] 03-13-PLAN.md — GAP 1: remove the reachable UB in `container.mp4.fragment_duration` (checked deltas, a total order that cannot overflow) plus an extreme-DTS regression test (CONT-05, PROBE-09)
 - [ ] 03-14-PLAN.md — GAP 3: generate and verify the media corpus before the Test step on every CI leg, so TRUST-06 can actually run as a release blocker (TRUST-06, DOC-03)
-- [ ] 03-15-PLAN.md — Complete the T-2-33 choke point: control-byte-safe JUnit XML, one sanitizing CLI diagnostic helper, lint scan list corrected (CONT-03, CONT-04)
+- [x] 03-15-PLAN.md — Complete the T-2-33 choke point: control-byte-safe JUnit XML, one sanitizing CLI diagnostic helper, lint scan list corrected (CONT-03, CONT-04)
 
 **Source doc**: `claude_docs/02-container-analysis.md` (design-doc phase 2), plus `size.*` from `claude_docs/06-content-and-size-analysis.md` §4
 
@@ -307,7 +307,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
-| 3. Probe Layer, Container & Size | 13/15 | In Progress|  |
+| 3. Probe Layer, Container & Size | 14/15 | In Progress|  |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |
