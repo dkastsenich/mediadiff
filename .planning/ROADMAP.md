@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 15 plans (11/11 executed; 4 gap-closure plans added after verification found 3 blocking gaps)
+**Plans**: 12/15 plans executed (11/11 executed; 4 gap-closure plans added after verification found 3 blocking gaps)
 
 Plans:
 **Wave 1**
@@ -220,7 +220,7 @@ Plans:
 
 **Wave 12** *(gap closure — blocked on Wave 11; TRACER: one gap closed end-to-end before expansion)*
 
-- [ ] 03-12-PLAN.md — GAP 2: bound and `checked_mul` the probe budget/timeout so an ordinary flag value can never silently blank every `size.*` check (SIZE-01, DIR-06)
+- [x] 03-12-PLAN.md — GAP 2: bound and `checked_mul` the probe budget/timeout so an ordinary flag value can never silently blank every `size.*` check (SIZE-01, DIR-06)
 
 **Wave 13** *(gap closure — blocked on Wave 12; three independent plans, zero file overlap)*
 
@@ -307,7 +307,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
-| 3. Probe Layer, Container & Size | 11/11 | In Progress|  |
+| 3. Probe Layer, Container & Size | 12/15 | In Progress|  |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |

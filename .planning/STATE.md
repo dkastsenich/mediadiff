@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: Completed 03-11-PLAN.md (phase 03 complete, ready_for_verification)
-last_updated: "2026-09-04T09:28:47.931Z"
-last_activity: 2026-09-02
-last_activity_desc: Phase 02 execution started
+stopped_at: Completed 03-12-PLAN.md (probe-budget overflow gap closed)
+last_updated: "2026-09-04T19:14:23.128Z"
+last_activity: 2026-09-04
+last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
-  completed_phases: 3
+  completed_phases: 2
   total_plans: 39
-  completed_plans: 35
+  completed_plans: 36
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 11 of 11
+Plan: 2 of 15
 Status: Ready to execute
-Last activity: 2026-09-02 — Phase 03 execution started
+Last activity: 2026-09-04 — Phase 03 execution started
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -84,6 +84,7 @@ Progress: [██████████] 100%
 | Phase 03 P09 | 90min | 3 tasks | 20 files |
 | Phase 03 P10 | 80min | 3 tasks | 20 files |
 | Phase 03 P11 | 45min | 4 tasks | 23 files |
+| Phase 03 P12 | 55min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 03-11: json.cpp/junit.cpp deliberately NOT sanitized -- wire-level JSON/XML escaping already applies; double-escaping would corrupt goldens
 - [Phase ?]: 03-11: TRUST-06's corruption-catches-a-regression proof done manually once against a non-committed scratch fixture, per the plan's own acceptance criterion not to commit the corruption
 - [Phase ?]: 03-11: DOC-03's gate calls the real CLI binary for every declared pair, matching every sibling integration test's convention; every trigger/clean pair verified empirically against the real binary before being written into the table
+- [Phase ?]: [03-12]: kMaxProbeMemoryBudgetMb=1048576 MB / kMaxProbeTimeoutSeconds=86400s, bounded at both TOML loader and CLI parse boundary; resolve_probe_memory_budget_bytes is the single MB-to-bytes conversion point for all four command entry points.
 
 ### Pending Todos
 
@@ -205,6 +207,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-03T22:40:49.874Z
-Stopped at: Completed 03-11-PLAN.md (phase 03 complete, ready_for_verification)
+Last session: 2026-09-04T19:14:23.110Z
+Stopped at: Completed 03-12-PLAN.md (probe-budget overflow gap closed)
 Resume file: None
