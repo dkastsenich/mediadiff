@@ -112,6 +112,11 @@ add_executable(mediadiff_integration_tests
   # make `dir` mode report the corrupted pair as an empty-findings clean
   # pass.
   test_type_poisoned_snapshot.cpp
+  # CONT-03/CONT-04, T-2-33, WR-01 (03-15-PLAN.md Task 3): the CLI
+  # diagnostic sink (src/cli/diagnostics.cpp) escapes control bytes in an
+  # argv-supplied string before it reaches stderr, across the real CLI
+  # binary, on every platform (no _WIN32 skip).
+  test_cli_diagnostics_escaping.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
