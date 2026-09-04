@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 11/11 plans executed
+**Plans**: 15 plans (11/11 executed; 4 gap-closure plans added after verification found 3 blocking gaps)
 
 Plans:
 **Wave 1**
@@ -217,6 +217,16 @@ Plans:
 **Wave 11** *(blocked on Wave 10 completion)*
 
 - [x] 03-11-PLAN.md — Close T-2-33, render the `inspect` container section, TRUST-06 release blocker, DOC-03 coverage gate
+
+**Wave 12** *(gap closure — blocked on Wave 11; TRACER: one gap closed end-to-end before expansion)*
+
+- [ ] 03-12-PLAN.md — GAP 2: bound and `checked_mul` the probe budget/timeout so an ordinary flag value can never silently blank every `size.*` check (SIZE-01, DIR-06)
+
+**Wave 13** *(gap closure — blocked on Wave 12; three independent plans, zero file overlap)*
+
+- [ ] 03-13-PLAN.md — GAP 1: remove the reachable UB in `container.mp4.fragment_duration` (checked deltas, a total order that cannot overflow) plus an extreme-DTS regression test (CONT-05, PROBE-09)
+- [ ] 03-14-PLAN.md — GAP 3: generate and verify the media corpus before the Test step on every CI leg, so TRUST-06 can actually run as a release blocker (TRUST-06, DOC-03)
+- [ ] 03-15-PLAN.md — Complete the T-2-33 choke point: control-byte-safe JUnit XML, one sanitizing CLI diagnostic helper, lint scan list corrected (CONT-03, CONT-04)
 
 **Source doc**: `claude_docs/02-container-analysis.md` (design-doc phase 2), plus `size.*` from `claude_docs/06-content-and-size-analysis.md` §4
 
