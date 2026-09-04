@@ -75,10 +75,18 @@ struct IntervalMax {
 // verdict-affecting ordering, not a cosmetic one) with Rational{1,1}
 // timebases, since both sides here are already plain millisecond
 // magnitudes, not tick counts in a real media timebase. Returns
-// std::nullopt when fewer than two offsets were given, when any
-// bytes_to_ms conversion overflows, or when the running-maximum comparison
-// itself overflows -- this function's own contract is "a real maximum or
-// nothing", never a partially-computed one.
+// std::nullopt when fewer than two offsets were given, when the adjacent
+// byte-offset delta itself overflows (WR-02: routed through
+// detail::checked_sub for consistency with every other byte-offset/PCR
+// delta in this analyzer family -- ts_scan.cpp's own compute_mux_rate_
+// estimate uses the identical pattern; the overflow risk here is not
+// realistically reachable in practice, since byte offsets are bounded by
+// real file size, unlike a file-controlled DTS value, but this function's
+// own "a real maximum or nothing" contract should not carry a raw
+// subtraction as its one exception), when any bytes_to_ms conversion
+// overflows, or when the running-maximum comparison itself overflows --
+// this function's own contract is "a real maximum or nothing", never a
+// partially-computed one.
 std::optional<IntervalMax> max_interval_ms(const std::vector<std::int64_t>& offsets, const MuxRateEstimate& rate) {
   if (offsets.size() < 2) {
     return std::nullopt;
@@ -86,7 +94,11 @@ std::optional<IntervalMax> max_interval_ms(const std::vector<std::int64_t>& offs
   IntervalMax result;
   bool have_max = false;
   for (std::size_t i = 1; i < offsets.size(); ++i) {
-    const std::optional<std::int64_t> ms = bytes_to_ms(offsets[i] - offsets[i - 1], rate);
+    std::int64_t offset_delta = 0;
+    if (!detail::checked_sub(offsets[i], offsets[i - 1], &offset_delta)) {
+      return std::nullopt;
+    }
+    const std::optional<std::int64_t> ms = bytes_to_ms(offset_delta, rate);
     if (!ms.has_value()) {
       return std::nullopt;
     }

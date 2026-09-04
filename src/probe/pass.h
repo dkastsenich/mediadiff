@@ -134,9 +134,9 @@ struct ProbeResults {
   // by every applicable analyzer -- populated ONLY when `Pass::ts_scan`
   // was requested, which is scoped to `ContainerFamily::ts` (mirrors
   // `bmff`/`ebml`'s own never-runs-on-the-wrong-container invariant
-  // above). This plan builds the scanner only; no analyzer declares
-  // `Pass::ts_scan` yet -- 03-08-PLAN.md's `container.ts.*` checks are the
-  // first real consumer.
+  // above). container_ts_analyzer() (src/analyzers/container/ts.cpp,
+  // 03-08-PLAN.md's `container.ts.*` checks) is the real, registered
+  // production consumer.
   std::optional<TsScanResult> ts;
 };
 
