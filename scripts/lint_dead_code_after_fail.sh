@@ -181,7 +181,16 @@ fi
 # off a recursive glob) because the matcher is stateful per file — FNR==1
 # only resets at true file boundaries when awk is given an explicit file
 # list, which an in-shell recursive grep does not provide.
-mapfile -t FILES < <(find "${SCAN_DIRS[@]}" -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+#
+# Portable in place of a bash 4+ only array-read builtin: macOS ships bash
+# 3.2, where that builtin does not exist at all and fails with a "command
+# not found" style error (exit 127) rather than a graceful degradation. A
+# `while read` loop reading from process substitution works identically on
+# bash 3.2 and 4+.
+FILES=()
+while IFS= read -r _found_file; do
+  FILES+=("$_found_file")
+done < <(find "${SCAN_DIRS[@]}" -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
 
 if [ "${#FILES[@]}" -eq 0 ]; then
   echo "lint_dead_code_after_fail.sh error: file enumeration under '${SCAN_DIRS[*]}' yielded zero files." >&2
