@@ -179,6 +179,33 @@ jobs:
       - name: Report corpus digest (cross-platform byte-identity evidence)
         run: bash scripts/corpus_digest.sh
 
+      # 03-19 gap closure: the digest reported above is only evidence until
+      # something asserts on it. Task 1's real-run evidence (run 33983460934,
+      # quoted in 03-19-SUMMARY.md) showed cross-platform byte-identity does
+      # NOT hold under the pin -- x64-linux and x64-windows-static-md agree
+      # byte-for-byte on all 80 fixtures, arm64-osx diverges on 76 of them.
+      # The developer confirmed the `designated` policy at 03-19's Task 2
+      # checkpoint: the byte-exact fixture-derived goldens (and this
+      # committed digest) are pinned to x64-linux only. Every other leg
+      # still builds and runs the rest of the suite; it just does not carry
+      # this specific guarantee, and says so out loud rather than silently
+      # omitting it. CI never writes tests/golden/CORPUS_DIGEST.txt -- a
+      # mismatch on the designated leg is a hard failure exactly as a golden
+      # mismatch is (tests/golden/README.md's "CI never sets UPDATE_GOLDENS"
+      # rule, T-3-92).
+      - name: Assert the corpus digest matches the committed pin (D-GAP-01)
+        run: |
+          DESIGNATED_LEG="x64-linux"
+          if [ "${{ matrix.preset }}" = "$DESIGNATED_LEG" ]; then
+            if ! diff -u tests/golden/CORPUS_DIGEST.txt <(bash scripts/corpus_digest.sh); then
+              echo "::error::corpus digest on the designated leg ($DESIGNATED_LEG) no longer matches the committed tests/golden/CORPUS_DIGEST.txt (diff printed above). This is a hard failure under D-GAP-01 -- CI never rewrites this file."
+              exit 1
+            fi
+            echo "Corpus digest on the designated leg ($DESIGNATED_LEG) matches the committed tests/golden/CORPUS_DIGEST.txt."
+          else
+            echo "This leg (${{ matrix.preset }}) is NOT the designated leg ($DESIGNATED_LEG) for tests/golden/CORPUS_DIGEST.txt (03-19: the pinned ffmpeg builds do not produce byte-identical fixtures across platforms -- see 03-19-SUMMARY.md). This leg's corpus is deliberately NOT asserted against the committed digest."
+          fi
+
       - name: Install mono for vcpkg's NuGet client (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get install -y mono-complete
@@ -325,7 +352,44 @@ jobs:
             exit 1
           fi
           echo "ctest discovered $TOTAL tests in $TEST_DIR."
-          ctest --test-dir "$TEST_DIR" --output-on-failure
+
+          # 03-19 gap closure, `designated` policy branch. The byte-exact
+          # fixture-derived golden tests below are baselined on x64-linux CI
+          # runner bytes only (see the digest-assertion step above and
+          # 03-19-SUMMARY.md's per-leg evidence: arm64-osx diverges on 76 of
+          # 80 fixtures under the same nominal ffmpeg pin). Running them on a
+          # non-designated leg would compare against bytes that leg's own
+          # pinned ffmpeg cannot produce, so they are excluded there by name
+          # — never by loosening the assertion itself (D-GAP-01) — and the
+          # exclusion is named, counted, and guarded against silently
+          # widening, mirroring the reasoning the "Total Tests:" guard above
+          # already applies to itself: an exclusion that quietly grows is the
+          # same defect class as a gate that quietly stops gating.
+          DESIGNATED_LEG="x64-linux"
+          EXCLUDED_TEST_REGEX='unit\.inspect_container - golden:|unit\.ts_scan_golden - ts_(204|multiprogram|single)\.ts matches|integration\.size_checks - the size\.\* findings are pinned'
+          EXPECTED_EXCLUDED_COUNT=5
+
+          if [ "${{ matrix.preset }}" = "$DESIGNATED_LEG" ]; then
+            ctest --test-dir "$TEST_DIR" --output-on-failure
+          else
+            FILTERED_TOTAL=$(ctest --test-dir "$TEST_DIR" -N -E "$EXCLUDED_TEST_REGEX" | sed -n 's/^Total Tests: \([0-9][0-9]*\)$/\1/p' || true)
+            if [ -z "$FILTERED_TOTAL" ]; then
+              echo "::error::could not parse a filtered test count from 'ctest -N -E' in $TEST_DIR — refusing to assume the exclusion applied correctly."
+              exit 1
+            fi
+            EXCLUDED_COUNT=$((TOTAL - FILTERED_TOTAL))
+            if [ "$EXCLUDED_COUNT" -ne "$EXPECTED_EXCLUDED_COUNT" ]; then
+              echo "::error::the byte-exact-golden exclusion regex now matches $EXCLUDED_COUNT tests, expected exactly $EXPECTED_EXCLUDED_COUNT — it now excludes a different set of tests than it was written for, which is the same defect class as a gate that quietly stops gating."
+              exit 1
+            fi
+            echo "Excluding $EXCLUDED_COUNT byte-exact fixture-derived golden test(s) on this non-designated leg (${{ matrix.preset }}) — the pinned ffmpeg build for this runner and for the designated leg ($DESIGNATED_LEG) do not produce byte-identical fixtures, so these are asserted on $DESIGNATED_LEG only (D-GAP-01, 03-19):"
+            echo "  - unit.inspect_container - golden: the container+meta section for one representative fixture per family"
+            echo "  - unit.ts_scan_golden - ts_204.ts matches the committed TSDuck-derived golden"
+            echo "  - unit.ts_scan_golden - ts_multiprogram.ts matches the committed TSDuck-derived golden"
+            echo "  - unit.ts_scan_golden - ts_single.ts matches the committed TSDuck-derived golden"
+            echo "  - integration.size_checks - the size.* findings are pinned by a committed, read-only golden"
+            ctest --test-dir "$TEST_DIR" --output-on-failure -E "$EXCLUDED_TEST_REGEX"
+          fi
 
       # CLI-09's remaining checkpoint needs a real Windows console, which CI
       # structurally cannot provide: Actions redirects stdout to a pipe, so
