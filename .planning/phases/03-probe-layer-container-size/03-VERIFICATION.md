@@ -12,7 +12,7 @@ re_verification:
     - "Gap 1 (SC2, CR-01/CR-02): container.mp4.fragment_duration's raw int64 DTS-delta subtraction and non-strict-weak-order sort comparator — reachable UB from crafted input. Closed by 03-13: detail::compute_median_fragment_duration routes every delta through detail::checked_sub and orders by raw same-timebase tick value (a total order that cannot overflow). Verified: 11 new unit tests exercising extreme-DTS inputs pass; independently confirmed via direct code read (grep -c 'checked_sub' + absence of 'compare_ticks_checked' + absence of the raw subtraction, all as claimed); fragment_duration's value/evidence on mp4_fragmented.mp4 confirmed byte-identical pre/post fix per 03-13-SUMMARY.md."
     - "Gap 2 (SC3/SC4/DIR-06, CR-04): unchecked megabytes-to-bytes and seconds-to-milliseconds multiplication on --probe-memory-budget-mb/--probe-timeout (and their [probe] TOML counterparts), overflowing to a negative budget that silently blanked every size.* check at exit 0, or produced a spurious immediate timeout at exit 65. Closed by 03-12: resolve_probe_memory_budget_bytes + a hardened resolve_probe_timeout_ms, both routed through detail::checked_mul with named-maximum usage errors (exit 64), applied at all FOUR command entry points including a 5th, previously-unlisted defect site in snapshot.cpp. Independently reproduced this verification round: both of 03-VERIFICATION.md's original repro commands now exit 64 with a bound-naming diagnostic (CLI11's own Range check fires first); the accepted-maximum budget still produces a real size.stream_bitrate finding (0 partial_scan hits)."
   gaps_remaining:
-    - "Gap 3 (SC5, TRUST-06 CI wiring) is NOT closed, though its originally-diagnosed mechanism is fixed. 03-14 wired scripts/gen_corpus.sh + a new scripts/check_corpus.sh preflight into all 5 CI legs before Configure, and a real CI run (PR #3, run 33951407521, independently confirmed via `gh run view` to have concluded failure) proves the corpus now generates successfully on every leg. But that same real run exposed two blocking-leg failures unrelated to the corpus that leave SC5's 'comes back clean as a CI release blocker' still false: x64-windows-static-md fails to even BUILD (src/probe/ebml_scan.cpp:348, a NOMINMAX/std::max macro clash — confirmed via direct code read that NOMINMAX is defined nowhere in this project's own sources), and x64-linux fails 5/620 tests (unit.inspect_container, ts_scan_golden x3, integration.size_checks) because the committed byte-level goldens were captured against a different local ffmpeg build than the ffmpeg 9.0.1 CI actually installs. Both are tracked as WINDOWS.md #9/#10, both open, both outside 03-14's declared files_modified by the plan's own explicit scoping. TRUST-06 itself has still never been confirmed to execute and pass on any real CI leg — it was not among the 5 x64-linux failures, but this was not independently re-confirmed against the run log by 03-14's own SUMMARY, and the Windows leg never reaches the Test step at all."
+    - "Gap 3 (SC5, TRUST-06 CI wiring) is NOT closed, though its originally-diagnosed mechanism is fixed. 03-14 wired scripts/gen_corpus.sh + a new scripts/check_corpus.sh preflight into all 5 CI legs before Configure, and a real CI run (PR #3, run 33951407521, independently confirmed via `gh run view` to have concluded failure) proves the corpus GENERATION step itself now succeeds on every leg — CORRECTED by 03-20 (see 03-20-SUMMARY.md): this same run did NOT verify cleanly on every leg it reached; the two macOS legs (arm64-osx, x64-osx) failed at the 'Verify the fixture corpus is complete' step itself (check_corpus.sh's bash-4-only mapfile builtin, exit 127, WINDOWS.md #15/#12/#13 as later split out) — a fourth defect this verification round did not record anywhere. All five build legs failed in run 33951407521, not two: x64-windows-static-md (NOMINMAX/std::max C2059), x64-linux (5 golden tests, ffmpeg-version drift), arm64-osx and x64-osx (bash-3.2 corpus-verify crash), and arm64-linux (non-blocking NuGet feed credential failure, WINDOWS.md #11). The ffmpeg version this entry originally attributed to CI's apt install (9.0.1) was also wrong — CI's apt-installed ffmpeg was actually 6.1.1-3ubuntu5; corrected in WINDOWS.md #10 by 03-20. Real CI run 33990099158 (03-20) proves the bash-3.2 fix at runtime: arm64-osx's corpus generation AND verification steps both concluded success."
   regressions: []
 gaps:
   - truth: "Encoding a fixture twice with identical settings and comparing under sw-encoder comes back clean as a CI release blocker (ROADMAP SC5)."
@@ -25,9 +25,22 @@ gaps:
       all five matrix legs, and this was proven on a real, non-simulated CI run (PR #3, run
       33951407521; independently re-confirmed this round via `gh run view 33951407521` returning
       conclusion=failure, i.e. the run is real and its failure is real, not fabricated). That run
-      showed the corpus itself generated and verified cleanly on every leg it reached.
-      However, the same real run shows the CI matrix is NOT green on 2 of its 3 blocking legs, for
-      reasons that directly undermine "comes back clean as a CI release blocker":
+      showed the corpus GENERATION step succeeding on every leg it reached.
+      **CORRECTION (03-20, see 03-20-SUMMARY.md):** the sentence above originally made a stronger,
+      false claim about corpus verification succeeding uniformly across every leg the run reached.
+      In run 33951407521 the two
+      macOS legs (arm64-osx, x64-osx) failed AT the "Verify the fixture corpus is complete" step
+      itself (check_corpus.sh's bash-4-only `mapfile` builtin does not exist on macOS's system bash
+      3.2, exit 127) — a fourth defect this verification round did not record in any ledger. All five
+      build legs failed in run 33951407521, not the two described below: x64-windows-static-md
+      (NOMINMAX/std::max C2059), x64-linux (5 golden tests, ffmpeg-version drift), arm64-osx and
+      x64-osx (the bash-3.2 corpus-verify crash just described), and arm64-linux (non-blocking NuGet
+      feed credential failure, WINDOWS.md #11). The ffmpeg version this report named below (9.0.1 via
+      apt) was also wrong — CI's apt-installed ffmpeg was actually 6.1.1-3ubuntu5, corrected in
+      WINDOWS.md #10 by 03-20.
+      Restricting to the ORIGINAL two defects this report focused on, the same real run shows the CI
+      matrix is NOT green on 2 of its 3 blocking legs, for reasons that directly undermine "comes back
+      clean as a CI release blocker":
         (a) x64-windows-static-md fails at the Build step, before Test ever runs: `error C2059:
             syntax error: ')'` on `std::max(1.0, std::abs(value))` at src/probe/ebml_scan.cpp:348,
             because windows.h's `max` macro clobbers `std::max` (NOMINMAX is undefined anywhere in
@@ -39,15 +52,25 @@ gaps:
         (b) x64-linux fails 5 of 620 tests — unit.inspect_container, ts_scan_golden (ts_204,
             ts_multiprogram, ts_single), integration.size_checks — because the committed byte-level
             goldens were generated against a local ffmpeg master snapshot
-            (N-126086-ge5ecfe8970-20260812) while CI's own install step provisions ffmpeg 9.0.1;
-            different muxer output invalidates byte-identical goldens across builds. This is the
-            exact CI leg CI treats as blocking, and it is currently red.
+            (N-126086-ge5ecfe8970-20260812) while CI's own install step provisions ffmpeg 6.1.1-3ubuntu5
+            via apt (corrected by 03-20; this report originally and incorrectly named the version as
+            9.0.1); different muxer output invalidates byte-identical goldens across builds. This is
+            the exact CI leg CI treats as blocking, and it is currently red.
       Neither defect is a corpus-generation problem — both are new-to-CI evidence the corpus fix
       itself surfaced, tracked as WINDOWS.md #9 (open) and #10 (open) — but their net effect is that
       SC5's own wording ("comes back clean as a CI release blocker") remains unmet: a release blocker
       that cannot build on one required leg and fails 5 tests on another required leg is not, in
       fact, functioning as a clean release blocker yet. 03-14-SUMMARY.md itself states this
       explicitly and does not claim otherwise ("Full five-leg green was NOT achieved").
+      **Status as of 03-20 (real CI run 33990099158, head 1b684de):** WINDOWS.md #9 (NOMINMAX) and
+      the macOS bash-3.2 defect are both fixed and observed fixed on real CI. x64-linux is green with
+      both TRUST-06 cases observed Passed. Two blocking legs still fail at Build for reasons unrelated
+      to this report's original two defects: arm64-osx now fails on WINDOWS.md #13 (AppleClang
+      -Werror,-Wunused-const-variable in tests/unit/test_ebml_scan.cpp:89, open, out of 03-20's scope)
+      and x64-windows-static-md now fails on a newly discovered defect, WINDOWS.md #16
+      (src/cli/main.cpp:297 calls report_cli_error unqualified outside namespace mediadiff, open, out
+      of 03-20's scope). SC5 therefore remains unmet — see 03-20-SUMMARY.md for the full, current
+      evidence and status.
     artifacts:
       - path: src/probe/ebml_scan.cpp
         issue: "Line 348: std::max(1.0, std::abs(value)) fails to compile under MSVC because NOMINMAX is undefined anywhere in the project, so windows.h's max macro clobbers std::max (WINDOWS.md #9, open). A Phase-3 file (03-06), unrelated to the gap-closure plans' own declared files_modified."
@@ -68,6 +91,21 @@ of recomputing.
 **Verified:** 2026-09-05T07:29:36Z
 **Status:** gaps_found
 **Re-verification:** Yes — after gap-closure plans 03-12 through 03-15
+
+> **Correction note (03-20, 2026-09-05, source: real CI run 33951407521):** this report originally
+> stated two errors, both corrected in the body below. (1) It claimed the fixture corpus "generated
+> and verified cleanly on every leg it reached" — false: the two macOS legs (`arm64-osx`, `x64-osx`)
+> failed AT the corpus-verification step itself (`check_corpus.sh`'s bash-4-only `mapfile` builtin
+> crashing on macOS's system bash 3.2, exit 127), a fourth defect this report recorded nowhere at the
+> time. All five build legs failed in run 33951407521, not the two this report discussed —
+> `x64-windows-static-md` (NOMINMAX/`std::max` C2059), `x64-linux` (5 golden tests), `arm64-osx` and
+> `x64-osx` (the bash-3.2 corpus-verify crash), and `arm64-linux` (non-blocking NuGet-feed credential
+> failure). (2) It named the ffmpeg version CI's apt install provisioned as `9.0.1` — also wrong; the
+> real version, confirmed from that leg's own `ffmpeg -version` output, was `6.1.1-3ubuntu5` (Ubuntu
+> 24.04's packaged build), a two-major-version gap from the local snapshot the goldens were captured
+> against, not the patch drift originally implied. See `.planning/WINDOWS.md` #10 (version correction)
+> and #15 (the newly recorded macOS defect, now fixed and observed fixed on real CI) and
+> `03-20-SUMMARY.md` for the full evidence trail.
 
 ## Goal Achievement
 
