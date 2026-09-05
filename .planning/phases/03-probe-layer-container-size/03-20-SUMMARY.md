@@ -288,6 +288,16 @@ None — no external service configuration required.
 
 Entry #17 (designated-leg narrowed golden coverage) and entry #11 (arm64-linux NuGet credentials) remain open by design — neither is expected to close as part of the SC5 follow-up above.
 
+## Self-Check: PASSED
+
+- FOUND: `.planning/WINDOWS.md`
+- FOUND: `.planning/phases/03-probe-layer-container-size/03-VERIFICATION.md`
+- FOUND: `.planning/phases/03-probe-layer-container-size/03-20-SUMMARY.md`
+- FOUND commit: `e955311` (docs(03-20): record real CI run evidence for SC5)
+- FOUND commit: `51f15d4` (docs(03-20): correct WINDOWS.md and VERIFICATION.md against real CI evidence)
+- Re-ran all plan-level `<verification>` greps: `grep -c 'installs ffmpeg 9.0.1 via apt' WINDOWS.md` = `0`; `grep -c '6.1.1-3ubuntu5' WINDOWS.md` = `2`; `grep -c 'generated and verified cleanly on every leg it reached' 03-VERIFICATION.md` = `0`; `node gsd-tools.cjs windows status` exits `0` with `total_count=17` matching both representations.
+- Note: this plan's OVERALL `<verification>` block (four bullets) requires "all three blocking legs conclude success" — this bullet FAILS on real run `33990099158` (`arm64-osx` and `x64-windows-static-md` both `failure`), and the "four TRUST-06 Passed lines" bullet also FAILS (only 2 observed). Both failures are the plan's actual, evidence-based finding — SC5 is not closed this round, stated plainly in the "SC5 Status" section above, not a self-check defect to silently paper over.
+
 ---
 *Phase: 03-probe-layer-container-size*
 *Completed: 2026-09-05*

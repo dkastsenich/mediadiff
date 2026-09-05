@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 03
 current_phase_name: Probe Layer, Container & Size
 status: executing
-stopped_at: Completed 03-19-PLAN.md
-last_updated: "2026-09-05T20:23:17.212Z"
+stopped_at: Completed 03-20-PLAN.md
+last_updated: "2026-09-05T20:43:11.533Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 03 execution started
-state_head: b0d8fb9403e3ea0354ba1a05c00b013a18778092
+state_head: 51f15d44c04ca01ac69eb834dea62ca22d17db34
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 44
-  completed_plans: 43
+  completed_plans: 44
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (Probe Layer, Container & Size) — EXECUTING
-Plan: 5 of 20
+Plan: 6 of 20
 Status: Ready to execute
 Last activity: 2026-09-05 — Phase 03 execution started
 
@@ -93,6 +93,7 @@ Progress: [█████████░] 92%
 | Phase 03 P17 | 55min | 2 tasks | 6 files |
 | Phase 03 P18 | 45min | 2 tasks | 4 files |
 | Phase 03 P19 | 65min | 3 tasks | 2 files |
+| Phase 03 P20 | 35min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Kept JUnit's backslash-doubling fix local to xml_escape rather than routing through sanitize_for_display — Routing through sanitize_for_display would double-escape the four XML metacharacters and move every committed JUnit golden
 - [Phase 03]: 03-18: comments in the two fixed lints omit the literal words mapfile/readarray so Task 1's raw grep -c acceptance check reports 0; lint_bash4_builtins.sh's own self-matching pattern-def/label/fixture lines carry # bash4-allow so the lint can include itself in scope — check_corpus.sh's verbatim comment mentions the builtin by name and is excluded from this raw grep scope, but the two Task-1 files ARE scanned by the literal grep, so their explanatory comments had to be rephrased without the literal builtin names while restating the same rationale in full
 - [Phase 03]: D-GAP-01 corpus-identity policy: designated (not uniform) — chosen by the developer on Task 1's real-run evidence (run 33983460934): x64-linux/x64-windows-static-md byte-identical on all 80 fixtures, arm64-osx diverging on 76/80; byte-exact fixture-derived goldens are pinned to x64-linux only, exclusion elsewhere is named and counted (EXPECTED_EXCLUDED_COUNT=5), never loosened
+- [Phase 03]: 03-20: SC5 reported NOT closed on direct run-log evidence (run 33990099158) -- 2 of 3 blocking legs green (arm64-osx and x64-windows-static-md both fail at Build for reasons unrelated to TRUST-06, WINDOWS.md #13/#16); only 2 of 4 required trust06_idempotence Passed lines observed since arm64-osx's Test step never runs
+- [Phase 03]: 03-20: WINDOWS.md corrected -- entry #10's ffmpeg-version claim fixed to 6.1.1-3ubuntu5 (not 9.0.1); entry #9 closed on narrow cited evidence (ebml_scan.cpp compiles cleanly under MSVC, not on the false claim that Build succeeded); new entries #15 (macOS bash-3.2 crash, closed), #16 (Windows report_cli_error defect, open, NOT fixed -- out of plan scope), #17 (designated-leg narrowed golden coverage, open)
 
 ### Pending Todos
 
@@ -225,6 +228,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-05T20:23:17.098Z
-Stopped at: Completed 03-19-PLAN.md
+Last session: 2026-09-05T20:43:11.410Z
+Stopped at: Completed 03-20-PLAN.md
 Resume file: None
