@@ -32,6 +32,15 @@
 // this file's own, XML-context-local fix for T-2-33 -- not a call into
 // sanitize_for_display, which would be the wrong context entirely (see
 // above).
+//
+// WR-01 (03-REVIEW.md): the "\xHH" numeric escape above is only half of
+// the disambiguation the display-escaping function named above applies --
+// that function ALSO doubles every literal backslash byte, precisely so a
+// real control byte's escape form and text that literally spells that
+// same escape form never render identically. xml_escape's own
+// `case '\\'` arm below applies that same doubling, matching that
+// function's own ASCII branch exactly, so the parity this file already
+// claimed is now actually true.
 
 namespace mediadiff {
 
@@ -112,6 +121,15 @@ std::string xml_escape(std::string_view text) {
         break;
       case '"':
         out += "&quot;";
+        break;
+      case '\\':
+        // Doubled, not hex-escaped -- mirrors src/util/sanitize.cpp's
+        // display-escaping ASCII branch exactly (see this function's own
+        // comment above and this file's top-of-file comment): without
+        // this, a real control byte's "\xHH" escape and text that
+        // literally spells that same escape form render identically,
+        // which is precisely the WR-01 ambiguity this arm closes.
+        out += "\\\\";
         break;
       default:
         if (c == 0x7F || (c < 0x20 && c != '\t' && c != '\n' && c != '\r')) {
