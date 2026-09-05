@@ -455,3 +455,6 @@ jobs:
 
       - name: Run control-byte escaping choke-point lint (T-2-33)
         run: bash scripts/lint_control_bytes.sh
+
+      - name: Run bash-3.2 portability lint (macOS CI guard)
+        run: bash scripts/lint_bash4_builtins.sh
