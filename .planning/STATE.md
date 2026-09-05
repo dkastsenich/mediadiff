@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v0.6.1
 current_phase: 03
-current_phase_name: probe-layer-container-size
+current_phase_name: Probe Layer, Container & Size
 status: executing
 stopped_at: "Completed 03-14-PLAN.md (CI corpus wiring proven on real CI run PR#3/33951407521; bash-3.2 mapfile fix; findings 2-4 recorded in WINDOWS.md #9-11, out of scope)"
-last_updated: "2026-09-05T07:13:53.775Z"
+last_updated: "2026-09-05T14:34:59.090Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 03 execution started
-state_head: 91d9d2fb21fc69bdf1223aaa038630e5f218c119
+state_head: 1a36159d730e7a9b8d951535d0dbe50696444ce2
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 39
+  total_plans: 44
   completed_plans: 39
 milestone_name: milestone
 ---
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 
 ## Current Position
 
-Phase: 03 (probe-layer-container-size) — EXECUTING
+Phase: 03 (Probe Layer, Container & Size) — READY TO EXECUTE
 Plan: 5 of 15
 Status: Ready to execute
 Last activity: 2026-09-04 — Phase 03 execution started
