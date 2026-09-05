@@ -219,13 +219,32 @@ esac
 # --- Resolve ffmpeg_path and guard against archive path traversal -----------
 CANDIDATE_PATH="${INSTALL_DIR}/${PIN_FFMPEG_PATH}"
 REAL_INSTALL_DIR="$(cd "$INSTALL_DIR" && pwd -P)"
-REAL_CANDIDATE_PATH="$(python3 -c "
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-" "$CANDIDATE_PATH")"
 
-case "$REAL_CANDIDATE_PATH" in
-  "${REAL_INSTALL_DIR}"/*) ;;
+# Resolve the candidate's containing directory with the SAME bash-native
+# `cd`+`pwd -P` mechanism used for REAL_INSTALL_DIR above -- not python3's
+# os.path.realpath. On the Windows leg, Git Bash's argv auto-conversion
+# hands a native python3.exe a Windows-style backslash path, so
+# os.path.realpath returns "D:\a\...\ffmpeg.exe" while `pwd -P` (an MSYS
+# builtin that never crosses into a native Windows process) returns
+# "/d/a/.../ffmpeg.exe" for the SAME directory. Comparing those two
+# representations as strings falsely reports every Windows install as an
+# escaped path (observed: CI run 33979976185, build (x64-windows-static-md)).
+# Resolving BOTH sides through the identical bash mechanism keeps the
+# representation consistent regardless of which style it happens to be.
+CANDIDATE_DIR="$(dirname "$CANDIDATE_PATH")"
+CANDIDATE_BASENAME="$(basename "$CANDIDATE_PATH")"
+
+if [ ! -d "$CANDIDATE_DIR" ]; then
+  echo "install_pinned_ffmpeg.sh error: expected directory '${CANDIDATE_DIR}' (from ffmpeg_path '${PIN_FFMPEG_PATH}') does not exist after extraction." >&2
+  echo "Refusing to invoke it -- the archive did not contain the expected ffmpeg_path recorded in scripts/ffmpeg_pin.json." >&2
+  exit 1
+fi
+
+REAL_CANDIDATE_DIR="$(cd "$CANDIDATE_DIR" && pwd -P)"
+REAL_CANDIDATE_PATH="${REAL_CANDIDATE_DIR}/${CANDIDATE_BASENAME}"
+
+case "$REAL_CANDIDATE_DIR" in
+  "$REAL_INSTALL_DIR"|"${REAL_INSTALL_DIR}"/*) ;;
   *)
     echo "install_pinned_ffmpeg.sh error: resolved ffmpeg_path '${PIN_FFMPEG_PATH}' escapes the extraction directory (resolved to ${REAL_CANDIDATE_PATH})." >&2
     echo "Refusing to invoke a binary outside the archive's own extraction directory -- this is the traversal T-3-79 mitigates." >&2
