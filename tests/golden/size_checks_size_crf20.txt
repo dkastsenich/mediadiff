@@ -1,6 +1,6 @@
-size.file global 345720
-size.overhead global num=2692 den=345720
-size.peak_bitrate audio[0] num=59552 den=1
+size.file global 351486
+size.overhead global num=2700 den=351486
+size.peak_bitrate audio[0] num=71744 den=1
 size.peak_bitrate video[0] num=1529664 den=1
-size.stream_bitrate audio[0] num=4183149600 den=89088
+size.stream_bitrate audio[0] num=6214572000 den=89088
 size.stream_bitrate video[0] num=33911910400 den=25088
