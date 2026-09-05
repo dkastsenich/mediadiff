@@ -59,7 +59,14 @@ extract_expected_names() {
     | sort -u
 }
 
-mapfile -t EXPECTED < <(extract_expected_names "$GEN_SCRIPT")
+# Portable in place of `mapfile -t` (bash 4+ only): macOS ships bash 3.2,
+# where `mapfile`/`readarray` do not exist at all and fail with "command not
+# found" (exit 127) rather than a graceful degradation. A `while read` loop
+# reading from process substitution works identically on bash 3.2 and 4+.
+EXPECTED=()
+while IFS= read -r _expected_name; do
+  EXPECTED+=("$_expected_name")
+done < <(extract_expected_names "$GEN_SCRIPT")
 
 # --- Zero-file guard: extraction must yield at least one expected name -----
 if [ "${#EXPECTED[@]}" -eq 0 ]; then
