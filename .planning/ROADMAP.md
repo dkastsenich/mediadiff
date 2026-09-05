@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 16/20 plans executed (15/20 executed; 5 further gap-closure plans added after re-verification left ROADMAP SC5 open)
+**Plans**: 17/20 plans executed (15/20 executed; 5 further gap-closure plans added after re-verification left ROADMAP SC5 open)
 
 Plans:
 **Wave 1**
@@ -234,7 +234,7 @@ Plans:
 
 **Wave 15** *(gap closure round 2 — blocked on Wave 14; two independent plans, zero file overlap)*
 
-- [ ] 03-17-PLAN.md — D-GAP-02 (a)+(d): suppress the Windows min/max macros for every first-party target so the MSVC leg builds, add the standard header ebml_scan actually needs, and make the JUnit escaper's control-byte output unambiguous (CONT-06, CONT-02, CONT-03, CONT-04)
+- [x] 03-17-PLAN.md — D-GAP-02 (a)+(d): suppress the Windows min/max macros for every first-party target so the MSVC leg builds, add the standard header ebml_scan actually needs, and make the JUnit escaper's control-byte output unambiguous (CONT-06, CONT-02, CONT-03, CONT-04)
 - [ ] 03-18-PLAN.md — D-GAP-02 (c): remove the last bash-4-only builtins from `scripts/` and add a permanent bash-3.2 portability gate to the required lint job (TRUST-06, DOC-03)
 
 **Wave 16** *(gap closure round 2 — blocked on Wave 15)*
@@ -324,7 +324,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
-| 3. Probe Layer, Container & Size | 16/20 | In Progress|  |
+| 3. Probe Layer, Container & Size | 17/20 | In Progress|  |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |
