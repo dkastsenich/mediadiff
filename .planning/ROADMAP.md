@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 20/20 plans executed (15/20 executed; 5 further gap-closure plans added after re-verification left ROADMAP SC5 open)
+**Plans**: 22 plans (20/22 executed; 2 further gap-closure plans added after gap-closure round 2's re-verification left ROADMAP SC5 open on two one-line source defects)
 
 Plans:
 **Wave 1**
@@ -244,6 +244,14 @@ Plans:
 **Wave 17** *(gap closure round 2 — blocked on Wave 16)*
 
 - [x] 03-20-PLAN.md — Close SC5 on observed run-log evidence (three blocking legs green, TRUST-06 passing on x64-linux and arm64-osx) and correct the stale WINDOWS.md / 03-VERIFICATION.md records (TRUST-06, DOC-03)
+
+**Wave 18** *(gap closure round 3 — TRACER: the two blocking-leg build defects proven end-to-end from source edit to observed CI Build conclusions before any expansion)*
+
+- [ ] 03-21-PLAN.md — Remove the unused `kClusterId` constant's AppleClang `-Werror` failure by giving it the untested unknown-size-Cluster case it was meant for, qualify `report_cli_error` inside `wmain` for MSVC, close code-review WR-01 (two lint-gate bypasses plus per-check self-test fixtures) and WR-02 (tar.xz path-traversal validation), then drive all three blocking legs to Build success and a reached Test step (TRUST-06, PROBE-05)
+
+**Wave 19** *(gap closure round 3 — blocked on Wave 18)*
+
+- [ ] 03-22-PLAN.md — Close SC5 on observed run-log evidence (four `trust06_idempotence` Passed lines on x64-linux and arm64-osx, and the x64-windows-static-md Test step concluding for the first time in this phase's history), then reconcile the WINDOWS.md defect ledger and the REQUIREMENTS.md TRUST-06 status against that evidence (TRUST-06, TRUST-09, DOC-03)
 
 **Source doc**: `claude_docs/02-container-analysis.md` (design-doc phase 2), plus `size.*` from `claude_docs/06-content-and-size-analysis.md` §4
 
