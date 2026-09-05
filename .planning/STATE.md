@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 03
 current_phase_name: probe-layer-container-size
 status: executing
-stopped_at: "Completed 03-15-PLAN.md (T-2-33 genuinely closed: JUnit XML control-byte escaping, one CLI diagnostic sink, corrected 02-SECURITY.md record) -- Phase 3 gap-closure complete"
-last_updated: "2026-09-04T19:47:47.104Z"
+stopped_at: "Completed 03-14-PLAN.md (CI corpus wiring proven on real CI run PR#3/33951407521; bash-3.2 mapfile fix; findings 2-4 recorded in WINDOWS.md #9-11, out of scope)"
+last_updated: "2026-09-05T07:13:53.775Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 03 execution started
-state_head: b1c5d28ad8783c16e7d9e8679774c15bdfc74097
+state_head: 91d9d2fb21fc69bdf1223aaa038630e5f218c119
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 39
-  completed_plans: 38
+  completed_plans: 39
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (probe-layer-container-size) — EXECUTING
-Plan: 4 of 15
+Plan: 5 of 15
 Status: Ready to execute
 Last activity: 2026-09-04 — Phase 03 execution started
 
@@ -88,6 +88,7 @@ Progress: [█████████░] 92%
 | Phase 03 P12 | 55min | 3 tasks | 14 files |
 | Phase 03 P13 | 55min | 3 tasks | 7 files |
 | Phase 03 P15 | 30min | 3 tasks | 17 files |
+| Phase 03 P14 | 60min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -183,6 +184,7 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-13: Same-timebase tick-value ordering replaces compare_ticks_checked in container.mp4.fragment_duration's median (CR-02) -- valid because every duration compared shares one already-positive-validated timebase by construction, never a general substitute for cross-timebase comparisons
 - [Phase 03]: 03-13: WR-02 (ts.cpp byte-offset checked_sub) and WR-03 (pass.h/orchestrator.cpp stale ts_scan consumer comments) fixed in the same plan as CR-01/CR-02 since both touch files this plan already opened; sanitizer (ASan/UBSan) build remains deferred per this plan's own flagged_assumptions
 - [Phase 03]: [Phase 03, 03-15]: T-2-33 completed across every output format -- xml_escape's own \xHH escaping closes JUnit XML (CR-03, no XML numeric character reference, which is equally illegal); one CLI diagnostic sink (report_cli_error) closes the 44-site stderr gap (WR-01); lint scan-list generalized + a second stderr-sink rule closes IN-02; 02-SECURITY.md corrected (not re-marked) to show the 03-11 closure was premature
+- [Phase 03]: 03-14: Fixed check_corpus.sh's mapfile (bash-4-only) with a while-read loop for macOS bash 3.2 compatibility -- confirmed necessary by a real CI run (PR #3, run 33951407521); findings 2-4 (ebml_scan.cpp NOMINMAX clash, ffmpeg-version-drifted goldens, vcpkg NuGet feed credentials) are out of scope, recorded in WINDOWS.md #9-#11, not fixed
 
 ### Pending Todos
 
@@ -194,7 +196,7 @@ None yet.
 - **Priming extraction spike is open.** Research flagged (v2 EXT-05) whether lightweight audio-priming extraction from container metadata is feasible ahead of the Phase 6 decode path. Until answered, Phase 5's `timeline.av_offset`/`av_drift` ship with `priming: unknown` on the common case — covered by TIME-10 fixtures, not closed.
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
-- scripts/gen_corpus.sh is never invoked in .github/workflows/ci.yml for Linux/macOS -- only the Windows gen_corpus.ps1 check runs; every corpus-dependent integration test would fail on a real CI run on 4 of 5 matrix legs until a fixture-generation step is added (WINDOWS.md #8, predates Phase 3)
+- **RESOLVED by 03-14 (real CI evidence, PR #3, run 33951407521; WINDOWS.md #8 marked fixed).** `scripts/gen_corpus.sh` is now invoked, unconditionally, before `Configure` on every matrix leg. **Correction to the original scope:** the gap covered all 5 legs, not 4 — the Windows leg's `gen_corpus.ps1` generated zero fixtures and ran after `Test`, so the `Test` step ran without media fixtures on every leg, not just Linux/macOS. The real run confirmed the corpus steps execute in the correct order on all five legs; the macOS legs' only failure was `check_corpus.sh`'s own bash-3.2 incompatibility (`mapfile`), fixed same-plan (`91d9d2f`). Full five-leg green is **not yet achieved**: x64-windows-static-md and x64-linux both fail for reasons unrelated to the corpus (WINDOWS.md #9: `ebml_scan.cpp:348` NOMINMAX/`std::max` macro clash on MSVC; WINDOWS.md #10: committed byte-level goldens generated against a different ffmpeg build than CI's installed 9.0.1). arm64-linux's non-blocking `Register vcpkg NuGet feed` credentials failure is WINDOWS.md #11. BUILD-01/BUILD-05/BUILD-06 (below) remain unproven pending a fully green run.
 
 ### Quick Tasks Completed
 
@@ -213,6 +215,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-04T19:47:46.988Z
-Stopped at: Completed 03-15-PLAN.md (T-2-33 genuinely closed: JUnit XML control-byte escaping, one CLI diagnostic sink, corrected 02-SECURITY.md record) -- Phase 3 gap-closure complete
+Last session: 2026-09-05T07:13:53.666Z
+Stopped at: Completed 03-14-PLAN.md (CI corpus wiring proven on real CI run PR#3/33951407521; bash-3.2 mapfile fix; findings 2-4 recorded in WINDOWS.md #9-11, out of scope)
 Resume file: None
