@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 15/15 plans executed (11/11 executed; 4 gap-closure plans added after verification found 3 blocking gaps)
+**Plans**: 20 plans (15/20 executed; 5 further gap-closure plans added after re-verification left ROADMAP SC5 open)
 
 Plans:
 **Wave 1**
@@ -227,6 +227,23 @@ Plans:
 - [x] 03-13-PLAN.md — GAP 1: remove the reachable UB in `container.mp4.fragment_duration` (checked deltas, a total order that cannot overflow) plus an extreme-DTS regression test (CONT-05, PROBE-09)
 - [x] 03-14-PLAN.md — GAP 3: generate and verify the media corpus before the Test step on every CI leg, so TRUST-06 can actually run as a release blocker (TRUST-06, DOC-03)
 - [x] 03-15-PLAN.md — Complete the T-2-33 choke point: control-byte-safe JUnit XML, one sanitizing CLI diagnostic helper, lint scan list corrected (CONT-03, CONT-04)
+
+**Wave 14** *(gap closure round 2 — blocked on Wave 13; TRACER: one blocking leg proven green end-to-end on real CI before expansion)*
+
+- [ ] 03-16-PLAN.md — SC5/D-GAP-01: pin the fixture-synthesis ffmpeg by URL + SHA-256 on all five legs, re-baseline the fixture-derived goldens once against that build, prove x64-linux green on a real run with TRUST-06 observed passing (TRUST-06, TRUST-09, DOC-03)
+
+**Wave 15** *(gap closure round 2 — blocked on Wave 14; two independent plans, zero file overlap)*
+
+- [ ] 03-17-PLAN.md — D-GAP-02 (a)+(d): suppress the Windows min/max macros for every first-party target so the MSVC leg builds, add the standard header ebml_scan actually needs, and make the JUnit escaper's control-byte output unambiguous (CONT-06, CONT-02, CONT-03, CONT-04)
+- [ ] 03-18-PLAN.md — D-GAP-02 (c): remove the last bash-4-only builtins from `scripts/` and add a permanent bash-3.2 portability gate to the required lint job (TRUST-06, DOC-03)
+
+**Wave 16** *(gap closure round 2 — blocked on Wave 15)*
+
+- [ ] 03-19-PLAN.md — Prove or disprove cross-platform corpus byte-identity under the pin from real per-leg digests, then make the confirmed policy a standing CI gate (TRUST-06, TRUST-09, DOC-03)
+
+**Wave 17** *(gap closure round 2 — blocked on Wave 16)*
+
+- [ ] 03-20-PLAN.md — Close SC5 on observed run-log evidence (three blocking legs green, TRUST-06 passing on x64-linux and arm64-osx) and correct the stale WINDOWS.md / 03-VERIFICATION.md records (TRUST-06, DOC-03)
 
 **Source doc**: `claude_docs/02-container-analysis.md` (design-doc phase 2), plus `size.*` from `claude_docs/06-content-and-size-analysis.md` §4
 
