@@ -172,6 +172,7 @@ target_compile_definitions(mediadiff_integration_tests PRIVATE
 # before the executable it spawns exists.
 add_dependencies(mediadiff_integration_tests mediadiff)
 mediadiff_apply_warnings(mediadiff_integration_tests)
+mediadiff_apply_platform_definitions(mediadiff_integration_tests)
 
 include(CTest)
 include(Catch)

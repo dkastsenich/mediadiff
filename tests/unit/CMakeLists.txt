@@ -209,6 +209,7 @@ add_executable(mediadiff_unit_tests
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain Threads::Threads)
 mediadiff_apply_warnings(mediadiff_unit_tests)
+mediadiff_apply_platform_definitions(mediadiff_unit_tests)
 add_dependencies(mediadiff_unit_tests generate_test_registry)
 
 # tests/process_spawn.h is shared with mediadiff_integration_tests (see that

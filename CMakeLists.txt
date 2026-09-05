@@ -258,6 +258,24 @@ endfunction()
 
 mediadiff_apply_warnings(libmediadiff)
 
+# --- Windows platform macro suppression on first-party targets only --------
+function(mediadiff_apply_platform_definitions target)
+  if(WIN32)
+    # The Windows SDK headers (<windows.h>, transitively included by
+    # src/util/fs.h on _WIN32) define function-like `min`/`max` macros that
+    # shadow the standard <algorithm> templates. That shadowing broke the
+    # x64-windows-static-md leg's Build step with
+    # `error C2059: syntax error: ')'` on `std::max(1.0, std::abs(value))`
+    # at src/probe/ebml_scan.cpp:348 in CI run 33951407521. Suppressing the
+    # macros PRIVATE, per first-party target, means no third-party
+    # translation unit's expectations change -- only this project's own
+    # sources ever see the definition.
+    target_compile_definitions(${target} PRIVATE NOMINMAX)
+  endif()
+endfunction()
+
+mediadiff_apply_platform_definitions(libmediadiff)
+
 # --- mediadiff executable ----------------------------------------------------
 add_executable(mediadiff
   src/cli/main.cpp
@@ -278,6 +296,7 @@ add_executable(mediadiff
 )
 target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11 Threads::Threads)
 mediadiff_apply_warnings(mediadiff)
+mediadiff_apply_platform_definitions(mediadiff)
 
 if(WIN32)
   # UTF-8 active-code-page manifest (D-04, CLI-09) — belt-and-braces

@@ -1,5 +1,6 @@
 #include "probe/ebml_scan.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
