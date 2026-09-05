@@ -125,23 +125,22 @@ jobs:
           choco install nasm -y --no-progress
           echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
 
-      - name: Install system ffmpeg for fixture synthesis (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y ffmpeg
-          ffmpeg -version | head -n1
-
-      - name: Install system ffmpeg for fixture synthesis (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ffmpeg
-          ffmpeg -version | head -n1
-
-      - name: Install system ffmpeg for fixture synthesis (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install ffmpeg -y --no-progress
-          ffmpeg -version | head -n1
+      # Downloads a checksum-pinned ffmpeg build (URL + SHA-256 recorded in
+      # scripts/ffmpeg_pin.json) instead of installing from a rolling
+      # distribution channel (apt/brew/choco) — replaces the three OS-scoped
+      # per-OS system-ffmpeg install steps that used to live here.
+      # D-GAP-01: the Linux leg used to install
+      # `6.1.1-3ubuntu5` from apt while the committed goldens were captured
+      # against a local master snapshot, so five fixture-derived goldens
+      # failed on the blocking x64-linux leg — three rolling channels each
+      # bump on their own schedule, and no one committed golden set can
+      # satisfy all three at once. No `if:`, no `continue-on-error:`: an
+      # input a release blocker depends on must not be skippable, and a
+      # checksum mismatch or an unrecognised runner aborts non-zero with no
+      # fallback (scripts/install_pinned_ffmpeg.sh never uses a system or
+      # rolling-channel ffmpeg when the pinned download fails).
+      - name: Install the pinned ffmpeg build (D-GAP-01)
+        run: bash scripts/install_pinned_ffmpeg.sh
 
       # Every media fixture is git-ignored and untracked (tests/fixtures/*,
       # .gitignore), so a fresh checkout has none of them. TRUST-06's
@@ -158,11 +157,27 @@ jobs:
       # below are unconditional on every leg — no matrix condition, no
       # failure tolerance — because a release blocker whose inputs can be
       # skipped is not a release blocker.
+      #
+      # The generating ffmpeg is now pinned by URL and SHA-256 in
+      # scripts/ffmpeg_pin.json (D-GAP-01) rather than installed from a
+      # rolling channel: the determinism guarantee the corpus rests on
+      # (`+bitexact` for a GIVEN encoder build) is worthless if the
+      # generating build itself drifts out from under the committed
+      # goldens every time a distribution ships a new package.
       - name: Generate media fixture corpus (BUILD-08 / D-08)
         run: bash scripts/gen_corpus.sh
 
       - name: Verify the fixture corpus is complete
         run: bash scripts/check_corpus.sh
+
+      # Prints a per-fixture SHA-256 listing and a single
+      # CORPUS_DIGEST_SUMMARY= line per leg (T-3-82) — the raw material for
+      # measuring cross-platform corpus byte-identity from run-log evidence
+      # rather than assuming it (this plan's <flagged_assumptions> A1: a
+      # pinned nominal ffmpeg version does not by itself guarantee
+      # byte-identical fixtures across platforms/binaries).
+      - name: Report corpus digest (cross-platform byte-identity evidence)
+        run: bash scripts/corpus_digest.sh
 
       - name: Install mono for vcpkg's NuGet client (Linux)
         if: runner.os == 'Linux'
@@ -340,9 +355,12 @@ jobs:
       # generator. Proves the version-gate failure branch (deferred here
       # explicitly by Plan 04, since the shell variant's equivalent branch
       # is already proven) and cross-checks the manifest key order Plan 04
-      # recorded. ffmpeg is already installed and on PATH from the
-      # "Install system ffmpeg for fixture synthesis (Windows)" step earlier
-      # in this job (03-14-PLAN.md) — no separate install needed here.
+      # recorded. The pinned ffmpeg is already installed and on PATH from
+      # the "Install the pinned ffmpeg build (D-GAP-01)" step earlier in
+      # this job (03-16-PLAN.md) — no separate install needed here. That
+      # step appends the pinned binary's directory to GITHUB_PATH
+      # specifically so this step's positive path (which clears
+      # MEDIADIFF_FFMPEG and then requires ffmpeg on PATH) still finds one.
       - name: PowerShell corpus generator version-gate and manifest-order cross-check (Windows, owed to Plan 04)
         if: matrix.preset == 'x64-windows-static-md'
         shell: pwsh

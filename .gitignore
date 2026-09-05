@@ -46,3 +46,8 @@ tests/fixtures/*
 
 # GSD runtime sentinels (dispatch isolation state) — machine-local, never committed
 /.gsd/
+
+# Extracted pinned ffmpeg build (D-GAP-01, scripts/install_pinned_ffmpeg.sh):
+# a downloaded, checksum-verified binary, never committed — the pin itself
+# (URL + SHA-256) lives in the tracked scripts/ffmpeg_pin.json.
+/.ffmpeg-pinned/
