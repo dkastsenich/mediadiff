@@ -355,3 +355,97 @@ TEST_CASE("junit - a document with a control byte in a crafted message still re-
   CHECK(count_illegal_c0_bytes(rendered) == 0);
   CHECK(xml_reparses_cleanly(rendered));
 }
+
+// WR-01 (03-REVIEW.md, non-gating) -- xml_escape's "\xHH" control-byte
+// escape omitted the backslash-doubling src/util/sanitize.cpp's
+// sanitize_for_display applies to the same byte class, so a real control
+// byte and text that literally spells that byte's escape form rendered
+// identically. Behaviors 7-8 below.
+
+TEST_CASE("junit - a real control byte and the literal text of its escape render distinguishably",
+          "[junit]") {
+  const auto& registry = mediadiff::test_registry();
+  // finding A carries a REAL ESC byte (0x1b); finding B carries the four
+  // literal ASCII characters that spell that byte's own escape form
+  // ("\x1b" as text, not as a control byte). Before this fix, xml_escape
+  // rendered both to the identical string "\x1b" in the emitted report --
+  // the exact ambiguity WR-01 describes.
+  const std::string real_control_byte = std::string("before\x1b" "after");
+  const std::string literal_escape_text = std::string("before\\x1bafter");
+  const ReportModel model = model_from({
+      make_finding("video.wr01_real", Status::fail, Severity::fail, real_control_byte),
+      make_finding("video.wr01_literal", Status::fail, Severity::fail, literal_escape_text),
+  });
+  const std::string rendered = mediadiff::render_junit(model, registry, false);
+
+  // Extract each finding's own message="..." attribute value so the
+  // comparison is scoped to what xml_escape actually produced for each
+  // input, not the whole document.
+  const auto extract_message = [&](const std::string& needle_prefix) {
+    const std::size_t name_pos = rendered.find(needle_prefix);
+    REQUIRE(name_pos != std::string::npos);
+    const std::size_t message_key = rendered.find("message=\"", name_pos);
+    REQUIRE(message_key != std::string::npos);
+    const std::size_t value_start = message_key + std::string("message=\"").size();
+    const std::size_t value_end = rendered.find('"', value_start);
+    REQUIRE(value_end != std::string::npos);
+    return rendered.substr(value_start, value_end - value_start);
+  };
+
+  const std::string real_rendered = extract_message("video.wr01_real");
+  const std::string literal_rendered = extract_message("video.wr01_literal");
+
+  // The direct statement of the property WR-01 says is currently
+  // violated: a real control byte and text that literally spells its
+  // escape form must render to DIFFERENT strings.
+  CHECK(real_rendered != literal_rendered);
+  // The real byte still escapes exactly as before (unchanged behavior).
+  CHECK(real_rendered == "before\\x1bafter");
+  // The literal text's own backslash is doubled, disambiguating it from
+  // the real-byte escape above.
+  CHECK(literal_rendered == "before\\\\x1bafter");
+  CHECK(count_illegal_c0_bytes(rendered) == 0);
+  CHECK(xml_reparses_cleanly(rendered));
+}
+
+TEST_CASE(
+    "junit - an ordinary backslash in a message is doubled in both attribute and element-body context",
+    "[junit]") {
+  const auto& registry = mediadiff::test_registry();
+  // finding.message renders into the <failure message="..."> ATTRIBUTE
+  // directly through xml_escape, so one source backslash becomes exactly
+  // two in the rendered attribute. finding.candidate renders into the
+  // <failure>...</failure> element BODY via baseline_candidate_detail,
+  // which JSON-serializes the value FIRST -- core/serializer.cpp's own
+  // escape_json_string already turns one backslash into two in the JSON
+  // text -- and THEN passes that JSON text through xml_escape, which
+  // doubles each of those two again. One source backslash therefore
+  // surfaces as two in the attribute but four in the body; both call
+  // sites share xml_escape, so this test proves the doubling ran in
+  // both, without re-asserting core/serializer.cpp's own JSON-escaping
+  // contract (mirrors the existing both-contexts control-byte test
+  // above, which likewise scopes its body assertion to "the raw byte
+  // never survives", not the JSON layer's exact escaping form).
+  const std::string windows_path_message = "C:" + std::string("\\") + "Users";
+  Finding f = make_finding("video.backslash_check", Status::fail, Severity::fail, windows_path_message);
+  f.candidate = mediadiff::Value{"a" + std::string("\\") + "b"};
+  const ReportModel model = model_from({f});
+  const std::string rendered = mediadiff::render_junit(model, registry, false);
+
+  // Attribute context: exactly one doubling.
+  const std::string doubled_attr = "message=\"C:" + std::string(2, '\\') + "Users\"";
+  const std::string undoubled_attr = "message=\"C:" + std::string(1, '\\') + "Users\"";
+  CHECK(rendered.find(doubled_attr) != std::string::npos);
+  CHECK(rendered.find(undoubled_attr) == std::string::npos);
+
+  // Element-body context: JSON's own escape (one -> two) followed by
+  // xml_escape's doubling (two -> four) leaves four consecutive
+  // backslash characters where the candidate value had one.
+  const std::string quadrupled_body = "a" + std::string(4, '\\') + "b";
+  const std::string json_only_body = "a" + std::string(2, '\\') + "b";
+  CHECK(rendered.find(quadrupled_body) != std::string::npos);
+  CHECK(rendered.find(json_only_body) == std::string::npos);
+
+  CHECK(count_illegal_c0_bytes(rendered) == 0);
+  CHECK(xml_reparses_cleanly(rendered));
+}
