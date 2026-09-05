@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 12
 waived_count: 0
 fixed_count: 2
-total_count: 11
-last_updated: 2026-09-05T07:11:26.648Z
+total_count: 14
+last_updated: 2026-09-05T17:26:26.638Z
 ---
 
 # Broken Windows Ledger
@@ -26,6 +26,9 @@ last_updated: 2026-09-05T07:11:26.648Z
 | 9 | 03 | deviation | src/probe/ebml_scan.cpp | 348 | x64-windows-static-md CI leg fails to build: 'std::max(1.0, std::abs(value))' hits C2059 syntax error because windows.h's max macro (NOMINMAX not defined anywhere in the project) clobbers std::max. Revealed by 03-14's real CI run (PR #3, run 33951407521); belongs to plan 03-06's ebml_scan, out of 03-14's declared files_modified. | open |  | 2026-09-05T07:11:26.378Z |  |
 | 10 | 03 | deviation | tests/fixtures/GENERATOR_MANIFEST.json |  | x64-linux CI leg: 5 of 620 tests fail (unit.inspect_container, ts_scan_golden ts_204/ts_multiprogram/ts_single, integration.size_checks) because committed byte-level goldens were generated against a local ffmpeg master snapshot (N-126086-ge5ecfe8970-20260812) while CI installs ffmpeg 9.0.1 via apt -- different muxer output invalidates byte-identical goldens across ffmpeg builds. Revealed by 03-14's real CI run (PR #3, run 33951407521); the design question (pin ffmpeg version in CI vs regenerate/version-tolerant goldens) is explicitly not 03-14's to decide. | open |  | 2026-09-05T07:11:26.508Z |  |
 | 11 | 03 | deviation | .github/workflows/ci.yml |  | arm64-linux (non-blocking leg) CI run: 'Register vcpkg NuGet feed (read-write, trusted runs only)' step exits 1, a credentials/infra problem unrelated to the fixture corpus. Revealed by 03-14's real CI run (PR #3, run 33951407521); non-blocking leg, out of 03-14's scope. | open |  | 2026-09-05T07:11:26.648Z |  |
+| 12 | 03 | deviation | scripts/ffmpeg_pin.json |  | The SAME checksum-verified pinned ffmpeg binary produces different fixture bytes on GitHub's x64-linux runner than on a local x86_64 Linux workstation (all 80 corpus_digest.sh hashes differed) -- almost certainly runtime CPU-feature-dispatch (SIMD) differences (the workstation has AVX-512, GH's runner likely does not) affecting floating-point DSP paths inside ffmpeg's encoders even under -flags +bitexact. Goldens must be captured from the actual blocking-leg CI runner (via a temporary CI diagnostic step), not assumed portable from a developer workstation, even when the exact same pinned binary is used. | open |  | 2026-09-05T17:25:14.513Z |  |
+| 13 | 03 | deviation | tests/unit/test_ebml_scan.cpp | 89 | arm64-osx/x64-osx CI legs fail to build: 'constexpr std::uint64_t kClusterId' triggers -Werror,-Wunused-const-variable under AppleClang (this file-local constant is genuinely unused in the test body). GCC on the Linux legs does not flag this the same way. Revealed by 03-16's real CI run (33980515543) reaching further into the macOS build than any prior run; belongs to plan 03-06's ebml_scan test file, out of 03-16's declared files_modified. | open |  | 2026-09-05T17:26:17.518Z |  |
+| 14 | 03 | deviation | .github/workflows/ci.yml |  | x64-osx (non-blocking, cross-built x86_64 from the arm64-osx host) fails at link: 'ld: symbol(s) not found for architecture arm64' against libmediadiff_core.a's FFmpeg symbols -- a triplet/architecture mismatch in the cross-build, matching research/STACK.md's own documented 'known failure class' for cross-compiling x64-osx from an Apple Silicon runner. Revealed by 03-16's real CI run (33980515543); non-blocking leg, out of 03-16's scope. | open |  | 2026-09-05T17:26:26.638Z |  |
 
 ````json
 [
@@ -159,6 +162,42 @@ last_updated: 2026-09-05T07:11:26.648Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T07:11:26.648Z",
+    "resolved_at": null
+  },
+  {
+    "id": 12,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "scripts/ffmpeg_pin.json",
+    "line": null,
+    "description": "The SAME checksum-verified pinned ffmpeg binary produces different fixture bytes on GitHub's x64-linux runner than on a local x86_64 Linux workstation (all 80 corpus_digest.sh hashes differed) -- almost certainly runtime CPU-feature-dispatch (SIMD) differences (the workstation has AVX-512, GH's runner likely does not) affecting floating-point DSP paths inside ffmpeg's encoders even under -flags +bitexact. Goldens must be captured from the actual blocking-leg CI runner (via a temporary CI diagnostic step), not assumed portable from a developer workstation, even when the exact same pinned binary is used.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T17:25:14.513Z",
+    "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "tests/unit/test_ebml_scan.cpp",
+    "line": 89,
+    "description": "arm64-osx/x64-osx CI legs fail to build: 'constexpr std::uint64_t kClusterId' triggers -Werror,-Wunused-const-variable under AppleClang (this file-local constant is genuinely unused in the test body). GCC on the Linux legs does not flag this the same way. Revealed by 03-16's real CI run (33980515543) reaching further into the macOS build than any prior run; belongs to plan 03-06's ebml_scan test file, out of 03-16's declared files_modified.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T17:26:17.518Z",
+    "resolved_at": null
+  },
+  {
+    "id": 14,
+    "kind": "deviation",
+    "phase": "03",
+    "file": ".github/workflows/ci.yml",
+    "line": null,
+    "description": "x64-osx (non-blocking, cross-built x86_64 from the arm64-osx host) fails at link: 'ld: symbol(s) not found for architecture arm64' against libmediadiff_core.a's FFmpeg symbols -- a triplet/architecture mismatch in the cross-build, matching research/STACK.md's own documented 'known failure class' for cross-compiling x64-osx from an Apple Silicon runner. Revealed by 03-16's real CI run (33980515543); non-blocking leg, out of 03-16's scope.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-05T17:26:26.638Z",
     "resolved_at": null
   }
 ]

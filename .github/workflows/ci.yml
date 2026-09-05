@@ -267,45 +267,6 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
 
-      # TEMPORARY (03-16-PLAN.md Task 2 diagnostic, removed before this
-      # plan's final commit): the SAME checksum-verified pinned ffmpeg
-      # binary produces different fixture bytes on this runner than on a
-      # developer workstation, almost certainly runtime SIMD-dispatch /
-      # libm differences between CPU microarchitectures affecting
-      # floating-point DSP paths inside the encoders even under
-      # `+bitexact`. Captures the goldens AS RENDERED ON THIS RUNNER so
-      # they can be pulled down and committed byte-for-byte correct,
-      # rather than trusting a local regeneration.
-      - name: TEMP capture golden refresh on this runner (03-16 diagnostic)
-        if: matrix.preset == 'x64-linux'
-        run: |
-          # -E ts_scan_golden: the three ts_scan_ts_*.txt goldens are an
-          # INDEPENDENT TSDuck reference (TRUST-09, D-04) -- refreshing them
-          # through this renderer-golden mechanism would bake ts_scan's own
-          # current output in as ground truth, exactly what D-04 forbids.
-          # Those three are captured separately below from the raw fixture
-          # bytes via scripts/capture_tsduck_golden.sh, run locally.
-          UPDATE_GOLDENS=1 ctest --test-dir build/x64-linux -R golden -E ts_scan_golden --output-on-failure
-
-      - name: TEMP upload refreshed goldens (03-16 diagnostic)
-        if: matrix.preset == 'x64-linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: temp-refreshed-goldens-03-16
-          path: tests/golden/
-          retention-days: 1
-
-      - name: TEMP upload raw TS fixtures for local TSDuck capture (03-16 diagnostic)
-        if: matrix.preset == 'x64-linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: temp-ts-fixtures-03-16
-          path: |
-            tests/fixtures/ts_single.ts
-            tests/fixtures/ts_multiprogram.ts
-            tests/fixtures/ts_204.ts
-          retention-days: 1
-
       # ctest --preset only exists for the 3 blocking triplets in
       # CMakePresets.json (owned by Plan 01, not modified here) — every
       # preset's binaryDir is build/<presetName>, so --test-dir reaches the
