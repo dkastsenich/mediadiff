@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 03
 current_phase_name: Probe Layer, Container & Size
 status: executing
-stopped_at: "Completed 03-14-PLAN.md (CI corpus wiring proven on real CI run PR#3/33951407521; bash-3.2 mapfile fix; findings 2-4 recorded in WINDOWS.md #9-11, out of scope)"
-last_updated: "2026-09-05T14:34:59.090Z"
-last_activity: 2026-09-04
+stopped_at: Completed 03-16-PLAN.md (pinned ffmpeg supply chain; x64-linux proven green on real CI run 33981198277, TRUST-06 observed Passed)
+last_updated: "2026-09-05T17:40:09.223Z"
+last_activity: 2026-09-05
 last_activity_desc: Phase 03 execution started
-state_head: 1a36159d730e7a9b8d951535d0dbe50696444ce2
+state_head: bd5c88de20e34802c1ed9631a6fcdea45f65daa3
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 44
-  completed_plans: 39
+  completed_plans: 40
 milestone_name: milestone
 ---
 
@@ -24,14 +24,14 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 03 — probe-layer-container-size
+**Current focus:** Phase 03 — Probe Layer, Container & Size
 
 ## Current Position
 
-Phase: 03 (Probe Layer, Container & Size) — READY TO EXECUTE
-Plan: 5 of 15
+Phase: 03 (Probe Layer, Container & Size) — EXECUTING
+Plan: 2 of 20
 Status: Ready to execute
-Last activity: 2026-09-04 — Phase 03 execution started
+Last activity: 2026-09-05 — Phase 03 execution started
 
 Progress: [█████████░] 92%
 
@@ -89,6 +89,7 @@ Progress: [█████████░] 92%
 | Phase 03 P13 | 55min | 3 tasks | 7 files |
 | Phase 03 P15 | 30min | 3 tasks | 17 files |
 | Phase 03 P14 | 60min | 3 tasks | 2 files |
+| Phase 03 P16 | 90min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -185,6 +186,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-13: WR-02 (ts.cpp byte-offset checked_sub) and WR-03 (pass.h/orchestrator.cpp stale ts_scan consumer comments) fixed in the same plan as CR-01/CR-02 since both touch files this plan already opened; sanitizer (ASan/UBSan) build remains deferred per this plan's own flagged_assumptions
 - [Phase 03]: [Phase 03, 03-15]: T-2-33 completed across every output format -- xml_escape's own \xHH escaping closes JUnit XML (CR-03, no XML numeric character reference, which is equally illegal); one CLI diagnostic sink (report_cli_error) closes the 44-site stderr gap (WR-01); lint scan-list generalized + a second stderr-sink rule closes IN-02; 02-SECURITY.md corrected (not re-marked) to show the 03-11 closure was premature
 - [Phase 03]: 03-14: Fixed check_corpus.sh's mapfile (bash-4-only) with a while-read loop for macOS bash 3.2 compatibility -- confirmed necessary by a real CI run (PR #3, run 33951407521); findings 2-4 (ebml_scan.cpp NOMINMAX clash, ffmpeg-version-drifted goldens, vcpkg NuGet feed credentials) are out of scope, recorded in WINDOWS.md #9-#11, not fixed
+- [Phase 03]: [Phase 3, 03-16]: Pinned fixture-synthesis ffmpeg by URL+SHA-256 (martin-riedl.de for Linux/macOS, BtbN/FFmpeg-Builds LGPL for Windows) replacing rolling apt/brew/choco installs; conda-forge rejected as each package needs ~40 separate shared-library dependencies, incompatible with a single-file checksum-verified install.
+- [Phase 03]: [Phase 3, 03-16]: Discovered the same checksum-verified pinned ffmpeg binary produces different fixture bytes on GitHub's x64-linux runner than on a local workstation (CPU SIMD-dispatch difference, not a build/version difference) -- goldens must be captured from the real blocking-leg CI runner via a temporary diagnostic step, never assumed portable from a dev machine even with an identical pinned binary.
 
 ### Pending Todos
 
@@ -215,6 +218,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-05T07:13:53.666Z
-Stopped at: Completed 03-14-PLAN.md (CI corpus wiring proven on real CI run PR#3/33951407521; bash-3.2 mapfile fix; findings 2-4 recorded in WINDOWS.md #9-11, out of scope)
+Last session: 2026-09-05T17:40:09.111Z
+Stopped at: Completed 03-16-PLAN.md (pinned ffmpeg supply chain; x64-linux proven green on real CI run 33981198277, TRUST-06 observed Passed)
 Resume file: None
