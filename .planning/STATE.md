@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 03
 current_phase_name: Probe Layer, Container & Size
 status: executing
-stopped_at: Completed 03-17-PLAN.md
-last_updated: "2026-09-05T17:55:51.275Z"
+stopped_at: Completed 03-18-PLAN.md
+last_updated: "2026-09-05T18:14:30.765Z"
 last_activity: 2026-09-05
 last_activity_desc: Phase 03 execution started
-state_head: f4c3b59d6fee54bdcf56eb32b1e4f8e55536f7d5
+state_head: 245d2cb52e65d0066e215d9531f5331f6d22e039
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 44
-  completed_plans: 41
+  completed_plans: 42
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (Probe Layer, Container & Size) — EXECUTING
-Plan: 3 of 20
+Plan: 4 of 20
 Status: Ready to execute
 Last activity: 2026-09-05 — Phase 03 execution started
 
@@ -91,6 +91,7 @@ Progress: [█████████░] 92%
 | Phase 03 P14 | 60min | 3 tasks | 2 files |
 | Phase 03 P16 | 90min | 3 tasks | 13 files |
 | Phase 03 P17 | 55min | 2 tasks | 6 files |
+| Phase 03 P18 | 45min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -191,6 +192,7 @@ Recent decisions affecting current work:
 - [Phase 03]: [Phase 3, 03-16]: Discovered the same checksum-verified pinned ffmpeg binary produces different fixture bytes on GitHub's x64-linux runner than on a local workstation (CPU SIMD-dispatch difference, not a build/version difference) -- goldens must be captured from the real blocking-leg CI runner via a temporary diagnostic step, never assumed portable from a dev machine even with an identical pinned binary.
 - [Phase 03]: Suppressed only NOMINMAX (not WIN32_LEAN_AND_MEAN) via a per-target CMake function applied to all four first-party targets, fixing the x64-windows-static-md C2059 build failure at the source level — WIN32_LEAN_AND_MEAN would remove declarations src/cli/main.cpp and src/util/fs.h depend on; fixing once in CMake avoids per-call-site parenthesization that would hide the defect at future sites
 - [Phase 03]: Kept JUnit's backslash-doubling fix local to xml_escape rather than routing through sanitize_for_display — Routing through sanitize_for_display would double-escape the four XML metacharacters and move every committed JUnit golden
+- [Phase 03]: 03-18: comments in the two fixed lints omit the literal words mapfile/readarray so Task 1's raw grep -c acceptance check reports 0; lint_bash4_builtins.sh's own self-matching pattern-def/label/fixture lines carry # bash4-allow so the lint can include itself in scope — check_corpus.sh's verbatim comment mentions the builtin by name and is excluded from this raw grep scope, but the two Task-1 files ARE scanned by the literal grep, so their explanatory comments had to be rephrased without the literal builtin names while restating the same rationale in full
 
 ### Pending Todos
 
@@ -221,6 +223,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-05T17:55:51.158Z
-Stopped at: Completed 03-17-PLAN.md
+Last session: 2026-09-05T18:14:30.654Z
+Stopped at: Completed 03-18-PLAN.md
 Resume file: None
