@@ -1,76 +1,20 @@
 ---
 phase: 03-probe-layer-container-size
-verified: 2026-09-05T21:15:00Z
-status: gaps_found
-score: 4/5 roadmap success criteria fully verified; 1/5 (SC5) still failed under real CI evidence
+verified: 2026-09-06T12:00:00Z
+status: passed
+score: 5/5 roadmap success criteria verified
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: gaps_found
-  previous_score: "4/5 fully clean; SC5 gap-bearing"
+  previous_score: "4/5 fully verified; SC5 failed under real CI evidence"
   gaps_closed:
-    - "WINDOWS.md #9 (ebml_scan.cpp NOMINMAX/std::max C2059 on MSVC) — closed on observed evidence: ebml_scan.cpp now compiles cleanly under MSVC in real CI run 33990099158 (x64-windows-static-md leg gets past this file; a DIFFERENT, later defect in main.cpp now blocks that leg — see gaps_remaining)."
-    - "WINDOWS.md #10 (x64-linux golden drift vs CI's apt ffmpeg) — closed: 03-16 pinned fixture-synthesis ffmpeg by URL+SHA-256 and re-baselined goldens against the pinned build's real x64-linux CI output; x64-linux is now fully green (build (x64-linux): success, run 33990099158) with both trust06_idempotence cases Passed."
-    - "WINDOWS.md #15 (macOS bash-3.2 check_corpus.sh mapfile crash, exit 127) — closed: 03-18's portable while-read rewrite is proven at runtime in run 33990099158; arm64-osx's 'Generate media fixture corpus' and 'Verify the fixture corpus is complete' steps both concluded success."
-    - "Cross-leg corpus byte-identity ambiguity resolved (not closed as 'uniform', but resolved as 'designated'): 03-19 measured real per-leg digests (run 33983460934) showing arm64-osx diverges from x64-linux/x64-windows-static-md on 76/80 fixtures, and implemented the 'designated' policy (x64-linux only for byte-exact fixture-derived goldens, named+counted exclusion elsewhere, EXPECTED_EXCLUDED_COUNT=5) as a standing, non-silent CI gate. This is a scope narrowing accepted by the developer at 03-19's checkpoint, not a defect."
-  gaps_remaining:
-    - "SC5 is STILL FAILED. Independently re-ran `gh run view 33990099158` and `gh run view 33990099158 --log-failed` this round (not re-quoting 03-20-SUMMARY.md): of the 3 blocking legs (x64-linux, arm64-osx, x64-windows-static-md), only x64-linux concludes success. arm64-osx fails at Build: `tests/unit/test_ebml_scan.cpp:89:25: error: unused variable 'kClusterId' [-Werror,-Wunused-const-variable]` (WINDOWS.md #13, open) — confirmed the offending line is still present verbatim in the current working tree (`constexpr std::uint64_t kClusterId = 0x1F43B675;` at test_ebml_scan.cpp:89, never referenced elsewhere in the file). x64-windows-static-md fails at Build: `src/cli/main.cpp(297): error C3861: 'report_cli_error': identifier not found` (WINDOWS.md #16, open) — confirmed still present verbatim in the current working tree (line 297 calls `report_cli_error(...)` unqualified, inside `wmain`, which is outside `namespace mediadiff` closed at line 209; line 292 immediately above correctly qualifies the analogous call as `mediadiff::wide_to_utf8(...)`). Both defects are one-line fixes, both are explicitly out of every gap-closure plan's declared files_modified (03-20 deliberately did not touch source files), and both remain unfixed as of the current HEAD (aa57af4), which contains no source changes since the CI run's head commit (1b684de) — confirmed via `git diff --stat 1b684de aa57af4` (docs/ledger files only)."
-    - "Only 2 of the 4 trust06_idempotence 'Passed' result lines this round's own must-haves require exist in the run log (both on x64-linux only) — independently confirmed via `gh run view 33990099158 --log --job <x64-linux job id> | grep trust06_idempotence`. arm64-osx's Test step never runs because its Build step fails first."
+    - "SC5 (\"Encoding a fixture twice with identical settings and comparing under sw-encoder comes back clean as a CI release blocker\") — closed on independently re-queried real CI run 34023871831 (head 64bc168). All three blocking legs (x64-linux, arm64-osx, x64-windows-static-md) plus the required lint job conclude Build=success/Test=success at both job and step level — independently confirmed via `gh run view --json jobs` and per-job `--log` greps, not by re-quoting 03-22-SUMMARY.md's narration."
+    - "WINDOWS.md #13 (AppleClang unused-const-variable, arm64-osx/x64-osx) — closed: `kClusterId` is now referenced by a real, behavior-asserting test case (unknown-size Cluster-inside-Segment edge, PROBE-05); confirmed present in the working tree and confirmed compiling under arm64-osx in the closing run."
+    - "WINDOWS.md #16 (unqualified report_cli_error, x64-windows-static-md) — closed: all three call sites in main.cpp now read `mediadiff::report_cli_error(...)`; confirmed present, confirmed compiling under MSVC in the closing run."
+    - "WINDOWS.md #18/#19/#20/#21 — four further blocking-leg defects discovered en route (missing provenance_render.cpp link on the unit-test target; a `far` identifier colliding with a Windows SDK legacy macro; an arm64-osx bitrate-margin doc03_coverage failure; a GITHUB_PATH MSYS-vs-native-path bug breaking the Windows job's PowerShell cross-check step) — all four fixed and closed with cited observed evidence and a resolved_at timestamp, confirmed via `windows status` (total 22, 11 fixed/11 open, markdown table and JSON array agree)."
+  gaps_remaining: []
   regressions: []
-gaps:
-  - truth: "Encoding a fixture twice with identical settings and comparing under sw-encoder comes back clean as a CI release blocker (ROADMAP SC5)."
-    status: failed
-    reason: >
-      The underlying test (tests/integration/test_trust06_idempotence.cpp) is real, substantive, and
-      passes both locally (independently re-run this round: `ctest -R trust06_idempotence` → 2/2 Passed)
-      and on the one CI leg that reaches it (x64-linux, run 33990099158, both cases Passed in the run
-      log). The corpus-generation, ffmpeg-pinning, and cross-platform-digest infrastructure built across
-      03-14/03-16/03-18/03-19 all work as designed and are proven on real, non-simulated CI runs this
-      round independently re-queried via `gh run view` and `gh run view --log-failed` (not re-derived
-      from any SUMMARY's narration).
-
-      But SC5's own text — "comes back clean as a CI release blocker" — requires the release-blocking CI
-      matrix itself to be green, and it is not. Of the 3 legs 03-20's own must_haves designate as
-      blocking (x64-linux, arm64-osx, x64-windows-static-md), only 1 concludes success in the latest real
-      run (33990099158, head 1b684de, current HEAD unchanged since):
-
-        (a) arm64-osx fails at Build: `tests/unit/test_ebml_scan.cpp:89:25: error: unused variable
-            'kClusterId' [-Werror,-Wunused-const-variable]` under AppleClang. GCC on the Linux legs does
-            not flag this the same way. WINDOWS.md #13, open. Confirmed the unused constant is still
-            present in the current working tree.
-
-        (b) x64-windows-static-md fails at Build: `src/cli/main.cpp(297): error C3861: 'report_cli_error':
-            identifier not found` — `report_cli_error` is declared in `namespace mediadiff`
-            (src/cli/diagnostics.h:43); `main.cpp` closes that namespace at line 209, and `wmain`
-            (lines 222-312) calls it unqualified at line 297, one line below a correctly-qualified sibling
-            call (`mediadiff::wide_to_utf8(...)` at line 292). This defect only became reachable once
-            03-17 fixed the earlier NOMINMAX/C2059 error that used to abort the Windows build before this
-            line was ever compiled. WINDOWS.md #16, open. Confirmed still present verbatim.
-
-      Both defects are one-token/one-line fixes, both are Phase-3 code (03-06's ebml_scan test file;
-      main.cpp's wmain block, both #ifdef-gated so GCC/Clang legs never compile them), and both were
-      deliberately left unfixed by 03-20, whose own declared files_modified were WINDOWS.md and
-      03-VERIFICATION.md only (an intentional, honest scope boundary, not an oversight — 03-20-SUMMARY.md
-      says so explicitly and this verification agrees that decision was correct plan hygiene). But their
-      net effect on this verification's job is unambiguous: **SC5 is still false.** A release blocker
-      that cannot build on 2 of its 3 required legs is not "wired into CI as a clean release blocker,"
-      regardless of how solid the underlying test, the corpus pin, and the cross-platform digest
-      machinery all are.
-
-      This is real, measurable progress from the prior round (which had 0 of 3 blocking legs green and 2
-      entirely different root causes — NOMINMAX and ffmpeg-version golden drift, both now genuinely fixed
-      and closed in WINDOWS.md #9/#10) but the success criterion's truth value has not changed: it was
-      false last round and it is false this round, for a different, narrower, and now well-understood
-      reason.
-    artifacts:
-      - path: tests/unit/test_ebml_scan.cpp
-        issue: "Line 89: `constexpr std::uint64_t kClusterId = 0x1F43B675;` is declared but never used in the file, tripping AppleClang's `-Werror,-Wunused-const-variable` on the arm64-osx (and x64-osx) legs and aborting the Build step before Test ever runs (WINDOWS.md #13, open)."
-      - path: src/cli/main.cpp
-        issue: "Line 297: `report_cli_error(...)` is called unqualified from inside `wmain`, which is outside `namespace mediadiff` (closed at line 209). MSVC's C3861 fires because the unqualified name cannot be found; GCC/Clang never compile this `#ifdef _WIN32` block so the defect was invisible on every non-Windows leg (WINDOWS.md #16, open)."
-    missing:
-      - "Fix tests/unit/test_ebml_scan.cpp:89 — either use kClusterId in a test case (there is likely a EBML Cluster-ID scenario this file's own header comment implies it was meant for) or remove the unused constant, so the arm64-osx/x64-osx AppleClang builds stop failing at Build."
-      - "Fix src/cli/main.cpp:297 — qualify the call as `mediadiff::report_cli_error(...)`, matching the sibling call one line above, so the x64-windows-static-md leg's Build step succeeds."
-      - "Re-run CI after both one-line fixes land and confirm: (1) all 3 blocking legs (x64-linux, arm64-osx, x64-windows-static-md) conclude Build success and reach Test; (2) all 4 trust06_idempotence result lines (2 cases x 2 of the legs that run tests, per 03-20's own must_haves — x64-linux and arm64-osx) are observed Passed in the run log, not merely absent from a failure list; (3) x64-windows-static-md's Test step also runs to completion (it has never yet been observed doing so on real CI, since Build has failed on every run to date for one reason or another)."
 deferred: []
 ---
 
@@ -79,17 +23,9 @@ deferred: []
 **Phase Goal:** Real media enters the engine — one header pass and one packet sweep feed every
 container, metadata and size check, plus the shared primitives that later phases consume instead
 of recomputing.
-**Verified:** 2026-09-05T21:15:00Z
-**Status:** gaps_found
-**Re-verification:** Yes — after gap-closure round 2 (plans 03-16 through 03-20)
-
-> **Prior correction note preserved (03-20, 2026-09-05, source: real CI run 33951407521):** the
-> verification report from gap-closure round 1 originally overstated corpus-verification cleanliness
-> and misidentified CI's apt ffmpeg version. Both errors were corrected in that round's report body
-> and are preserved in this document's git history; this round's evidence (run 33990099158) supersedes
-> both the original claim and the round-1 correction, since the underlying defects (WINDOWS.md #9, #10)
-> are now genuinely closed. See the round-1 correction note in this file's git history if the prior
-> wording is needed for audit purposes.
+**Verified:** 2026-09-06T12:00:00Z
+**Status:** passed
+**Re-verification:** Yes — after gap-closure round 3 (plans 03-21, 03-22)
 
 ## Goal Achievement
 
@@ -97,64 +33,114 @@ of recomputing.
 
 | # | Truth (ROADMAP SC) | Status | Evidence |
 |---|---|---|---|
-| 1 | `mediadiff inspect` on MP4/MOV, MKV/WebM, MPEG-TS renders a complete container section | ✓ VERIFIED (unchanged, no regression from gap-closure round 2) | No round-2 plan touched the rendering path. Local test suite includes the container-family unit/integration tests; unaffected by round-2's ffmpeg-pinning, MSVC/bash portability, and CI-ledger scope. |
-| 2 | Cross-container migration demotes cleanly; truncated/garbage input degrades to `skipped:unparsed_mechanism` with byte offset or exits 65; never crashes or silently passes | ✓ VERIFIED (closed in round 1, unaffected by round 2) | CR-01/CR-02 fix (03-13) unaffected by any of 03-16..03-20's declared files_modified; no regression risk. |
-| 3 | `size.file`/`size.stream_bitrate`/`size.peak_bitrate`/`size.overhead` report rate economics from the packet scan alone, DTS-in-ticks windowing, cross-platform-identical | ✓ VERIFIED (closed in round 1, unaffected by round 2) | CR-04 fix (03-12) unaffected by round 2's scope. Note: "cross-platform-identical" here refers to the size.* *computation* (DTS-tick windowing, unaffected by which ffmpeg build synthesized the fixture); the separate, newly-discovered fact that the *fixture bytes themselves* are not byte-identical across CI legs (WINDOWS.md #12, #17) is a corpus-generation property, not a size.* computation defect, and is handled by the "designated" golden-scope policy, not by this SC. |
-| 4 | Each file read exactly once; PROBE-10 packet-interval statistics shared as one probe-level primitive; peak memory per in-flight file bounded and asserted so `--threads N` is an honest memory knob | ✓ VERIFIED (closed in round 1, unaffected by round 2) | `pass_union`/`packet_budget` tests unaffected by round 2. |
-| 5 | Encode-twice-and-compare comes back clean as a CI release blocker (TRUST-06); every check has both a triggering and a clean fixture pair (DOC-03); `ts_scan` cross-checked against TSDuck (TRUST-09) | ✗ FAILED — root cause narrowed and shifted again, SC still unmet | `ctest -R trust06_idempotence` (2/2, independently re-run this round, both locally and confirmed identical in the CI log), `ctest -R doc03` and `ctest -R ts_scan_golden` all pass locally. The ffmpeg-pinning and CI-corpus-wiring defects from round 1 (WINDOWS.md #9, #10) are genuinely closed this round, proven on real CI run 33990099158 (independently re-queried this round via `gh run view` and `gh run view --log-failed`, not re-quoted from any SUMMARY). But of the 3 legs 03-20's own must-haves designate as blocking, only x64-linux concludes success; arm64-osx fails at Build on an unused-const-variable AppleClang warning-as-error (WINDOWS.md #13) and x64-windows-static-md fails at Build on an unqualified `report_cli_error` call newly reachable now that the earlier NOMINMAX defect is fixed (WINDOWS.md #16). Both confirmed still present in the current working tree. |
+| 1 | `mediadiff inspect` on MP4/MOV, MKV/WebM, MPEG-TS renders a complete container section | ✓ VERIFIED (unchanged, no regression from round 3) | No round-3 plan touched the rendering path. Local `ctest -N` still reports the same 623-test tree (622 + 1 new PROBE-05 test); container-family tests unaffected. |
+| 2 | Cross-container migration demotes cleanly; truncated/garbage input degrades to `skipped:unparsed_mechanism` with byte offset or exits 65; never crashes or silently passes | ✓ VERIFIED (closed round 1, unaffected by round 3) | Round-3's diff touches `tests/unit/test_ebml_scan.cpp`, `src/cli/main.cpp`, two scripts, and ledger/digest files only — none of which is on this code path. |
+| 3 | `size.*` checks report rate economics from the packet scan alone, DTS-in-ticks windowing, cross-platform-identical | ✓ VERIFIED (closed round 1; the one round-3-era wrinkle is a fixture-margin fix, not a computation defect) | WINDOWS.md #20 (arm64-osx's `doc03_coverage` clean-pair for `size.stream_bitrate` tipping over its 3% warn bound under cross-architecture SIMD variance) was a **fixture calibration** issue, not a defect in `size.*`'s own DTS-tick windowing math — fixed by widening the fixture pair's margin (700k/715k) and regenerating the designated-leg digest from real CI output. Confirmed fixed: `build (arm64-osx)` reports `100% tests passed out of 618` in the closing run. |
+| 4 | Each file read exactly once; PROBE-10 shared primitive; peak memory per in-flight file bounded | ✓ VERIFIED (closed round 1, unaffected by round 3) | `pass_union`/`packet_budget` tests unaffected by round 3's file set. |
+| 5 | Encode-twice-and-compare comes back clean as a CI release blocker (TRUST-06); every check has a triggering+clean fixture pair (DOC-03); `ts_scan` cross-checked against TSDuck (TRUST-09) | ✓ VERIFIED — independently re-confirmed on real CI run 34023871831 | See "Independent Re-Verification of SC5" below. All three blocking legs (x64-linux, arm64-osx, x64-windows-static-md) plus the required lint job conclude `success` at both job and step level; four `trust06_idempotence` `Passed` lines observed directly in two named legs' own logs (**and, additionally, on the Windows leg itself** — stronger evidence than either plan's own must-haves required); `x64-windows-static-md`'s `Test` step is observed concluding `success` for the first time in this phase's CI history; DOC-03's coverage gate and TRUST-09's three TSDuck-derived goldens observed `Passed` on the designated leg. |
 
-**Score:** 4/5 roadmap success criteria fully verified this round (SC1-SC4, unchanged from round 1); SC5 remains unmet, for a narrower, well-diagnosed, and well-documented reason than either prior round.
+**Score:** 5/5 roadmap success criteria verified.
 
-### Gap-Closure Verification (Prior Round's Remaining Gap: SC5)
+### Independent Re-Verification of SC5
 
-| Sub-issue | Prior Status | This Round | Evidence |
+This verifier re-ran the queries against GitHub's API directly rather than trusting
+03-21-SUMMARY.md / 03-22-SUMMARY.md's quoted output, per this round's explicit instruction (two
+prior rounds overstated CI cleanliness in exactly this spot).
+
+**Run identity** (`gh run view 34023871831 --json status,conclusion,headSha,headBranch`):
+`status=completed`, `conclusion=success`, `headSha=64bc168684fac34e649f16a18f6a4c736ec192e4`,
+`headBranch=gsd/phase-03-probe-layer-container-size`. Matches the orchestrator's cited run exactly.
+
+**All six jobs, independently queried** (`gh run view --json jobs`):
+
+| Job | Conclusion | Build step | Test step |
 |---|---|---|---|
-| ffmpeg supply-chain integrity (D-GAP-01) | not addressed | ✓ **CLOSED** | 03-16: `scripts/ffmpeg_pin.json` (30 lines, 4 `sha256` entries) + `scripts/install_pinned_ffmpeg.sh` (314 lines, checksum-verifying, no unpinned fallback) wired into all 5 CI legs (`grep -c install_pinned_ffmpeg.sh .github/workflows/ci.yml` = 2, install + PATH export). |
-| WINDOWS.md #9 (MSVC NOMINMAX/C2059) | open | ✓ **CLOSED** | 03-17: `CMakeLists.txt:273` `target_compile_definitions(${target} PRIVATE NOMINMAX)` applied via `mediadiff_apply_platform_definitions` to all 4 first-party targets; `src/probe/ebml_scan.cpp:3` now includes `<algorithm>` explicitly. Confirmed in current working tree. Real CI run 33990099158 shows `ebml_scan.cpp.o` compiling cleanly on x64-windows-static-md — the Build step now fails at a *different, later* file (main.cpp:297), proving this specific defect is gone rather than merely masked. |
-| WINDOWS.md #10 (x64-linux golden drift) | open | ✓ **CLOSED** | 03-16 re-baselined goldens against the pinned build's real x64-linux CI output. Confirmed: x64-linux leg of run 33990099158 concludes `success`, with 616-617/622 (`trust06_idempotence`) both `Passed` observed directly in the run log this round. |
-| WINDOWS.md #15 (macOS bash-3.2 `mapfile` crash) | open (discovered mid-round) | ✓ **CLOSED** | 03-18's while-read rewrite (`scripts/lint_bash4_builtins.sh`, 239 lines, permanent lint gate) proven at runtime: arm64-osx's corpus-generation and corpus-verification steps both conclude success in run 33990099158. |
-| Cross-leg corpus byte-identity (D-GAP-01 follow-on question) | unknown/unmeasured | ✓ **RESOLVED as "designated"** | 03-19 measured real per-leg digests (run 33983460934): arm64-osx diverges from x64-linux/x64-windows-static-md on 76/80 fixtures. Developer chose the `designated` policy at the plan's own Task 2 checkpoint (locked decision, not this verifier's call to relitigate): byte-exact fixture-derived goldens run on x64-linux only; every other leg names the 5 excluded tests and asserts `EXPECTED_EXCLUDED_COUNT=5` (confirmed at `.github/workflows/ci.yml:370-382`) so the exclusion cannot silently widen. `tests/golden/CORPUS_DIGEST.txt` (81 lines) committed as the designated leg's drift gate. This narrows test *coverage*, never assertion *strength* — WINDOWS.md #17, open, tracked as an accepted, visible limitation, not a defect. |
-| WINDOWS.md #13 (AppleClang unused-const-variable, arm64-osx/x64-osx) | not discovered until this round | ✗ **STILL OPEN** | Confirmed present in current working tree (`tests/unit/test_ebml_scan.cpp:89`). Blocks arm64-osx's Build step, which is one of 03-20's own 3 designated blocking legs. |
-| WINDOWS.md #16 (unqualified `report_cli_error`, x64-windows-static-md) | not discovered until this round (newly reachable after #9's fix) | ✗ **STILL OPEN** | Confirmed present in current working tree (`src/cli/main.cpp:297`). Blocks x64-windows-static-md's Build step, the third of 03-20's 3 designated blocking legs. |
+| lint (ENG-16 boundary) | success | — | — |
+| build (x64-linux) | success | success | success |
+| build (arm64-osx) | success | success | success |
+| build (x64-windows-static-md) | success | success | success |
+| build (x64-osx) — non-blocking | failure | failure | skipped |
+| build (arm64-linux) — non-blocking | failure | skipped (fails earlier) | skipped |
 
-### Required Artifacts
+Matches the orchestrator's table verbatim. All three designated-blocking legs conclude `Build`
+and `Test` = `success` at the step level, not merely at the job level.
+
+**Four `trust06_idempotence` result lines, pulled directly from each job's own `--log` output** (not
+inferred from absence in a failure list):
+- `build (x64-linux)`: `617/623 ... Passed 0.01 sec` and `618/623 ... Passed 0.01 sec`
+- `build (arm64-osx)`: `612/618 ... Passed 0.03 sec` and `613/618 ... Passed 0.03 sec`
+- `build (x64-windows-static-md)`: `612/618 ... Passed 0.03 sec` and `613/618 ... Passed 0.03 sec` (this exceeds what either plan's must-haves required — the Windows leg was only required to *conclude* its Test step, and it additionally ran and passed the same idempotence pair)
+
+**DOC-03 / TRUST-09 gates on the designated leg** (`build (x64-linux)`, pulled from its own log):
+`unit.ts_scan_golden` — `ts_204.ts`, `ts_multiprogram.ts`, `ts_single.ts` all `Passed`;
+`integration.doc03_coverage` — both cases (`dir-mode-only checks...` and `every registered check
+has a declared triggering fixture pair and a declared clean one`) `Passed`.
+
+**Per-blocking-leg corpus verification**: all three blocking legs print
+`check_corpus.sh: clean. Verified 80 fixture(s) present and non-empty` in their own logs.
+
+**Overall test summary per blocking leg**: `x64-linux`: `100% tests passed, 0 tests failed out of
+623`. `arm64-osx`: `100% tests passed out of 618`. `x64-windows-static-md`: `100% tests passed, 0
+tests failed out of 618`.
+
+**Non-blocking-leg failure classification, independently confirmed as legitimate (not a convenient
+exclusion):**
+- `build (arm64-linux)` fails at the `Register vcpkg NuGet feed (read-write, trusted runs only)`
+  step — an infra/credentials step that runs before `Configure`/`Build`/`Test`, all of which are
+  `skipped`. Matches WINDOWS.md #11 exactly.
+- `build (x64-osx)` fails at `Build` with `ld: symbol(s) not found for architecture arm64` against
+  `libmediadiff_core.a`'s FFmpeg symbols — the documented cross-architecture-build failure class
+  (x64 cross-built from an arm64 host). Matches WINDOWS.md #14 exactly.
+- Both legs are declared `blocking: false` in `.github/workflows/ci.yml` with
+  `continue-on-error: ${{ !matrix.blocking }}` at the job level — this is a structural property of
+  the workflow file itself (not a branch-protection-rule assumption), so neither leg's failure can
+  influence the required-check aggregate in either direction. `git diff --stat 1b684de..HEAD --
+  .github/workflows/ci.yml CMakeLists.txt` is empty across the entire round-3 span — no leg was
+  quietly made non-blocking and no exclusion/warning-flag was widened to manufacture this result.
+
+**Conclusion: SC5 is met.** The encode-twice comparison runs and comes back clean on all three
+blocking legs (plus additionally on the Windows leg, beyond what was strictly required), DOC-03's
+coverage gate and TRUST-09's TSDuck-derived goldens pass on the designated leg, and the release
+blocker is genuinely wired into a CI matrix whose three required legs are green on real,
+independently-queried evidence — not inference, not a partial matrix, not absence-from-a-failure-list.
+
+### Required Artifacts (round-3 files, verified against the current working tree)
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `scripts/ffmpeg_pin.json` | Pinned ffmpeg build set: URL + SHA-256 per runner key | ✓ VERIFIED | 30 lines, 4 `sha256` fields present. |
-| `scripts/install_pinned_ffmpeg.sh` | Checksum-verifying downloader, no unpinned fallback | ✓ VERIFIED | 314 lines (min_lines: 80 satisfied). WR-02 (code review) notes a latent, currently-unreached path-traversal gap in its dead `tar.xz` branch — not a blocker, all 4 current pin entries use `"archive": "zip"`, which CPython sanitizes natively. |
-| `scripts/corpus_digest.sh` | Deterministic per-fixture SHA-256 listing | ✓ VERIFIED | 102 lines (min_lines: 40 satisfied). |
-| `scripts/lint_bash4_builtins.sh` | Permanent bash-3.2 portability gate | ✓ VERIFIED, ⚠️ 2 bypasses documented | 239 lines (min_lines: 90 satisfied); wired into the required lint job. Code review (03-REVIEW.md WR-01, this round's own numbering) confirms by direct AWK-matcher execution that `shopt -s <other> globstar` and split-token `declare -r -A` both bypass detection — a real gap in a gate built specifically to prevent silent misses of this class, but not a Phase-3-goal blocker (no such construct exists in the repo today). |
-| `tests/golden/CORPUS_DIGEST.txt` | Committed per-fixture digest listing, designated-leg drift gate | ✓ VERIFIED | 81 lines, `CORPUS_DIGEST_SUMMARY=` present. |
-| `CMakeLists.txt` (NOMINMAX) | Windows macro suppression applied once, to all first-party targets | ✓ VERIFIED | Line 273, via `mediadiff_apply_platform_definitions`, not per-file. |
-| `src/probe/ebml_scan.cpp` | Compiles under MSVC | ✓ VERIFIED (this specific defect) | `#include <algorithm>` present at line 3; confirmed compiling cleanly in CI run 33990099158 (a later, unrelated file now blocks the same leg). |
-| `src/report/junit.cpp` (`xml_escape`) | Backslash-doubling matching `sanitize_for_display` | ✓ VERIFIED | Code review (03-REVIEW.md) confirms lines 122-130 add `case '\\': out += "\\\\"; break;`, with 2 new targeted regression tests in `tests/unit/test_junit.cpp`. Round-1's WR-01 (junit.cpp) finding is closed and not re-raised. |
-| `tests/unit/test_ebml_scan.cpp` (kClusterId) | Should not trip `-Wunused-const-variable` on any first-party toolchain | ✗ STILL BROKEN | Line 89's `kClusterId` constant remains genuinely unused; blocks arm64-osx/x64-osx Build under AppleClang. |
-| `src/cli/main.cpp` (wmain) | Every call inside `wmain` should be reachable/well-qualified for MSVC | ✗ STILL BROKEN | Line 297's `report_cli_error(...)` call remains unqualified; blocks x64-windows-static-md Build under MSVC. |
+| `tests/unit/test_ebml_scan.cpp` | `kClusterId` referenced by a real test, not a silencing no-op | ✓ VERIFIED | Line 89 declares the constant; line 248 uses it in a new Cluster-inside-Segment test asserting `first_cluster_offset` by value, not merely presence. `grep -c kClusterId` = 2. |
+| `src/cli/main.cpp` | Every `report_cli_error` call site namespace-qualified | ✓ VERIFIED | All three call sites (lines 157, 176, 297) read `mediadiff::report_cli_error(...)`. |
+| `scripts/lint_bash4_builtins.sh` | Widened matchers close the split-flag/multi-option bypasses; self-test covers all 6 checks | ✓ VERIFIED (code review confirms by direct execution) | 03-REVIEW.md independently re-ran the extracted AWK matcher against `declare -r -A arr` and `shopt -s dotglob globstar` — both now flagged, with no new false positives. |
+| `scripts/install_pinned_ffmpeg.sh` | tar.xz member-path traversal guard | ⚠️ PARTIALLY VERIFIED — see CR-01 below | The direct `../escape.txt` traversal case is refused (confirmed). A **relative-target symlink** bypass remains unaddressed and the header comment's "refused outright" claim is inaccurate for that case (03-REVIEW.md CR-01, reproduced by the reviewer). Dead code today — every `ffmpeg_pin.json` entry uses `"archive": "zip"` — so not currently reachable. |
+| `.planning/WINDOWS.md` | Entries #13/#16 closed on cited observed evidence; every newly-exposed defect recorded | ✓ VERIFIED | `windows status`: total 22, 11 fixed / 11 open, markdown table and JSON array agree exactly (independently re-run). #13, #16, #18, #19, #20, #21 all read `fixed` with a `resolved_at`; #11, #14, #17, #22 read `open` with a recorded reason. |
+| `.planning/REQUIREMENTS.md` | TRUST-06 status agrees at both carrying sites, matching observed evidence | ✓ VERIFIED | Line 173 (`- [x] **TRUST-06**...`) and line 372 (`| TRUST-06 | Phase 3 | Complete |`) agree; this verifier's own independent CI re-query confirms the underlying claim is now true, not merely asserted. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| `scripts/ffmpeg_pin.json` | `scripts/install_pinned_ffmpeg.sh` | URL + SHA-256 verification before any corpus generation | ✓ WIRED | Confirmed: `install_pinned_ffmpeg.sh` reads the pin file, verifies checksum, exports `MEDIADIFF_FFMPEG`; no rolling-channel fallback found in `.github/workflows/ci.yml`. |
-| `.github/workflows/ci.yml` (all 5 legs) | `scripts/check_corpus.sh` / `scripts/corpus_digest.sh` | Unconditional pre-Configure corpus generation + verification + digest steps | ✓ WIRED, PROVEN AT RUNTIME | Real CI run 33990099158: x64-linux and arm64-osx both show these steps concluding success (arm64-linux fails downstream at NuGet feed registration — a separate, non-blocking, pre-existing infra issue, WINDOWS.md #11 — not at corpus generation). |
-| `tests/golden/CORPUS_DIGEST.txt` | The 5 byte-exact fixture-derived golden tests | Named+counted CTest `-E` exclusion on non-designated legs | ✓ WIRED | `.github/workflows/ci.yml:370-382`: `EXPECTED_EXCLUDED_COUNT=5` asserted against unfiltered-vs-filtered `ctest -N` totals; confirmed present in the workflow file. |
-| `scripts/gen_corpus.sh` → `tests/fixtures/*` → `ctest` | The `Test` step's exit code → the required status check | 3-step unconditional CI group before `Configure`, now on a checksum-verified ffmpeg | ⚠️ WIRED ON x64-linux ONLY, DOWNSTREAM RED ON THE OTHER 2 BLOCKING LEGS | x64-linux: Test runs, 616/617 `trust06_idempotence` both Passed. arm64-osx, x64-windows-static-md: Build fails before Test ever runs, for reasons (#13, #16) unrelated to the corpus/ffmpeg-pin chain itself. |
+| Two one-line source fixes (main.cpp:297, test_ebml_scan.cpp:89) | arm64-osx / x64-windows-static-md Build step conclusions | one push, per-leg step conclusions read individually | ✓ WIRED, PROVEN AT RUNTIME | Confirmed via independent `gh run view --json jobs` query against the closing run. |
+| `tests/golden/CORPUS_DIGEST.txt` (regenerated `size_near_b.mp4` entry) | `build (arm64-osx)`'s `doc03_coverage`/digest-assert steps | fixture-margin widening + designated-leg digest regeneration from real x64-linux CI output | ✓ WIRED, PROVEN AT RUNTIME | `build (arm64-osx)`: `100% tests passed out of 618` in the closing run; `build (x64-linux)`'s digest-assert step also passed in the same run. |
+| `.planning/WINDOWS.md` (dual representation) | `windows status` / `/gsd-ship`'s enforcement gate | markdown table + fenced JSON array kept in sync via the `windows` subcommands | ✓ WIRED | Independently re-verified: `windows status` total (22) matches both representations exactly; per-entry disposition (fixed vs open) matches between the two representations for every one of #11/#13/#14/#16/#17/#20/#21/#22 checked. |
+| `.planning/REQUIREMENTS.md` TRUST-06 | Observed CI evidence | evidence-not-edit reconciliation (03-22 Task 2) | ✓ WIRED | Confirmed both sites already read `Complete`/checked and the underlying claim is now independently verified true, closing the discrepancy the prior verification round flagged. |
 
-### Behavioral Spot-Checks (this round, independently re-run against real CI and the current working tree — not re-quoting any SUMMARY)
+### Behavioral Spot-Checks (independently re-run against real CI, not re-quoting any SUMMARY)
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| Real CI run's per-job conclusions (blocking-leg status) | `gh run view 33990099158 --repo dkastsenich/mediadiff --json headSha,status,conclusion,jobs` | `headSha=1b684de`, overall `conclusion=failure`; `build (x64-linux)`: success; `build (arm64-osx)`: failure; `build (x64-windows-static-md)`: failure; `build (x64-osx)`: failure (non-blocking); `build (arm64-linux)`: failure (non-blocking, NuGet feed); `lint (ENG-16 boundary)`: success | ✓ CONFIRMS only 1/3 blocking legs green |
-| x64-windows-static-md Build failure root cause | `gh run view 33990099158 --log-failed --job <id> \| grep -iE error` | `src/cli/main.cpp(297): error C3861: 'report_cli_error': identifier not found` | ✓ CONFIRMS WINDOWS.md #16 verbatim |
-| arm64-osx Build failure root cause | `gh run view 33990099158 --log-failed --job <id> \| grep -iE error` | `tests/unit/test_ebml_scan.cpp:89:25: error: unused variable 'kClusterId' [-Werror,-Wunused-const-variable]` | ✓ CONFIRMS WINDOWS.md #13 verbatim |
-| arm64-linux failure is infra, not corpus/build | `gh run view 33990099158 --json jobs -q '.jobs[] \| select(.name=="build (arm64-linux)") \| .steps[] \| select(.conclusion=="failure")'` | `"Register vcpkg NuGet feed (read-write, trusted runs only)"` — pre-Configure infra step | ✓ CONFIRMS non-blocking classification |
-| Both defect lines still present in current working tree (not fixed since the CI run) | `sed -n '297p' src/cli/main.cpp`; `sed -n '89p' tests/unit/test_ebml_scan.cpp` | `report_cli_error(...)` still unqualified; `constexpr std::uint64_t kClusterId = 0x1F43B675;` still present, unreferenced | ✓ CONFIRMS defects remain unfixed at current HEAD |
-| No source changed between the CI run's head and current HEAD | `git diff --stat 1b684de aa57af4` | Only `.planning/*` docs/ledger files changed (ROADMAP.md, STATE.md, WINDOWS.md, 03-*-SUMMARY.md, 03-REVIEW*.md, 03-VERIFICATION.md) | ✓ CONFIRMS CI evidence at 1b684de still applies to current code |
-| `trust06_idempotence` passes on the one leg that reaches it, independently re-run locally | `ctest --test-dir build/x64-linux -R trust06_idempotence` | 2/2 Passed | ✓ PASS (matches CI log) |
-| `trust06_idempotence` Passed-line count in the real run log | `gh run view 33990099158 --log --job <x64-linux id> \| grep trust06_idempotence` | 2 `Passed` lines found (both on x64-linux); 0 on arm64-osx (Test step never reached) | ✓ CONFIRMS only 2/4 required lines exist, matching 03-20's own honest self-assessment |
-| Code review WR-01/WR-02 findings still open in current tree | Read `03-REVIEW.md` frontmatter + body | `critical: 0, warning: 2, info: 4` | ✓ CONFIRMS review's own count, cross-checked against file content |
-| Requirements coverage: all 23 Phase-3 IDs present | `grep -E "Phase 3" .planning/REQUIREMENTS.md` | All 23 IDs (`PROBE-01/02/04-10, CONT-01-09, SIZE-01, DIR-06, TRUST-06/09, DOC-03`) marked `Complete` | ⚠️ SEE REQUIREMENTS COVERAGE NOTE BELOW — REQUIREMENTS.md marks TRUST-06 "Complete" despite SC5 remaining false; a discrepancy worth flagging, not silently accepting |
+| Closing run's per-job conclusions | `gh run view 34023871831 --json jobs` | 4 required jobs `success`, 2 non-blocking `failure` | ✓ CONFIRMS orchestrator's table exactly |
+| Per-step Build/Test conclusions for all 5 build legs | `gh run view --json jobs --jq '.jobs[]|{name,steps:[...]}'` | 3 blocking legs Build=success/Test=success; x64-osx Build=failure/Test=skipped; arm64-linux Build=skipped/Test=skipped | ✓ CONFIRMS step-level (not just job-level) success on all 3 blocking legs |
+| `trust06_idempotence` Passed lines, x64-linux | `gh run view --log --job <id> \| grep -i trust06_idempotence` | 2 `Passed` lines (#617, #618) | ✓ CONFIRMS |
+| `trust06_idempotence` Passed lines, arm64-osx | same, different job id | 2 `Passed` lines (#612, #613) | ✓ CONFIRMS |
+| `trust06_idempotence` Passed lines, x64-windows-static-md | same, different job id | 2 `Passed` lines (#612, #613) — exceeds requirement | ✓ CONFIRMS (bonus evidence) |
+| DOC-03/TRUST-09 gate lines, x64-linux | `grep -iE 'doc03_coverage|ts_scan_golden'` on that job's log | 3 `ts_scan_golden` + 2 `doc03_coverage` Passed lines | ✓ CONFIRMS |
+| Per-leg corpus verification | `grep -i 'check_corpus.sh: clean'` on each blocking leg's log | 3/3 present | ✓ CONFIRMS |
+| Non-blocking-leg failure root causes | `--log-failed` on `x64-osx`/`arm64-linux` jobs | link error (arch mismatch) / NuGet feed registration | ✓ CONFIRMS legitimate pre-existing classification, not a convenient exclusion |
+| Workflow/CMake gate integrity across the whole round-3 span | `git diff --stat 1b684de..HEAD -- .github/workflows/ci.yml CMakeLists.txt` | empty | ✓ CONFIRMS no leg was quietly narrowed to manufacture green |
+| Local test count matches CI's built tree | `ctest --test-dir build/x64-linux -N` | `Total Tests: 623` | ✓ CONFIRMS working tree matches what CI built |
+| `windows status` ledger integrity | `node gsd-tools.cjs windows status` | total 22; 11 fixed / 11 open; table and JSON agree | ✓ CONFIRMS |
+| Code-review CR-01 (relative-symlink tar.xz bypass) still unfixed | `sed -n '217,236p' scripts/install_pinned_ffmpeg.sh` | only `os.path.isabs(linkname)` checked; no relative-target resolution | ✓ CONFIRMS review's finding is still present verbatim; no fix commit exists after `be355f1` |
+| WINDOWS.md #22 (x64-linux corpus non-reproducibility) still open, unledgered CR-01 | `grep -n 'CR-01\|symlink' .planning/WINDOWS.md` | no match | ✓ CONFIRMS CR-01 has not yet been added to the ledger |
 
 ### Probe Execution
 
@@ -162,23 +148,22 @@ No `scripts/*/tests/probe-*.sh`-style probes declared by this phase; N/A — ski
 
 ### Requirements Coverage
 
-All 23 requirement IDs declared across the phase's 20 plans (`PROBE-01/02/04/05/06/07/08/09/10,
-CONT-01…09, SIZE-01, DIR-06, TRUST-06/09, DOC-03`) are present in REQUIREMENTS.md's Phase-3 mapping.
-Cross-referenced against `.planning/ROADMAP.md`'s Phase-3 requirement list — identical 23-id set, no
-orphans, no omissions.
+All 23 requirement IDs (`PROBE-01/02/04/05/06/07/08/09/10, CONT-01…09, SIZE-01, DIR-06,
+TRUST-06/09, DOC-03`) are present in `.planning/REQUIREMENTS.md`'s Phase-3 mapping, all marked
+`Complete`, and cross-referenced against `.planning/ROADMAP.md`'s Phase-3 requirement list —
+identical 23-id set, no orphans, no omissions. Checklist-site checkboxes (`- [x] **ID**: ...`)
+spot-checked for PROBE-05, TRUST-06, TRUST-09, DOC-03 all agree with their table-row status.
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| PROBE-01, 02, 04, 05, 06, 07, 08 | ✓ SATISFIED (unchanged) | Untouched by gap-closure round 2. |
-| PROBE-09 | ✓ SATISFIED | Unaffected by round 2 (CR-01/CR-02 fix from round 1 stands). |
-| PROBE-10 | ✓ SATISFIED (unchanged) | `pass_union` tests unaffected. |
-| CONT-01, 07, 08, 09 | ✓ SATISFIED (unchanged) | Untouched by round 2. |
-| CONT-02, CONT-03, CONT-04, CONT-06 | ✓ SATISFIED | 03-17 touched these for the JUnit backslash-doubling fix and Windows macro suppression; both confirmed present and tested this round (test_junit.cpp's 2 new cases). |
-| CONT-05 | ✓ SATISFIED (unchanged) | Round-1 CR-01/CR-02 fix stands, untouched by round 2. |
-| SIZE-01, DIR-06 | ✓ SATISFIED (unchanged) | Round-1 CR-04 fix stands, untouched by round 2. |
-| TRUST-06 | ⚠️ **REQUIREMENTS.md says "Complete"; actual CI evidence says NOT wired as a green release blocker.** | REQUIREMENTS.md's Phase-3 table marks TRUST-06 `Complete` (a pre-existing categorization, not something round 2 changed), but this verification's own SC5 finding directly contradicts that: the CI matrix that would make TRUST-06 a functioning release blocker is red on 2 of 3 blocking legs as of the latest real run (33990099158) and current HEAD. Flagging rather than silently accepting REQUIREMENTS.md's checkbox — the underlying test and corpus infrastructure are real and substantive, but "wired into CI as a release blocker" (the requirement's own operative claim, mirrored in SC5) is not yet true end-to-end. |
-| TRUST-09 | ✓ SATISFIED locally, same CI-matrix caveat | `ts_scan_golden` passes on x64-linux (the designated leg); excluded-by-name-and-count elsewhere per the accepted `designated` policy (WINDOWS.md #17). |
-| DOC-03 | ✓ SATISFIED locally, same CI-matrix caveat | 30/30 checks covered locally; the coverage gate itself is real and registry-driven, unaffected by the 2 open Build-step defects. |
+| PROBE-01, 02, 04, 06, 07, 08 | ✓ SATISFIED (unchanged) | Untouched by round 3. |
+| PROBE-05 | ✓ SATISFIED, freshly strengthened | This round adds a real behavioral test for the unknown-size-Cluster-inside-Segment edge (previously documented in `ebml_scan.h`'s header comment but never tested), asserting `first_cluster_offset` by value. |
+| PROBE-09, PROBE-10 | ✓ SATISFIED (unchanged) | Untouched by round 3. |
+| CONT-01…09 | ✓ SATISFIED (unchanged) | Untouched by round 3. |
+| SIZE-01, DIR-06 | ✓ SATISFIED (unchanged) | The round-3 fixture-margin fix (WINDOWS.md #20) was a calibration correction, not a change to `size.*`'s computation. |
+| TRUST-06 | ✓ SATISFIED, now genuinely supported by observed evidence | Independently re-confirmed this round via direct `gh` queries against run 34023871831: the release blocker is wired into CI and comes back green on all three required legs. Previously `Complete` was asserted but unsupported by CI evidence (round 2's own finding); this round's evidence closes that gap. |
+| TRUST-09 | ✓ SATISFIED | `ts_scan_golden`'s three TSDuck-derived cases independently confirmed `Passed` on the designated leg in the closing run. |
+| DOC-03 | ✓ SATISFIED | `doc03_coverage`'s two cases independently confirmed `Passed` on the designated leg in the closing run. |
 
 No ORPHANED requirements found.
 
@@ -186,78 +171,74 @@ No ORPHANED requirements found.
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `tests/unit/test_ebml_scan.cpp` | 89 | `constexpr std::uint64_t kClusterId` declared, never used | 🛑 Blocker (for SC5 / arm64-osx & x64-osx build parity) | Confirmed present in current working tree; confirmed as the exact AppleClang `-Werror` failure in real CI run 33990099158 (WINDOWS.md #13, open). |
-| `src/cli/main.cpp` | 297 | `report_cli_error(...)` called unqualified from a scope outside `namespace mediadiff` | 🛑 Blocker (for SC5 / x64-windows-static-md build parity) | Confirmed present in current working tree; confirmed as the exact MSVC C3861 failure in real CI run 33990099158 (WINDOWS.md #16, open). Only reachable now that 03-17 fixed the earlier NOMINMAX defect that used to abort the build first. |
-| `scripts/lint_bash4_builtins.sh` | 133, 153 | `shopt -s <other> globstar` and split-token `declare -r -A` both bypass the gate's own detection regexes | ⚠️ Warning | Confirmed by direct AWK-matcher execution in 03-REVIEW.md (WR-01, this round's numbering). Not exploited anywhere in the current repo; a real gap in a gate purpose-built to prevent exactly this class of silent miss. |
-| `scripts/install_pinned_ffmpeg.sh` | 206-211 | `tarfile.extractall()` on the `tar.xz` branch has no path-traversal member validation | ⚠️ Warning | Confirmed dead code today (all 4 pin entries use `"archive": "zip"`, which CPython's `zipfile` sanitizes natively); live, reachable code for a future archive kind (03-REVIEW.md WR-02). |
-| `src/cli/options.cpp` | 309-361 | `resolve_probe_timeout_ms`/`resolve_probe_memory_budget_mb` re-parse CLI11-already-validated text with `std::stoll` | ℹ️ Info | Pre-existing, carried forward verbatim from round-1 review's own IN-01; untouched by round 2. |
-| `scripts/lint_bash4_builtins.sh` | 128-131 | `mapfile`/`readarray` check can false-positive on a quoted string literal mentioning those words | ℹ️ Info | Confirmed by direct test in 03-REVIEW.md (IN-02). Not presently triggered by any file under `scripts/`. |
-| `scripts/lint_bash4_builtins.sh` | 161-217 | Self-test control clause exercises only 1 of the script's 6 flagged-construct checks | ℹ️ Info | Confirmed in 03-REVIEW.md (IN-03); the two WR-01 gaps above are invisible to the self-test as written. |
-| `scripts/install_pinned_ffmpeg.sh`, `scripts/corpus_digest.sh` | various | `compute_sha256` and its preflight tool-check duplicated verbatim between the two scripts | ℹ️ Info | Confirmed in 03-REVIEW.md (IN-04); deliberate per both scripts' own header comments, but a future-drift risk. |
+| `scripts/install_pinned_ffmpeg.sh` | 217-236 | tar.xz extraction guard checks only absolute symlink targets; a relative-target symlink that resolves outside the destination directory is not checked, and the header comment's "refused outright" claim is inaccurate for that case (03-REVIEW.md CR-01, reproduced by the reviewer with a working exploit) | ⚠️ Warning (not a phase blocker — see rationale below) | Dead code today: every entry in `scripts/ffmpeg_pin.json` uses `"archive": "zip"` (confirmed: `grep -c '"archive": "zip"' scripts/ffmpeg_pin.json` = 4), and reaching the tar.xz branch also requires a URL+SHA-256 pin entry an attacker already controls. Not yet recorded in `.planning/WINDOWS.md` as of this verification — this is a process gap: a critical-severity code review finding that should be ledgered even while deferred. **Recommend adding a WINDOWS.md entry before `/gsd-ship`**, since the ledger's own stated purpose is to make exactly this kind of accepted-but-unresolved finding visible to the next round. |
+| `scripts/gen_corpus.sh` | 483-491 | x64-linux's own libopus-encoded fixture generation (`mkv_opus_a.webm`/`mkv_opus_b.webm`) observed non-reproducible run-to-run on the identical commit and pinned ffmpeg binary (WINDOWS.md #22, open) | ⚠️ Warning (does not currently fail any SC — see rationale below) | This threatens the evidentiary basis of the designated-leg byte-exact golden policy (WINDOWS.md #17) in principle, but did not recur in either of this round's two subsequent CI runs, and none of the 5 byte-exact golden tests failed in the closing run 34023871831 (`x64-linux`: `100% tests passed, 0 tests failed out of 623`). Honestly recorded as open with quoted hash evidence from both the passing and failing prior runs; correctly not folded into a claimed-closed SC5. |
+| `src/cli/options.cpp` | 309-361 | `resolve_probe_timeout_ms`/`resolve_probe_memory_budget_mb` re-parse CLI11-already-validated text with `std::stoll` | ℹ️ Info | Pre-existing, carried forward verbatim from round-1 review (IN-01); untouched by round 3. |
+| `scripts/lint_bash4_builtins.sh` | various | Line-based comment-stripping still false-positives on a quoted string literal containing a flagged construct on a live code line (IN-02, reconfirmed open by 03-REVIEW.md) | ℹ️ Info | No file under `scripts/` currently triggers it; the `# bash4-allow` escape valve is the sanctioned remedy if one ever does. |
+| `scripts/install_pinned_ffmpeg.sh`, `scripts/corpus_digest.sh` | various | `compute_sha256` duplicated verbatim between the two scripts (IN-04) | ℹ️ Info | Deliberate, documented in both scripts' own header comments; a future-drift risk, not fixed this round by design (the ffmpeg-install path is executed by all 5 CI legs, so a shared-helper refactor was judged too risky mid-round). |
+| `tests/unit/CMakeLists.txt` | 191-194 | Comment justifying the new `provenance_render.cpp` link overstates which test exercises the `verbose=true` rendering path — no unit test currently calls `render_inspect_text(..., true)` (03-REVIEW.md IN-05) | ℹ️ Info | Doesn't invalidate the link fix itself (the symbol needs linking regardless of runtime branch-folding); purely a documentation-accuracy note. |
+| `src/cli/main.cpp` | 157, 176 | Two of the three `mediadiff::` qualifications added this round are functionally inert (already inside `namespace mediadiff`, never actually broken) (03-REVIEW.md IN-06) | ℹ️ Info | Harmless; the round's own SUMMARY already correctly attributes only the `wmain` call site (line 297) as the actual MSVC fix. |
 
-**Debt-marker gate:** No `TBD`/`FIXME`/`XXX` found in any file touched by round-2's 5 gap-closure plans
-(checked this round via direct grep against each plan's declared `key-files`) — clean.
+**Debt-marker gate:** No unreferenced `TBD`/`FIXME`/`XXX` found in any file touched by round 3's
+two gap-closure plans (`git diff --stat 40db636..HEAD` file set checked directly) — clean.
 
 ### Human Verification Required
 
-None. Every finding above — including the two still-open, CI-blocking defects — was resolved
-programmatically: by independently re-querying the real CI run and its failure logs via `gh run view`
-/ `gh run view --log-failed` (a different invocation than any prior round used, targeting job-level
-step failures directly rather than the whole-run summary), by reading the exact source lines those
-logs cite in the current working tree, and by confirming no source has changed between the CI run's
-head commit and current HEAD via `git diff --stat`.
+None. All findings above — including the two open, non-blocking WINDOWS.md entries (#17, #22)
+and the unledgered code-review finding (CR-01) — were resolved programmatically: by independently
+re-querying the real CI run and its job/step-level conclusions via `gh run view`, by reading the
+exact source lines the review and the ledger cite in the current working tree, and by confirming
+no workflow/CMake gate was altered across the entire round-3 span.
 
 ### Gaps Summary
 
-Gap-closure round 2 delivered real, substantial, independently-verified progress on SC5. Two
-significant, previously-open defects (WINDOWS.md #9 — MSVC NOMINMAX; #10 — x64-linux golden drift) are
-genuinely closed this round, each confirmed via a *specific, observed CI step conclusion*, not a
-committed-change inference: `ebml_scan.cpp` now compiles cleanly under MSVC, and x64-linux's Build and
-Test steps both conclude success with `trust06_idempotence`'s two cases directly observed `Passed` in
-the run log. A third, mid-round-discovered defect (WINDOWS.md #15 — macOS bash-3.2 `mapfile` crash) is
-also closed and proven at runtime. The cross-platform corpus-identity question the pinning work raised
-is resolved with a deliberate, developer-approved, non-silent "designated" scope narrowing (WINDOWS.md
-#17) rather than left open or quietly assumed.
+**SC5 is now met, independently re-confirmed.** Gap-closure round 3 (plans 03-21, 03-22) closed
+the two one-line source defects (`tests/unit/test_ebml_scan.cpp:89`, `src/cli/main.cpp:297`) that
+blocked two of the three required CI legs, discovered and fixed four further defects along the
+way (a missing test-target link, a Windows-macro identifier collision, a fixture-margin
+calibration issue, and a GITHUB_PATH format bug), and produced one real CI run
+(34023871831, head `64bc168`) in which all three blocking legs and the required lint job conclude
+`Build`=`success`/`Test`=`success` at the step level — independently re-verified against GitHub's
+API directly by this verifier, not accepted from either plan's SUMMARY narration. This is the
+first time in this phase's entire CI history (across at least 9 real runs referenced across
+rounds 1-3) that this has been observed. All 23 Phase-3 requirement IDs are satisfied, and
+REQUIREMENTS.md's TRUST-06 status — previously flagged by the prior verification round as
+asserting more than its evidence supported — is now genuinely backed by observed evidence.
 
-**But SC5 itself is still false, and this round's own evidence says so plainly — 03-20-SUMMARY.md
-reports this itself, and this verification independently confirms it via a separate `gh` query this
-round.** Of the 3 legs the gap-closure work itself designates as blocking, only x64-linux is green.
-Two new (to this specific investigation depth) defects — both one-line fixes, both outside any
-gap-closure plan's declared scope, both confirmed present in the current working tree — keep the other
-2 blocking legs red:
+**Two items are worth carrying forward as recorded, non-blocking follow-ups, not as gaps against
+this phase's goal:**
 
-1. **`tests/unit/test_ebml_scan.cpp:89`** — an unused `constexpr` fails AppleClang's
-   `-Werror,-Wunused-const-variable`, blocking arm64-osx's Build step (WINDOWS.md #13).
-2. **`src/cli/main.cpp:297`** — an unqualified `report_cli_error` call fails MSVC's name lookup,
-   blocking x64-windows-static-md's Build step (WINDOWS.md #16). This defect was invisible until 03-17's
-   NOMINMAX fix let the Windows build reach this line for the first time.
+1. **03-REVIEW.md's CR-01** (a critical-severity finding: the tar.xz path-traversal guard added
+   this round only checks absolute symlink targets, leaving a relative-target symlink escape
+   unaddressed, and its header comment overstates the guarantee as "refused outright"). This does
+   not block the phase goal: the branch is dead code today (every `ffmpeg_pin.json` entry is
+   `"archive": "zip"`, confirmed), reaching it requires an attacker who already controls a pinned
+   URL+SHA-256 entry, and no Phase-3 requirement or ROADMAP success criterion depends on this
+   script's extraction hardening being complete — it was itself a code-review-driven hardening
+   task (WR-02) layered onto D-GAP-01's supply-chain-integrity work, not a named acceptance
+   criterion. It IS a process gap worth naming plainly: a critical review finding that has not yet
+   been recorded in `.planning/WINDOWS.md`, unlike every other defect this phase has surfaced.
+   **Recommend a WINDOWS.md entry and a follow-up fix (the reviewer's own drafted patch) before
+   this branch is ever made live** (i.e., before any `ffmpeg_pin.json` entry uses `"archive":
+   "tar.xz"`).
+2. **WINDOWS.md #22** (x64-linux's own libopus-fixture generation observed non-reproducible once,
+   run-to-run, on the identical commit and pinned ffmpeg binary). This does not currently fail any
+   ROADMAP success criterion or requirement — it did not recur in either of this round's two
+   later CI runs, and the closing run's designated-leg digest-assert step and all 5 byte-exact
+   golden tests passed cleanly. It IS a legitimate, honestly-recorded reliability risk to the
+   designated-leg byte-exact policy's own assumption (WINDOWS.md #17) that x64-linux is internally
+   deterministic — a single non-recurrence is evidence against that assumption, not proof the
+   policy is safe long-term. Correctly left open rather than silently assumed resolved; no action
+   required before this phase can be considered complete, but a future ffmpeg-pin bump or CI
+   flakiness investigation should treat this as open, not closed.
 
-Neither defect touches TRUST-06's own logic, the ffmpeg pin, the corpus generation/digest machinery, or
-any of round 2's actual deliverables — they are pre-existing Phase-3 source defects (03-06's test file;
-main.cpp's Windows-only `wmain` path) that real CI has now progressed far enough to expose, exactly as
-WINDOWS.md #9/#10 were before them. This is the third consecutive round in which fixing one blocking-CI
-defect has revealed the next one behind it — a pattern worth naming explicitly for whoever plans the
-next round: **this phase's CI matrix has never yet had all 3 blocking legs reach and pass Test in the
-same run.** x64-windows-static-md in particular has never once been observed reaching its Test step at
-all across all three real CI runs referenced in this phase's verification history
-(33951407521, 33983460934, 33990099158).
-
-**What must happen before Phase 3 can pass:**
-1. Fix `tests/unit/test_ebml_scan.cpp:89` (use or remove the unused `kClusterId` constant).
-2. Fix `src/cli/main.cpp:297` (qualify as `mediadiff::report_cli_error(...)`).
-3. Re-run CI and confirm, from the run log directly: all 3 blocking legs conclude Build success and
-   reach Test; all 4 required `trust06_idempotence` Passed lines are observed (2 on x64-linux, 2 on
-   arm64-osx); and — since this has never yet happened on any real run — x64-windows-static-md's Test
-   step itself concludes and its own `trust06_idempotence` (or platform-equivalent) results are
-   observed, not merely inferred from Build succeeding.
-
-Both fixes are small and low-risk; neither requires reopening any of round 2's actual work (ffmpeg
-pinning, bash-3.2 portability, corpus-digest policy, JUnit escaping) or round 1's work (CR-01/CR-02,
-CR-04). No override is suggested for SC5 — the gap is real, current, independently reproducible via
-`gh run view`, and its two remaining causes are now named precisely enough that the next round should
-be able to close it in one plan.
+Neither item changes the phase's goal-achievement verdict: SC5's own precise, narrow claim —
+"comes back clean as a CI release blocker" — is true on the evidence this verifier independently
+gathered, and the surrounding infrastructure (ffmpeg pinning, corpus generation/digest, bash-3.2
+portability, MSVC/AppleClang build parity) that three consecutive gap-closure rounds progressively
+hardened is now proven working end-to-end on a real, current CI run.
 
 ---
 
-_Verified: 2026-09-05T21:15:00Z_
+_Verified: 2026-09-06T12:00:00Z_
 _Verifier: Claude (gsd-verifier)_
