@@ -925,11 +925,17 @@ cp "$OUT_DIR/size_crf20.mp4" "$OUT_DIR/size_crf20_copy.mp4"
   -c:v mpeg4 -c:a aac -b:v 400k -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/size_crf23.mp4"
 
-# The near-identical pair: confirmed empirically -b:v 700k vs -b:v 730k ->
-# a ~2.7% delta -- under the sw-encoder profile's 3% warn bound (passes)
-# but over the strict-bitexact/remux profiles' 0.5% override (fails
-# there), proving the [check.profile_tolerance] override actually
-# resolves.
+# The near-identical pair: originally -b:v 700k vs -b:v 730k, measured at a
+# ~2.7% delta -- under the sw-encoder profile's 3% warn bound (passes) but
+# over the strict-bitexact/remux profiles' 0.5% override (fails there),
+# proving the [check.profile_tolerance] override actually resolves. That
+# ~2.7% delta sat only ~0.3 points under the 3% warn bound, and the pinned
+# ffmpeg's mpeg4 encoder measurably shifts by CPU architecture even under
+# -flags +bitexact -fflags +bitexact (WINDOWS.md #12's SIMD-dispatch
+# class), which tipped this pair from pass into warn on arm64-osx
+# (WINDOWS.md #20, real CI run 34021508083). Widened to -b:v 700k/715k
+# (~1.1% measured delta locally) for a safer margin under the same 3%
+# bound while still clearing the 0.5% strict-bitexact/remux override.
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
   -f lavfi -i "sine=frequency=440:duration=2" \
   -c:v mpeg4 -c:a aac -b:v 700k -flags +bitexact -fflags +bitexact -y \
@@ -937,7 +943,7 @@ cp "$OUT_DIR/size_crf20.mp4" "$OUT_DIR/size_crf20_copy.mp4"
 
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
   -f lavfi -i "sine=frequency=440:duration=2" \
-  -c:v mpeg4 -c:a aac -b:v 730k -flags +bitexact -fflags +bitexact -y \
+  -c:v mpeg4 -c:a aac -b:v 715k -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/size_near_b.mp4"
 
 # `size.peak_bitrate`: a longer (4s) clip so at least one full 1-second
