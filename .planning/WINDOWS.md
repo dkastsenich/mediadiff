@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 12
+open_count: 14
 waived_count: 0
 fixed_count: 5
-total_count: 17
-last_updated: 2026-09-05T20:35:40.346Z
+total_count: 19
+last_updated: 2026-09-06T08:18:23.142Z
 ---
 
 # Broken Windows Ledger
@@ -32,6 +32,8 @@ last_updated: 2026-09-05T20:35:40.346Z
 | 15 | 03 | deviation | scripts/check_corpus.sh |  | Blocking arm64-osx CI leg failed at 'Verify the fixture corpus is complete' with exit 127 because check_corpus.sh used a bash-4-only array-reading builtin (mapfile) that macOS's system bash 3.2 does not provide, aborting before Configure/Build/Test ever ran. Fixed in commit 91d9d2f (03-14, which switched to a while-read loop) -- but that fix had never been exercised by any real CI run at the time it was recorded; 03-18 added the permanent bash-4-builtin lint guard, and 03-20 observed the runtime proof on real CI run 33990099158 (head 1b684de): arm64-osx's 'Generate media fixture corpus (BUILD-08 / D-08)' and 'Verify the fixture corpus is complete' steps both concluded success, printing 'check_corpus.sh: clean. Verified 80 fixture(s) present and non-empty'. | fixed |  | 2026-09-05T20:35:10.410Z | 2026-09-05T20:35:40.208Z |
 | 16 | 03 | deviation | src/cli/main.cpp | 297 | Blocking x64-windows-static-md CI leg fails at the Build step (all other blocking-leg build defects it previously failed on are now fixed): src/cli/main.cpp(297): error C3861: 'report_cli_error': identifier not found. report_cli_error is declared in namespace mediadiff (src/cli/diagnostics.h:43); main.cpp closes that namespace at line 209, and wmain (lines 222-312) calls it unqualified. Line 292 immediately above correctly writes mediadiff::wide_to_utf8(...); line 297 simply omits the qualification. The whole block is inside #ifdef _WIN32, so GCC/Clang on the other legs never compile it -- it only became reachable once 03-17 fixed the earlier C2059/NOMINMAX error that used to abort the Windows build first. Fix is a one-token change to mediadiff::report_cli_error(...). Discovered by 03-20 on real CI run 33990099158 (head 1b684de); out of 03-20's declared files_modified (WINDOWS.md, 03-VERIFICATION.md only) -- recorded, not fixed. | open |  | 2026-09-05T20:35:20.791Z |  |
 | 17 | 03 | deviation | .github/workflows/ci.yml |  | 03-19 chose the 'designated' D-GAP-01 corpus-identity policy (not 'uniform') after measuring that the pinned ffmpeg builds do NOT produce byte-identical fixtures across CI legs (arm64-osx diverges from x64-linux/x64-windows-static-md on 76 of 80 fixtures, real run 33983460934). As a result 5 byte-exact fixture-derived golden tests -- unit.inspect_container - golden:, unit.ts_scan_golden (ts_204/ts_multiprogram/ts_single), and integration.size_checks - the size.* findings are pinned -- run ONLY on the designated leg (x64-linux); they are excluded by name on every other leg (arm64-osx, x64-osx, x64-windows-static-md, arm64-linux) via a CTest -E regex, with EXPECTED_EXCLUDED_COUNT=5 asserted against unfiltered-vs-filtered ctest -N totals so the exclusion cannot silently widen. Every non-designated leg's log announces the exclusion by name and reason (never silent). This is an accepted, deliberate narrowing of test COVERAGE (not of assertion strength -- the byte-exact assertions themselves stay byte-exact on the designated leg) that the ledger should keep visible for future rounds. Left open: a future ffmpeg-pin bump under this policy must regenerate tests/golden/CORPUS_DIGEST.txt from the designated leg's real CI output in the same commit as the pin change (03-19-SUMMARY.md's own Next Phase Readiness note). | open |  | 2026-09-05T20:35:33.156Z |  |
+| 18 | 03 | deviation | tests/unit/CMakeLists.txt |  | Blocking arm64-osx CI leg fails to link tests/unit/mediadiff_unit_tests: undefined symbol mediadiff::render_provenance_chain(std::span<const PolicyProvenance>, int), referenced from test_inspect_container_section.cpp.o. src/cli/provenance_render.cpp (which defines it) is only compiled into the mediadiff executable target, never into the unit-test target, even though src/cli/commands/inspect_render.h's inline render_inspect_text() calls it under verbose=true. Every call site in test_inspect_container_section.cpp happens to pass a literal verbose=false, which lets GCC's inliner constant-fold the branch away and never reference the symbol on x64-linux -- AppleClang's arm64-osx leg does not perform the same fold and fails at link. Revealed by 03-21 on real CI run 34020446940 (head 501c0dd), once the two blocking-leg one-line defects it fixed stopped masking this one; fixed same-round by adding src/cli/provenance_render.cpp to tests/unit/CMakeLists.txt's source list, matching the established color_policy.cpp/tty_render.cpp/dir_pairing.cpp/worker_pool.cpp pattern. | open |  | 2026-09-06T08:18:22.996Z |  |
+| 19 | 03 | deviation | tests/integration/test_container_ts.cpp | 140 | Blocking x64-windows-static-md CI leg fails to build: tests/integration/test_container_ts.cpp(140): error C2513: 'mediadiff::test::ProcessResult': no variable declared before '=', followed by cascading syntax errors on the next two lines. Root cause: a local variable is named 'far', which the Windows SDK's <windows.h> (transitively included by tests/process_spawn.h's _WIN32 CreateProcess path) defines as an EMPTY legacy 16-bit-compatibility macro (alongside 'near'/'pascal'), silently erasing the identifier and corrupting the declaration -- MSVC-only, since no other leg's toolchain defines any such macro. Revealed by 03-21 on real CI run 34020446940 (head 501c0dd), once the two blocking-leg one-line defects it fixed let the build reach this file for the first time; fixed same-round by renaming the variable to pcr_far. | open |  | 2026-09-06T08:18:23.142Z |  |
 
 ````json
 [
@@ -237,6 +239,30 @@ last_updated: 2026-09-05T20:35:40.346Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-05T20:35:33.156Z",
+    "resolved_at": null
+  },
+  {
+    "id": 18,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "tests/unit/CMakeLists.txt",
+    "line": null,
+    "description": "Blocking arm64-osx CI leg fails to link tests/unit/mediadiff_unit_tests: undefined symbol mediadiff::render_provenance_chain(std::span<const PolicyProvenance>, int), referenced from test_inspect_container_section.cpp.o. src/cli/provenance_render.cpp (which defines it) is only compiled into the mediadiff executable target, never into the unit-test target, even though src/cli/commands/inspect_render.h's inline render_inspect_text() calls it under verbose=true. Every call site in test_inspect_container_section.cpp happens to pass a literal verbose=false, which lets GCC's inliner constant-fold the branch away and never reference the symbol on x64-linux -- AppleClang's arm64-osx leg does not perform the same fold and fails at link. Revealed by 03-21 on real CI run 34020446940 (head 501c0dd), once the two blocking-leg one-line defects it fixed stopped masking this one; fixed same-round by adding src/cli/provenance_render.cpp to tests/unit/CMakeLists.txt's source list, matching the established color_policy.cpp/tty_render.cpp/dir_pairing.cpp/worker_pool.cpp pattern.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:18:22.996Z",
+    "resolved_at": null
+  },
+  {
+    "id": 19,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "tests/integration/test_container_ts.cpp",
+    "line": 140,
+    "description": "Blocking x64-windows-static-md CI leg fails to build: tests/integration/test_container_ts.cpp(140): error C2513: 'mediadiff::test::ProcessResult': no variable declared before '=', followed by cascading syntax errors on the next two lines. Root cause: a local variable is named 'far', which the Windows SDK's <windows.h> (transitively included by tests/process_spawn.h's _WIN32 CreateProcess path) defines as an EMPTY legacy 16-bit-compatibility macro (alongside 'near'/'pascal'), silently erasing the identifier and corrupting the declaration -- MSVC-only, since no other leg's toolchain defines any such macro. Revealed by 03-21 on real CI run 34020446940 (head 501c0dd), once the two blocking-leg one-line defects it fixed let the build reach this file for the first time; fixed same-round by renaming the variable to pcr_far.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:18:23.142Z",
     "resolved_at": null
   }
 ]

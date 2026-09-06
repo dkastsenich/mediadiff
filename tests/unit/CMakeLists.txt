@@ -188,6 +188,18 @@ add_executable(mediadiff_unit_tests
   # without spawning the built binary.
   "${CMAKE_SOURCE_DIR}/src/cli/dir_pairing.cpp"
   "${CMAKE_SOURCE_DIR}/src/cli/worker_pool.cpp"
+  # provenance_render.cpp lives under src/cli/ too, for the same reason:
+  # src/cli/commands/inspect_render.h's inline render_inspect_text() calls
+  # render_provenance_chain() under verbose=true, and test_inspect_container_section.cpp
+  # exercises that path directly. Every call site in THIS translation unit
+  # happens to pass a literal verbose=false, which is why GCC's inliner can
+  # constant-fold the branch away and the symbol goes unreferenced there --
+  # but relying on that is optimizer-dependent, not a real link guarantee
+  # (AppleClang's arm64-osx leg does not fold it away and fails at link
+  # with an undefined symbol for render_provenance_chain, 03-21, WINDOWS.md).
+  # Linking the real definition here removes the dependency on that
+  # optimizer behavior entirely.
+  "${CMAKE_SOURCE_DIR}/src/cli/provenance_render.cpp"
   test_dir_pairing.cpp
   test_worker_pool.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12

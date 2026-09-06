@@ -137,9 +137,13 @@ TEST_CASE("container_ts - pcr_interval passes within the widened tolerance and f
     REQUIRE(finding->at("message").get<std::string>().find("estimated") != std::string::npos);
   }
   {
-    CliResult far = run_cli({"compare", fixture("ts_pcr_far_a.ts"), fixture("ts_pcr_far_b.ts"), "--json"});
-    REQUIRE(far.exit_code != 0);
-    const nlohmann::ordered_json doc = nlohmann::ordered_json::parse(far.out, nullptr, false);
+    // Not named `far`: the Windows SDK headers <windows.h> transitively pulls in
+    // (via tests/process_spawn.h's _WIN32 CreateProcess path) define `far` as an
+    // empty legacy 16-bit-compatibility macro, which silently erases the
+    // identifier and breaks this declaration on MSVC only (WINDOWS.md, 03-21).
+    CliResult pcr_far = run_cli({"compare", fixture("ts_pcr_far_a.ts"), fixture("ts_pcr_far_b.ts"), "--json"});
+    REQUIRE(pcr_far.exit_code != 0);
+    const nlohmann::ordered_json doc = nlohmann::ordered_json::parse(pcr_far.out, nullptr, false);
     REQUIRE_FALSE(doc.is_discarded());
     const auto* finding = find_finding(doc, "container.ts.pcr_interval");
     REQUIRE(finding != nullptr);
