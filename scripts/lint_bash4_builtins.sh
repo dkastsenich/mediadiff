@@ -130,7 +130,7 @@ BASH4_AWK='
     violation = 1
   }
 
-  if (match(code, /(^|[^A-Za-z0-9_])(declare|local|typeset)[ \t]+-[A-Za-z]*A[A-Za-z]*([ \t]|$)/)) {
+  if (match(code, /(^|[^A-Za-z0-9_])(declare|local|typeset)([ \t]+-[A-Za-z]+)*[ \t]+-[A-Za-z]*A[A-Za-z]*([ \t]|$)/)) {
     print FILENAME ":" FNR ": " "associative-array declaration (-A flag)"
     violation = 1
   }
@@ -150,8 +150,8 @@ BASH4_AWK='
     violation = 1
   }
 
-  if (match(code, /shopt[ \t]+-s[ \t]+globstar/)) {
-    print FILENAME ":" FNR ": " "shopt -s globstar"   # bash4-allow
+  if (match(code, /(^|[^A-Za-z0-9_])shopt[ \t]+-s([ \t]+[A-Za-z_][A-Za-z0-9_]*)*[ \t]+globstar([^A-Za-z0-9_]|$)/)) {   # bash4-allow
+    print FILENAME ":" FNR ": " "shopt -s globstar (or multi-option -s list ending in globstar)"   # bash4-allow
     violation = 1
   }
 }
@@ -163,8 +163,16 @@ END { exit (violation ? 1 : 0) }
 # scripts/lint_dead_code_after_fail.sh and
 # scripts/lint_fixture_case_collisions.sh's own established shape). A
 # matcher that has silently stopped matching reports "clean" forever --
-# the "gate that stops gating" shape this project treats as P0. Three
-# synthetic fixtures, run through the identical matcher used below:
+# the "gate that stops gating" shape this project treats as P0.
+#
+# IN-03: every one of the six checks above needs its OWN known-bad control
+# fixture -- three fixtures sharing one builtin (the array-read builtin)
+# left five of the six checks with no known-bad control input at all, so a
+# regression in any of them would still print "self-test OK". The two new
+# fixtures below that exercise the WIDENED associative-array and shopt
+# matchers (WR-01a/WR-01b) also double as permanent regression guards for
+# those two specific bypasses.
+#
 #   1. a known-bad line containing a flagged construct on a live code
 #      line -- must be flagged.
 #   2. the SAME construct, but inside a comment -- must NOT be flagged
@@ -173,6 +181,10 @@ END { exit (violation ? 1 : 0) }
 #   3. a known-good line using the bash-3.2-safe equivalent -- must NOT be
 #      flagged (guards against a matcher so aggressive it flags
 #      everything).
+#   4. one known-bad fixture per REMAINING check (associative-array via
+#      the split-flag form, case-modification expansion, `wait -n`,
+#      `coproc`, and the multi-option `shopt -s ... globstar` form) --
+#      each must independently be flagged.
 SELF_TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$SELF_TEST_DIR"' EXIT
 
@@ -185,6 +197,21 @@ printf '%s\n' '# mapfile -t arr is bash4-only, avoided deliberately' > "$KNOWN_B
 KNOWN_GOOD_FILE="${SELF_TEST_DIR}/known_good.sh"
 printf '%s\n' 'arr=(a b c)' > "$KNOWN_GOOD_FILE"
 
+KNOWN_BAD_ASSOC_FILE="${SELF_TEST_DIR}/known_bad_assoc.sh"
+printf '%s\n' 'declare -r -A arr' > "$KNOWN_BAD_ASSOC_FILE"   # bash4-allow
+
+KNOWN_BAD_CASEMOD_FILE="${SELF_TEST_DIR}/known_bad_casemod.sh"
+printf '%s\n' 'echo "${name^^}"' > "$KNOWN_BAD_CASEMOD_FILE"   # bash4-allow
+
+KNOWN_BAD_WAITN_FILE="${SELF_TEST_DIR}/known_bad_waitn.sh"
+printf '%s\n' 'wait -n' > "$KNOWN_BAD_WAITN_FILE"   # bash4-allow
+
+KNOWN_BAD_COPROC_FILE="${SELF_TEST_DIR}/known_bad_coproc.sh"
+printf '%s\n' 'coproc reader { cat; }' > "$KNOWN_BAD_COPROC_FILE"   # bash4-allow
+
+KNOWN_BAD_SHOPT_MULTI_FILE="${SELF_TEST_DIR}/known_bad_shopt_multi.sh"
+printf '%s\n' 'shopt -s dotglob globstar' > "$KNOWN_BAD_SHOPT_MULTI_FILE"   # bash4-allow
+
 set +e
 awk "$BASH4_AWK" "$KNOWN_BAD_FILE" >/dev/null
 SELF_TEST_BAD_RC=$?
@@ -192,6 +219,16 @@ awk "$BASH4_AWK" "$KNOWN_BAD_COMMENT_FILE" >/dev/null
 SELF_TEST_COMMENT_RC=$?
 awk "$BASH4_AWK" "$KNOWN_GOOD_FILE" >/dev/null
 SELF_TEST_GOOD_RC=$?
+awk "$BASH4_AWK" "$KNOWN_BAD_ASSOC_FILE" >/dev/null
+SELF_TEST_ASSOC_RC=$?
+awk "$BASH4_AWK" "$KNOWN_BAD_CASEMOD_FILE" >/dev/null
+SELF_TEST_CASEMOD_RC=$?
+awk "$BASH4_AWK" "$KNOWN_BAD_WAITN_FILE" >/dev/null
+SELF_TEST_WAITN_RC=$?
+awk "$BASH4_AWK" "$KNOWN_BAD_COPROC_FILE" >/dev/null
+SELF_TEST_COPROC_RC=$?
+awk "$BASH4_AWK" "$KNOWN_BAD_SHOPT_MULTI_FILE" >/dev/null
+SELF_TEST_SHOPT_MULTI_RC=$?
 set -e
 
 if [ "$SELF_TEST_BAD_RC" -ne 1 ]; then
@@ -209,6 +246,36 @@ fi
 if [ "$SELF_TEST_GOOD_RC" -ne 0 ]; then
   echo "lint_bash4_builtins.sh error: the matcher flagged a synthetic KNOWN-GOOD fixture (expected exit 0, got ${SELF_TEST_GOOD_RC})." >&2
   echo "Refusing to report the real scan as clean — a matcher that flags known-good input is unreliable in the other direction too." >&2
+  exit 1
+fi
+
+if [ "$SELF_TEST_ASSOC_RC" -ne 1 ]; then
+  echo "lint_bash4_builtins.sh error: the associative-array check's own self-test did not fire against a synthetic 'declare -r -A arr' fixture (expected exit 1, got ${SELF_TEST_ASSOC_RC})." >&2   # bash4-allow
+  echo "Refusing to report the real scan as clean — this is the exact split-flag form that previously bypassed this check (WR-01)." >&2
+  exit 1
+fi
+
+if [ "$SELF_TEST_CASEMOD_RC" -ne 1 ]; then
+  echo "lint_bash4_builtins.sh error: the case-modification check's own self-test did not fire against a synthetic '\${name^^}' fixture (expected exit 1, got ${SELF_TEST_CASEMOD_RC})." >&2   # bash4-allow
+  echo "Refusing to report the real scan as clean — a matcher that cannot detect its own known-bad control input cannot be trusted to detect a real one." >&2
+  exit 1
+fi
+
+if [ "$SELF_TEST_WAITN_RC" -ne 1 ]; then
+  echo "lint_bash4_builtins.sh error: the 'wait -n' check's own self-test did not fire against a synthetic 'wait -n' fixture (expected exit 1, got ${SELF_TEST_WAITN_RC})." >&2   # bash4-allow
+  echo "Refusing to report the real scan as clean — a matcher that cannot detect its own known-bad control input cannot be trusted to detect a real one." >&2
+  exit 1
+fi
+
+if [ "$SELF_TEST_COPROC_RC" -ne 1 ]; then
+  echo "lint_bash4_builtins.sh error: the 'coproc' check's own self-test did not fire against a synthetic 'coproc reader { cat; }' fixture (expected exit 1, got ${SELF_TEST_COPROC_RC})." >&2   # bash4-allow
+  echo "Refusing to report the real scan as clean — a matcher that cannot detect its own known-bad control input cannot be trusted to detect a real one." >&2
+  exit 1
+fi
+
+if [ "$SELF_TEST_SHOPT_MULTI_RC" -ne 1 ]; then
+  echo "lint_bash4_builtins.sh error: the shopt check's own self-test did not fire against a synthetic 'shopt -s dotglob globstar' fixture (expected exit 1, got ${SELF_TEST_SHOPT_MULTI_RC})." >&2   # bash4-allow
+  echo "Refusing to report the real scan as clean — this is the exact multi-option form that previously bypassed this check (WR-01)." >&2
   exit 1
 fi
 

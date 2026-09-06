@@ -204,9 +204,35 @@ zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
 " "$ARCHIVE_FILE" "$INSTALL_DIR"
     ;;
   tar.xz)
+    # WR-02: this arm is dead code today (every scripts/ffmpeg_pin.json
+    # entry declares "archive": "zip"), which is exactly why it is safe to
+    # harden now rather than the round that first needs it live. This
+    # archive kind's own standard-library extraction performs no member-path
+    # validation -- a member named with an absolute path or a leading '../'
+    # can write outside the extraction directory (the CVE-2007-4559 class).
+    # Every member's resolved destination is checked against the
+    # destination directory's own realpath BEFORE anything is extracted,
+    # and any symlink/hardlink member pointing at an absolute target is
+    # refused outright.
     python3 -c "
-import sys, tarfile
-tarfile.open(sys.argv[1], mode='r:xz').extractall(sys.argv[2])
+# --- BEGIN tar.xz extraction program
+import sys, os, tarfile
+
+archive_path, dest_dir = sys.argv[1], sys.argv[2]
+dest_real = os.path.realpath(dest_dir)
+
+tf = tarfile.open(archive_path, mode='r:xz')
+for member in tf.getmembers():
+    member_real = os.path.realpath(os.path.join(dest_real, member.name))
+    if member_real != dest_real and not member_real.startswith(dest_real + os.sep):
+        sys.exit('install_pinned_ffmpeg.sh: refusing to extract tar.xz member outside destination: ' + member.name)
+    if member.issym() or member.islnk():
+        linkname = member.linkname or ''
+        if linkname and os.path.isabs(linkname):
+            sys.exit('install_pinned_ffmpeg.sh: refusing to extract tar.xz link member with absolute target: ' + member.name)
+
+tf.extractall(dest_dir)
+# --- END tar.xz extraction program
 " "$ARCHIVE_FILE" "$INSTALL_DIR"
     ;;
   *)
