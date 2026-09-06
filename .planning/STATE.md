@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 03
 current_phase_name: Probe Layer, Container & Size
 status: executing
-stopped_at: Completed 03-20-PLAN.md
-last_updated: "2026-09-05T23:46:00.966Z"
-last_activity: 2026-09-05
+stopped_at: Completed 03-21-PLAN.md
+last_updated: "2026-09-06T08:38:05.960Z"
+last_activity: 2026-09-06
 last_activity_desc: Phase 03 execution started
-state_head: 124549adb452ce531a0e0815320b30b00772a009
+state_head: fb820a219c9d7ce8f94a72c6e255503dd118e1c0
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 46
-  completed_plans: 44
+  completed_plans: 45
 milestone_name: milestone
 ---
 
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 
 ## Current Position
 
-Phase: 03 (Probe Layer, Container & Size) — READY TO EXECUTE
-Plan: 6 of 20
+Phase: 03 (Probe Layer, Container & Size) — EXECUTING
+Plan: 2 of 22
 Status: Ready to execute
-Last activity: 2026-09-05 — Phase 03 execution started
+Last activity: 2026-09-06 — Phase 03 execution started
 
 Progress: [█████████░] 92%
 
@@ -94,6 +94,7 @@ Progress: [█████████░] 92%
 | Phase 03 P18 | 45min | 2 tasks | 4 files |
 | Phase 03 P19 | 65min | 3 tasks | 2 files |
 | Phase 03 P20 | 35min | 2 tasks | 2 files |
+| Phase 03 P21 | 46min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -198,6 +199,8 @@ Recent decisions affecting current work:
 - [Phase 03]: D-GAP-01 corpus-identity policy: designated (not uniform) — chosen by the developer on Task 1's real-run evidence (run 33983460934): x64-linux/x64-windows-static-md byte-identical on all 80 fixtures, arm64-osx diverging on 76/80; byte-exact fixture-derived goldens are pinned to x64-linux only, exclusion elsewhere is named and counted (EXPECTED_EXCLUDED_COUNT=5), never loosened
 - [Phase 03]: 03-20: SC5 reported NOT closed on direct run-log evidence (run 33990099158) -- 2 of 3 blocking legs green (arm64-osx and x64-windows-static-md both fail at Build for reasons unrelated to TRUST-06, WINDOWS.md #13/#16); only 2 of 4 required trust06_idempotence Passed lines observed since arm64-osx's Test step never runs
 - [Phase 03]: 03-20: WINDOWS.md corrected -- entry #10's ffmpeg-version claim fixed to 6.1.1-3ubuntu5 (not 9.0.1); entry #9 closed on narrow cited evidence (ebml_scan.cpp compiles cleanly under MSVC, not on the false claim that Build succeeded); new entries #15 (macOS bash-3.2 crash, closed), #16 (Windows report_cli_error defect, open, NOT fixed -- out of plan scope), #17 (designated-leg narrowed golden coverage, open)
+- [Phase 03]: 03-21: Stopped Task 3's CI round-trip loop at round 2 of 4 once its own literal acceptance criteria (blocking legs Build==success count=3, Test!=skipped count=3) were met on real CI run 34021508083 -- first time all three blocking legs reach Test in this phase's history
+- [Phase 03]: 03-21: Reverted a speculative scripts/gen_corpus.sh fixture-margin fix for arm64-osx's size.stream_bitrate test failure after determining it requires regenerating tests/golden/CORPUS_DIGEST.txt from real designated-leg CI output; recorded as WINDOWS.md #20 (open) for next round instead
 
 ### Pending Todos
 
@@ -228,6 +231,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-05T20:43:11.410Z
-Stopped at: Completed 03-20-PLAN.md
+Last session: 2026-09-06T08:38:05.831Z
+Stopped at: Completed 03-21-PLAN.md
 Resume file: None

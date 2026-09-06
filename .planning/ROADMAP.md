@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 22 plans (20/22 executed; 2 further gap-closure plans added after gap-closure round 2's re-verification left ROADMAP SC5 open on two one-line source defects)
+**Plans**: 21/22 plans executed (20/22 executed; 2 further gap-closure plans added after gap-closure round 2's re-verification left ROADMAP SC5 open on two one-line source defects)
 
 Plans:
 **Wave 1**
@@ -247,7 +247,7 @@ Plans:
 
 **Wave 18** *(gap closure round 3 — TRACER: the two blocking-leg build defects proven end-to-end from source edit to observed CI Build conclusions before any expansion)*
 
-- [ ] 03-21-PLAN.md — Remove the unused `kClusterId` constant's AppleClang `-Werror` failure by giving it the untested unknown-size-Cluster case it was meant for, qualify `report_cli_error` inside `wmain` for MSVC, close code-review WR-01 (two lint-gate bypasses plus per-check self-test fixtures) and WR-02 (tar.xz path-traversal validation), then drive all three blocking legs to Build success and a reached Test step (TRUST-06, PROBE-05)
+- [x] 03-21-PLAN.md — Remove the unused `kClusterId` constant's AppleClang `-Werror` failure by giving it the untested unknown-size-Cluster case it was meant for, qualify `report_cli_error` inside `wmain` for MSVC, close code-review WR-01 (two lint-gate bypasses plus per-check self-test fixtures) and WR-02 (tar.xz path-traversal validation), then drive all three blocking legs to Build success and a reached Test step (TRUST-06, PROBE-05)
 
 **Wave 19** *(gap closure round 3 — blocked on Wave 18)*
 
@@ -332,7 +332,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
-| 3. Probe Layer, Container & Size | 20/20 | In Progress|  |
+| 3. Probe Layer, Container & Size | 21/22 | In Progress|  |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |
