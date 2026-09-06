@@ -171,7 +171,7 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: 21/22 plans executed (20/22 executed; 2 further gap-closure plans added after gap-closure round 2's re-verification left ROADMAP SC5 open on two one-line source defects)
+**Plans**: 22/22 plans executed (20/22 executed; 2 further gap-closure plans added after gap-closure round 2's re-verification left ROADMAP SC5 open on two one-line source defects)
 
 Plans:
 **Wave 1**
@@ -251,7 +251,7 @@ Plans:
 
 **Wave 19** *(gap closure round 3 — blocked on Wave 18)*
 
-- [ ] 03-22-PLAN.md — Close SC5 on observed run-log evidence (four `trust06_idempotence` Passed lines on x64-linux and arm64-osx, and the x64-windows-static-md Test step concluding for the first time in this phase's history), then reconcile the WINDOWS.md defect ledger and the REQUIREMENTS.md TRUST-06 status against that evidence (TRUST-06, TRUST-09, DOC-03)
+- [x] 03-22-PLAN.md — Close SC5 on observed run-log evidence (four `trust06_idempotence` Passed lines on x64-linux and arm64-osx, and the x64-windows-static-md Test step concluding for the first time in this phase's history), then reconcile the WINDOWS.md defect ledger and the REQUIREMENTS.md TRUST-06 status against that evidence (TRUST-06, TRUST-09, DOC-03)
 
 **Source doc**: `claude_docs/02-container-analysis.md` (design-doc phase 2), plus `size.*` from `claude_docs/06-content-and-size-analysis.md` §4
 
@@ -332,7 +332,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
-| 3. Probe Layer, Container & Size | 21/22 | In Progress|  |
+| 3. Probe Layer, Container & Size | 22/22 | In Progress|  |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |

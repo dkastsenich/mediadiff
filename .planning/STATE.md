@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 03
 current_phase_name: Probe Layer, Container & Size
 status: executing
-stopped_at: Completed 03-21-PLAN.md
-last_updated: "2026-09-06T08:38:05.960Z"
+stopped_at: Completed 03-22-PLAN.md
+last_updated: "2026-09-06T09:23:19.228Z"
 last_activity: 2026-09-06
 last_activity_desc: Phase 03 execution started
-state_head: fb820a219c9d7ce8f94a72c6e255503dd118e1c0
+state_head: 6b66918b388096f5e44536762d22481298594d93
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 46
-  completed_plans: 45
+  completed_plans: 46
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 03 (Probe Layer, Container & Size) — EXECUTING
-Plan: 2 of 22
+Plan: 3 of 22
 Status: Ready to execute
 Last activity: 2026-09-06 — Phase 03 execution started
 
@@ -95,6 +95,7 @@ Progress: [█████████░] 92%
 | Phase 03 P19 | 65min | 3 tasks | 2 files |
 | Phase 03 P20 | 35min | 2 tasks | 2 files |
 | Phase 03 P21 | 46min | 3 tasks | 7 files |
+| Phase 03 P22 | 41min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -201,6 +202,8 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-20: WINDOWS.md corrected -- entry #10's ffmpeg-version claim fixed to 6.1.1-3ubuntu5 (not 9.0.1); entry #9 closed on narrow cited evidence (ebml_scan.cpp compiles cleanly under MSVC, not on the false claim that Build succeeded); new entries #15 (macOS bash-3.2 crash, closed), #16 (Windows report_cli_error defect, open, NOT fixed -- out of plan scope), #17 (designated-leg narrowed golden coverage, open)
 - [Phase 03]: 03-21: Stopped Task 3's CI round-trip loop at round 2 of 4 once its own literal acceptance criteria (blocking legs Build==success count=3, Test!=skipped count=3) were met on real CI run 34021508083 -- first time all three blocking legs reach Test in this phase's history
 - [Phase 03]: 03-21: Reverted a speculative scripts/gen_corpus.sh fixture-margin fix for arm64-osx's size.stream_bitrate test failure after determining it requires regenerating tests/golden/CORPUS_DIGEST.txt from real designated-leg CI output; recorded as WINDOWS.md #20 (open) for next round instead
+- [Phase 03]: ROADMAP SC5 closed on real CI run 34023871831 (head 64bc168): all three blocking legs + lint conclude success at the job level, four trust06_idempotence Passed lines observed, x64-windows-static-md Test step observed concluding for the first time in this phase's history.
+- [Phase 03]: Fixed two newly-discovered blocking-leg CI defects (WINDOWS.md #21 GITHUB_PATH format bug, #20 arm64-osx bitrate margin) within Task 1's 3-round-trip budget; recorded but deliberately left open a third (#22, x64-linux corpus-digest run-to-run non-reproducibility on mkv_opus_a/b.webm).
 
 ### Pending Todos
 
@@ -231,6 +234,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-06T08:38:05.831Z
-Stopped at: Completed 03-21-PLAN.md
+Last session: 2026-09-06T09:23:19.092Z
+Stopped at: Completed 03-22-PLAN.md
 Resume file: None
