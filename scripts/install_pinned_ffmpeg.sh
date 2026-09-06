@@ -331,8 +331,27 @@ if [ -n "${GITHUB_ENV:-}" ] && [ -n "${GITHUB_PATH:-}" ]; then
   # (.github/workflows/ci.yml "PowerShell corpus generator version-gate and
   # manifest-order cross-check") clears MEDIADIFF_FFMPEG and then requires a
   # real ffmpeg on PATH.
-  dirname "$REAL_CANDIDATE_PATH" >> "$GITHUB_PATH"
-  echo "install_pinned_ffmpeg.sh: exported MEDIADIFF_FFMPEG and appended $(dirname "$REAL_CANDIDATE_PATH") to GITHUB_PATH."
+  #
+  # GITHUB_PATH entries must be native-Windows paths on the Windows runner:
+  # $REAL_CANDIDATE_PATH is resolved via Git Bash's own `pwd -P` (see the
+  # comment above REAL_INSTALL_DIR), which yields an MSYS-style POSIX path
+  # (e.g. /d/a/mediadiff/.../bin). That resolves fine for every later
+  # bash-invoked step (gen_corpus.sh/check_corpus.sh/corpus_digest.sh --
+  # which is why Build and Test both succeed), but the PowerShell
+  # cross-check step above spawns a native pwsh child process, and Windows'
+  # own PATH resolution cannot locate a directory named "/d/a/..." (it has
+  # no drive-letter prefix; it is not a valid Windows path at all) --
+  # confirmed as the exact cause of "ffmpeg was not found" in real CI runs
+  # 34021508083 and 34022461121 (WINDOWS.md #21). Convert through `cygpath
+  # -w` (bundled with Git for Windows/MSYS2, absent on Linux/macOS) so the
+  # PATH entry is native-Windows for pwsh while every bash consumer is
+  # unaffected.
+  PINNED_FFMPEG_PATH_ENTRY="$(dirname "$REAL_CANDIDATE_PATH")"
+  if command -v cygpath >/dev/null 2>&1; then
+    PINNED_FFMPEG_PATH_ENTRY="$(cygpath -w "$PINNED_FFMPEG_PATH_ENTRY")"
+  fi
+  printf '%s\n' "$PINNED_FFMPEG_PATH_ENTRY" >> "$GITHUB_PATH"
+  echo "install_pinned_ffmpeg.sh: exported MEDIADIFF_FFMPEG and appended ${PINNED_FFMPEG_PATH_ENTRY} to GITHUB_PATH."
 else
   echo "export MEDIADIFF_FFMPEG=${REAL_CANDIDATE_PATH}"
 fi

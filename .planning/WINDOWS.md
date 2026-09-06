@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 13
 waived_count: 0
 fixed_count: 9
-total_count: 20
-last_updated: 2026-09-06T08:33:47.499Z
+total_count: 22
+last_updated: 2026-09-06T08:52:04.751Z
 ---
 
 # Broken Windows Ledger
@@ -35,6 +35,8 @@ last_updated: 2026-09-06T08:33:47.499Z
 | 18 | 03 | deviation | tests/unit/CMakeLists.txt |  | Blocking arm64-osx CI leg fails to link tests/unit/mediadiff_unit_tests: undefined symbol mediadiff::render_provenance_chain(std::span<const PolicyProvenance>, int), referenced from test_inspect_container_section.cpp.o. src/cli/provenance_render.cpp (which defines it) is only compiled into the mediadiff executable target, never into the unit-test target, even though src/cli/commands/inspect_render.h's inline render_inspect_text() calls it under verbose=true. Every call site in test_inspect_container_section.cpp happens to pass a literal verbose=false, which lets GCC's inliner constant-fold the branch away and never reference the symbol on x64-linux -- AppleClang's arm64-osx leg does not perform the same fold and fails at link. Revealed by 03-21 on real CI run 34020446940 (head 501c0dd), once the two blocking-leg one-line defects it fixed stopped masking this one; fixed same-round by adding src/cli/provenance_render.cpp to tests/unit/CMakeLists.txt's source list, matching the established color_policy.cpp/tty_render.cpp/dir_pairing.cpp/worker_pool.cpp pattern. | fixed |  | 2026-09-06T08:18:22.996Z | 2026-09-06T08:33:05.116Z |
 | 19 | 03 | deviation | tests/integration/test_container_ts.cpp | 140 | Blocking x64-windows-static-md CI leg fails to build: tests/integration/test_container_ts.cpp(140): error C2513: 'mediadiff::test::ProcessResult': no variable declared before '=', followed by cascading syntax errors on the next two lines. Root cause: a local variable is named 'far', which the Windows SDK's <windows.h> (transitively included by tests/process_spawn.h's _WIN32 CreateProcess path) defines as an EMPTY legacy 16-bit-compatibility macro (alongside 'near'/'pascal'), silently erasing the identifier and corrupting the declaration -- MSVC-only, since no other leg's toolchain defines any such macro. Revealed by 03-21 on real CI run 34020446940 (head 501c0dd), once the two blocking-leg one-line defects it fixed let the build reach this file for the first time; fixed same-round by renaming the variable to pcr_far. | fixed |  | 2026-09-06T08:18:23.142Z | 2026-09-06T08:33:05.258Z |
 | 20 | 03 | deviation | scripts/gen_corpus.sh |  | Blocking arm64-osx CI leg's Test step reaches completion for the first time (build (arm64-osx) run 34021508083, head dfc9e8d) but reports 1 test failure: integration.doc03_coverage's declared CLEAN pair for size.stream_bitrate (size_near_a.mp4 vs size_near_b.mp4, -b:v 700k vs 730k) does not compare all-pass under --profile sw-encoder. Root cause: this fixture pair was calibrated on a single dev machine to a ~2.7% measured video-stream bitrate delta, only ~0.3 percentage points below the check's 3% warn threshold (tolerance = 3%,10% in src/core/checks.def) -- confirmed by an independent local re-measurement this round (video stream 279942 vs 287983 bytes, delta 2.87%). The pinned ffmpeg build's mpeg4 encoder produces measurably different output by CPU architecture even under -flags +bitexact -fflags +bitexact on the SAME binary (WINDOWS.md #12's already-documented SIMD-dispatch class), and on arm64-osx that variance is enough to tip the delta from pass into warn. Not fixed this round: correcting it requires regenerating size_near_a.mp4/size_near_b.mp4 with a wider safety margin (e.g. 700k/715k, locally re-measured at ~1.1%) AND regenerating tests/golden/CORPUS_DIGEST.txt's committed digest for the designated leg (x64-linux) from that leg's real CI output (D-GAP-01's own established procedure, 03-16/03-19 precedent) -- a byte-changing fix that needs its own dedicated CI round trip to capture the correct digest, out of this plan's remaining round-trip budget. This defect does not block 03-21's own must_haves.truths (which require blocking legs to reach Build success and their Test step, not a 100%-passing Test step) but must be fixed before SC5 can be considered fully closed. | open |  | 2026-09-06T08:32:50.473Z |  |
+| 21 | 03 | deviation | scripts/install_pinned_ffmpeg.sh | 334 | Blocking x64-windows-static-md CI leg's job-level conclusion is failure even though Build and Test both conclude success: the 'PowerShell corpus generator version-gate and manifest-order cross-check' step (ci.yml, first reachable now that 03-21 fixed the two earlier Build defects) fails with 'gen_corpus requires a system ffmpeg >= 6.1 on PATH ... ffmpeg was not found', because install_pinned_ffmpeg.sh appends dirname($REAL_CANDIDATE_PATH) -- an MSYS/Git-Bash POSIX-style path such as /d/a/mediadiff/.../bin -- to GITHUB_PATH; this resolves fine for later bash-invoked steps (gen_corpus.sh/check_corpus.sh/corpus_digest.sh, which is why Build/Test both succeed) but is not a valid Windows path for the pwsh child process this step spawns, so Get-Command/& ffmpeg cannot find it. Confirmed present verbatim in both real CI run 34021508083 (head dfc9e8d) and run 34022461121 (head 6b57c2a); never previously observed because Build/Test never both succeeded on this leg before 03-21, so this later step was never reached. | open |  | 2026-09-06T08:51:51.713Z |  |
+| 22 | 03 | deviation | scripts/gen_corpus.sh | 483 | The designated leg's (x64-linux) own fixture generation is not reproducible run-to-run on the SAME commit with the SAME pinned ffmpeg binary: real CI run 34021508083 (head dfc9e8d) passed 'Assert the corpus digest matches the committed pin (D-GAP-01)' cleanly, but real CI run 34022461121 (head 6b57c2a, a docs-only diff from dfc9e8d -- confirmed via git diff --name-only, no source changed) failed that same step on the SAME leg with a byte-level mismatch confined to mkv_opus_a.webm and mkv_opus_b.webm (CORPUS_DIGEST_SUMMARY differed: d351f426... vs 7dff4882...; every other one of the 80 fixtures matched byte-for-byte both times). Both fixtures are produced by gen_corpus.sh's libopus/-application-lowdelay recipes (lines 483-491) under -flags +bitexact -fflags +bitexact. Root cause not yet isolated -- most likely candidate is the same CPU-feature-dispatch (SIMD) class already documented at WINDOWS.md #12, but manifesting WITHIN one architecture-labeled leg across separate GitHub-hosted-runner invocations (the ubuntu-latest label is not a fixed physical host) rather than only across differing architectures. This threatens the evidentiary basis of the entire 'designated leg' byte-exact policy (WINDOWS.md #17): a policy that assumes x64-linux is internally reproducible is not established by this observation. Not fixed this round -- diagnosing and stabilizing libopus's encode determinism (or narrowing the byte-exact assertion to exclude Opus-encoded fixtures) is out of this plan's declared scope (WINDOWS.md, REQUIREMENTS.md only) and needs its own dedicated investigation. | open |  | 2026-09-06T08:52:04.751Z |  |
 
 ````json
 [
@@ -276,6 +278,30 @@ last_updated: 2026-09-06T08:33:47.499Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T08:32:50.473Z",
+    "resolved_at": null
+  },
+  {
+    "id": 21,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "scripts/install_pinned_ffmpeg.sh",
+    "line": 334,
+    "description": "Blocking x64-windows-static-md CI leg's job-level conclusion is failure even though Build and Test both conclude success: the 'PowerShell corpus generator version-gate and manifest-order cross-check' step (ci.yml, first reachable now that 03-21 fixed the two earlier Build defects) fails with 'gen_corpus requires a system ffmpeg >= 6.1 on PATH ... ffmpeg was not found', because install_pinned_ffmpeg.sh appends dirname($REAL_CANDIDATE_PATH) -- an MSYS/Git-Bash POSIX-style path such as /d/a/mediadiff/.../bin -- to GITHUB_PATH; this resolves fine for later bash-invoked steps (gen_corpus.sh/check_corpus.sh/corpus_digest.sh, which is why Build/Test both succeed) but is not a valid Windows path for the pwsh child process this step spawns, so Get-Command/& ffmpeg cannot find it. Confirmed present verbatim in both real CI run 34021508083 (head dfc9e8d) and run 34022461121 (head 6b57c2a); never previously observed because Build/Test never both succeeded on this leg before 03-21, so this later step was never reached.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:51:51.713Z",
+    "resolved_at": null
+  },
+  {
+    "id": 22,
+    "kind": "deviation",
+    "phase": "03",
+    "file": "scripts/gen_corpus.sh",
+    "line": 483,
+    "description": "The designated leg's (x64-linux) own fixture generation is not reproducible run-to-run on the SAME commit with the SAME pinned ffmpeg binary: real CI run 34021508083 (head dfc9e8d) passed 'Assert the corpus digest matches the committed pin (D-GAP-01)' cleanly, but real CI run 34022461121 (head 6b57c2a, a docs-only diff from dfc9e8d -- confirmed via git diff --name-only, no source changed) failed that same step on the SAME leg with a byte-level mismatch confined to mkv_opus_a.webm and mkv_opus_b.webm (CORPUS_DIGEST_SUMMARY differed: d351f426... vs 7dff4882...; every other one of the 80 fixtures matched byte-for-byte both times). Both fixtures are produced by gen_corpus.sh's libopus/-application-lowdelay recipes (lines 483-491) under -flags +bitexact -fflags +bitexact. Root cause not yet isolated -- most likely candidate is the same CPU-feature-dispatch (SIMD) class already documented at WINDOWS.md #12, but manifesting WITHIN one architecture-labeled leg across separate GitHub-hosted-runner invocations (the ubuntu-latest label is not a fixed physical host) rather than only across differing architectures. This threatens the evidentiary basis of the entire 'designated leg' byte-exact policy (WINDOWS.md #17): a policy that assumes x64-linux is internally reproducible is not established by this observation. Not fixed this round -- diagnosing and stabilizing libopus's encode determinism (or narrowing the byte-exact assertion to exclude Opus-encoded fixtures) is out of this plan's declared scope (WINDOWS.md, REQUIREMENTS.md only) and needs its own dedicated investigation.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T08:52:04.751Z",
     "resolved_at": null
   }
 ]
