@@ -204,16 +204,24 @@ zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
 " "$ARCHIVE_FILE" "$INSTALL_DIR"
     ;;
   tar.xz)
-    # WR-02: this arm is dead code today (every scripts/ffmpeg_pin.json
+    # WR-02/CR-01: this arm is dead code today (every scripts/ffmpeg_pin.json
     # entry declares "archive": "zip"), which is exactly why it is safe to
     # harden now rather than the round that first needs it live. This
     # archive kind's own standard-library extraction performs no member-path
     # validation -- a member named with an absolute path or a leading '../'
     # can write outside the extraction directory (the CVE-2007-4559 class).
     # Every member's resolved destination is checked against the
-    # destination directory's own realpath BEFORE anything is extracted,
-    # and any symlink/hardlink member pointing at an absolute target is
-    # refused outright.
+    # destination directory's own realpath BEFORE anything is extracted.
+    # Both absolute and relative symlink/hardlink targets that resolve
+    # outside the destination directory are refused -- the relative-target
+    # check resolves against the member's own containing directory inside
+    # dest_dir (the same base extraction would use), not against dest_dir
+    # itself or the not-yet-created link, since at scan time the link does
+    # not exist on disk and a naive realpath on the raw linkname cannot
+    # detect an escape. This is member-path validation, not a general
+    # defense against every TOCTOU race tar extraction can exhibit (e.g. a
+    # member that replaces an intermediate directory component with a
+    # symlink partway through extraction remains a known, harder hazard).
     python3 -c "
 # --- BEGIN tar.xz extraction program
 import sys, os, tarfile
@@ -228,8 +236,16 @@ for member in tf.getmembers():
         sys.exit('install_pinned_ffmpeg.sh: refusing to extract tar.xz member outside destination: ' + member.name)
     if member.issym() or member.islnk():
         linkname = member.linkname or ''
-        if linkname and os.path.isabs(linkname):
-            sys.exit('install_pinned_ffmpeg.sh: refusing to extract tar.xz link member with absolute target: ' + member.name)
+        if linkname:
+            if os.path.isabs(linkname):
+                sys.exit('install_pinned_ffmpeg.sh: refusing to extract tar.xz link member with absolute target: ' + member.name)
+            # Resolve the target the SAME way extraction will: relative to
+            # the member's own containing directory inside dest_dir, not
+            # relative to dest_dir itself or to the (not-yet-created) link.
+            member_dir = os.path.dirname(os.path.join(dest_real, member.name))
+            target_real = os.path.realpath(os.path.join(member_dir, linkname))
+            if target_real != dest_real and not target_real.startswith(dest_real + os.sep):
+                sys.exit('install_pinned_ffmpeg.sh: refusing to extract tar.xz link member with target escaping destination: ' + member.name)
 
 tf.extractall(dest_dir)
 # --- END tar.xz extraction program
