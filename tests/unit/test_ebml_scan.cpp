@@ -238,6 +238,27 @@ TEST_CASE(
   REQUIRE_FALSE(result2->cues_offset.has_value());
 }
 
+TEST_CASE("ebml_scan - a Cluster inside Segment may legally carry unknown size, stopping the walk cleanly at "
+          "its own offset",
+          "[unit]") {
+  // Cluster header: canonical 4-byte element ID followed by the 1-byte
+  // reserved unknown-size VINT -- legal EBML for a Cluster (this header's
+  // own top comment), the complement of the Segment-carries-unknown-size
+  // case above.
+  const std::string cluster_header = bytes_be(kClusterId, 4) + unknown_size_vint(1);
+  // Segment: known-size 1-byte VINT declaring exactly the Cluster header's
+  // own length, so the Cluster element starts immediately after Segment's
+  // 4-byte ID plus its 1-byte size VINT -- offset 5.
+  const std::string segment = bytes_be(kSegmentId, 4) + size_vint(1, cluster_header.size()) + cluster_header;
+  const auto result = run_ebml_scan(write_bytes("unknown_size_cluster.bin", segment));
+  REQUIRE(result.has_value());
+  REQUIRE(result->complete);
+  REQUIRE(result->stop_offset == 0);
+  REQUIRE(result->first_cluster_offset.has_value());
+  REQUIRE(*result->first_cluster_offset == 5);
+  REQUIRE_FALSE(result->cues_offset.has_value());
+}
+
 // --- Behavior 3: a leading byte of 0x00 is rejected, never read as a 9+ ---
 // --- byte integer --------------------------------------------------------
 

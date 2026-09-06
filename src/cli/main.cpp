@@ -154,7 +154,7 @@ int run(int argc, char** argv) {
     // CR-01 fixed. It deliberately reports internal (a mediadiff bug), not
     // a user-input problem, since a well-formed lib boundary would never
     // let an exception reach here.
-    report_cli_error("internal error (uncaught exception): " + std::string(e.what()));
+    mediadiff::report_cli_error("internal error (uncaught exception): " + std::string(e.what()));
     return kExitInternal;
   }
 
@@ -173,7 +173,7 @@ int run(int argc, char** argv) {
     // silently deposit 'c' into implicit_baseline instead of failing; a
     // bare positional is only ever meaningful when no subcommand fired.
     if (implicit_baseline_opt->count() > 0 || implicit_candidate_opt->count() > 0) {
-      report_cli_error("unexpected extra argument after a subcommand");
+      mediadiff::report_cli_error("unexpected extra argument after a subcommand");
       return kExitUsage;
     }
     // Unreachable in practice (every registered subcommand's callback
@@ -294,7 +294,8 @@ int wmain(int /*argc*/, wchar_t** /*argv*/) {
       LocalFree(argv_w);
       // Reported here rather than from the engine: libmediadiff writes to no
       // standard stream and never exits the process (ENG-16 / D-07).
-      report_cli_error("argument " + std::to_string(i) + " is not valid UTF-16 and cannot be converted to UTF-8.");
+      mediadiff::report_cli_error("argument " + std::to_string(i) +
+                                   " is not valid UTF-16 and cannot be converted to UTF-8.");
       return 64;  // usage — the argument is malformed, no input was opened
     }
     argv_utf8.push_back(std::move(utf8_arg));
