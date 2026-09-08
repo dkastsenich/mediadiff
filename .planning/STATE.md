@@ -4,11 +4,11 @@ milestone: v0.6.1
 current_phase: 1
 current_phase_name: Foundation & Toolchain
 status: planning
-stopped_at: Phase 03 complete, ready to plan Phase 1
-last_updated: "2026-09-06T09:43:10.214Z"
+stopped_at: "Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)"
+last_updated: "2026-09-08T15:48:02.305Z"
 last_activity: 2026-09-06
 last_activity_desc: Phase 03 complete, transitioned to Phase 1
-state_head: be355f1d09bea45cecb212830f818fcb26398ff7
+state_head: ae0efafebd1874917b9e8a9d2ac8fbb08bddd567
 progress:
   total_phases: 7
   completed_phases: 3
@@ -204,6 +204,7 @@ Recent decisions affecting current work:
 - [Phase 03]: 03-21: Reverted a speculative scripts/gen_corpus.sh fixture-margin fix for arm64-osx's size.stream_bitrate test failure after determining it requires regenerating tests/golden/CORPUS_DIGEST.txt from real designated-leg CI output; recorded as WINDOWS.md #20 (open) for next round instead
 - [Phase 03]: ROADMAP SC5 closed on real CI run 34023871831 (head 64bc168): all three blocking legs + lint conclude success at the job level, four trust06_idempotence Passed lines observed, x64-windows-static-md Test step observed concluding for the first time in this phase's history.
 - [Phase 03]: Fixed two newly-discovered blocking-leg CI defects (WINDOWS.md #21 GITHUB_PATH format bug, #20 arm64-osx bitrate margin) within Task 1's 3-round-trip budget; recorded but deliberately left open a third (#22, x64-linux corpus-digest run-to-run non-reproducibility on mkv_opus_a/b.webm).
+- [Phase 1]: [Quick 260908-oax]: WINDOWS.md #22 waived (not fixed) -- scripts/assert_corpus_digest.sh excludes mkv_opus_a.webm, mkv_opus_b.webm and the derived CORPUS_DIGEST_SUMMARY line (exactly 3, count-guarded) from D-GAP-01's byte-exact comparison; libopus's cross-host CPU-feature dispatch is not fixable at this layer. Residual gap tracked openly at WINDOWS.md #24.
 
 ### Pending Todos
 
@@ -223,6 +224,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260815-m5g | Pin Python to 3.11+ in CI so the Phase 2 registry generator can rely on stdlib tomllib | 2026-08-15 | 2a628fd | [260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-](./quick/260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-/) |
 | 260902-it6 | Migrate CLI option binding from shared_ptr to CLI::Option* (03-CONTEXT.md D-05) | 2026-09-02 | 8258c83 | [260902-it6-migrate-cli-option-binding-from-shared-p](./quick/260902-it6-migrate-cli-option-binding-from-shared-p/) |
+| 260908-oax | Narrow the corpus digest assertion to exclude the two libopus fixtures from byte-exact comparison (WINDOWS.md #22) | 2026-09-08 | ae0efaf | [260908-oax-narrow-the-corpus-digest-assertion-to-ex](./quick/260908-oax-narrow-the-corpus-digest-assertion-to-ex/) |
 
 ## Deferred Items
 
@@ -234,6 +236,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-06T09:23:19.092Z
-Stopped at: Phase 03 complete, ready to plan Phase 1
+Last session: 2026-09-08T15:48:02.140Z
+Stopped at: Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)
 Resume file: None
