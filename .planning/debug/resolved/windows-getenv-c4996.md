@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "I created a PR of this branch into main to generate Windows artifacts during CI - and all builds failed"
 created: 2026-08-16T00:00:00Z
-updated: 2026-08-16T00:00:00Z
+updated: 2026-09-06T00:00:00Z
 gap: G-02-1
 mode: find_root_cause_only
 bug_class: Bohrbug (deterministic, platform-conditional compile error)
@@ -281,6 +281,43 @@ root_cause: |
       FALSE, scripts/lint_eng16.sh deliberately excludes src/cli from its scan, and GCC/Clang have no
       C4996 analogue — so the class is undetectable outside the single Windows CI leg, which reports
       only its first occurrence. This is why the violation recurred six times rather than once.
-fix: "(not applied — goal: find_root_cause_only)"
-verification: "(not applied)"
-files_changed: []
+resolved_at: 2026-09-06
+resolved_by: "closed retroactively during /gsd-debug triage — the fix landed in later phase work, this session was never marked resolved"
+
+fix: |
+  Resolved by the accessor the diagnosis implied: all six unguarded call sites were replaced
+  with a single platform-conditional entry point, `mediadiff::getenv_utf8(const char*)` at
+  src/util/fs.h:222. Its `#ifdef _WIN32` branch uses `_dupenv_s` (chosen over `getenv_s` to
+  avoid the two-call size probe while preserving the unset-vs-empty distinction); the `#else`
+  branch holds the only remaining `std::getenv` in the tree, which MSVC never compiles.
+
+  Every former site now routes through it — src/cli/options.cpp:456-458, commands/snapshot.cpp:232,
+  commands/dir.cpp:353, tests/integration/test_exit_codes.cpp:146,
+  tests/integration/test_snapshot_safe_write.cpp:137.
+
+  Cause (3), the missing enforcement gate, is addressed in the same shape the session argued for:
+  src/cli/options.cpp:434-442 documents that the drift is now compile-VISIBLE through the single
+  accessor, and cites this session file by name.
+
+  Cause (2) — `/W4 /WX` on all four first-party targets — was deliberately left in place, as the
+  session recommended.
+
+verification: |
+  Real CI run 34033745470 (head f278060, conclusion: success): `build (x64-windows-static-md)`
+  concludes Build=success AND Test=success. Green across three consecutive runs (34023871831,
+  34024554848, 34033745470).
+
+  This directly retires the session's stated blind spot — "because ninja stopped at [32/97], the
+  ~65 unbuilt objects ... have NEVER been compiled by MSVC in any run ... I cannot assert it is
+  sufficient." The full target set now compiles AND the Windows test suite runs to completion,
+  which had never been observed at diagnosis time. Two further MSVC defects were indeed hiding
+  behind it, exactly as predicted, and were closed separately: WINDOWS.md #9 (NOMINMAX/C2059) and
+  #16 (unqualified report_cli_error/C3861).
+
+files_changed:
+  - src/util/fs.h
+  - src/cli/options.cpp
+  - src/cli/commands/snapshot.cpp
+  - src/cli/commands/dir.cpp
+  - tests/integration/test_exit_codes.cpp
+  - tests/integration/test_snapshot_safe_write.cpp
