@@ -879,3 +879,70 @@ this session, not recalled from training data.
 
 **Research date:** 2026-09-09
 **Valid until:** tied to the pinned FFmpeg versions (8.1 linked / 9.0.1 generator) — re-verify empirical recipes if either pin changes
+
+---
+
+## Orchestrator Addendum — Open Question 1 RESOLVED (2026-09-09)
+
+**Status: CLOSED. Do not plan around this as an open question.**
+
+Open Question 1 asked whether VIDEO-03's `yuvj420p` fixture can be built at all, since neither
+`mpeg4` nor `mpeg2video` accepts `yuvj420p` as encoder input. **It can.** The answer is `mjpeg`,
+which the research pass did not test.
+
+**Verified by the orchestrator against the pinned build**
+(`.ffmpeg-pinned/linux-x86_64/ffmpeg`, `ffmpeg version 9.0.1-https://www.martin-riedl.de`):
+
+```
+$ ffmpeg -hide_banner -h encoder=mjpeg | grep -i "pixel formats"
+    Supported pixel formats: yuvj420p yuvj422p yuvj444p yuv420p yuv422p yuv444p
+
+$ ffmpeg -f lavfi -i "testsrc2=size=64x64:rate=25:duration=1" \
+    -c:v mjpeg -pix_fmt yuvj420p -flags +bitexact -fflags +bitexact -y yuvj.mp4
+$ ffprobe -show_entries stream=codec_name,pix_fmt,color_range -of csv=p=0 yuvj.mp4
+mjpeg,yuvj420p,pc
+```
+
+`mjpeg` is a native FFmpeg codec rather than an external library, so it carries no GPL
+dependency and satisfies `gen_corpus.sh`'s never-libx264/GPL convention exactly as `mpeg4` and
+`mpeg2video` do. It requires **no** change to `ffmpeg_pin.json` and **no** hand construction
+under D-01.
+
+**Scope of this verification: the Linux pinned build only.** This does not discharge the
+research pass's own assumption **A3** — that `mjpeg` is present on all four pinned builds,
+notably BtbN's Windows `-lgpl` artifact. A3 remains open and is exactly the cross-platform
+risk D-09 was designed to avoid for HDR. **The plan must verify `mjpeg` availability on every
+pinned build before depending on it**, and the natural place is the existing preflight in
+`scripts/check_corpus.sh`, which already runs unconditionally before Configure on all five
+legs.
+
+**Consequence for planning:** VIDEO-03's signature pair — the same intent spelled two ways,
+which must produce exactly ONE finding on `video.color.range` — is constructible as:
+
+- baseline: `-c:v mjpeg -pix_fmt yuvj420p`
+- candidate: `-c:v mjpeg -pix_fmt yuv420p -color_range pc`
+
+**D-04 does not need revisiting.** The researcher's caveat that Open Question 1 "may require
+revisiting D-04's scope" is superseded — real encoders still cover every check they were scoped
+to cover, and `mjpeg` simply joins `mpeg4`/`mpeg2video` as a third allowed built-in encoder.
+
+### Also independently re-verified by the orchestrator
+
+- **Priority finding 1 (D-09) — CONFIRMED.** With plain `-c:v mpeg4` and the codec-independent
+  `-mastering_display` / `-content_light` options placed **before `-i`** (they are input-side
+  options; placing them after the input errors with "you are trying to apply an input option to
+  an output file"), the pinned 9.0.1 wrote real `clli` and `mdcv` boxes — observed in the raw
+  bytes at file offsets `0x9800` and `0x9810` — and they round-tripped on demux as stream-level
+  side data with rationals intact (`red_x=34000/50000`, `max_luminance=10000000/10000`,
+  `max_content=1000`, `max_average=400`). Values coming back as rationals rather than floats
+  matters for the project's rational-everywhere rule.
+- **Priority finding 4 — CONFIRMED against the pinned build.** `mpeg4` reports
+  `Supported pixel formats: yuv420p` only; `mpeg2video` reports `yuv420p yuv422p`. Neither
+  accepts `yuvj420p`. The finding was correct; only its conclusion needed the `mjpeg` addition.
+
+### Still open (unchanged)
+
+- **Open Question 2** — whether the Matroska HDR path round-trips as mp4 does. Not tested.
+- **Open Question 3** — exact minimal SPS/PPS Exp-Golomb bit layout for D-03's writer. The
+  research pass recommends a small execution-time spike against the real linked parser; that
+  recommendation stands.
