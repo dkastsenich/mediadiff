@@ -269,7 +269,22 @@ Plans:
   4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source (stream-level vs first-frame) recorded, and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
   5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the parser pass measures at under 10% overhead over a plain packet scan on the 10-minute reference file.
 
-**Plans**: TBD
+**Plans**: 12 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Tracer: ParserScan fused into the existing sweep, carrying `video.gop.length` end to end (+ check-id roster gate)
+- [ ] 04-02-PLAN.md — Encoder-based video fixtures and the `mjpeg`/`ffv1` pinned-build preflight
+- [ ] 04-03-PLAN.md — Parser-overhead measurement harness, recorded not gated (D-11/D-12)
+- [ ] 04-04-PLAN.md — HDR MDCV/CLL and coherence fixtures via codec-independent metadata options (D-09)
+- [ ] 04-05-PLAN.md — Hand-constructed H.264/HEVC Annex-B streams, the `dvcC` box and the SAR-conflict patch (D-01/D-02/D-03)
+- [ ] 04-06-PLAN.md — Stream parameters: codec, profile, level, resolution, frame_count (VIDEO-01/02)
+- [ ] 04-07-PLAN.md — Shared cadence derivation (D-05/D-06/D-07), SAR/DAR/conflict and frame rate (VIDEO-01/04)
+- [ ] 04-08-PLAN.md — pix_fmt range fold and colorimetry, with the exactly-one-finding signature test (VIDEO-03/07/08)
+- [ ] 04-09-PLAN.md — GOP family: IDR cadence, open/closed from NAL types, refs, frame types, no-parser degradation (VIDEO-05/12)
+- [ ] 04-10-PLAN.md — `video.interlace`, declared field order cross-checked against per-frame flags (VIDEO-06)
+- [ ] 04-11-PLAN.md — HDR mastering-display and content-light with the D-08 precedence seam (VIDEO-09)
+- [ ] 04-12-PLAN.md — Dolby Vision configuration, the D-10 coherence guard, and the corpus-wide inspect section test (VIDEO-09/10)
+
 **Source doc**: `claude_docs/03-video-analysis.md` (design-doc phase 3)
 
 ### Phase 5: Timeline Analysis
