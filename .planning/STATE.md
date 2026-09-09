@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.1
-current_phase: 1
-current_phase_name: Foundation & Toolchain
-status: "Phase 3 shipped — PR #3"
+current_phase: 4
+current_phase_name: Video Analysis
+status: "Phase 3 merged to main (PR #3, merge commit 4b1c2e4)"
 stopped_at: "Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)"
-last_updated: "2026-09-09T07:34:56.042Z"
+last_updated: "2026-09-09T10:24:14.997Z"
 last_activity: 2026-09-09
-state_head: 75329554af81a4e446e48515c0c4593adce26db6
+state_head: 4b1c2e40c61978dcc34bdc766bb7ac9ddef10fa0
 progress:
   total_phases: 7
   completed_phases: 3
@@ -23,13 +23,13 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 03 — Probe Layer, Container & Size
+**Current focus:** Phase 04 — Video Analysis
 
 ## Current Position
 
-Phase: 1 — Foundation & Toolchain
+Phase: 4 — Video Analysis
 Plan: Not started
-Status: Phase 3 shipped — PR #3
+Status: Phase 3 merged to main (PR #3, merge commit 4b1c2e4)
 Last activity: 2026-09-09
 
 Progress: [█████████░] 92%
