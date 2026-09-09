@@ -125,6 +125,100 @@ jobs:
           choco install nasm -y --no-progress
           echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
 
+      # Downloads a checksum-pinned ffmpeg build (URL + SHA-256 recorded in
+      # scripts/ffmpeg_pin.json) instead of installing from a rolling
+      # distribution channel (apt/brew/choco) — replaces the three OS-scoped
+      # per-OS system-ffmpeg install steps that used to live here.
+      # D-GAP-01: the Linux leg used to install
+      # `6.1.1-3ubuntu5` from apt while the committed goldens were captured
+      # against a local master snapshot, so five fixture-derived goldens
+      # failed on the blocking x64-linux leg — three rolling channels each
+      # bump on their own schedule, and no one committed golden set can
+      # satisfy all three at once. No `if:`, no `continue-on-error:`: an
+      # input a release blocker depends on must not be skippable, and a
+      # checksum mismatch or an unrecognised runner aborts non-zero with no
+      # fallback (scripts/install_pinned_ffmpeg.sh never uses a system or
+      # rolling-channel ffmpeg when the pinned download fails).
+      - name: Install the pinned ffmpeg build (D-GAP-01)
+        run: bash scripts/install_pinned_ffmpeg.sh
+
+      # Every media fixture is git-ignored and untracked (tests/fixtures/*,
+      # .gitignore), so a fresh checkout has none of them. TRUST-06's
+      # encode-twice release blocker and the DOC-03 per-check fixture-pair
+      # gate both depend on this corpus existing before `ctest` runs.
+      # Placed here, ahead of Configure, so a corpus failure fails fast —
+      # before the 15-40 minute FFmpeg build — and can never be mistaken
+      # for a build or a test failure. Deliberately regenerated on EVERY
+      # run and never restored from a cache: `-flags +bitexact -fflags
+      # +bitexact` guarantees determinism for a GIVEN encoder build, not
+      # across builds, so a cached corpus produced by a different run's
+      # ffmpeg would silently make TRUST-06 compare two encodes that never
+      # shared a binary (03-14-PLAN.md <flagged_assumptions>). Both steps
+      # below are unconditional on every leg — no matrix condition, no
+      # failure tolerance — because a release blocker whose inputs can be
+      # skipped is not a release blocker.
+      #
+      # The generating ffmpeg is now pinned by URL and SHA-256 in
+      # scripts/ffmpeg_pin.json (D-GAP-01) rather than installed from a
+      # rolling channel: the determinism guarantee the corpus rests on
+      # (`+bitexact` for a GIVEN encoder build) is worthless if the
+      # generating build itself drifts out from under the committed
+      # goldens every time a distribution ships a new package.
+      - name: Generate media fixture corpus (BUILD-08 / D-08)
+        run: bash scripts/gen_corpus.sh
+
+      - name: Verify the fixture corpus is complete
+        run: bash scripts/check_corpus.sh
+
+      # Prints a per-fixture SHA-256 listing and a single
+      # CORPUS_DIGEST_SUMMARY= line per leg (T-3-82) — the raw material for
+      # measuring cross-platform corpus byte-identity from run-log evidence
+      # rather than assuming it (this plan's <flagged_assumptions> A1: a
+      # pinned nominal ffmpeg version does not by itself guarantee
+      # byte-identical fixtures across platforms/binaries).
+      - name: Report corpus digest (cross-platform byte-identity evidence)
+        run: bash scripts/corpus_digest.sh
+
+      # 03-19 gap closure: the digest reported above is only evidence until
+      # something asserts on it. Task 1's real-run evidence (run 33983460934,
+      # quoted in 03-19-SUMMARY.md) showed cross-platform byte-identity does
+      # NOT hold under the pin -- x64-linux and x64-windows-static-md agree
+      # byte-for-byte on all 80 fixtures, arm64-osx diverges on 76 of them.
+      # The developer confirmed the `designated` policy at 03-19's Task 2
+      # checkpoint: the byte-exact fixture-derived goldens (and this
+      # committed digest) are pinned to x64-linux only. Every other leg
+      # still builds and runs the rest of the suite; it just does not carry
+      # this specific guarantee, and says so out loud rather than silently
+      # omitting it. CI never writes tests/golden/CORPUS_DIGEST.txt -- a
+      # mismatch on the designated leg is a hard failure exactly as a golden
+      # mismatch is (tests/golden/README.md's "CI never sets UPDATE_GOLDENS"
+      # rule, T-3-92).
+      #
+      # WINDOWS.md #22 (waived): the designated leg's OWN fixture generation
+      # is not run-to-run reproducible on mkv_opus_a.webm/mkv_opus_b.webm --
+      # libopus performs its own runtime CPU-feature dispatch over float DSP
+      # and `-flags +bitexact` does not reach inside a third-party encoder,
+      # so the jitter is cross-host (the ubuntu-latest label is not a fixed
+      # physical machine), confirmed non-fixable at this layer. As of this
+      # comment the comparison below is delegated to
+      # scripts/assert_corpus_digest.sh, which excludes exactly those two
+      # fixture lines plus the derived CORPUS_DIGEST_SUMMARY= line from
+      # byte-exact comparison and asserts the excluded-line count is exactly
+      # 3 on both sides, so it cannot silently widen. Both fixtures are
+      # still generated by gen_corpus.sh, still present in the corpus,
+      # still exercised by their own tests on every leg, and still hashed
+      # and printed by the "Report corpus digest" step above -- what
+      # changed is that the assertion no longer claims a byte-exact
+      # property those two files do not have.
+      - name: Assert the corpus digest matches the committed pin (D-GAP-01)
+        run: |
+          DESIGNATED_LEG="x64-linux"
+          if [ "${{ matrix.preset }}" = "$DESIGNATED_LEG" ]; then
+            bash scripts/assert_corpus_digest.sh
+          else
+            echo "This leg (${{ matrix.preset }}) is NOT the designated leg ($DESIGNATED_LEG) for tests/golden/CORPUS_DIGEST.txt (03-19: the pinned ffmpeg builds do not produce byte-identical fixtures across platforms -- see 03-19-SUMMARY.md). This leg's corpus is deliberately NOT asserted against the committed digest."
+          fi
+
       - name: Install mono for vcpkg's NuGet client (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get install -y mono-complete
@@ -271,7 +365,44 @@ jobs:
             exit 1
           fi
           echo "ctest discovered $TOTAL tests in $TEST_DIR."
-          ctest --test-dir "$TEST_DIR" --output-on-failure
+
+          # 03-19 gap closure, `designated` policy branch. The byte-exact
+          # fixture-derived golden tests below are baselined on x64-linux CI
+          # runner bytes only (see the digest-assertion step above and
+          # 03-19-SUMMARY.md's per-leg evidence: arm64-osx diverges on 76 of
+          # 80 fixtures under the same nominal ffmpeg pin). Running them on a
+          # non-designated leg would compare against bytes that leg's own
+          # pinned ffmpeg cannot produce, so they are excluded there by name
+          # — never by loosening the assertion itself (D-GAP-01) — and the
+          # exclusion is named, counted, and guarded against silently
+          # widening, mirroring the reasoning the "Total Tests:" guard above
+          # already applies to itself: an exclusion that quietly grows is the
+          # same defect class as a gate that quietly stops gating.
+          DESIGNATED_LEG="x64-linux"
+          EXCLUDED_TEST_REGEX='unit\.inspect_container - golden:|unit\.ts_scan_golden - ts_(204|multiprogram|single)\.ts matches|integration\.size_checks - the size\.\* findings are pinned'
+          EXPECTED_EXCLUDED_COUNT=5
+
+          if [ "${{ matrix.preset }}" = "$DESIGNATED_LEG" ]; then
+            ctest --test-dir "$TEST_DIR" --output-on-failure
+          else
+            FILTERED_TOTAL=$(ctest --test-dir "$TEST_DIR" -N -E "$EXCLUDED_TEST_REGEX" | sed -n 's/^Total Tests: \([0-9][0-9]*\)$/\1/p' || true)
+            if [ -z "$FILTERED_TOTAL" ]; then
+              echo "::error::could not parse a filtered test count from 'ctest -N -E' in $TEST_DIR — refusing to assume the exclusion applied correctly."
+              exit 1
+            fi
+            EXCLUDED_COUNT=$((TOTAL - FILTERED_TOTAL))
+            if [ "$EXCLUDED_COUNT" -ne "$EXPECTED_EXCLUDED_COUNT" ]; then
+              echo "::error::the byte-exact-golden exclusion regex now matches $EXCLUDED_COUNT tests, expected exactly $EXPECTED_EXCLUDED_COUNT — it now excludes a different set of tests than it was written for, which is the same defect class as a gate that quietly stops gating."
+              exit 1
+            fi
+            echo "Excluding $EXCLUDED_COUNT byte-exact fixture-derived golden test(s) on this non-designated leg (${{ matrix.preset }}) — the pinned ffmpeg build for this runner and for the designated leg ($DESIGNATED_LEG) do not produce byte-identical fixtures, so these are asserted on $DESIGNATED_LEG only (D-GAP-01, 03-19):"
+            echo "  - unit.inspect_container - golden: the container+meta section for one representative fixture per family"
+            echo "  - unit.ts_scan_golden - ts_204.ts matches the committed TSDuck-derived golden"
+            echo "  - unit.ts_scan_golden - ts_multiprogram.ts matches the committed TSDuck-derived golden"
+            echo "  - unit.ts_scan_golden - ts_single.ts matches the committed TSDuck-derived golden"
+            echo "  - integration.size_checks - the size.* findings are pinned by a committed, read-only golden"
+            ctest --test-dir "$TEST_DIR" --output-on-failure -E "$EXCLUDED_TEST_REGEX"
+          fi
 
       # CLI-09's remaining checkpoint needs a real Windows console, which CI
       # structurally cannot provide: Actions redirects stdout to a pipe, so
@@ -301,11 +432,12 @@ jobs:
       # generator. Proves the version-gate failure branch (deferred here
       # explicitly by Plan 04, since the shell variant's equivalent branch
       # is already proven) and cross-checks the manifest key order Plan 04
-      # recorded.
-      - name: Install system ffmpeg for the corpus generator's positive-path check (Windows)
-        if: matrix.preset == 'x64-windows-static-md'
-        run: choco install ffmpeg -y --no-progress
-
+      # recorded. The pinned ffmpeg is already installed and on PATH from
+      # the "Install the pinned ffmpeg build (D-GAP-01)" step earlier in
+      # this job (03-16-PLAN.md) — no separate install needed here. That
+      # step appends the pinned binary's directory to GITHUB_PATH
+      # specifically so this step's positive path (which clears
+      # MEDIADIFF_FFMPEG and then requires ffmpeg on PATH) still finds one.
       - name: PowerShell corpus generator version-gate and manifest-order cross-check (Windows, owed to Plan 04)
         if: matrix.preset == 'x64-windows-static-md'
         shell: pwsh
@@ -394,3 +526,12 @@ jobs:
 
       - name: Run fixture case-collision portability lint
         run: bash scripts/lint_fixture_case_collisions.sh
+
+      - name: Run TSDuck golden presence lint (TRUST-09, D-04)
+        run: bash scripts/lint_tsduck_goldens.sh
+
+      - name: Run control-byte escaping choke-point lint (T-2-33)
+        run: bash scripts/lint_control_bytes.sh
+
+      - name: Run bash-3.2 portability lint (macOS CI guard)
+        run: bash scripts/lint_bash4_builtins.sh

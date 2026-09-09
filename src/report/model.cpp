@@ -92,10 +92,40 @@ std::size_t group_slot(Group group) {
 }
 
 // Accumulates one finding into a Summary: the Status count, plus
-// worst_gating tracked as the maximum Severity seen so far (Severity's own
-// declaration order -- ignore < info < warn < fail, core/registry.h -- is
-// exactly the ordering "worst" means here).
+// worst_gating tracked as the maximum Severity among findings that
+// actually gate this run.
+//
+// 03-02-PLAN.md's own discovery (Rule 3, blocking-issue fix -- see that
+// plan's SUMMARY for the full derivation): every comparator sets
+// `finding.severity` to the CHECK's own resolved severity unconditionally
+// (compare/exact.cpp, compare/tol.cpp, ... all set it before deciding
+// pass/warn/fail), so severity alone can never distinguish "this check
+// COULD gate if it differed" from "this check DID gate." Gating
+// worst_gating on severity alone -- as this function did before this fix
+// -- meant ANY evaluated fail-severity check poisoned the whole run's
+// exit code even when it PASSED, which cannot coexist with PROJECT.md's
+// Core Value ("a no-change re-run under the right profile is clean out of
+// the box"): container.format is severity=fail and passes on any two
+// files sharing a container family, the common case, so an unfixed
+// accumulate() would make a routine clean compare exit non-zero forever.
+// No pre-Phase-3 check ever exposed this: meta.tool_version is
+// severity=warn, and meta.missing_candidate/extra_candidate (the only
+// pre-existing severity=fail/warn checks) are presence checks that never
+// produce a Status::pass finding through the real CLI path at all
+// (compare_presence is invoked only for an unpaired file in dir mode).
+//
+// The fix: only a finding whose STATUS itself signals a problem
+// (Status::warn, Status::fail, or Status::error -- CR-03's "never a
+// fabricated verdict" overflow path, which must not silently stop
+// gating) contributes its severity to worst_gating. Status::pass,
+// Status::info and Status::skipped never do, regardless of the check's
+// own ceiling severity. This still honors the documented two-threshold
+// `tol` scenario (a delta that crosses into warn/fail territory resolves
+// Status::warn/Status::fail and gates exactly as before) -- it only
+// excludes the specific case this function got wrong: a finding that
+// resolved cleanly (Status::pass) must never gate.
 void accumulate(Summary& summary, const Finding& finding) {
+  bool gates = false;
   switch (finding.status) {
     case Status::pass:
       ++summary.pass;
@@ -105,18 +135,21 @@ void accumulate(Summary& summary, const Finding& finding) {
       break;
     case Status::warn:
       ++summary.warn;
+      gates = true;
       break;
     case Status::fail:
       ++summary.fail;
+      gates = true;
       break;
     case Status::skipped:
       ++summary.skipped;
       break;
     case Status::error:
       ++summary.error;
+      gates = true;
       break;
   }
-  if (static_cast<int>(finding.severity) > static_cast<int>(summary.worst_gating)) {
+  if (gates && static_cast<int>(finding.severity) > static_cast<int>(summary.worst_gating)) {
     summary.worst_gating = finding.severity;
   }
 }

@@ -111,7 +111,15 @@ if [ ! -d "$SCAN_DIR" ]; then
   exit 1
 fi
 
-mapfile -t SCAN_FILES < <(find "$SCAN_DIR" -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
+# Portable in place of a bash 4+ only array-read builtin: macOS ships bash
+# 3.2, where that builtin does not exist at all and fails with a "command
+# not found" style error (exit 127) rather than a graceful degradation. A
+# `while read` loop reading from process substitution works identically on
+# bash 3.2 and 4+.
+SCAN_FILES=()
+while IFS= read -r _found_file; do
+  SCAN_FILES+=("$_found_file")
+done < <(find "$SCAN_DIR" -type f \( -name '*.cpp' -o -name '*.h' \) | sort)
 
 if [ "${#SCAN_FILES[@]}" -eq 0 ]; then
   echo "lint_fixture_case_collisions.sh error: enumeration of '${SCAN_DIR}' yielded zero files." >&2

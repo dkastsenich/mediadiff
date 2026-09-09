@@ -1,0 +1,10 @@
+{
+  "tsduck_version": "tsanalyze: TSDuck - The MPEG Transport Stream Toolkit - version 3.44-4676",
+  "version_flag": "--version",
+  "fixtures": [
+    "ts_single",
+    "ts_multiprogram",
+    "ts_204"
+  ],
+  "captured_at": "2026-09-05T17:28:37Z"
+}

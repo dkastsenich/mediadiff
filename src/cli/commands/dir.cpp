@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "cli/color_policy.h"
+#include "cli/diagnostics.h"
 #include "cli/dir_pairing.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
@@ -27,6 +28,9 @@
 #include "core/registry.h"
 #include "core/snapshot.h"
 #include "core/value.h"
+#include "probe/demux_session.h"
+#include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
 #include "report/json.h"
 #include "report/junit.h"
 #include "report/markdown.h"
@@ -183,16 +187,32 @@ void register_dir_command(CLI::App& app) {
     auto config_result = discover_and_load(explicit_config_path);
     if (!config_result) {
       const Error& err = config_result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     const std::optional<ConfigFile>& config = *config_result;
+
+    // Resolved once, here, before the worker pool starts (the same
+    // "resolved once, read many times across worker threads" pattern this
+    // command already applies to the base Policy below) -- every job's
+    // own DemuxSession::open call reads DemuxOptions{}'s default member
+    // initializer, which reads this global, so a single --probe-timeout
+    // governs every file in the corpus identically.
+    auto probe_timeout_result = resolve_probe_timeout_ms(options.probe, config);
+    if (!probe_timeout_result) {
+      const Error& err = probe_timeout_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    if (probe_timeout_result->has_value()) {
+      set_default_wall_clock_budget_ms(**probe_timeout_result);
+    }
 
     auto cli_overrides_result =
         parse_cli_overrides(opt_strings(options.policy.set_flags), opt_strings(options.policy.tol_flags));
     if (!cli_overrides_result) {
       const Error& err = cli_overrides_result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     const std::vector<CliOverride>& cli_overrides = *cli_overrides_result;
@@ -200,7 +220,7 @@ void register_dir_command(CLI::App& app) {
     auto profile_result = resolve_profile_selection(opt_string(options.policy.profile), config);
     if (!profile_result) {
       const Error& err = profile_result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     const ProfileId profile = *profile_result;
@@ -218,7 +238,7 @@ void register_dir_command(CLI::App& app) {
     auto base_policy_result = resolve_policy(registry, profile, config_for_base, /*cli_overrides=*/{});
     if (!base_policy_result) {
       const Error& err = base_policy_result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     const Policy base_policy = *base_policy_result;
@@ -230,7 +250,7 @@ void register_dir_command(CLI::App& app) {
     auto report_destinations_result = parse_report_destinations(opt_strings(options.report.report_flags));
     if (!report_destinations_result) {
       const Error& err = report_destinations_result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     const std::vector<ReportDestination>& report_destinations = *report_destinations_result;
@@ -240,7 +260,7 @@ void register_dir_command(CLI::App& app) {
     if (json_to_file) {
       for (const ReportDestination& dest : report_destinations) {
         if (dest.path == json_path) {
-          std::fputs(("mediadiff: --json and --report name the same path '" + dest.path + "'\n").c_str(), stderr);
+          report_cli_error("--json and --report name the same path '" + dest.path + "'");
           std::exit(kExitUsage);
         }
       }
@@ -251,41 +271,65 @@ void register_dir_command(CLI::App& app) {
     // diagnostic, not an error: the corpus run still completes on the
     // default header-plus-packet pass set.
     if (content_requested) {
-      std::fputs(
-          "mediadiff: --content is accepted but has no effect yet -- the decode pass arrives with a later phase\n",
-          stderr);
+      report_cli_error("--content is accepted but has no effect yet -- the decode pass arrives with a later phase");
     }
 
     // --threads resolution: explicit --threads > [dir] threads > hardware
     // concurrency (clamped). An explicit value of zero or negative is a
-    // usage error regardless of source (T-2-41: this is simultaneously
-    // the concurrency AND the memory knob).
-    constexpr int kMaxDefaultThreads = 32;
+    // usage error regardless of source; a value above kMaxDirThreads is
+    // ALSO a usage error, from every source (T-2-41's closed residual):
+    // this is simultaneously the concurrency AND the memory knob (D-01),
+    // and a user who asked for a thread count they cannot have must be
+    // told, never silently given a different one.
     int resolved_threads = 0;
     if (threads_opt->count() > 0) {
       if (*threads <= 0) {
-        std::fputs("mediadiff: --threads must be a positive integer\n", stderr);
+        report_cli_error("--threads must be a positive integer");
+        std::exit(kExitUsage);
+      }
+      if (*threads > kMaxDirThreads) {
+        report_cli_error("--threads must not exceed " + std::to_string(kMaxDirThreads) +
+                          " (the maximum worker thread count)");
         std::exit(kExitUsage);
       }
       resolved_threads = *threads;
     } else if (config.has_value() && config->dir.has_value() && config->dir->threads.has_value()) {
-      // Already validated positive at config-load time
-      // (src/config/toml_load.cpp) -- trusted here.
+      // Already validated positive AND <= kMaxDirThreads at config-load
+      // time (src/config/toml_load.cpp) -- trusted here.
       resolved_threads = *config->dir->threads;
     } else {
       const unsigned hardware = std::thread::hardware_concurrency();
       resolved_threads = hardware == 0 ? 1 : static_cast<int>(hardware);
-      if (resolved_threads > kMaxDefaultThreads) {
-        resolved_threads = kMaxDefaultThreads;
+      if (resolved_threads > kMaxDirThreads) {
+        resolved_threads = kMaxDirThreads;
       }
     }
+
+    // D-01: derive this invocation's per-file PacketScan byte cap from
+    // the resolved global probe-memory budget and the resolved thread
+    // count above, and set it as the process-wide default BEFORE the
+    // worker pool starts -- every job's own run_packet_scan call (inside
+    // fingerprint_input, via the orchestrator) reads
+    // PacketScanLimits{}'s own default member initializer, which reads
+    // this global, so every file in the corpus is bounded by the SAME
+    // per-file cap.
+    // 03-12-PLAN.md Task 2 (T-3-58): the megabytes-to-bytes conversion is
+    // resolve_probe_memory_budget_bytes's own job now -- no raw
+    // megabytes-to-bytes product survives here.
+    auto probe_budget_bytes_result = resolve_probe_memory_budget_bytes(options.probe, config);
+    if (!probe_budget_bytes_result) {
+      const Error& err = probe_budget_bytes_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes_result, resolved_threads));
 
     // DIR-01/DIR-04: the full pair list, byte-wise sorted, computed BEFORE
     // any worker starts and never mutated afterward.
     auto pairs_result = pair_directories(baseline_dir_text, candidate_dir_text);
     if (!pairs_result) {
       const Error& err = pairs_result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     const std::vector<FilePair>& pairs = *pairs_result;
@@ -298,7 +342,7 @@ void register_dir_command(CLI::App& app) {
       // future registry misconfiguration fails loudly (exit 70, a
       // mediadiff bug) rather than silently skipping every unpaired
       // finding.
-      std::fputs("mediadiff: internal error: meta.missing_candidate/meta.extra_candidate not registered\n", stderr);
+      report_cli_error("internal error: meta.missing_candidate/meta.extra_candidate not registered");
       std::exit(kExitInternal);
     }
 
@@ -334,12 +378,12 @@ void register_dir_command(CLI::App& app) {
         const std::string baseline_path = join_relative(baseline_dir_text, pair.relative_path);
         const std::string candidate_path = join_relative(candidate_dir_text, pair.relative_path);
 
-        auto baseline_fp = read_snapshot(baseline_path, registry);
+        auto baseline_fp = fingerprint_input(baseline_path, registry);
         if (!baseline_fp) {
           outcomes[i].hard_error = baseline_fp.error();
           return;
         }
-        auto candidate_fp = read_snapshot(candidate_path, registry);
+        auto candidate_fp = fingerprint_input(candidate_path, registry);
         if (!candidate_fp) {
           outcomes[i].hard_error = candidate_fp.error();
           return;
@@ -432,7 +476,7 @@ void register_dir_command(CLI::App& app) {
       const CorpusModel tty_model = build_corpus_model(results, registry, tty_options);
       const TerminalSize terminal = query_terminal_size();
       const std::string tty_report = render_tty(tty_model, registry, color, terminal.width, terminal.height);
-      std::fputs(tty_report.c_str(), stdout);
+      std::fwrite(tty_report.data(), 1, tty_report.size(), stdout);
     }
 
     if (json_requested) {
@@ -440,20 +484,17 @@ void register_dir_command(CLI::App& app) {
       if (json_to_file) {
         FILE* handle = fopen_utf8(json_path, "wb");
         if (handle == nullptr) {
-          std::fputs(("mediadiff: could not open report destination for writing: " + json_path + "\n")
-                         .c_str(),
-                     stderr);
+          report_cli_error("could not open report destination for writing: " + json_path);
           std::exit(kExitUsage);
         }
         const std::size_t written = std::fwrite(report.data(), 1, report.size(), handle);
         const bool close_ok = std::fclose(handle) == 0;
         if (written != report.size() || !close_ok) {
-          std::fputs(("mediadiff: failed writing report destination: " + json_path + "\n").c_str(),
-                     stderr);
+          report_cli_error("failed writing report destination: " + json_path);
           std::exit(kExitUsage);
         }
       } else {
-        std::fputs(report.c_str(), stdout);
+        std::fwrite(report.data(), 1, report.size(), stdout);
       }
     }
 
@@ -469,13 +510,13 @@ void register_dir_command(CLI::App& app) {
       }
       FILE* handle = fopen_utf8(dest.path, "wb");
       if (handle == nullptr) {
-        std::fputs(("mediadiff: could not open report destination for writing: " + dest.path + "\n").c_str(), stderr);
+        report_cli_error("could not open report destination for writing: " + dest.path);
         std::exit(kExitUsage);
       }
       const std::size_t written = std::fwrite(rendered.data(), 1, rendered.size(), handle);
       const bool close_ok = std::fclose(handle) == 0;
       if (written != rendered.size() || !close_ok) {
-        std::fputs(("mediadiff: failed writing report destination: " + dest.path + "\n").c_str(), stderr);
+        report_cli_error("failed writing report destination: " + dest.path);
         std::exit(kExitUsage);
       }
     }

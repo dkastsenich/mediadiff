@@ -10,6 +10,38 @@
 
 #include "core/serializer.h"
 
+// T-2-33: this file deliberately does NOT call
+// mediadiff::sanitize_for_display (src/util/sanitize.h) anywhere. XML
+// escaping (xml_escape below) is a different context with different rules
+// -- routing through the display escaper would double-escape the four XML
+// metacharacters and silently change every committed JUnit golden for no
+// security benefit. sanitize_for_display's own job is the terminal/
+// Markdown display surface (src/cli/tty_render.cpp, src/cli/
+// provenance_render.cpp, src/report/markdown.cpp), not this one.
+//
+// The four XML metacharacter substitutions alone do NOT make this file's
+// output legal XML 1.0: a raw C0 control byte (other than tab/LF/CR) or
+// DEL is not legal XML 1.0 character data under ANY escaping mechanism --
+// not even an XML numeric character reference (`&#x1B;` is exactly as
+// illegal as the literal byte, so emitting one would move the problem
+// rather than fix it). xml_escape's default branch below therefore emits
+// such a byte as a visible "\xHH" numeric escape IN THE TEXT ITSELF,
+// matching the escape form src/util/sanitize.cpp's sanitize_for_display
+// already uses for the same class of byte, so a reader who has seen one
+// escaped control byte in this codebase recognizes the other. This is
+// this file's own, XML-context-local fix for T-2-33 -- not a call into
+// sanitize_for_display, which would be the wrong context entirely (see
+// above).
+//
+// WR-01 (03-REVIEW.md): the "\xHH" numeric escape above is only half of
+// the disambiguation the display-escaping function named above applies --
+// that function ALSO doubles every literal backslash byte, precisely so a
+// real control byte's escape form and text that literally spells that
+// same escape form never render identically. xml_escape's own
+// `case '\\'` arm below applies that same doubling, matching that
+// function's own ASCII branch exactly, so the parity this file already
+// claimed is now actually true.
+
 namespace mediadiff {
 
 namespace {
@@ -38,18 +70,45 @@ std::string_view skip_reason_text(SkipReason reason) {
       return "requires_media";
     case SkipReason::no_prior_release:
       return "no_prior_release";
+    case SkipReason::partial_scan:
+      return "partial_scan";
+    case SkipReason::insufficient_data:
+      return "insufficient_data";
+    case SkipReason::no_timing_data:
+      return "no_timing_data";
   }
   return "none";
 }
 
+constexpr char kHexDigits[] = "0123456789abcdef";
+
+// Appends "\xHH" (lowercase hex, exactly two digits) to `out` for a byte
+// that is illegal as raw XML 1.0 character data -- matches the escape
+// form src/util/sanitize.cpp's sanitize_for_display uses for the same
+// class of byte (see this file's own top-of-file comment for why this is
+// a local fix, not a call into that function).
+void append_control_byte_escape(std::string& out, unsigned char value) {
+  out += "\\x";
+  out += kHexDigits[(value >> 4) & 0xF];
+  out += kHexDigits[value & 0xF];
+}
+
 // Escapes text for both an XML attribute value (double-quoted throughout
-// this renderer) and an XML text body -- the same four substitutions cover
-// both contexts, since `"` only matters inside an attribute and escaping
-// it inside a text body is harmless.
+// this renderer) and an XML text body -- the same four metacharacter
+// substitutions cover both contexts, since `"` only matters inside an
+// attribute and escaping it inside a text body is harmless. Beyond the
+// four metacharacters, any C0 control byte other than tab (0x09), line
+// feed (0x0A) and carriage return (0x0D), plus DEL (0x7F), is not legal
+// XML 1.0 character data in any form -- those bytes are escaped as a
+// visible "\xHH" sequence in the text itself (see append_control_byte_escape
+// and this file's own top comment for why NOT an XML numeric character
+// reference). Every other byte -- ordinary printable ASCII, tab/LF/CR, and
+// valid multi-byte UTF-8 -- passes through unchanged, byte-for-byte, so a
+// committed golden with no such bytes is unaffected.
 std::string xml_escape(std::string_view text) {
   std::string out;
   out.reserve(text.size());
-  for (char c : text) {
+  for (unsigned char c : text) {
     switch (c) {
       case '&':
         out += "&amp;";
@@ -63,8 +122,21 @@ std::string xml_escape(std::string_view text) {
       case '"':
         out += "&quot;";
         break;
+      case '\\':
+        // Doubled, not hex-escaped -- mirrors src/util/sanitize.cpp's
+        // display-escaping ASCII branch exactly (see this function's own
+        // comment above and this file's top-of-file comment): without
+        // this, a real control byte's "\xHH" escape and text that
+        // literally spells that same escape form render identically,
+        // which is precisely the WR-01 ambiguity this arm closes.
+        out += "\\\\";
+        break;
       default:
-        out += c;
+        if (c == 0x7F || (c < 0x20 && c != '\t' && c != '\n' && c != '\r')) {
+          append_control_byte_escape(out, c);
+        } else {
+          out += static_cast<char>(c);
+        }
     }
   }
   return out;

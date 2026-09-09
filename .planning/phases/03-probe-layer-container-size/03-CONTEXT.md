@@ -30,93 +30,46 @@ guarantee).
 
 ### Probe memory and `--threads`
 
-- **D-01: Memory is a single global budget divided by the thread count, not a fixed per-file cap.**
-  A per-file `PacketScan` cap is derived as `budget / threads`, so `--threads N` is an honest
-  memory knob rather than a multiplier on an unbounded total. This is what makes DIR-06's
-  "peak memory per in-flight file is bounded and asserted" a single assertable number instead of
-  a per-stream rule with no roof. The doc's ~40 B/packet figure and its 5M-packets/stream
-  observation remain the sizing inputs; they stop being the bound itself.
-  — **Reversibility:** costly — the budget is surfaced as a CLI/config knob and every analyzer's
-  scan allocation derives from it, so changing the model later touches the orchestrator, the
-  packet store, and the documented meaning of `--threads`.
+- **D-01: Memory is a single global budget divided by the thread count, not a fixed per-file cap.** — **Reversibility:** costly — the budget is surfaced as a CLI/config knob and every analyzer's scan allocation derives from it, so changing the model later touches the orchestrator, the packet store, and the documented meaning of `--threads`.
+
+  A per-file `PacketScan` cap is derived as `budget / threads`, so `--threads N` is an honest memory knob rather than a multiplier on an unbounded total. This is what makes DIR-06's "peak memory per in-flight file is bounded and asserted" a single assertable number instead of a per-stream rule with no roof. The doc's ~40 B/packet figure and its 5M-packets/stream observation remain the sizing inputs; they stop being the bound itself.
 
 ### Degraded scans must not produce verdicts
 
-- **D-02: When `PacketScan` truncates (`partial:true`), every dependent check skips with
-  `skipped:partial_scan` — it never reports a number computed from incomplete packets.**
-  Applies to `size.stream_bitrate`, `size.peak_bitrate`, `size.overhead`, and any later consumer
-  of packet-interval statistics. A bitrate derived from a truncated sweep is a confidently wrong
-  value, and the engine already enforces `skipped != pass`, so skipping is both visible and safe.
-  Rejected: reporting with an evidence flag (an info finding is easy to overlook), and reporting
-  normally (highest false-verdict risk).
-  — **Reversibility:** reversible — a per-check disposition, local to the size analyzers.
+- **D-02: A truncated packet scan makes every dependent check skip rather than report a number computed from incomplete packets.** — **Reversibility:** reversible — a per-check disposition, local to the size analyzers.
+
+  Concretely: when `PacketScan` sets `partial:true`, dependent checks emit `skipped:partial_scan`. Applies to `size.stream_bitrate`, `size.peak_bitrate`, `size.overhead`, and any later consumer of packet-interval statistics. A bitrate derived from a truncated sweep is a confidently wrong value, and the engine already enforces `skipped != pass`, so skipping is both visible and safe. Rejected: reporting with an evidence flag (an info finding is easy to overlook), and reporting normally (highest false-verdict risk).
 
 ### Estimated measurements compare differently from measured ones
 
-- **D-03: TS interval measurements derived from the mux-rate estimate carry an `estimated` marker
-  and compare under a wider tolerance than a directly measured value.**
-  `container.ts.pcr_interval` and `container.ts.psi_interval` are milliseconds computed from a
-  byte-offset-to-time conversion using a PCR-pair mux-rate estimate. Two files whose estimates
-  differ slightly could otherwise trip `fail > 100 ms` on estimation noise rather than real
-  spacing drift. False positives are P0 in this project, so the estimate's nature must reach the
-  comparison layer, not just the evidence string.
-  — **Reversibility:** costly — introduces a measurement-level attribute the comparison layer
-  reads, so the `Value`/measurement contract and the tolerance resolution path both see it.
+- **D-03: TS interval measurements derived from the mux-rate estimate carry an `estimated` marker and compare under a wider tolerance than a directly measured value.** — **Reversibility:** costly — introduces a measurement-level attribute the comparison layer reads, so the `Value`/measurement contract and the tolerance resolution path both see it.
+
+  `container.ts.pcr_interval` and `container.ts.psi_interval` are milliseconds computed from a byte-offset-to-time conversion using a PCR-pair mux-rate estimate. Two files whose estimates differ slightly could otherwise trip `fail > 100 ms` on estimation noise rather than real spacing drift. False positives are P0 in this project, so the estimate's nature must reach the comparison layer, not just the evidence string.
 
 ### TRUST-09 must actually gate
 
-- **D-04: TSDuck's analysis is captured once per fixture and committed as a golden; CI compares
-  `ts_scan` output against those goldens on every run.**
-  This keeps TSDuck unlinked and absent from CI runners while still failing the build when
-  `ts_scan` drifts. Rejected: an opt-in CI job that skips when TSDuck is missing — a gate that can
-  silently stop gating is the exact failure this project treats as worthless, and Phase 2 already
-  shipped one lint with that defect. Also rejected: a documented manual release procedure, which
-  nothing enforces.
-  Regenerating a golden requires a deliberate, reviewed act with the TSDuck version recorded,
-  mirroring the existing `UPDATE_GOLDENS` discipline (Phase 2 D-12).
-  — **Reversibility:** reversible — goldens and a comparison step.
+- **D-04: TSDuck's analysis is captured once per fixture and committed as a golden, and CI compares `ts_scan` output against those goldens on every run.** — **Reversibility:** reversible — goldens and a comparison step.
+
+  This keeps TSDuck unlinked and absent from CI runners while still failing the build when `ts_scan` drifts. Rejected: an opt-in CI job that skips when TSDuck is missing — a gate that can silently stop gating is the exact failure this project treats as worthless, and Phase 2 already shipped one lint with that defect. Also rejected: a documented manual release procedure, which nothing enforces. Regenerating a golden requires a deliberate, reviewed act with the TSDuck version recorded, mirroring the existing `UPDATE_GOLDENS` discipline (Phase 2 D-12).
 
 ### CLI option binding
 
-- **D-05: New CLI surface binds options via `CLI::Option*` and reads them in the callback —
-  `as<std::string>()` for strings, `->count()` for flags — never by heap-allocating a
-  `shared_ptr` per option to extend its lifetime.**
-  The `App` owns its options (`std::vector<Option_p> options_`), so a borrowed `Option*` outlives
-  the registration function for free. Verified against the pinned CLI11: `Option::as<T>()`
-  (`Option.hpp:761`), untargeted `add_option(std::string)` (`App.hpp:657`), untargeted
-  `add_flag(std::string)` (`App.hpp:691`).
-  **Exception — typed numerics keep a bound variable or an explicit `->check()`.** Untargeted
-  `add_option` is not templated and drops parse-time type validation; for a value like
-  `--threads` that would move the failure out of parse and weaken the exit-64 usage contract.
-  — **Reversibility:** reversible — a per-call-site binding style.
+- **D-05: New CLI surface binds options by borrowed pointer, never by heap-allocating a per-option smart pointer to extend its lifetime.** — **Reversibility:** reversible — a per-call-site binding style.
 
-- **D-06: Migrating the 38 existing `shared_ptr` option sites is a SEPARATE task on `main`,
-  completed BEFORE Phase 3 execution begins — not folded into this phase.**
-  Those sites are shipped, verified Phase 2 code covered by the exit-code integration tests.
-  Doing the migration first means Phase 3 starts from the clean pattern without Phase 3 owning a
-  refactor of a prior phase's CLI.
-  **This is a prerequisite, and Phase 3 planning should treat it as done.** Affected:
-  `src/cli/options.cpp` (19), `compare.cpp` (5), `dir.cpp` (5), `snapshot.cpp` (3),
-  `list_checks.cpp` (2), `main.cpp` (2), `explain.cpp` (1), `inspect.cpp` (1).
+  Concretely: bind via `CLI::Option*`, using `as<std::string>()` for strings, `->count()` for flags. The `App` owns its options (`std::vector<Option_p> options_`), so a borrowed `Option*` outlives the registration function for free. Verified against the pinned CLI11: `Option::as<T>()` (`Option.hpp:761`), untargeted `add_option(std::string)` (`App.hpp:657`), untargeted `add_flag(std::string)` (`App.hpp:691`). **Exception — typed numerics keep a bound variable or an explicit `->check()`.** Untargeted `add_option` is not templated and drops parse-time type validation; for a value like `--threads` that would move the failure out of parse and weaken the exit-64 usage contract.
+
+- **D-06: Migrating the 38 existing `shared_ptr` option sites is a separate task completed before Phase 3 execution begins, not folded into this phase.** — **Reversibility:** reversible — a completed prerequisite.
+
+  Those sites were shipped, verified Phase 2 code covered by the exit-code integration tests. **Status: DONE** — quick task `260902-it6` migrated 38 sites to 1 (the `--threads` bound int, kept per D-05's exception), merged to `main` at `968b5c8`, CI green on all four required contexts including MSVC. Phase 3 therefore starts from the clean pattern.
 
 ### Claude's Discretion
 
-The design doc is unusually prescriptive and the following are settled there — the planner should
-follow doc 02 rather than re-deciding: EBML/BMFF element IDs and walk order, the ISO 13818-1
-§2.4.3.3 continuity-counter carve-outs, per-check semantics and profile defaults, evidence
-shapes, cross-container demotion mechanics (CONT-02), multi-program scoping by `program_number`,
-the "hand-roll, don't link TSDuck/libebml/GPAC" call, implementation order (DemuxSession →
-PacketScan → bmff → ebml → ts), and the fixture recipes in §8.
+The design doc is unusually prescriptive and the following are settled there — the planner should follow doc 02 rather than re-deciding: EBML/BMFF element IDs and walk order, the ISO 13818-1 §2.4.3.3 continuity-counter carve-outs, per-check semantics and profile defaults, evidence shapes, cross-container demotion mechanics (CONT-02), multi-program scoping by `program_number`, the "hand-roll, don't link TSDuck/libebml/GPAC" call, implementation order (DemuxSession → PacketScan → bmff → ebml → ts), and the fixture recipes in §8.
 
 Two lower-stakes items were left to the planner with a stated default rather than discussed:
 
-- **`DemuxSession` wall-clock budget.** Default assumption: a bounded per-file budget enforced via
-  the interrupt callback, with a timeout degrading to a clean `input_unsupported` / exit 65 rather
-  than a crash or an indefinite stall — important in `dir` mode, where one pathological file must
-  not hang a corpus run. The concrete value is the planner's to propose.
-- **Volatile tag ignore list (CONT-03).** Default assumption: the doc's fixed list
-  (`creation_time`, `encoder`, `handler_name`, `encoding_tool`) ships as the built-in baseline.
-  Whether it becomes user-extensible via `mediadiff.toml` is deferred until a real need appears.
+- **`DemuxSession` wall-clock budget.** Default assumption: a bounded per-file budget enforced via the interrupt callback, with a timeout degrading to a clean `input_unsupported` / exit 65 rather than a crash or an indefinite stall — important in `dir` mode, where one pathological file must not hang a corpus run. The concrete value is the planner's to propose.
+- **Volatile tag ignore list (CONT-03).** Default assumption: the doc's fixed list (`creation_time`, `encoder`, `handler_name`, `encoding_tool`) ships as the built-in baseline. Whether it becomes user-extensible via `mediadiff.toml` is deferred until a real need appears.
 
 </decisions>
 

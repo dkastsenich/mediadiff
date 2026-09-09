@@ -44,6 +44,17 @@ std::optional<Magnitude> extract_magnitude(const Value& value) {
   return std::nullopt;
 }
 
+// D-03 (03-CONTEXT.md): TS interval measurements derived from a mux-rate
+// estimate compare under a wider tolerance than a directly measured value,
+// so estimation noise in e.g. container.ts.pcr_interval's byte-offset ->
+// time conversion cannot fabricate a false regression (false positives are
+// P0). 3x on pcr_interval's 100ms default yields 300ms, still well under
+// psi_interval's own 500ms bound -- a real spacing regression still fires
+// while estimation noise does not. A single named constant, never a
+// double: the multiply below always goes through
+// core/rational.h's detail::checked_mul.
+constexpr std::int64_t kEstimatedToleranceFactor = 3;
+
 }  // namespace
 
 // compare_tol: doc 01 section 3's `±tol` semantic. This engine layer has
@@ -139,6 +150,29 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     abs_delta_num = delta_num;
   }
 
+  // D-03: either side carrying `estimated` widens the effective threshold
+  // magnitudes by kEstimatedToleranceFactor, via checked integer
+  // multiplication -- never a double conversion. An overflowing multiply
+  // routes through the same overflow_finding path the delta computation
+  // above uses, rather than silently falling back to the unwidened value
+  // (which would be a fabricated verdict just as much as a wrapped
+  // multiply would be).
+  const bool widened = baseline.estimated || candidate.estimated;
+  std::int64_t effective_num = tolerance->num;
+  std::optional<std::int64_t> effective_warn_num = tolerance->warn_num;
+  if (widened) {
+    if (!detail::checked_mul(tolerance->num, kEstimatedToleranceFactor, &effective_num)) {
+      return overflow_finding("estimated-measurement tolerance widening (fail threshold * 3)");
+    }
+    if (tolerance->warn_num.has_value()) {
+      std::int64_t widened_warn = 0;
+      if (!detail::checked_mul(*tolerance->warn_num, kEstimatedToleranceFactor, &widened_warn)) {
+        return overflow_finding("estimated-measurement tolerance widening (warn threshold * 3)");
+      }
+      effective_warn_num = widened_warn;
+    }
+  }
+
   bool within_fail = false;
   bool within_warn = false;
   if (tolerance->is_relative) {
@@ -160,14 +194,14 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
       return overflow_finding("relative-tolerance lhs (|delta| * tolerance_den * 100)");
     }
     std::int64_t rhs = 0;
-    if (!detail::checked_mul(tolerance->num, abs_baseline_num, &rhs) ||
+    if (!detail::checked_mul(effective_num, abs_baseline_num, &rhs) ||
         !detail::checked_mul(rhs, candidate_mag->den, &rhs)) {
       return overflow_finding("relative-tolerance rhs (tolerance_num * |baseline| * candidate_den)");
     }
     within_fail = lhs <= rhs;
-    if (tolerance->warn_num.has_value()) {
+    if (effective_warn_num.has_value()) {
       std::int64_t rhs_warn = 0;
-      if (!detail::checked_mul(*tolerance->warn_num, abs_baseline_num, &rhs_warn) ||
+      if (!detail::checked_mul(*effective_warn_num, abs_baseline_num, &rhs_warn) ||
           !detail::checked_mul(rhs_warn, candidate_mag->den, &rhs_warn)) {
         return overflow_finding("relative-tolerance warn rhs (warn_num * |baseline| * candidate_den)");
       }
@@ -179,13 +213,13 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
       return overflow_finding("absolute-tolerance lhs (|delta| * tolerance_den)");
     }
     std::int64_t rhs = 0;
-    if (!detail::checked_mul(tolerance->num, delta_den, &rhs)) {
+    if (!detail::checked_mul(effective_num, delta_den, &rhs)) {
       return overflow_finding("absolute-tolerance rhs (tolerance_num * delta_den)");
     }
     within_fail = lhs <= rhs;
-    if (tolerance->warn_num.has_value()) {
+    if (effective_warn_num.has_value()) {
       std::int64_t rhs_warn = 0;
-      if (!detail::checked_mul(*tolerance->warn_num, delta_den, &rhs_warn)) {
+      if (!detail::checked_mul(*effective_warn_num, delta_den, &rhs_warn)) {
         return overflow_finding("absolute-tolerance warn rhs (warn_num * delta_den)");
       }
       within_warn = lhs <= rhs_warn;
@@ -193,35 +227,41 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   }
 
   const std::string_view unit_text = unit_suffix(check.unit);
+  // D-03: appended to every message below when the widened threshold was
+  // actually used for this comparison, so a reader sees why an otherwise
+  // out-of-tolerance delta was let through.
+  const std::string widened_suffix =
+      widened ? fmt::format(" (estimated measurement, tolerance widened {}x)", kEstimatedToleranceFactor) : "";
 
-  if (tolerance->warn_num.has_value()) {
+  if (effective_warn_num.has_value()) {
     // Two-threshold form: the zone the delta falls in decides the status,
     // independent of the check's own severity (doc 01 section 3).
     if (within_warn) {
       finding.status = Status::pass;
-      finding.message = fmt::format("delta {}{}/{}{} within warn threshold", sign, abs_delta_num, delta_den,
-                                     tolerance->is_relative ? "%" : std::string(unit_text));
+      finding.message = fmt::format("delta {}{}/{}{} within warn threshold{}", sign, abs_delta_num, delta_den,
+                                     tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
     } else if (within_fail) {
       finding.status = Status::warn;
-      finding.message = fmt::format("delta {}{}/{}{} between warn and fail thresholds", sign, abs_delta_num,
-                                     delta_den, tolerance->is_relative ? "%" : std::string(unit_text));
+      finding.message = fmt::format("delta {}{}/{}{} between warn and fail thresholds{}", sign, abs_delta_num,
+                                     delta_den, tolerance->is_relative ? "%" : std::string(unit_text),
+                                     widened_suffix);
     } else {
       finding.status = Status::fail;
-      finding.message = fmt::format("delta {}{}/{}{} beyond fail threshold", sign, abs_delta_num, delta_den,
-                                     tolerance->is_relative ? "%" : std::string(unit_text));
+      finding.message = fmt::format("delta {}{}/{}{} beyond fail threshold{}", sign, abs_delta_num, delta_den,
+                                     tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
     }
     return finding;
   }
 
   if (within_fail) {
     finding.status = Status::pass;
-    finding.message = "delta within tolerance";
+    finding.message = "delta within tolerance" + widened_suffix;
     return finding;
   }
 
   finding.status = escalate(finding.severity);
-  finding.message = fmt::format("delta {}{}/{}{} exceeds tolerance", sign, abs_delta_num, delta_den,
-                                 tolerance->is_relative ? "%" : std::string(unit_text));
+  finding.message = fmt::format("delta {}{}/{}{} exceeds tolerance{}", sign, abs_delta_num, delta_den,
+                                 tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
   return finding;
 }
 

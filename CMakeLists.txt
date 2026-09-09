@@ -132,12 +132,14 @@ add_custom_target(generate_test_registry DEPENDS
 # structurally in Plan 04 via a CI lint over this target's sources.
 add_library(libmediadiff STATIC
   src/util/version.cpp
+  src/util/sanitize.cpp
   src/core/serializer.cpp
   src/core/snapshot.cpp
   src/core/glob.cpp
   src/core/tolerance.cpp
   src/core/profiles.cpp
   src/core/policy.cpp
+  src/core/container_family.cpp
   src/config/toml_load.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
@@ -151,6 +153,18 @@ add_library(libmediadiff STATIC
   src/report/json.cpp
   src/report/markdown.cpp
   src/report/junit.cpp
+  src/probe/demux_session.cpp
+  src/probe/packet_scan.cpp
+  src/probe/bmff_scan.cpp
+  src/probe/ebml_scan.cpp
+  src/probe/ts_scan.cpp
+  src/probe/orchestrator.cpp
+  src/analyzers/container/topology.cpp
+  src/analyzers/container/meta.cpp
+  src/analyzers/container/mp4.cpp
+  src/analyzers/container/mkv.cpp
+  src/analyzers/container/ts.cpp
+  src/analyzers/size/size.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -184,6 +198,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/glob.h
   src/core/tolerance.h
   src/core/check_explain.h
+  src/core/container_family.h
   src/config/toml_load.h
   src/compare/semantics.h
   src/compare/engine.h
@@ -192,10 +207,21 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/report/markdown.h
   src/report/junit.h
   src/cli/exit_code.h
+  src/cli/diagnostics.h
   src/cli/color_policy.h
   src/cli/tty_render.h
+  src/cli/commands/inspect_render.h
   src/cli/dir_pairing.h
   src/cli/worker_pool.h
+  src/probe/pass.h
+  src/probe/demux_session.h
+  src/probe/packet_scan.h
+  src/probe/bmff_scan.h
+  src/probe/ebml_scan.h
+  src/probe/ts_scan.h
+  src/probe/orchestrator.h
+  src/analyzers/container/analyzers.h
+  src/analyzers/size/analyzers.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 
@@ -232,6 +258,24 @@ endfunction()
 
 mediadiff_apply_warnings(libmediadiff)
 
+# --- Windows platform macro suppression on first-party targets only --------
+function(mediadiff_apply_platform_definitions target)
+  if(WIN32)
+    # The Windows SDK headers (<windows.h>, transitively included by
+    # src/util/fs.h on _WIN32) define function-like `min`/`max` macros that
+    # shadow the standard <algorithm> templates. That shadowing broke the
+    # x64-windows-static-md leg's Build step with
+    # `error C2059: syntax error: ')'` on `std::max(1.0, std::abs(value))`
+    # at src/probe/ebml_scan.cpp:348 in CI run 33951407521. Suppressing the
+    # macros PRIVATE, per first-party target, means no third-party
+    # translation unit's expectations change -- only this project's own
+    # sources ever see the definition.
+    target_compile_definitions(${target} PRIVATE NOMINMAX)
+  endif()
+endfunction()
+
+mediadiff_apply_platform_definitions(libmediadiff)
+
 # --- mediadiff executable ----------------------------------------------------
 add_executable(mediadiff
   src/cli/main.cpp
@@ -240,6 +284,7 @@ add_executable(mediadiff
   src/cli/color_policy.cpp
   src/cli/tty_render.cpp
   src/cli/exit_code.cpp
+  src/cli/diagnostics.cpp
   src/cli/commands/compare.cpp
   src/cli/commands/list_checks.cpp
   src/cli/commands/snapshot.cpp
@@ -251,6 +296,7 @@ add_executable(mediadiff
 )
 target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11 Threads::Threads)
 mediadiff_apply_warnings(mediadiff)
+mediadiff_apply_platform_definitions(mediadiff)
 
 if(WIN32)
   # UTF-8 active-code-page manifest (D-04, CLI-09) — belt-and-braces

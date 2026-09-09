@@ -9,6 +9,19 @@
 #include "core/profiles.h"
 #include "core/serializer.h"
 
+// T-2-33: this file deliberately does NOT call
+// mediadiff::sanitize_for_display (src/util/sanitize.h) anywhere. JSON
+// already escapes every control byte at the wire level -- nlohmann's own
+// string escaping, applied uniformly by core/serializer.cpp's
+// serialize_document to every scalar this file writes -- so a second,
+// display-oriented escape pass here would double-escape a control byte
+// (e.g. a real ESC in a tag value would become the four visible
+// characters `\`, `u`, `0`, `0`, `1`, `b` escaped a SECOND time inside the
+// JSON string) and silently change every committed JSON golden for no
+// security benefit. sanitize_for_display's own job is the terminal/
+// Markdown display surface (src/cli/tty_render.cpp, src/cli/
+// provenance_render.cpp, src/report/markdown.cpp), not this one.
+
 namespace mediadiff {
 
 namespace {
@@ -31,33 +44,11 @@ std::string_view status_to_string(Status status) {
   return "error";
 }
 
-std::string_view skip_reason_to_string(SkipReason reason) {
-  switch (reason) {
-    case SkipReason::none:
-      return "none";
-    case SkipReason::not_applicable_container:
-      return "not_applicable_container";
-    case SkipReason::requires_decode:
-      return "requires_decode";
-    case SkipReason::cross_container:
-      return "cross_container";
-    case SkipReason::sampling_mismatch:
-      return "sampling_mismatch";
-    case SkipReason::hash_incomparable:
-      return "hash_incomparable";
-    case SkipReason::no_parser:
-      return "no_parser";
-    case SkipReason::unparsed_mechanism:
-      return "unparsed_mechanism";
-    case SkipReason::vfr:
-      return "vfr";
-    case SkipReason::requires_media:
-      return "requires_media";
-    case SkipReason::no_prior_release:
-      return "no_prior_release";
-  }
-  return "none";
-}
+// skip_reason_to_string itself now lives in core/model.h (03-04-PLAN.md
+// Task 1) -- centralized there once a THIRD call site (core/snapshot.cpp's
+// Measurement::skip_reason round trip) needed the identical mapping this
+// file already had; this file's own former local copy is removed rather
+// than kept as a second, driftable definition of the same switch.
 
 std::string_view scope_kind_to_string(Scope::Kind kind) {
   switch (kind) {
@@ -152,10 +143,11 @@ nlohmann::ordered_json finding_to_json(const Finding& finding, Group group, cons
   // Always present, even "none" -- a skipped finding can never be misread
   // as pass from the JSON body alone (ENG-14).
   j["skip_reason"] = std::string(skip_reason_to_string(finding.skip_reason));
-  // core/model.h's Finding carries no evidence field of its own (only
-  // Measurement does, and compare_fingerprints does not thread it
-  // through) -- see `delta`'s own comment above for the same rationale.
-  j["evidence"] = nullptr;
+  // Closes Broken Window #1's evidence half: compare/engine.cpp's single
+  // seam populates Finding::evidence from the paired measurements' own
+  // evidence; `delta` (above) stays null deliberately -- that half of
+  // window #1 remains open, tracked separately.
+  j["evidence"] = finding.evidence.is_null() ? nlohmann::ordered_json(nullptr) : finding.evidence;
 
   if (verbose && resolved != nullptr) {
     nlohmann::ordered_json chain = nlohmann::ordered_json::array();

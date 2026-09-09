@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "cli/color_policy.h"
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "cli/tty_render.h"
@@ -21,6 +22,9 @@
 #include "core/profiles.h"
 #include "core/registry.h"
 #include "core/snapshot.h"
+#include "probe/demux_session.h"
+#include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
 #include "report/json.h"
 #include "report/junit.h"
 #include "report/markdown.h"
@@ -113,14 +117,15 @@ void register_compare_command(CLI::App& app) {
   ReportArgs report_args = add_report_flags(*cmp);
   PolicyArgs policy_args = add_policy_flags(*cmp);
   ColorArgs color_args = add_color_flags(*cmp);
+  ProbeArgs probe_args = add_probe_flags(*cmp);
 
   // Capturing raw Option*s by value is exactly as safe as the shared_ptrs
   // they replace (D-05): the App owns every Option for the whole program
   // lifetime, and this callback only runs during app.parse().
   cmp->callback([baseline_path, candidate_path, strict_flag, verbose_flag, quiet_flag, report_args, policy_args,
-                 color_args]() {
+                 color_args, probe_args]() {
     run_compare(opt_string(baseline_path), opt_string(candidate_path), opt_flag(strict_flag), opt_flag(verbose_flag),
-                opt_flag(quiet_flag), report_args, policy_args, color_args);
+                opt_flag(quiet_flag), report_args, policy_args, color_args, probe_args);
   });
 }
 
@@ -133,53 +138,79 @@ void register_compare_command(CLI::App& app) {
 // comment in compare.h.
 void run_compare(const std::string& baseline_path, const std::string& candidate_path, bool strict, bool verbose,
                   bool quiet, const ReportArgs& report_args, const PolicyArgs& policy_args,
-                  const ColorArgs& color_args) {
+                  const ColorArgs& color_args, const ProbeArgs& probe_args) {
   const CheckRegistry& registry = builtin_registry();
 
-  auto baseline = read_snapshot(baseline_path, registry);
-  if (!baseline) {
-    const Error& err = baseline.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
-    std::exit(exit_code_for(err.kind));
-  }
-  auto candidate = read_snapshot(candidate_path, registry);
-  if (!candidate) {
-    const Error& err = candidate.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
-    std::exit(exit_code_for(err.kind));
-  }
-
   // Doc 01 section 6: mediadiff.toml is read exactly once here, before
-  // any worker starts (a `dir` run's later plan reuses this same
-  // resolved Policy per file rather than re-reading the config).
+  // any worker starts -- now also the source of --probe-timeout's own
+  // `[probe] timeout_seconds` fallback, resolved and applied below,
+  // BEFORE either fingerprint_input call, so a configured budget governs
+  // both the baseline's and the candidate's probe.
   const std::string config_path_text = opt_string(policy_args.config_path);
   const std::optional<std::string> explicit_config_path =
       config_path_text.empty() ? std::nullopt : std::make_optional(config_path_text);
   auto config = discover_and_load(explicit_config_path);
   if (!config) {
     const Error& err = config.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
+    std::exit(exit_code_for(err.kind));
+  }
+
+  auto probe_timeout_ms = resolve_probe_timeout_ms(probe_args, *config);
+  if (!probe_timeout_ms) {
+    const Error& err = probe_timeout_ms.error();
+    report_cli_error(err.message);
+    std::exit(exit_code_for(err.kind));
+  }
+  if (probe_timeout_ms->has_value()) {
+    set_default_wall_clock_budget_ms(**probe_timeout_ms);
+  }
+
+  // D-01: this command's own resolved thread count is always 1 (a single
+  // baseline/candidate pair, compared synchronously) -- derive_per_file_cap_bytes
+  // with threads=1 returns the whole resolved budget unchanged, so a
+  // single in-flight file gets it in full. 03-12-PLAN.md Task 2 (T-3-58):
+  // the megabytes-to-bytes conversion is resolve_probe_memory_budget_bytes's
+  // own job now -- no raw megabytes-to-bytes product survives here.
+  auto probe_budget_bytes = resolve_probe_memory_budget_bytes(probe_args, *config);
+  if (!probe_budget_bytes) {
+    const Error& err = probe_budget_bytes.error();
+    report_cli_error(err.message);
+    std::exit(exit_code_for(err.kind));
+  }
+  set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
+
+  auto baseline = fingerprint_input(baseline_path, registry);
+  if (!baseline) {
+    const Error& err = baseline.error();
+    report_cli_error(err.message);
+    std::exit(exit_code_for(err.kind));
+  }
+  auto candidate = fingerprint_input(candidate_path, registry);
+  if (!candidate) {
+    const Error& err = candidate.error();
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
 
   auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
   if (!cli_overrides) {
     const Error& err = cli_overrides.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
 
   auto profile = resolve_profile_selection(opt_string(policy_args.profile), *config);
   if (!profile) {
     const Error& err = profile.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
 
   auto resolved_policy = resolve_policy(registry, *profile, *config, *cli_overrides);
   if (!resolved_policy) {
     const Error& err = resolved_policy.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
   // The `[transform]` block's declared expectation is read here, once,
@@ -198,7 +229,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   auto report_destinations = parse_report_destinations(opt_strings(report_args.report_flags));
   if (!report_destinations) {
     const Error& err = report_destinations.error();
-    std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+    report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
   // report_args.json_option is nullptr on the implicit-compare route
@@ -211,7 +242,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   if (json_to_file) {
     for (const ReportDestination& dest : *report_destinations) {
       if (dest.path == json_path) {
-        std::fputs(("mediadiff: --json and --report name the same path '" + dest.path + "'\n").c_str(), stderr);
+        report_cli_error("--json and --report name the same path '" + dest.path + "'");
         std::exit(kExitUsage);
       }
     }
@@ -235,7 +266,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     if (err.kind == ErrorKind::decode) {
       partial = true;
     } else {
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
   } else {
@@ -277,8 +308,11 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     const RenderOptions tty_options{/*show_pass=*/verbose, /*show_ignored=*/verbose, /*ascii=*/color.ascii_glyphs,
                                      /*strict=*/strict};
     const ReportModel tty_model = build_report_model(candidate->envelope, findings, registry, tty_options);
-    const std::string tty_report = render_tty(tty_model, registry, color, query_terminal_width());
-    std::fputs(tty_report.c_str(), stdout);
+    // CONT-03's `-v` half: the same `verbose` flag that already widened
+    // this model to show_pass/show_ignored also reveals each finding's
+    // ignored-volatile-tag-key evidence.
+    const std::string tty_report = render_tty(tty_model, registry, color, query_terminal_width(), verbose);
+    std::fwrite(tty_report.data(), 1, tty_report.size(), stdout);
   }
 
   if (json_requested) {
@@ -287,11 +321,11 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
       auto write_result = write_report_file(json_path, report);
       if (!write_result) {
         const Error& err = write_result.error();
-        std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+        report_cli_error(err.message);
         std::exit(exit_code_for(err.kind));
       }
     } else {
-      std::fputs(report.c_str(), stdout);
+      std::fwrite(report.data(), 1, report.size(), stdout);
     }
   }
 
@@ -308,7 +342,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     auto write_result = write_report_file(dest.path, rendered);
     if (!write_result) {
       const Error& err = write_result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
   }

@@ -105,6 +105,27 @@ inline bool checked_negate(std::int64_t a, std::int64_t* out) {
   return true;
 }
 
+// a / b with overflow/UB detection -- SIZE-01's window-boundary
+// computation (03-RESEARCH.md Open Question 2) needs an integer division
+// that never invokes undefined behavior. A bare `/` is UB for exactly two
+// inputs: a zero divisor (implementation-defined signal on most platforms,
+// SIGFPE on x86-64) and INT64_MIN / -1 (the one division whose true
+// mathematical result, 2^63, does not fit in int64_t). No widening trick
+// is needed -- both cases have an exact, portable, branch-only check, the
+// same shape as checked_sub/checked_add/checked_negate above. Returns
+// false (leaving *out unspecified) for either case; otherwise sets
+// *out = a / b and returns true.
+inline bool checked_div(std::int64_t a, std::int64_t b, std::int64_t* out) {
+  if (b == 0) {
+    return false;
+  }
+  if (a == INT64_MIN && b == -1) {
+    return false;
+  }
+  *out = a / b;
+  return true;
+}
+
 }  // namespace detail
 
 // Compares two rational time values without ever converting to double

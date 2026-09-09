@@ -81,3 +81,398 @@ semantic = "presence"
 unit = "none"
 value_kind = "string"
 severity = "warn"
+
+# Phase 3's tracer check (03-02-PLAN.md, 03-CHECK-ROSTER.md): the
+# container family's own name, extracted from AVInputFormat.name's first
+# comma-delimited token (doc 02 section 2) by src/analyzers/container/
+# topology.cpp. A baseline/candidate container mismatch (e.g. "mov" vs
+# "matroska") is almost always intentional and blocking -- hence `fail`,
+# not `warn`.
+[[check]]
+id = "container.format"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 03-04-PLAN.md Task 1, 03-CHECK-ROSTER.md: the remaining four
+# container-agnostic topology checks doc 02 section 2's table declares,
+# expanding src/analyzers/container/topology.cpp beyond the tracer's single
+# container.format measurement.
+
+# Five-bin per-type stream Histogram (video/audio/subtitle/data/attachment,
+# a zero-count bin always present) -- fixed bin order is what makes a
+# dropped subtitle track a VALUE difference under `exact`, not a shape
+# difference, and what keeps two consecutive runs' --json byte-identical.
+[[check]]
+id = "container.track_count"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "histogram"
+severity = "fail"
+
+# The ordered multiset of stream media types as one canonical comma-joined
+# string, preserving both order and duplicates -- two files with the same
+# types in a different order compare as a VALUE difference here (doc 02:
+# "timecode and caption data tracks named in the message -- their loss is
+# the headline", CONT-09).
+[[check]]
+id = "container.track_types"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# The ordered (media_type, codec_name) signature string in stream index
+# order -- a reorder with identical membership fails THIS check while
+# track_count/track_types (order-insensitive counts/multisets) still pass
+# (doc 02: "a move, not add+remove"). `warn`, not `fail`: doc 02's own
+# severity for this row.
+[[check]]
+id = "container.track_order"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+# A StringSet of canonicalized chapter entries (start/end ticks, shared
+# timebase, title). `set` semantic: doc 02's own choice, since chapter
+# reordering with identical membership is not itself meaningful the way
+# stream order is. Auto-skips as `skipped:not_applicable_container` on
+# MPEG-TS (03-04-PLAN.md Task 1's own must_have) -- `info` severity per doc
+# 02's table.
+[[check]]
+id = "container.chapters"
+group = "container"
+semantic = "set"
+unit = "none"
+value_kind = "string_set"
+severity = "info"
+
+# 03-04-PLAN.md Tasks 2-3 (CONT-03, CONT-04), src/analyzers/container/meta.cpp.
+
+# Container- and per-stream metadata dictionaries compared as a StringSet
+# of "key=value" entries, with the four built-in volatile keys
+# (creation_time, encoder, handler_name, encoding_tool) excluded from the
+# compared value but retained in evidence (CONT-03) -- doc 02 section 2's
+# own row.
+[[check]]
+id = "meta.tags"
+group = "meta"
+semantic = "set"
+unit = "none"
+value_kind = "string_set"
+severity = "warn"
+
+# Per-stream `language` tag, normalized so an absent tag and the literal
+# `und` compare equal (CONT-04: a muxer artifact, not a regression) --
+# normalization happens at measurement construction (meta.cpp), never in
+# the `exact` comparator, so a stored snapshot already carries the
+# normalized form.
+[[check]]
+id = "meta.tags.language"
+group = "meta"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+# 03-05-PLAN.md Tasks 1-2 (PROBE-04, CONT-05), src/analyzers/container/
+# mp4.cpp, src/probe/bmff_scan.{h,cpp}. Every one of the six ids below
+# auto-skips as `skipped:not_applicable_container` on a non-MP4 container
+# (src/analyzers/container/mp4.cpp's own family-agnostic sibling analyzer),
+# and as `skipped:unparsed_mechanism` (carrying `stop_offset` in evidence)
+# when the bmff_scan walk itself did not complete (03-CHECK-ROSTER.md).
+
+# `moov` offset vs the first `mdat` offset, from the SAME bmff_scan
+# top-level walk -- moov-before-mdat vs moov-after-mdat. Auto-skips (also
+# as not_applicable_container) on a fragmented file, per doc 02 section 3's
+# own note that init-segment layout governs instead there.
+[[check]]
+id = "container.mp4.faststart"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# ftyp's major brand plus every compatible brand, as one StringSet --
+# evidence separately names major_brand/minor_version so a major-brand
+# change is distinguishable from compatible-set churn.
+[[check]]
+id = "container.mp4.brands"
+group = "container"
+semantic = "set"
+unit = "none"
+value_kind = "string_set"
+severity = "warn"
+
+# progressive vs fragmented mode, derived from bmff_scan's own moof_count
+# -- 03-CHECK-ROSTER.md's own deliberate split of doc 02's single
+# `fragmentation` row: this half keeps the exact/fail mode signal.
+[[check]]
+id = "container.mp4.fragmentation"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# Split counterpart above -- the MEDIAN fragment duration (a RationalValue)
+# at a ±20% tolerance, warn severity. Emits nothing (skips as
+# not_applicable_container) on a progressive file.
+[[check]]
+id = "container.mp4.fragment_duration"
+group = "container"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "warn"
+tolerance = "20%"
+
+# One measurement per track, at that track's own scope: the canonical
+# string of that track's elst entries verbatim. `[check.profile_severity]`
+# below matches doc 02 section 3's own "fail in remux/strict, warn in
+# encoders" note (03-CHECK-ROSTER.md).
+[[check]]
+id = "container.mp4.edit_list"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+[check.profile_severity]
+strict_bitexact = "fail"
+remux = "fail"
+
+[[check]]
+id = "container.mp4.timescale"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "int64"
+severity = "warn"
+
+# 03-06-PLAN.md Task 2 (CONT-06, doc 02 section 4): the four container.mkv.*
+# checks, emitted from ebml_scan (src/probe/ebml_scan.h). Auto-skip as
+# not_applicable_container on a non-MKV input (mirrors container.mp4.*'s own
+# two-AnalyzerSpec split), and as unparsed_mechanism when the ebml_scan walk
+# itself did not complete (03-CHECK-ROSTER.md).
+
+# Cues' own byte offset compared against the first Cluster's -- a SEEKING
+# property, deliberately NOT named faststart (see
+# docs/checks/container.mkv.cues_placement.md for why).
+[[check]]
+id = "container.mkv.cues_placement"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+# One measurement per track, at that track's own scope: CodecDelay
+# converted from nanoseconds to SAMPLES via the track's own sampling
+# frequency (checked_mul then checked_div, never a floating divide).
+# Baseline severity `fail` per 03-CHECK-ROSTER.md's own note: per-codec
+# severity is not representable (a CheckDef carries one severity), and for
+# a non-Opus track CodecDelay is normally absent/zero on both sides, so the
+# check simply never fires there -- a difference anywhere is itself
+# suspicious enough to warrant `fail`.
+[[check]]
+id = "container.mkv.codec_delay"
+group = "container"
+semantic = "tol"
+unit = "samples"
+value_kind = "int64"
+severity = "fail"
+tolerance = "1samples"
+
+# Info's own TimestampScale, at global scope. Matroska's own default is
+# 1,000,000 ns (1 ms); evidence records that default so a reader can tell a
+# departure-from-default apart from a change between two non-defaults.
+[[check]]
+id = "container.mkv.timestamp_scale"
+group = "container"
+semantic = "exact"
+unit = "none"
+value_kind = "int64"
+severity = "warn"
+
+# The `presence` semantic (doc 01 section 3): whether Info carries a
+# Duration element at all -- a missing Duration means a live or
+# unfinalized mux, which flips consumer expectations for the file.
+[[check]]
+id = "container.mkv.duration_element"
+group = "container"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "info"
+
+# 03-08-PLAN.md Tasks 1-3 (CONT-07, CONT-08, doc 02 section 5), src/analyzers/
+# container/ts.cpp, src/probe/ts_scan.{h,cpp}. Every one of the six ids below
+# auto-skips as `skipped:not_applicable_container` on a non-TS container
+# (src/analyzers/container/ts.cpp's own family-agnostic sibling analyzer),
+# and as `skipped:unparsed_mechanism` (carrying `stop_offset` in evidence)
+# when the ts_scan walk itself did not complete (03-CHECK-ROSTER.md).
+
+# The unflagged (non discontinuity_indicator) continuity-counter error
+# count, summed across every PID at global scope -- `exact 0` gating: any
+# nonzero count is a failure independent of the other side (doc 02 section
+# 5). Evidence carries the per-PID breakdown and the first offending PID's
+# byte offset.
+[[check]]
+id = "container.ts.cc_errors"
+group = "container"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+
+# Split from doc 02's `cc_errors` row (03-CHECK-ROSTER.md): the FLAGGED
+# (discontinuity_indicator) reset count, reported separately at `info` --
+# the muxer declared it did that on purpose, so this is never folded into
+# the gating cc_errors count above. Addition beyond doc 02's literal row
+# count.
+[[check]]
+id = "container.ts.cc_discontinuities"
+group = "container"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "info"
+
+# The MAXIMUM spacing between consecutive PCRs on a program's own PCR_PID,
+# in milliseconds, derived from ts_scan's mux-rate estimate (D-03: this
+# value's `Measurement::estimated` flag widens the effective tolerance 3x
+# at comparison, src/compare/tol.cpp). Program-scoped: Scope{Kind::program,
+# index} where `index` is the PSI program_number (AVProgram::program_num),
+# NEVER the AVFormatContext::programs[] array position (CONT-08). Skips as
+# `insufficient_data` on fewer than two PCRs, never a fabricated interval.
+[[check]]
+id = "container.ts.pcr_interval"
+group = "container"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "100ms"
+
+# The MAXIMUM of the PAT and PMT section repetition intervals, in
+# milliseconds, also `estimated` (D-03 widening applies, see pcr_interval
+# above). Program-scoped, same program_number rule as pcr_interval --
+# version churn breaks downstream remuxers, hence `warn`.
+[[check]]
+id = "container.ts.psi_interval"
+group = "container"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "warn"
+tolerance = "500ms"
+
+# Split from doc 02's `psi_interval` row (03-CHECK-ROSTER.md): the PMT
+# `version_number` CHANGE count -- a second semantic on the same id is not
+# representable, hence its own id. Directly counted, NEVER `estimated`
+# (widening a directly-counted value would silently loosen a real gate).
+# Program-scoped, same program_number rule. Addition beyond doc 02's
+# literal row count.
+[[check]]
+id = "container.ts.pmt_version_churn"
+group = "container"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "warn"
+
+# null_packets / total_packets, kept as an EXACT RationalValue (never
+# pre-divided into a rounded percentage) -- a CBR mux efficiency drift tell
+# (doc 02 section 5), `info` severity. Global scope: a whole-transport-
+# stream property, not per-program (scoping it per program would
+# double-count shared PIDs).
+[[check]]
+id = "container.ts.null_ratio"
+group = "container"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "info"
+tolerance = "5%"
+
+# 03-09-PLAN.md (SIZE-01, PROBE-10's first size.* consumer), src/analyzers/
+# size/size.cpp. Rate economics derived directly from PacketScan's own
+# shared per-stream packet array (03-03-PLAN.md), plus the container's own
+# on-disk byte size. D-02: size.stream_bitrate/size.peak_bitrate/
+# size.overhead all auto-skip as `skipped:partial_scan` when
+# PacketScanResult::partial is true -- a bitrate or overhead ratio derived
+# from a truncated sweep is a confidently wrong number. size.file is the
+# one exception: it is a property of the FILE, not of the scan, so it
+# reports independently of PacketScan's own completeness.
+
+# The container's byte size on disk, at global scope. `±%` tolerance with a
+# tighter override for `remux`/`strict_bitexact` (03-CHECK-ROSTER.md): a
+# remux or bit-exact re-encode changing size at all is itself suspicious,
+# while ordinary encoder-to-encoder variation is expected within 3%/8%.
+[[check]]
+id = "size.file"
+group = "size"
+semantic = "tol"
+unit = "percent"
+value_kind = "int64"
+severity = "fail"
+tolerance = "3%,8%"
+
+[check.profile_tolerance]
+strict_bitexact = "0.5%"
+remux = "0.5%"
+
+# Per-stream, `byte_total * 8 / dts_span_seconds` kept as an exact
+# RationalValue (never pre-divided) -- a directly measured rate, never
+# `estimated` (unlike container.ts.pcr_interval's mux-rate-derived
+# counterpart). Auto-skips `skipped:partial_scan` under D-02, and
+# `skipped:no_timing_data` when every packet on the stream lacks a DTS.
+[[check]]
+id = "size.stream_bitrate"
+group = "size"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "3%,10%"
+
+# Per-stream, the MAXIMUM byte sum over any 1-second window (100ms step) of
+# a stream's own DTS-in-ticks axis, doubled to bits and kept as an exact
+# RationalValue -- doc 06's own "buffer/VBV compatibility tell". Windowing
+# is pure integer arithmetic (checked_mul/checked_add/checked_div,
+# compare_ticks_checked) so the result is byte-identical across platforms.
+# Auto-skips `skipped:no_timing_data` when every packet lacks a DTS, and
+# `skipped:insufficient_data` when the stream's own DTS span is shorter
+# than one window; `skipped:partial_scan` under D-02.
+[[check]]
+id = "size.peak_bitrate"
+group = "size"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "5%,15%"
+
+# `(file_bytes - Sum of per-stream byte_total) / file_bytes`, kept as an
+# exact RationalValue, global scope -- a muxer efficiency drift tell
+# (`info` severity, doc 06). A payload sum that exceeds the file's own size
+# (a crafted or otherwise inconsistent input) skips `insufficient_data`
+# rather than reporting a negative overhead. Auto-skips
+# `skipped:partial_scan` under D-02.
+[[check]]
+id = "size.overhead"
+group = "size"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "info"
+tolerance = "5%"

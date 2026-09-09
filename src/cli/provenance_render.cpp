@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <string>
 #include <string_view>
+
+#include "util/sanitize.h"
 
 namespace mediadiff {
 
@@ -45,12 +48,21 @@ std::string render_provenance_chain(std::span<const PolicyProvenance> chain, int
   std::string out;
   const std::size_t indent = indent_spaces > 0 ? static_cast<std::size_t>(indent_spaces) : 0;
   for (const PolicyProvenance& entry : chain) {
+    // T-2-33: entry.value/entry.detail are not literally file-derived
+    // today, but this is one of the three permitted display render paths
+    // (this file's own header comment; src/util/sanitize.h's own header
+    // comment enumerates all three) -- sanitized for defense-in-depth and
+    // so scripts/lint_control_bytes.sh's single-choke-point rule holds
+    // uniformly across every file it scans, not only the ones that
+    // happen to touch a Finding today.
+    const std::string sanitized_value = sanitize_for_display(entry.value);
+    const std::string sanitized_detail = sanitize_for_display(entry.detail);
     out.append(indent, ' ');
     append_padded(out, layer_name(entry.layer), 7);
     out.append(2, ' ');
-    append_padded(out, entry.value, 8);
+    append_padded(out, sanitized_value, 8);
     out += '(';
-    out += entry.detail;
+    out += sanitized_detail;
     out += ")\n";
   }
   return out;

@@ -1,0 +1,6 @@
+# 03-12-PLAN.md Task 1 (T-3-60, D-01): '[probe] timeout_seconds' above
+# kMaxProbeTimeoutSeconds (86400, src/config/toml_load.h) must be rejected
+# at config-load time, naming the key and the bound, BEFORE any
+# static_cast<int> narrowing.
+[probe]
+timeout_seconds = 9223372036854776

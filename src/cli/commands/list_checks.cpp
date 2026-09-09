@@ -10,6 +10,7 @@
 
 #include <fmt/format.h>
 
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "cli/provenance_render.h"
@@ -102,7 +103,7 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
                             semantic_to_string(check.semantic), unit_suffix(check.unit),
                             value_kind_to_string(check.value_kind), severity_to_string(check.default_severity));
       }
-      std::fputs(out.c_str(), stdout);
+      std::fwrite(out.data(), 1, out.size(), stdout);
       std::exit(kExitClean);
     }
 
@@ -116,28 +117,28 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
     auto config = discover_and_load(explicit_config_path);
     if (!config) {
       const Error& err = config.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
     auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
     if (!cli_overrides) {
       const Error& err = cli_overrides.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
     auto profile = resolve_profile_selection(opt_string(policy_args.profile), *config);
     if (!profile) {
       const Error& err = profile.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
     auto resolved_policy = resolve_policy(registry, *profile, *config, *cli_overrides);
     if (!resolved_policy) {
       const Error& err = resolved_policy.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
 
@@ -151,7 +152,7 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
         out += render_provenance_chain(resolved.chain, 2);
       }
     }
-    std::fputs(out.c_str(), stdout);
+    std::fwrite(out.data(), 1, out.size(), stdout);
     std::exit(kExitClean);
   });
 }

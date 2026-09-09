@@ -11,10 +11,16 @@
 #include "cli/commands/inspect.h"
 #include "cli/commands/list_checks.h"
 #include "cli/commands/snapshot.h"
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
+#include "probe/demux_session.h"
 #include "util/fs.h"
 #include "util/version.h"
+
+extern "C" {
+#include <libavutil/log.h>
+}
 
 #ifdef _WIN32
 #include <shellapi.h>
@@ -24,7 +30,7 @@
 // MSVC's standard headers pull in less than libstdc++'s, so a translation
 // unit that compiles on GCC purely by inheritance can fail on MSVC — and the
 // Windows leg is the one that cannot be checked from a POSIX host.
-#include <cstdio>       // std::fputs, stderr
+#include <cstdio>       // _fileno, stdout, stderr (for _setmode below)
 #include <string>       // std::string, std::to_string
 #include <string_view>  // std::wstring_view
 #include <utility>      // std::move
@@ -44,6 +50,20 @@
 namespace mediadiff {
 
 int run(int argc, char** argv) {
+  // Installed exactly once, here, at process start -- the ONE call site
+  // this project permits (03-02-PLAN.md Task 2's own acceptance
+  // criterion counts this exact libav log-callback installer's own name
+  // across the whole src/ tree and requires exactly one occurrence, so
+  // no OTHER comment in this codebase spells it out literally). This
+  // libav entry point overwrites a single process-global function
+  // pointer (libavutil/log.c) -- installing it from anywhere but the
+  // single-threaded startup path (never a `dir`-mode worker thread) is
+  // what keeps "the last caller anywhere in the process wins for every
+  // thread" from becoming a race. probe_log_callback itself
+  // (src/probe/demux_session.h) is a no-op until a DemuxSession::open
+  // call on the same thread has attached its own diagnostics accumulator.
+  av_log_set_callback(&mediadiff::probe_log_callback);
+
   CLI::App app{"media-aware regression diff", "mediadiff"};
 
   // Tolerates "0 subcommands fired" -- the implicit-compare route below.
@@ -134,7 +154,7 @@ int run(int argc, char** argv) {
     // CR-01 fixed. It deliberately reports internal (a mediadiff bug), not
     // a user-input problem, since a well-formed lib boundary would never
     // let an exception reach here.
-    std::fputs(("mediadiff: internal error (uncaught exception): " + std::string(e.what()) + "\n").c_str(), stderr);
+    mediadiff::report_cli_error("internal error (uncaught exception): " + std::string(e.what()));
     return kExitInternal;
   }
 
@@ -153,7 +173,7 @@ int run(int argc, char** argv) {
     // silently deposit 'c' into implicit_baseline instead of failing; a
     // bare positional is only ever meaningful when no subcommand fired.
     if (implicit_baseline_opt->count() > 0 || implicit_candidate_opt->count() > 0) {
-      std::fputs("mediadiff: unexpected extra argument after a subcommand\n", stderr);
+      mediadiff::report_cli_error("unexpected extra argument after a subcommand");
       return kExitUsage;
     }
     // Unreachable in practice (every registered subcommand's callback
@@ -174,14 +194,15 @@ int run(int argc, char** argv) {
     // given.
     run_compare(opt_string(implicit_baseline_opt), opt_string(implicit_candidate_opt), /*strict=*/false,
                 /*verbose=*/false, /*quiet=*/false, default_report_args(), default_policy_args(),
-                default_color_args());
+                default_color_args(), default_probe_args());
   }
 
   // Fewer than two positionals (including bare `mediadiff` with none):
   // CLI-01's own contract is "print help and exit 64", never 0 -- a CI
   // script that invoked the tool with nothing to compare has not
   // succeeded.
-  std::fputs(app.help().c_str(), stdout);
+  const std::string help_text = app.help();
+  std::fwrite(help_text.data(), 1, help_text.size(), stdout);
   return kExitUsage;
 }
 
@@ -273,9 +294,8 @@ int wmain(int /*argc*/, wchar_t** /*argv*/) {
       LocalFree(argv_w);
       // Reported here rather than from the engine: libmediadiff writes to no
       // standard stream and never exits the process (ENG-16 / D-07).
-      std::fputs("mediadiff: argument ", stderr);
-      std::fputs(std::to_string(i).c_str(), stderr);
-      std::fputs(" is not valid UTF-16 and cannot be converted to UTF-8.\n", stderr);
+      mediadiff::report_cli_error("argument " + std::to_string(i) +
+                                   " is not valid UTF-16 and cannot be converted to UTF-8.");
       return 64;  // usage — the argument is malformed, no input was opened
     }
     argv_utf8.push_back(std::move(utf8_arg));

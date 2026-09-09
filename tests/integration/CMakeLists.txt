@@ -10,7 +10,73 @@ find_package(nlohmann_json_schema_validator CONFIG REQUIRED)
 add_executable(mediadiff_integration_tests
   test_version_output.cpp
   test_compare_tracer.cpp
+  # PROBE-01/PROBE-08/CONT-01: real media flowing through fingerprint_input
+  # -> DemuxSession -> the pass union -> topology.cpp -> compare, from both
+  # `compare` and `inspect`; the wall-clock budget's CLI surface
+  # (03-02-PLAN.md Tasks 1-2).
+  test_probe_tracer.cpp
+  # DOC-03: a real triggering and a real clean CLI invocation for each of
+  # the six checks 03-04-PLAN.md registers -- container.track_count/
+  # track_types/track_order/chapters, meta.tags, meta.tags.language.
+  test_container_topology.cpp
+  # PROBE-04/PROBE-09/CONT-05: the six container.mp4.* checks proven
+  # through the real CLI (faststart, brands, fragmentation/
+  # fragment_duration tolerance, edit_list profile severity, timescale),
+  # cross-format skip correctness (MKV/TS never run bmff_scan), and the
+  # mp4 half of the fuzz-adjacent degradation pair -- truncated, random and
+  # zero-length inputs degrade to exactly one of exit 65 or
+  # skipped:unparsed_mechanism, with a permanently-red canary
+  # (03-05-PLAN.md Task 3).
+  test_container_mp4.cpp
+  # PROBE-09: the CLI-level degradation smoke generalized to MKV and TS
+  # (test_container_mp4.cpp already covers the MP4 half) -- truncation,
+  # structurally-significant byte flips, fixed-seed PRNG byte flips, pure
+  # random bytes, the zero-byte permanent canary, and the libav
+  # DemuxSession open path, per family (03-10-PLAN.md Task 1).
+  test_degradation.cpp
+  # PROBE-05/CONT-06: the four container.mkv.* checks proven through the
+  # real CLI (cues_placement front/end/absent, codec_delay samples-unit
+  # conversion, timestamp_scale, duration_element presence), cross-format
+  # skip correctness, and the incomplete-walk skip (03-06-PLAN.md Task 2).
+  test_container_mkv.cpp
+  # CONT-02: cross-container migration demotes container.<fmt>.* on BOTH
+  # sides to skipped:cross_container while unscoped checks still compare,
+  # independently of severity policy (03-06-PLAN.md Task 3).
+  test_cross_container.cpp
+  # CONT-07: the six container.ts.* checks proven through the real CLI
+  # (cc_errors/cc_discontinuities, pcr_interval/psi_interval's D-03
+  # widening, pmt_version_churn, null_ratio), cross-format skip
+  # correctness, and the incomplete-walk skip (03-08-PLAN.md Tasks 1-2).
+  test_container_ts.cpp
+  # CONT-08: program-scoped container.ts.* measurements keyed by PSI
+  # program_number, proven to pair correctly across a reordered-PAT
+  # sibling and to fail as an unpaired topology mismatch across a
+  # renumbered sibling (03-08-PLAN.md Task 3).
+  test_multiprogram.cpp
+  # SIZE-01: the cross-platform determinism assertion for the size.*
+  # family -- a committed, read-only golden of the extracted size.*
+  # findings, compared on every CI leg (03-09-PLAN.md Task 3).
+  test_size_checks.cpp
   test_determinism.cpp
+  # TRUST-06: encoding a fixture twice with identical settings compares
+  # clean under --profile sw-encoder (and strict-bitexact, when the pair
+  # is genuinely byte-identical) -- an unconditional, non-skippable
+  # release blocker living in this same Test step, never a separate job
+  # or a conditional (03-11-PLAN.md Task 3).
+  test_trust06_idempotence.cpp
+  # DOC-03: every check the built registry currently registers has a
+  # declared triggering fixture pair and a declared clean one, enumerated
+  # from the real registry rather than a hand-maintained id list; the
+  # verified count must equal the registry's own check count
+  # (03-11-PLAN.md Task 4).
+  test_doc03_coverage.cpp
+  # SIZE-01/DIR-06: the VERIFICATION.md gap-2 reproductions, inverted
+  # permanently -- an extreme but CLI11-legal --probe-memory-budget-mb/
+  # --probe-timeout value exits 64 naming the maximum, across all four
+  # command entry points, and can never silently blank size.stream_bitrate/
+  # size.peak_bitrate/size.overhead to skipped:partial_scan
+  # (03-12-PLAN.md Task 3).
+  test_probe_budget_overflow.cpp
   # `list-checks`/`--effective`/`-v` provenance chain (02-06-PLAN.md Task 3).
   test_list_checks.cpp
   # Schema-version major-mismatch refusal, tool_version skew diagnostic,
@@ -46,9 +112,18 @@ add_executable(mediadiff_integration_tests
   # make `dir` mode report the corrupted pair as an empty-findings clean
   # pass.
   test_type_poisoned_snapshot.cpp
+  # CONT-03/CONT-04, T-2-33, WR-01 (03-15-PLAN.md Task 3): the CLI
+  # diagnostic sink (src/cli/diagnostics.cpp) escapes control bytes in an
+  # argv-supplied string before it reaches stderr, across the real CLI
+  # binary, on every platform (no _WIN32 skip).
+  test_cli_diagnostics_escaping.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
+  # Shared truncation/byte-flip/PRNG mutation helpers (03-10-PLAN.md Task 1),
+  # shared with tests/unit/ (test_probe_fuzz_smoke.cpp) and this target's
+  # own test_container_mp4.cpp/test_degradation.cpp.
+  "${CMAKE_SOURCE_DIR}/tests/support/mutate.cpp"
   # Generated by tools/gen_registry.py --symbol-prefix test_ from
   # tests/support/test_checks.def (generate_test_registry target, root
   # CMakeLists.txt) -- test_determinism.cpp calls compare_fingerprints()/
@@ -97,6 +172,7 @@ target_compile_definitions(mediadiff_integration_tests PRIVATE
 # before the executable it spawns exists.
 add_dependencies(mediadiff_integration_tests mediadiff)
 mediadiff_apply_warnings(mediadiff_integration_tests)
+mediadiff_apply_platform_definitions(mediadiff_integration_tests)
 
 include(CTest)
 include(Catch)

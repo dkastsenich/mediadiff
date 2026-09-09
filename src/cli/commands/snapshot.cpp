@@ -8,9 +8,13 @@
 #include <string_view>
 #include <vector>
 
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "core/snapshot.h"
+#include "probe/demux_session.h"
+#include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
 #include "util/fs.h"
 
 #if defined(_WIN32)
@@ -266,38 +270,67 @@ void register_snapshot_command(CLI::App& app) {
       cmd->add_option("--out", "Output path (default: <file> if it already ends in .snap.json, else <file>.snap.json)")
           ->type_name("TEXT");
   CLI::Option* force_flag = cmd->add_flag("--force", "Overwrite an existing git-tracked or CI-protected target");
+  ProbeArgs probe_args = add_probe_flags(*cmd);
 
   // ENG-16 explicitly reserves exit()/stdout/stderr as "the CLI's
   // prerogative" — see src/cli/commands/compare.cpp's identical rationale.
   // Capturing a raw Option* by value is exactly as safe as the shared_ptr
   // it replaces (D-05): the App owns the Option for the whole program
   // lifetime, and this callback only runs during app.parse().
-  cmd->callback([input_path, out_path, force_flag]() {
+  cmd->callback([input_path, out_path, force_flag, probe_args]() {
     const CheckRegistry& registry = builtin_registry();
 
-    // No probe layer exists until Phase 3 (D-11: the stub analyzer never
-    // enters the shipped binary), so this command has no way to fingerprint
-    // real media yet. An input that IS already a valid *.snap.json is not
-    // "real media" at all — it's re-read and re-materialized through the
-    // exact same write path, which is what this task actually proves.
-    // Anything that fails to read as a snapshot (including any real media
-    // file) gets the honest, actionable reason below rather than
-    // read_snapshot's own more generic "not valid JSON" text.
+    // snapshot reads no mediadiff.toml today (it predates policy
+    // resolution entirely), so --probe-timeout has no `[probe]
+    // timeout_seconds` config fallback here -- pass std::nullopt for
+    // `config`, matching resolve_probe_timeout_ms's own documented
+    // fallback-to-nullopt-config contract.
+    auto probe_timeout_ms = resolve_probe_timeout_ms(probe_args, std::nullopt);
+    if (!probe_timeout_ms) {
+      const Error& err = probe_timeout_ms.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    if (probe_timeout_ms->has_value()) {
+      set_default_wall_clock_budget_ms(**probe_timeout_ms);
+    }
+
+    // Same std::nullopt-config rationale as the --probe-timeout
+    // resolution just above -- snapshot reads no mediadiff.toml. This
+    // command's own resolved thread count is always 1 (a single file),
+    // so derive_per_file_cap_bytes hands it the whole resolved budget.
+    // 03-12-PLAN.md Task 2 (T-3-58): a fifth defect site absent from both
+    // 03-REVIEW.md's CR-04 and 03-VERIFICATION.md's own artifact list --
+    // confirmed by reading this call site directly. The megabytes-to-bytes
+    // conversion is resolve_probe_memory_budget_bytes's own job now -- no
+    // raw megabytes-to-bytes product survives here.
+    auto probe_budget_bytes = resolve_probe_memory_budget_bytes(probe_args, std::nullopt);
+    if (!probe_budget_bytes) {
+      const Error& err = probe_budget_bytes.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
+
+    // fingerprint_input (src/probe/orchestrator.h) tries read_snapshot
+    // first -- an input that IS already a valid *.snap.json is re-read
+    // and re-materialized through the exact same write path unchanged
+    // (SNAP-01's own contract) -- and falls through to a real probe of
+    // the media bytes only when the input opened but was not a snapshot
+    // (PROBE-01, this plan).
     const std::string input_path_text = opt_string(input_path);
-    auto fp = read_snapshot(input_path_text, registry);
+    auto fp = fingerprint_input(input_path_text, registry);
     if (!fp) {
-      std::fputs(
-          "mediadiff: fingerprinting a media file requires the probe layer, which arrives with Phase 3; pass an "
-          "existing *.snap.json as <file> to re-materialize/rewrite it instead.\n",
-          stderr);
-      std::exit(kExitInput);
+      const Error& err = fp.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
     }
 
     const std::string resolved_out = resolve_out_path(input_path_text, opt_string(out_path));
     auto result = write_snapshot_gated(*fp, resolved_out, opt_flag(force_flag), registry);
     if (!result) {
       const Error& err = result.error();
-      std::fputs(("mediadiff: " + err.message + "\n").c_str(), stderr);
+      report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
     std::exit(kExitClean);

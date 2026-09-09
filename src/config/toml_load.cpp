@@ -169,8 +169,8 @@ mediadiff::expected<std::optional<ConfigFile>, Error> discover_and_load(std::opt
     return usage_error("config file '" + path + "': " + std::string(e.description()) + position_suffix(e.source()));
   }
 
-  static const std::set<std::string_view> kKnownTopLevelKeys = {"profile",  "severity", "tolerance",
-                                                                   "transform", "dir",      "override"};
+  static const std::set<std::string_view> kKnownTopLevelKeys = {"profile", "severity", "tolerance",
+                                                                   "transform", "dir",    "probe", "override"};
   for (auto&& [k, v] : tbl) {
     (void)v;
     if (kKnownTopLevelKeys.find(k.str()) == kKnownTopLevelKeys.end()) {
@@ -252,9 +252,56 @@ mediadiff::expected<std::optional<ConfigFile>, Error> discover_and_load(std::opt
         return usage_error("config file '" + path + "': '[dir] threads' must be a positive integer" +
                             position_suffix(threads_node->source()));
       }
+      if (threads_value > kMaxDirThreads) {
+        return usage_error("config file '" + path + "': '[dir] threads' must not exceed " +
+                            std::to_string(kMaxDirThreads) + " (the maximum worker thread count)" +
+                            position_suffix(threads_node->source()));
+      }
       block.threads = static_cast<int>(threads_value);
     }
     cfg.dir = block;
+  }
+
+  if (const toml::node* probe_node = tbl.get("probe")) {
+    if (!probe_node->is_table()) {
+      return usage_error("config file '" + path + "': '[probe]' must be a table" + position_suffix(probe_node->source()));
+    }
+    ProbeBlock block;
+    if (const toml::node* timeout_node = probe_node->as_table()->get("timeout_seconds")) {
+      if (!timeout_node->is_integer()) {
+        return usage_error("config file '" + path + "': '[probe] timeout_seconds' must be an integer" +
+                            position_suffix(timeout_node->source()));
+      }
+      const std::int64_t timeout_value = *timeout_node->value<std::int64_t>();
+      if (timeout_value < 0) {
+        return usage_error("config file '" + path + "': '[probe] timeout_seconds' must be a non-negative integer" +
+                            position_suffix(timeout_node->source()));
+      }
+      if (timeout_value > kMaxProbeTimeoutSeconds) {
+        return usage_error("config file '" + path + "': '[probe] timeout_seconds' must not exceed " +
+                            std::to_string(kMaxProbeTimeoutSeconds) + " (twenty-four hours, the maximum probe timeout)" +
+                            position_suffix(timeout_node->source()));
+      }
+      block.timeout_seconds = static_cast<int>(timeout_value);
+    }
+    if (const toml::node* memory_node = probe_node->as_table()->get("memory_budget_mb")) {
+      if (!memory_node->is_integer()) {
+        return usage_error("config file '" + path + "': '[probe] memory_budget_mb' must be an integer" +
+                            position_suffix(memory_node->source()));
+      }
+      const std::int64_t memory_value = *memory_node->value<std::int64_t>();
+      if (memory_value <= 0) {
+        return usage_error("config file '" + path + "': '[probe] memory_budget_mb' must be a positive integer" +
+                            position_suffix(memory_node->source()));
+      }
+      if (memory_value > kMaxProbeMemoryBudgetMb) {
+        return usage_error("config file '" + path + "': '[probe] memory_budget_mb' must not exceed " +
+                            std::to_string(kMaxProbeMemoryBudgetMb) + " (one tebibyte, the maximum probe memory budget)" +
+                            position_suffix(memory_node->source()));
+      }
+      block.memory_budget_mb = static_cast<int>(memory_value);
+    }
+    cfg.probe = block;
   }
 
   if (const toml::node* override_node = tbl.get("override")) {

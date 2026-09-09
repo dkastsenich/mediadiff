@@ -132,6 +132,75 @@ struct ColorArgs {
 // Registers `--no-color` and `--ascii` on `cmd`.
 ColorArgs add_color_flags(CLI::App& cmd);
 
+// Shared option storage for the probe layer's two CLI flags (03-02-PLAN.md
+// Task 2, PROBE-01 completion): `--probe-timeout` (consumed this plan) and
+// `--probe-memory-budget-mb` (registered here, accepted, left unconsumed
+// for plan 03-03 to wire up -- D-01's global memory-budget model). Both are
+// typed numerics, D-05's stated exception: bound via `->check()` rather
+// than the untargeted add_option/opt_string pattern, so a malformed value
+// is a parse-time exit-64 usage error rather than a runtime surprise.
+struct ProbeArgs {
+  CLI::Option* timeout_seconds = nullptr;
+  CLI::Option* memory_budget_mb = nullptr;
+};
+
+// Registers `--probe-timeout SECONDS` and `--probe-memory-budget-mb MB` on
+// `cmd`.
+ProbeArgs add_probe_flags(CLI::App& cmd);
+
+// Resolves the wall-clock probe budget, in milliseconds, from
+// `--probe-timeout` (when given) else `[probe] timeout_seconds` (when
+// `config` declared one) else std::nullopt -- meaning "no override; leave
+// src/probe/demux_session.h's own default_wall_clock_budget_ms() in
+// force", the same three-way precedence shape src/cli/commands/dir.cpp
+// already established for `--threads`/`[dir] threads`. A caller that gets
+// an engaged value is expected to call set_default_wall_clock_budget_ms
+// with it before the first DemuxSession::open of this invocation; a
+// std::nullopt result means the caller should not call the setter at all.
+// `--probe-timeout`'s own text is re-parsed here even though CLI11's
+// ->check(CLI::NonNegativeNumber) already validated it at parse time,
+// mirroring resolve_profile_selection's own "re-validate, don't trust
+// blindly" convention.
+mediadiff::expected<std::optional<std::int64_t>, Error> resolve_probe_timeout_ms(const ProbeArgs& args,
+                                                                                    const std::optional<ConfigFile>& config);
+
+// Resolves the GLOBAL probe-memory budget, in MEGABYTES, from
+// `--probe-memory-budget-mb` (when given) else `[probe] memory_budget_mb`
+// (when `config` declared one) else src/probe/packet_scan.h's own
+// kDefaultProbeMemoryBudgetMb (D-01) -- the same three-way precedence
+// shape resolve_probe_timeout_ms already established, except this one
+// ALWAYS returns an engaged value (there is no "leave some other default
+// in force" case: D-01's derived per-file cap must be set before the
+// first run_packet_scan call of every invocation). Every caller converts
+// this MB value to bytes, divides by its own resolved thread count via
+// src/probe/packet_scan.h's derive_per_file_cap_bytes, and calls
+// set_default_packet_scan_max_bytes with the result -- `dir` mode passes
+// its resolved `--threads`/`[dir] threads` count; the three single-file
+// commands always pass 1 (their own resolved thread count is always 1,
+// so a single in-flight file gets the whole budget).
+mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_mb(const ProbeArgs& args,
+                                                                           const std::optional<ConfigFile>& config);
+
+// 03-12-PLAN.md Task 1 (T-3-58, D-01): wraps resolve_probe_memory_budget_mb
+// and converts its megabyte result to BYTES in exactly ONE place, instead
+// of at four separate command entry points -- each of which used to
+// perform its own raw megabytes-to-bytes multiplication with no overflow
+// check. Rejects a resolved value above kMaxProbeMemoryBudgetMb (src/config/toml_load.h)
+// with ErrorKind::usage naming the offending value and the maximum, then
+// converts to bytes via two successive detail::checked_mul (src/core/rational.h)
+// steps (MB -> KB -> bytes), returning ErrorKind::usage on either overflow.
+// resolve_probe_memory_budget_mb itself stays public -- this function wraps
+// it rather than replacing it, so the plain megabyte value stays available
+// wherever a caller wants it for diagnostics.
+mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_bytes(const ProbeArgs& args,
+                                                                               const std::optional<ConfigFile>& config);
+
+// All-null ProbeArgs, matching default_policy_args()/default_report_args()/
+// default_color_args()'s own contract -- used by main.cpp's implicit
+// two-positional dispatch, which carries none of `compare`'s own optional
+// flags.
+ProbeArgs default_probe_args();
+
 // All-null PolicyArgs/ReportArgs/ColorArgs, with no CLI11 flags registered
 // on any App -- used by main.cpp's implicit two-positional dispatch
 // (CLI-01), which intentionally carries none of `compare`'s own optional
@@ -198,6 +267,7 @@ struct CliOptions {
   PolicyArgs policy;
   ReportArgs report;
   ColorArgs color;
+  ProbeArgs probe;
   CLI::Option* strict = nullptr;
   CLI::Option* quiet = nullptr;
   CLI::Option* verbose = nullptr;

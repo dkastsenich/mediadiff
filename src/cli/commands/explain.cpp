@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "core/check_explain.h"
@@ -65,7 +66,7 @@ void register_explain_command(CLI::App& app) {
           message += std::string(group_members[i]);
         }
       }
-      std::fputs(("mediadiff: " + message + "\n").c_str(), stderr);
+      report_cli_error(message);
       std::exit(kExitUsage);
     }
 
@@ -76,7 +77,7 @@ void register_explain_command(CLI::App& app) {
     }
     out += std::string(explain_doc(static_cast<CheckId>(*index)));
     out += "\n";
-    std::fputs(out.c_str(), stdout);
+    std::fwrite(out.data(), 1, out.size(), stdout);
     std::exit(kExitClean);
   });
 }

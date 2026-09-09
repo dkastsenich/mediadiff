@@ -5,6 +5,9 @@ add_executable(mediadiff_unit_tests
   test_license.cpp
   test_expected.cpp
   test_fs_utf8.cpp
+  # T-2-33's single choke point: sanitize_for_display's own escape/replace
+  # rules, independent of any render path (03-11-PLAN.md Task 1).
+  test_sanitize.cpp
   # Tagged [console]. Skips (never passes) unless stdout is a real console, so
   # CI records it as skipped and a developer running it from a console window
   # exercises it for real — CLI-09's manual checkpoint, made mechanical.
@@ -16,12 +19,125 @@ add_executable(mediadiff_unit_tests
   # D-14/D-15/D-16 fail-first meta-infrastructure (02-03-PLAN.md Task 2).
   test_fail_first_coverage.cpp
   test_canary.cpp
-  # ENG-05/CLI-10 tolerance grammar (02-04-PLAN.md Task 1).
+  # ENG-05/CLI-10 tolerance grammar (02-04-PLAN.md Task 1), extended by
+  # 03-01-PLAN.md Task 3 with D-03's estimated-measurement tolerance
+  # widening.
   test_tolerance.cpp
+  # core/rational.h's detail::checked_div, added alongside its four
+  # siblings for SIZE-01's window-boundary math (03-01-PLAN.md Task 3).
+  test_rational.cpp
   # Table-driven edge-value coverage for all seven semantics (02-04-PLAN.md
   # Task 3), distinct from test_fail_first_coverage.cpp's (semantic,
   # status) gate.
   test_compare_semantics.cpp
+  # SkipReason's compile-time-coupled extension (json.cpp/junit.cpp/
+  # docs/schema/report-1.0.json), Measurement.estimated's snapshot round
+  # trip, and Finding.evidence's single propagation seam (03-01-PLAN.md
+  # Tasks 1-2, closes Broken Window #1).
+  test_measurement_provenance.cpp
+  # PROBE-01: DemuxSession's format_name()/stream_count()/error mapping,
+  # fingerprint_input's snapshot-first fallthrough, the wall-clock budget,
+  # and the libav log-capture mechanism (03-02-PLAN.md Tasks 1-2).
+  test_demux_session.cpp
+  # PROBE-08: the pass union runs each pass exactly once per file and
+  # scopes analyzers by container family (03-02-PLAN.md Task 3); extended
+  # by 03-03-PLAN.md Task 3 with PROBE-10's shared-PacketScan proof.
+  test_pass_union.cpp
+  # PROBE-02: PacketScan's one av_read_frame sweep, the doc 02 record
+  # shape, the 5,000,000-packet-per-stream ceiling, sentinel preservation,
+  # per-stream timebase conversion, and the zero-packet case
+  # (03-03-PLAN.md Task 1).
+  test_packet_scan.cpp
+  # D-01: the accounted (never OS-measured) probe-memory budget, its
+  # budget/threads derivation, and the T-2-41 --threads/[dir] threads
+  # ceiling (03-03-PLAN.md Task 2).
+  test_packet_budget.cpp
+  # CONT-01/CONT-09: container.track_count/track_types/track_order/chapters
+  # -- the four remaining container-agnostic topology checks, expanding the
+  # tracer's own container.format (03-04-PLAN.md Task 1).
+  test_topology_analyzer.cpp
+  # CONT-03/CONT-04: meta.tags (volatile-key exclusion, evidence retention,
+  # per-stream scoping, UTF-8 sanitization) and meta.tags.language
+  # (und-equals-absent normalization) (03-04-PLAN.md Tasks 2-3).
+  test_meta_tags.cpp
+  # The `inspect` container section: generic topology (incl. subtitle/
+  # tmcd evidence), per-format mechanisms, per-program TS entries, legible
+  # skip reasons, CONT-03's -v half, and T-2-33 sanitization -- driven
+  # through src/cli/commands/inspect_render.h directly, no CLI11 linking
+  # needed (03-11-PLAN.md Task 2).
+  test_inspect_container_section.cpp
+  # PROBE-04: bmff_scan's bounded top-level box walk and minimal moov
+  # descent -- largesize/size-zero/uuid handling, oversize/undersize
+  # bounds violations with exact stop_offset, ftyp/mvhd/tkhd/mdhd/elst
+  # field parsing at both FullBox versions, moof/sidx counting, and
+  # truncation at 10%/50%/90% (03-05-PLAN.md Task 1).
+  test_bmff_scan.cpp
+  # CONT-05: the six container.mp4.* checks -- faststart, brands,
+  # fragmentation, fragment_duration (median via
+  # detail::compute_median_fragment_duration, 03-13-PLAN.md's checked-sub/
+  # total-order seam), edit_list (empty-edit vs trim classification,
+  # profile severity), and timescale, plus the incomplete-walk skip and the
+  # family-agnostic not-applicable sibling analyzer (03-05-PLAN.md Task 2).
+  test_mp4_analyzer.cpp
+  # CONT-05/PROBE-09 (CR-01/CR-02 in 03-REVIEW.md, 03-13-PLAN.md Task 2):
+  # the eight extreme-DTS behaviors of
+  # detail::compute_median_fragment_duration -- checked-subtraction
+  # overflow refusal (CR-01 reproduction), a same-timebase total order that
+  # cannot overflow a comparator (CR-02 reproduction), non-positive
+  # timebase refusal, degenerate input counts, the lower-median rule, and
+  # no-reorder/shuffle-invariance -- driven directly at the seam since no
+  # bitexact fixture (D-08) can carry such DTS values.
+  test_mp4_fragment_duration.cpp
+  # PROBE-05: ebml_scan's bounded Segment-level element walk -- the VINT
+  # reader across all eight length-descriptor widths (both marker-retained
+  # ID mode and marker-stripped size mode), the reserved unknown-size form,
+  # SeekHead/Info/Tracks descent, the guarded single-hop SeekHead-follow to
+  # a trailing Cues (bounds + ID verification, both rejection cases), and
+  # truncation at 10%/50%/90% (03-06-PLAN.md Task 1).
+  test_ebml_scan.cpp
+  # CONT-02: container_family_token's own mapping table, shared verbatim
+  # by the probe layer and the compare engine (03-06-PLAN.md Task 3).
+  test_container_family.cpp
+  # PROBE-06: ts_scan's bounded stride-autodetected packet walk -- stride
+  # detection (188/192/204), resync after corruption, the structurally-
+  # bounded per-PID table, PCR extraction, PAT/PMT parsing with version
+  # tracking, and the mux-rate estimate (03-07-PLAN.md Tasks 1-2).
+  test_ts_scan.cpp
+  # PROBE-07: the ISO 13818-1 section 2.4.3.3 continuity-counter carve-outs,
+  # proven as a nine-case hand-verified table directly against
+  # detail::step_continuity (03-07-PLAN.md Task 3).
+  test_ts_continuity.cpp
+  # CONT-07: the six container.ts.* checks -- cc_errors/cc_discontinuities
+  # (kept independent), pcr_interval/psi_interval (D-03 estimated-measurement
+  # widening, program-scoped), pmt_version_churn, null_ratio (exact
+  # RationalValue), the incomplete-walk skip, and cross-format skip
+  # correctness (03-08-PLAN.md Tasks 1-2).
+  test_ts_analyzer.cpp
+  # SIZE-01: the nine determinism behaviors of
+  # mediadiff::detail::compute_peak_window (window boundary computed fresh
+  # from k, sort-before-window, AV_NOPTS_VALUE exclusion, non-unit-numerator
+  # timebases, overflow-emits-a-skip), driven against hand-built
+  # PacketRecord arrays with human-computed expected peaks (03-09-PLAN.md
+  # Task 2).
+  test_size_windowing.cpp
+  # SIZE-01: size.file/size.overhead/size.stream_bitrate/size.peak_bitrate
+  # wired through mediadiff::size_analyzer()'s own run() -- size.file's
+  # independence from PacketScan's own completeness, the exact overhead
+  # ratio, D-02's partial_scan gating (size.file excepted), and the two
+  # scenarios no real fixture can produce (payload exceeding file size, a
+  # stream whose every packet lacks a DTS) via direct PacketScanResult
+  # construction (03-09-PLAN.md Task 1).
+  test_size_analyzer.cpp
+  # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
+  # directly over truncated, structurally-corrupted and fixed-seed
+  # pseudo-random inputs, plus the permanently-broken canary and the
+  # missing-fixture-fails-naming-it guard (03-10-PLAN.md Task 1).
+  test_probe_fuzz_smoke.cpp
+  # TRUST-09/D-04: ts_scan's own claims (per-PID packet counts, cc_errors,
+  # PAT presence, per-program pmt_pid/version_number, PCR presence) cross-
+  # checked against a committed TSDuck-derived golden, read-only unless
+  # UPDATE_GOLDENS is set (03-10-PLAN.md Task 3).
+  test_ts_scan_golden.cpp
   # Profile identity and the builtin+profile resolution pass (02-05-PLAN.md
   # Task 1).
   test_profiles.cpp
@@ -72,6 +188,18 @@ add_executable(mediadiff_unit_tests
   # without spawning the built binary.
   "${CMAKE_SOURCE_DIR}/src/cli/dir_pairing.cpp"
   "${CMAKE_SOURCE_DIR}/src/cli/worker_pool.cpp"
+  # provenance_render.cpp lives under src/cli/ too, for the same reason:
+  # src/cli/commands/inspect_render.h's inline render_inspect_text() calls
+  # render_provenance_chain() under verbose=true, and test_inspect_container_section.cpp
+  # exercises that path directly. Every call site in THIS translation unit
+  # happens to pass a literal verbose=false, which is why GCC's inliner can
+  # constant-fold the branch away and the symbol goes unreferenced there --
+  # but relying on that is optimizer-dependent, not a real link guarantee
+  # (AppleClang's arm64-osx leg does not fold it away and fails at link
+  # with an undefined symbol for render_provenance_chain, 03-21, WINDOWS.md).
+  # Linking the real definition here removes the dependency on that
+  # optimizer behavior entirely.
+  "${CMAKE_SOURCE_DIR}/src/cli/provenance_render.cpp"
   test_dir_pairing.cpp
   test_worker_pool.cpp
   # T-2-12 cli_harness.h/process_spawn.h capture-defect proof and the D-12
@@ -82,6 +210,9 @@ add_executable(mediadiff_unit_tests
   # executables, never into libmediadiff/mediadiff.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
+  # Shared truncation/byte-flip/PRNG mutation helpers (03-10-PLAN.md Task 1),
+  # linked into both test executables like golden.cpp/stub_analyzer.cpp above.
+  "${CMAKE_SOURCE_DIR}/tests/support/mutate.cpp"
   # Generated by tools/gen_registry.py --symbol-prefix test_ from
   # tests/support/test_checks.def (generate_test_registry target, root
   # CMakeLists.txt).
@@ -90,6 +221,7 @@ add_executable(mediadiff_unit_tests
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain Threads::Threads)
 mediadiff_apply_warnings(mediadiff_unit_tests)
+mediadiff_apply_platform_definitions(mediadiff_unit_tests)
 add_dependencies(mediadiff_unit_tests generate_test_registry)
 
 # tests/process_spawn.h is shared with mediadiff_integration_tests (see that
@@ -102,6 +234,15 @@ target_include_directories(mediadiff_unit_tests PRIVATE "${CMAKE_SOURCE_DIR}/tes
 target_compile_definitions(mediadiff_unit_tests PRIVATE
   MEDIADIFF_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures"
   MEDIADIFF_GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden"
+)
+
+# docs/schema/report-1.0.json, resolved at configure time -- same
+# MEDIADIFF_REPORT_SCHEMA convention tests/integration/CMakeLists.txt
+# already uses, so test_measurement_provenance.cpp's schema-agreement test
+# (03-01-PLAN.md Task 1) reads the schema's skip_reason enum without
+# hardcoding its 14-value vocabulary a second time.
+target_compile_definitions(mediadiff_unit_tests PRIVATE
+  MEDIADIFF_REPORT_SCHEMA="${CMAKE_SOURCE_DIR}/docs/schema/report-1.0.json"
 )
 
 # ENG-01/DOC-01 fail-first proof (02-02-PLAN.md Task 3): test_registry_generator.cpp

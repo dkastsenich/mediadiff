@@ -1,0 +1,125 @@
+== mp4: topo_subs.mp4 ==
+container:
+  container.format global: "mov"
+  container.track_count global: [{"bin":"video","count":1},{"bin":"audio","count":1},{"bin":"subtitle","count":1},{"bin":"data","count":0},{"bin":"attachment","count":0}]
+      evidence: {"video":1,"audio":1,"subtitle":1,"data":0,"attachment":0}
+  container.track_types global: "video,audio,subtitle"
+  container.track_order global: "video:mpeg4,audio:aac,subtitle:mov_text"
+  container.chapters global: []
+  container.mp4.faststart global: "moov_after_mdat"
+      evidence: {"moov_offset":137707,"mdat_offset":36}
+  container.mp4.brands global: ["iso2","isom","mp41"]
+      evidence: {"major_brand":"isom","minor_version":512}
+  container.mp4.fragmentation global: "progressive"
+      evidence: {"moof_count":0,"has_sidx":false}
+  container.mp4.fragment_duration global: (skipped: not_applicable_container)
+  container.mp4.edit_list video[0]: "segment_duration=882000000 media_time=0 media_rate=1+0"
+      evidence: {"track_id":1,"entries":[{"type":"trim","segment_duration":882000000,"media_time":0}]}
+  container.mp4.edit_list audio[0]: "segment_duration=882000000 media_time=1024 media_rate=1+0"
+      evidence: {"track_id":2,"entries":[{"type":"trim","segment_duration":882000000,"media_time":1024}]}
+  container.mp4.edit_list subtitle[0]: "segment_duration=441000000 media_time=0 media_rate=1+0"
+      evidence: {"track_id":3,"entries":[{"type":"trim","segment_duration":441000000,"media_time":0}]}
+  container.mp4.timescale global: 441000000
+  container.mp4.timescale video[0]: 12800
+  container.mp4.timescale audio[0]: 44100
+  container.mp4.timescale subtitle[0]: 1000000
+  container.mkv.cues_placement global: (skipped: not_applicable_container)
+  container.mkv.codec_delay global: (skipped: not_applicable_container)
+  container.mkv.timestamp_scale global: (skipped: not_applicable_container)
+  container.mkv.duration_element global: (skipped: not_applicable_container)
+  container.ts.cc_errors global: (skipped: not_applicable_container)
+  container.ts.cc_discontinuities global: (skipped: not_applicable_container)
+  container.ts.pcr_interval global: (skipped: not_applicable_container)
+  container.ts.psi_interval global: (skipped: not_applicable_container)
+  container.ts.pmt_version_churn global: (skipped: not_applicable_container)
+  container.ts.null_ratio global: (skipped: not_applicable_container)
+meta:
+  meta.tags global: ["compatible_brands=isomiso2mp41","major_brand=isom","minor_version=512"]
+  meta.tags video[0]: ["language=und"]
+      evidence: {"handler_name":"VideoHandler","encoder":"Lavc mpeg4"}
+  meta.tags audio[0]: ["language=und"]
+      evidence: {"handler_name":"SoundHandler"}
+  meta.tags subtitle[0]: ["language=und"]
+      evidence: {"handler_name":"SubtitleHandler"}
+  meta.tags.language video[0]: "und"
+  meta.tags.language audio[0]: "und"
+  meta.tags.language subtitle[0]: "und"
+== mkv: topo_chapters.mkv ==
+container:
+  container.format global: "matroska"
+  container.track_count global: [{"bin":"video","count":1},{"bin":"audio","count":1},{"bin":"subtitle","count":0},{"bin":"data","count":0},{"bin":"attachment","count":0}]
+      evidence: {"video":1,"audio":1,"subtitle":0,"data":0,"attachment":0}
+  container.track_types global: "video,audio"
+  container.track_order global: "video:mpeg4,audio:aac"
+  container.chapters global: ["start=0 end=1000000000 tb=1/1000000000 title=Chapter One","start=1000000000 end=2000000000 tb=1/1000000000 title=Chapter Two"]
+  container.mp4.faststart global: (skipped: not_applicable_container)
+  container.mp4.brands global: (skipped: not_applicable_container)
+  container.mp4.fragmentation global: (skipped: not_applicable_container)
+  container.mp4.fragment_duration global: (skipped: not_applicable_container)
+  container.mp4.edit_list global: (skipped: not_applicable_container)
+  container.mp4.timescale global: (skipped: not_applicable_container)
+  container.mkv.cues_placement global: "end"
+      evidence: {"cues_offset":139436,"first_cluster_offset":759}
+  container.mkv.codec_delay audio[0]: 1024
+      evidence: {"codec_delay_ns":23219955}
+  container.mkv.timestamp_scale global: 1000000
+      evidence: {"matroska_default_ns":1000000}
+  container.mkv.duration_element global: "present"
+  container.ts.cc_errors global: (skipped: not_applicable_container)
+  container.ts.cc_discontinuities global: (skipped: not_applicable_container)
+  container.ts.pcr_interval global: (skipped: not_applicable_container)
+  container.ts.psi_interval global: (skipped: not_applicable_container)
+  container.ts.pmt_version_churn global: (skipped: not_applicable_container)
+  container.ts.null_ratio global: (skipped: not_applicable_container)
+meta:
+  meta.tags global: []
+      evidence: {"encoder":"Lavf"}
+  meta.tags video[0]: ["DURATION=00:00:02.000000000"]
+      evidence: {"ENCODER":"Lavc mpeg4"}
+  meta.tags audio[0]: ["DURATION=00:00:02.023000000"]
+      evidence: {"ENCODER":"Lavc aac"}
+  meta.tags.language video[0]: "und"
+  meta.tags.language audio[0]: "und"
+== ts: ts_multiprogram.ts ==
+container:
+  container.format global: "mpegts"
+  container.track_count global: [{"bin":"video","count":2},{"bin":"audio","count":2},{"bin":"subtitle","count":0},{"bin":"data","count":0},{"bin":"attachment","count":0}]
+      evidence: {"video":2,"audio":2,"subtitle":0,"data":0,"attachment":0}
+  container.track_types global: "video,audio,video,audio"
+  container.track_order global: "video:mpeg2video,audio:mp2,video:mpeg2video,audio:mp2"
+  container.chapters global: (skipped: not_applicable_container)
+  container.mp4.faststart global: (skipped: not_applicable_container)
+  container.mp4.brands global: (skipped: not_applicable_container)
+  container.mp4.fragmentation global: (skipped: not_applicable_container)
+  container.mp4.fragment_duration global: (skipped: not_applicable_container)
+  container.mp4.edit_list global: (skipped: not_applicable_container)
+  container.mp4.timescale global: (skipped: not_applicable_container)
+  container.mkv.cues_placement global: (skipped: not_applicable_container)
+  container.mkv.codec_delay global: (skipped: not_applicable_container)
+  container.mkv.timestamp_scale global: (skipped: not_applicable_container)
+  container.mkv.duration_element global: (skipped: not_applicable_container)
+  container.ts.cc_errors global: 0
+      evidence: {"per_pid_errors":{}}
+  container.ts.cc_discontinuities global: 0
+  container.ts.pcr_interval program[1]: {"num":87,"den":1,"tb":{"num":1,"den":1},"ms":87000.0}
+      evidence: {"pcr_pid":256,"sample_count":25,"mean_ms":{"num":854,"den":24}}
+  container.ts.pcr_interval program[2]: {"num":87,"den":1,"tb":{"num":1,"den":1},"ms":87000.0}
+      evidence: {"pcr_pid":258,"sample_count":25,"mean_ms":{"num":887,"den":24}}
+  container.ts.psi_interval program[1]: {"num":106,"den":1,"tb":{"num":1,"den":1},"ms":106000.0}
+      evidence: {"pat_max_ms":106,"pmt_max_ms":106}
+  container.ts.psi_interval program[2]: {"num":111,"den":1,"tb":{"num":1,"den":1},"ms":111000.0}
+      evidence: {"pat_max_ms":111,"pmt_max_ms":111}
+  container.ts.pmt_version_churn program[1]: 0
+  container.ts.pmt_version_churn program[2]: 0
+  container.ts.null_ratio global: {"num":0,"den":2540,"tb":{"num":1,"den":1},"ms":0.0}
+      evidence: {"null_packets":0,"total_packets":2540}
+meta:
+  meta.tags global: []
+  meta.tags video[0]: []
+  meta.tags video[1]: []
+  meta.tags audio[0]: []
+  meta.tags audio[1]: []
+  meta.tags.language video[0]: "und"
+  meta.tags.language video[1]: "und"
+  meta.tags.language audio[0]: "und"
+  meta.tags.language audio[1]: "und"

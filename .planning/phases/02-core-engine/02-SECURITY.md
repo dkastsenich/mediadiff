@@ -5,14 +5,14 @@ status: audited
 # threats_open = count of OPEN threats at or above workflow.security_block_on severity (the blocking gate)
 threats_open: 0
 threats_total: 88
-threats_closed: 87
-threats_open_below_threshold: 1
+threats_closed: 88
+threats_open_below_threshold: 0
 asvs_level: 1
 block_on: high
 register_authored_at_plan_time: true
 created: 2026-08-24
 audited: 2026-08-24
-evidence_refreshed: 2026-09-01
+evidence_refreshed: 2026-09-04
 ---
 
 # Phase 02 — Security
@@ -20,10 +20,13 @@ evidence_refreshed: 2026-09-01
 > Per-phase security contract: threat register, accepted risks, and audit trail.
 
 **Verdict: SECURED.** All 31 high-severity threats are CLOSED with located
-evidence. `threats_open` is **0** at the `high` block threshold. One medium threat (**T-2-33**) is
-genuinely OPEN and is recorded below — it does not block under `block_on: high`, but it is a
-declared mitigation that was never implemented and it is the highest-priority open security item
-carried out of this phase.
+evidence. `threats_open` is **0** at the `high` block threshold. The one medium threat that was
+carried forward OPEN (**T-2-33**) is now also CLOSED — see "Closure Note — T-2-33" below, and its
+own follow-on "Post-Audit Correction — T-2-33" for what that first closure missed and what actually
+completed it — so `threats_open_below_threshold` is now 0 as well. It was the highest-priority open
+security item carried out of this phase; 03-11-PLAN.md Task 1 closed three of the five render/
+diagnostic paths (terminal, provenance, Markdown), and 03-15-PLAN.md Tasks 1-2 closed the remaining
+two (JUnit XML, CLI stderr diagnostics) that 03-VERIFICATION.md's own review found still open.
 
 Register origin: `register_authored_at_plan_time: true` — all 19 plans carried a `<threat_model>`
 block, so the auditor verified declared mitigations rather than retroactively scanning for threats.
@@ -95,7 +98,7 @@ block, so the auditor verified declared mitigations rather than retroactively sc
 | T-2-26 | Repudiation | `read_snapshot` | medium | mitigate | Tool-version skew is surfaced as a diagnostic on the returned fingerprint rather than swallowed, so a comparison across builds is never silently prese… | closed |
 | T-2-30 | Tampering | `src/cli/options.cpp` | medium | mitigate | An unrecognised `--report` kind, an empty path, or two destinations naming the same path are usage errors, so a report cannot silently overwrite anoth… | closed |
 | T-2-31 | Information Disclosure | `src/report/json.cpp` | medium | mitigate | The report carries the same basename-only input identity the snapshot envelope carries; no absolute path or environment value is rendered into a repor… | closed |
-| T-2-33 | Tampering | `src/cli/tty_render.cpp` | medium | mitigate | Finding values originate in user-supplied files and can contain control bytes. Rendered values are filtered so no byte below 0x20 other than a rendere… | **open — below `high` threshold (non-blocking)** |
+| T-2-33 | Tampering | `src/cli/tty_render.cpp` | medium | mitigate | Finding values originate in user-supplied files and can contain control bytes. Rendered values are filtered so no byte below 0x20 other than a rendere… | **closed 2026-09-04 (terminal/provenance/Markdown by 03-11; JUnit XML + CLI stderr diagnostics by 03-15) — see Closure Note and Post-Audit Correction below** |
 | T-2-34 | Repudiation | `src/cli/color_policy.cpp` | medium | mitigate | The colour decision is one pure function over explicit inputs with a fully asserted truth table, so a CI environment cannot silently produce output wh… | closed |
 | T-2-42 | Tampering | `src/cli/dir_pairing.cpp` | medium | mitigate | Symbolic links are not followed during the recursive walk, so a link pointing outside the corpus root cannot pull an unrelated file into the compariso… | closed |
 | T-2-44 | Elevation of Privilege | `src/core/policy.cpp` | medium | mitigate | Each job derives its own `Policy` copy from the immutable resolved base plus the `[override.*]` blocks matching its own relative path; no job writes t… | closed |
@@ -145,7 +148,7 @@ block, so the auditor verified declared mitigations rather than retroactively sc
 
 ---
 
-## Open Threat — T-2-33 (medium, non-blocking, carried to Phase 3)
+## Open Threat — T-2-33 (medium, non-blocking, carried to Phase 3) — CLOSED, see Closure Note below
 
 **Declared mitigation does not exist.** `02-09-PLAN.md` declares: *"Rendered values are filtered so
 no byte below 0x20 other than a rendered separator reaches the terminal, which prevents a crafted
@@ -164,10 +167,115 @@ No such filter was implemented. Independently confirmed at audit time:
 filename containing `\x1b[2K\r` inside a compared corpus can reposition the cursor and overwrite a
 rendered `fail` row. The project's stated core value is that false positives are P0 and *a muted gate
 is worth nothing* — this threat is precisely a mechanism for muting the gate's own output. It is
-below the `high` block threshold and therefore non-blocking under the configured policy, but it is
+below the `high` block threshold and therefore non-blocking under the configured policy, but it was
 recorded here as the highest-priority security item leaving Phase 2.
 
-**Not** a structural-but-unexercised guard awaiting real analyzers — the affected render path is live.
+**Not** a structural-but-unexercised guard awaiting real analyzers — the affected render path was
+live at the time this section was written (and still is; it is now sanitized).
+
+---
+
+## Closure Note — T-2-33 (2026-09-04)
+
+**Closed by `03-11-PLAN.md` Task 1.** `src/util/sanitize.{h,cpp}` (new) implements
+`sanitize_for_display`, the single choke point this section's own declared-but-missing mitigation
+described: every C0 control byte except tab (0x00-0x1F), DEL (0x7F), and the UTF-8 encoding of the
+C1 range (U+0080-U+009F) is escaped to a visible, unambiguous form (`\xHH` / `\uHHHH`); a literal
+backslash is doubled so an escape marker can never be confused with raw text that happens to contain
+the same characters; invalid UTF-8 is replaced with U+FFFD. Sanitization runs BEFORE `elide_value`'s
+width accounting, closing the exact "an invisible sequence corrupts the elision budget" gap this
+section's original finding implied.
+
+Evidence, re-verified directly (not merely re-asserted) at closure time:
+
+- `grep -rl 'sanitize_for_display' src/` → exactly five files: `src/util/sanitize.{h,cpp}` and the
+  three display render paths (`src/cli/tty_render.cpp`, `src/cli/provenance_render.cpp`,
+  `src/report/markdown.cpp`). `src/report/json.cpp`/`src/report/junit.cpp` each carry a top-of-file
+  comment explaining why they deliberately do NOT call it (their own wire-level/XML escaping already
+  covers their context; a second pass would double-escape and change committed goldens for no
+  security benefit).
+- `render_file_summary_line`'s `block.relative_path` (the exact call site this section named) and
+  `render_finding_row`'s `finding.message`/both values (the other exact call site this section
+  named) are both now sanitized — verified by reading the current source, not by re-trusting the
+  original finding.
+- `scripts/lint_control_bytes.sh` (new, wired into the required `lint (ENG-16 boundary)` CI job)
+  enforces the single-choke-point rule going forward: a line in one of the three display render
+  paths referencing a risky raw field without a same-line `sanitize_for_display` call fails the
+  build. Self-tests against both a synthetic known-bad and known-good fixture before every real run.
+- `tests/unit/test_sanitize.cpp` proves the escape/replace rules directly; the full suite (`ctest`,
+  574 tests including the new ones) is green and `git status --porcelain tests/golden/` is empty —
+  no pre-existing golden changed, confirming ordinary control-byte-free/backslash-free input is
+  unaffected.
+- Threat T-3-53 (03-11-PLAN.md's own threat model) additionally covers the specific escape-sequence-
+  forging-a-fake-finding-row mechanism this section's "why it matters" paragraph described.
+
+Full detail: `.planning/phases/03-probe-layer-container-size/03-11-SUMMARY.md`.
+
+---
+
+## Post-Audit Correction — T-2-33 (2026-09-04, same day as the Closure Note above)
+
+**This section's own Closure Note, written earlier the same day, certified T-2-33 CLOSED while two
+of the five render/diagnostic paths it needed to cover were still open.** Recording this plainly,
+for the same reason the T-2-24 correction below does: a security document that quietly absorbs its
+own miss is worth less than one that shows where its evidence stopped.
+
+What the Closure Note verified was real and remains true: `sanitize_for_display` is the single
+choke point for the terminal, provenance-chain and Markdown render paths, all three sanitized
+before `elide_value`'s width accounting, all three enforced by `scripts/lint_control_bytes.sh`.
+
+What the Closure Note did not reach:
+
+- **CR-03 (`src/report/junit.cpp`, Warning).** `xml_escape` substituted only the four XML
+  metacharacters and passed every other byte through unchanged. A raw C0 control byte is not legal
+  XML 1.0 character data under any escaping mechanism, and `src/analyzers/container/meta.cpp`'s
+  `sanitize_utf8` deliberately leaves such bytes in place, deferring to "the single render
+  boundary" — a deferral that is sound only if every boundary actually honors it. `xml_escape` did
+  not. `src/util/sanitize.h`'s own header comment asserted `junit.cpp` "handles its own context",
+  which was false at the time it was written.
+- **WR-01 (`src/cli/commands/*.cpp`, `src/cli/main.cpp`, Warning).** 44 inline CLI diagnostics wrote
+  `Error::message` straight to stderr via `std::fputs`, outside the Closure Note's three-file scan
+  list. In `dir` mode those messages embed filenames from a directory listing, not from argv — this
+  project's own stated audience runs `dir` mode as its primary corpus-diff use case (UC2), and this
+  project deliberately enables VT processing on Windows, so an unescaped ANSI sequence there is not
+  merely cosmetic.
+- **IN-02 (`scripts/lint_control_bytes.sh`, Info).** The lint's own scan list omitted
+  `src/cli/commands/inspect_render.h`, a fourth, already-correct call site — a gap that would have
+  made a future regression there invisible to the gate.
+
+Found by `03-VERIFICATION.md` (this phase's own gap-closure verification pass), not by a fresh
+external review — the same review loop this project runs against itself before calling a phase
+done.
+
+**Fixed by `03-15-PLAN.md`:**
+
+- Task 1 — `xml_escape`'s default branch now escapes any C0 control byte (other than tab/LF/CR) and
+  DEL as a visible `\xHH` sequence in the text itself (a numeric XML character reference would be
+  equally illegal, so it would move the problem rather than fix it), closing CR-03. `junit.cpp`'s
+  and `sanitize.h`'s header comments were corrected in the same commit to state what is actually
+  true rather than assert a completeness that did not hold.
+- Task 2 — every inline CLI diagnostic across `compare.cpp`, `dir.cpp`, `inspect.cpp`,
+  `snapshot.cpp`, `explain.cpp`, `list_checks.cpp` and `main.cpp` now routes through one new
+  helper, `src/cli/diagnostics.cpp`'s `report_cli_error`, which calls `sanitize_for_display` before
+  writing to stderr — closing WR-01. `scripts/lint_control_bytes.sh` gained a second, independent
+  rule enforcing this as the one permitted CLI diagnostic sink, plus `inspect_render.h` added to its
+  display-render scan list — closing IN-02.
+- Task 3 — `tests/integration/test_cli_diagnostics_escaping.cpp` proves the CLI diagnostic path
+  escapes control bytes end-to-end through the real binary, using an argv-supplied vector (not a
+  crafted filename, which cannot exist on Windows) so the proof runs on every platform leg, not two
+  of three.
+
+**Scope of the original gap, stated honestly:** both CR-03 and WR-01 required a crafted media tag
+value or directory-listing filename containing a raw control byte, which is achievable by anyone who
+can supply the compared input — the same trust boundary the rest of T-2-33 already covers. This was
+a completeness gap in the mitigation's own coverage, not a newly-discovered attacker capability. The
+lesson for future closure notes, matching the T-2-24 correction's own lesson below: verifying that a
+choke point exists is not the same as verifying every path that must route through it — a scan list
+enumerated by hand (three files) is exactly as complete as the person who wrote it remembered to be,
+which is why IN-02's own fix generalizes `sanitize.h`'s comment to point at the lint's scan list
+itself rather than restating a count.
+
+Full detail: `.planning/phases/03-probe-layer-container-size/03-15-SUMMARY.md`.
 
 ---
 
@@ -260,6 +368,8 @@ this is self-inflicted only. Worth a follow-up bound on all three sources.
 |------------|---------------|--------|------|--------|
 | 2026-08-24 | 88 | 87 | 1 (all below `high` threshold) | gsd-security-auditor (ASVS L1, block_on high) |
 | 2026-09-01 | 88 | 87 | 1 (T-2-33, below threshold) | post-ship code re-review — found WR-05 bypassing T-2-24; fixed in `524ea88`, CI-confirmed run 33550930821 |
+| 2026-09-04 | 88 | 88 | 0 | 03-11-PLAN.md Task 1 closed T-2-33's terminal/provenance/Markdown paths (`sanitize_for_display` + `scripts/lint_control_bytes.sh`); see Closure Note above |
+| 2026-09-04 (later same day) | 88 | 88 | 0 | 03-VERIFICATION.md found T-2-33's closure premature (CR-03 JUnit XML, WR-01 CLI stderr, IN-02 lint scan-list gap); 03-15-PLAN.md Tasks 1-2 closed the remaining two paths and extended the lint; see Post-Audit Correction above |
 
 ---
 
@@ -269,4 +379,4 @@ this is self-inflicted only. Worth a follow-up bound on all three sources.
 - [x] Accepted risks documented in Accepted Risks Log (23 entries)
 - [x] `threats_open: 0` confirmed at the `high` block threshold
 - [x] T-2-24 evidence refreshed after the 2026-09-01 re-review found and closed a Windows bypass (`524ea88`, CI-confirmed)
-- [ ] T-2-33 (medium) resolved — deliberately carried to Phase 3
+- [x] T-2-33 (medium) resolved — closed 2026-09-04, terminal/provenance/Markdown paths by 03-11-PLAN.md Task 1, JUnit XML + CLI stderr diagnostic paths by 03-15-PLAN.md Tasks 1-2 after 03-VERIFICATION.md found the first closure incomplete; see Closure Note and Post-Audit Correction above

@@ -8,6 +8,7 @@
 // exits the process (ENG-16); every failure returns an Error through
 // mediadiff::expected.
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,19 +45,78 @@ struct TransformBlock {
   std::optional<std::string> resolution;
 };
 
+// The maximum worker-thread count `dir` mode will ever create, from ANY
+// source -- an explicit `--threads`, an explicit `[dir] threads`, or the
+// hardware-concurrency-derived default (T-2-41's closed residual, D-01).
+// Each `std::thread` carries a real OS-allocated stack (a multi-megabyte
+// resource `WorkerPool` itself does not bound, src/cli/worker_pool.h's own
+// header comment), so this ceiling is a separate mitigation from D-01's
+// byte-accounted `PacketScan` budget, not a consequence of it. Enforced
+// identically at BOTH entry points -- here (config-load time, for
+// `[dir] threads`) and src/cli/commands/dir.cpp (parse time, for
+// `--threads`) -- so a value above the ceiling is a usage error naming
+// this maximum, exiting 64, from whichever path supplied it. Declared
+// once, here, since src/cli/commands/dir.cpp already includes this
+// header for DirBlock/ProbeBlock and a config-shape ceiling belongs
+// beside the shape it constrains, not duplicated as two separate literal
+// 32s that could silently drift apart.
+inline constexpr int kMaxDirThreads = 32;
+
+// 03-12-PLAN.md Task 1 (T-3-58/T-3-59, D-01): the upper bounds on the two
+// `[probe]` magnitudes, enforced here (before the loader's own
+// `static_cast<int>` narrowing) and again at the CLI parse boundary
+// (src/cli/options.cpp's add_probe_flags). Both are `std::int64_t` so the
+// comparison against the loader's own `std::int64_t` node value needs no
+// cast under `-Wall -Wextra -Werror`.
+//
+// kMaxProbeMemoryBudgetMb: one tebibyte, expressed in megabytes
+// (1024*1024) -- far above any machine this tool runs on. Chosen so the
+// megabytes-to-bytes conversion (two successive `* 1024` steps, run
+// through `detail::checked_mul` in resolve_probe_memory_budget_bytes)
+// stays deep inside `int64_t`'s range (well short of ~8.4 * 10^18), and
+// so the value itself stays inside `int` for `ProbeBlock::memory_budget_mb`
+// -- both are what keep this bound from itself becoming an overflow.
+inline constexpr std::int64_t kMaxProbeMemoryBudgetMb = 1'048'576;
+
+// kMaxProbeTimeoutSeconds: twenty-four hours -- a per-file probe budget
+// longer than a day is not a budget. Chosen so the seconds-to-milliseconds
+// conversion (`* 1000`, run through `detail::checked_mul` in
+// resolve_probe_timeout_ms) stays deep inside `int64_t`'s range and the
+// value stays inside `int` for `ProbeBlock::timeout_seconds`.
+inline constexpr std::int64_t kMaxProbeTimeoutSeconds = 86'400;
+
 // The `[dir]` block (doc 01 section 10, plan 02-11): today, just the
 // worker-pool default thread count. `threads` is std::nullopt when the key
 // was absent from an otherwise-present `[dir]` table -- `[dir] threads`'s
 // own resolution precedence (below `--threads`, above hardware-concurrency
 // autodetection) is `src/cli/commands/dir.cpp`'s job, not this parser's;
 // this struct only carries what the table said, validated for shape (a
-// positive integer) at load time so a malformed value is reported the
-// moment the config is read rather than on the first `dir` invocation that
-// happens to fall through to it. Other `[dir]` fields (include/exclude
-// patterns, ...) remain unspecified by doc 01 section 10 and are left for
-// a future plan to add without walking this one back.
+// positive integer not exceeding kMaxDirThreads, T-2-41) at load time so
+// a malformed value is reported the moment the config is read rather than
+// on the first `dir` invocation that happens to fall through to it. Other
+// `[dir]` fields (include/exclude patterns, ...) remain unspecified by
+// doc 01 section 10 and are left for a future plan to add without
+// walking this one back.
 struct DirBlock {
   std::optional<int> threads;
+};
+
+// The `[probe]` block (doc 02 section 1.1, 03-02-PLAN.md Task 2; extended
+// by 03-03-PLAN.md Task 2, D-01): the per-file wall-clock probe budget in
+// seconds, plus the global probe-memory budget in megabytes. Both are
+// std::nullopt when their key was absent -- resolution precedence
+// (`--probe-timeout`/`--probe-memory-budget-mb` above these, above
+// src/probe/demux_session.h's kDefaultProbeBudgetMs /
+// src/probe/packet_scan.h's kDefaultProbeMemoryBudgetMb) is
+// src/cli/options.cpp's resolve_probe_timeout_ms/
+// resolve_probe_memory_budget_mb's job, not this parser's; this struct
+// only carries what the table said, validated for shape (a non-negative
+// integer for timeout_seconds, a positive integer for
+// memory_budget_mb -- matching --probe-memory-budget-mb's own
+// CLI::PositiveNumber check) at load time.
+struct ProbeBlock {
+  std::optional<int> timeout_seconds;
+  std::optional<int> memory_budget_mb;
 };
 
 // One `[override."<glob-on-relative-path>"]` block (doc 01 section 6, dir
@@ -86,6 +146,7 @@ struct ConfigFile {
   std::vector<GlobRule> tolerance;
   std::optional<TransformBlock> transform;
   std::optional<DirBlock> dir;
+  std::optional<ProbeBlock> probe;
   std::vector<OverrideBlock> overrides;
   std::string source_path;
 };

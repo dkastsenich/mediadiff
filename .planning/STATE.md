@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.1
-milestone_name: milestone
-current_phase: 02
-current_phase_name: core-engine
-status: "Phase 02 shipped — PR #2"
-stopped_at: Completed 02-11-PLAN.md (final plan of phase 02-core-engine)
-last_updated: "2026-09-02T11:28:42.844Z"
-last_activity: 2026-09-02
+current_phase: 1
+current_phase_name: Foundation & Toolchain
+status: "Phase 3 shipped — PR #3"
+stopped_at: "Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)"
+last_updated: "2026-09-09T07:34:56.042Z"
+last_activity: 2026-09-09
+state_head: 75329554af81a4e446e48515c0c4593adce26db6
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 24
-  completed_plans: 21
-last_activity_desc: Phase 02 execution started
+  total_phases: 7
+  completed_phases: 3
+  total_plans: 46
+  completed_plans: 46
+milestone_name: milestone
 ---
 
 # Project State
@@ -23,22 +23,22 @@ last_activity_desc: Phase 02 execution started
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 02 — core-engine
+**Current focus:** Phase 03 — Probe Layer, Container & Size
 
 ## Current Position
 
-Phase: 02 (core-engine) — EXECUTING
-Plan: 1 of 19
-Status: Phase 02 shipped — PR #2
-Last activity: 2026-09-02
+Phase: 1 — Foundation & Toolchain
+Plan: Not started
+Status: Phase 3 shipped — PR #3
+Last activity: 2026-09-09
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 22
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -46,7 +46,7 @@ Progress: [██████████] 100%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 03 | 22 | - | - |
 
 **Recent Trend:**
 
@@ -73,6 +73,28 @@ Progress: [██████████] 100%
 | Phase 02 P09 | 30min | 2 tasks | 34 files |
 | Phase 02-core-engine P10 | 35min | 3 tasks | 24 files |
 | Phase 02 P11 | 3h10min | 3 tasks | 30 files |
+| Phase 03 P01 | 50min | 4 tasks | 13 files |
+| Phase 03 P02 | 110min | 3 tasks | 37 files |
+| Phase 03 P03 | 100min | 3 tasks | 23 files |
+| Phase 03 P04 | 150min | 3 tasks | 27 files |
+| Phase 03 P05 | 140 | 3 tasks | 22 files |
+| Phase 03 P06 | 37min | 3 tasks | 25 files |
+| Phase 03 P07 | 40min | 3 tasks | 10 files |
+| Phase 03 P08 | 30min | 3 tasks | 22 files |
+| Phase 03 P09 | 90min | 3 tasks | 20 files |
+| Phase 03 P10 | 80min | 3 tasks | 20 files |
+| Phase 03 P11 | 45min | 4 tasks | 23 files |
+| Phase 03 P12 | 55min | 3 tasks | 14 files |
+| Phase 03 P13 | 55min | 3 tasks | 7 files |
+| Phase 03 P15 | 30min | 3 tasks | 17 files |
+| Phase 03 P14 | 60min | 3 tasks | 2 files |
+| Phase 03 P16 | 90min | 3 tasks | 13 files |
+| Phase 03 P17 | 55min | 2 tasks | 6 files |
+| Phase 03 P18 | 45min | 2 tasks | 4 files |
+| Phase 03 P19 | 65min | 3 tasks | 2 files |
+| Phase 03 P20 | 35min | 2 tasks | 2 files |
+| Phase 03 P21 | 46min | 3 tasks | 7 files |
+| Phase 03 P22 | 41min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -130,6 +152,58 @@ Recent decisions affecting current work:
 - [Phase ?]: Per-file policy resolution splits into a shared base Policy (builtin/profile/config-top-level, no path overrides, no CLI) plus resolve_policy_for_file applying path-matching config overrides then CLI overrides onto a copy per file, so no worker-pool job mutates shared state
 - [Phase ?]: A hard per-file error or partial-decode marker never aborts the corpus run mid-flight; exit-code escalation (hard error > any-partial > findings-based) is decided only after every requested report destination has been written
 - [Phase ?]: docs/schema/report-1.0.json extended with top-level oneOf(findings, files) and a shared $defs/summary, keeping the single-file document shape byte-for-byte unchanged while a corpus document validates under the same schema file
+- [Phase ?]: 03-01: SkipReason extended to 14 enumerators; Measurement.estimated/Finding.evidence added with single-seam propagation; detail::checked_div added; D-03 3x tolerance widening implemented; 27-id Phase-3 check roster approved (approve-as-proposed)
+- [Phase ?]: fingerprint_input distinguishes JSON-shaped-but-rejected snapshots from non-JSON via a first-non-whitespace-byte peek (looks_like_json_document), so a real probe never masks read_snapshot's own diagnostic
+- [Phase ?]: DemuxOptions::wall_clock_budget_ms defaults from a runtime-mutable atomic (default_wall_clock_budget_ms), so --probe-timeout reaches DemuxSession::open without orchestrator.cpp's frozen 2-arg fingerprint_input call site ever changing
+- [Phase ?]: Fixed report/model.cpp accumulate(): Summary.worst_gating no longer gates on a Status::pass finding's own declared severity -- only Status::warn/fail/error gate, restoring a clean exit on a routinely-passing fail-severity check
+- [Phase ?]: 03-03: Rule-1 fix — DemuxSession's AVIOInterruptCB heap-owned (std::unique_ptr) and disarmed in place, not by clearing the AVFormatContext field, since ffmpeg's avio layer copies the callback into its own URLContext at avio_open2() time independent of AVFormatContext::interrupt_callback thereafter (found via AddressSanitizer stack-use-after-return).
+- [Phase ?]: 03-03: D-01 byte budget accounted globally across all of one file's streams (a single running total), not per-stream — matches 'peak accounted bytes per in-flight file'; doc 02's per-stream 5M-packet ceiling stays a separate, independently-scoped mitigation.
+- [Phase ?]: 03-03: kMaxDirThreads(=32) relocated to src/config/toml_load.h as one named constant shared by dir.cpp's --threads path and toml_load.cpp's [dir] threads path, closing T-2-41.
+- [Phase ?]: [Phase 3, 03-04]: Measurement.skip_reason added (mirrors 03-01's Measurement.estimated) so an analyzer can explicitly mark a check not-applicable-here; compare/engine.cpp short-circuits to skipped ahead of normal dispatch, inspect.cpp renders it -- the engine's pre-existing unpaired-measurement path was verified (not assumed) to drop such a check with no Finding at all
+- [Phase ?]: [Phase 3, 03-04]: container.track_types/track_order canonical string encodings locked (comma-joined type tokens; comma-joined media_type:codec_name using avcodec_get_name) -- costly to change, enters committed snapshots
+- [Phase ?]: [Phase 3, 03-04]: per-stream meta.tags/meta.tags.language Scope.index is the stream's rank among same-media-type streams, not raw stream-array position (Claude's Discretion, mirrors CONT-08's program_number stability rationale)
+- [Phase ?]: container.mp4.* split into two AnalyzerSpecs (family-scoped real-data + family-agnostic not-applicable sibling) so bmff_scan never runs on non-MP4 bytes while inspect/compare still show an explicit skipped:not_applicable_container there -- the required pattern for 03-06/03-08's mkv/ts scanners too
+- [Phase ?]: container.mp4.fragment_duration's median always derives from PacketScan keyframe DTS deltas, never sidx -- bmff_scan's approved scope only records sidx presence, not segment durations
+- [Phase ?]: BoundedReader duplicated (not shared) between ebml_scan.cpp and bmff_scan.cpp -- the binary grammars diverge enough that sharing would add indirection without removing real duplication
+- [Phase ?]: Segment walk stops at first Cluster; a trailing Cues is located exclusively via a guarded single-hop SeekHead-follow (bounds-check + ID-verify, no recursion)
+- [Phase ?]: codec_delay ns-to-samples conversion is exclusively checked-integer arithmetic (checked_mul then checked_div), never floating point
+- [Phase ?]: container_family_token centralized as a shared core primitive so probe's ContainerFamily and compare's cross-container demotion can never disagree
+- [Phase ?]: 03-07: container_family.cpp needed no change -- confirmed empirically (inspect reports container.format==mpegts) that the existing mapping already covers this scanner's fixtures
+- [Phase ?]: 03-07: mux-rate estimate derived from the first valid consecutive same-PID PCR pair only (not averaged), kept as an unreduced exact rational, never divided in this scanner
+- [Phase ?]: 03-07: PSI section reassembly across packet boundaries is explicitly out of scope (T-3-33) -- a PAT/PMT section not fully contained in one packet is discarded and counted, never parsed from a truncated buffer
+- [Phase ?]: 03-08: Rule 1 fix -- ts_scan.cpp's mux-rate estimate carried an erroneous *8 bytes-to-bits factor (bytes_per_second_num/den was actually bits/sec); removed, companion test corrected.
+- [Phase ?]: 03-08: ProgramRateContext derives a per-program, PID-filtered mux-rate estimate in ts.cpp to sidestep ts_scan's flat list-adjacency limitation on interleaved multi-program PCR PIDs (03-07-SUMMARY.md's own flagged '03-08 owns' gap).
+- [Phase ?]: 03-08: CONT-08 unpaired-program topology-fail path added to compare/engine.cpp -- generic over Scope::Kind::program, Status::fail unconditional on severity policy, mirrors the cross_container demotion shape.
+- [Phase ?]: 03-09: DemuxSession::file_size_bytes() (avio_size on the already-open AVIOContext) added so size.file reads independently of PacketScan's own completeness -- the structural D-02 exemption for the one size.* check that is a property of the file, not the scan.
+- [Phase ?]: 03-09: size.peak_bitrate's window-count bound (T-3-46) is kMaxWindowSteps=10,000,000, checked via one division before the sliding-window sweep starts; the {1001,30000} timebase test found no accumulation-vs-closed-form numeric divergence is constructible for correct all-integer arithmetic -- the static '+= step' grep gate plus the 10,000-window/far-boundary-spike test are what actually gate the architecture.
+- [Phase ?]: 03-09: size_crf20.mp4/size_crf23.mp4 fixtures are -b:v (target-bitrate) driven, never -crf, extending gen_corpus.sh's own established never-libx264/GPL convention; a 13th fixture (size_partial.mp4, 25,000 tiny frames) was added beyond the plan's own fixture list since --probe-memory-budget-mb's 1 MB integer floor exceeds every other size_*.mp4 fixture's real packet-store need.
+- [Phase ?]: 03-10: Mutation offsets derive from raw std::mt19937 output modulo range, never uniform_int_distribution (T-3-52) -- unspecified mapping across standard libraries would make a red CI leg unreproducible cross-platform
+- [Phase ?]: 03-10: PRNG-seeded byte-flip test asserts 'never crashes, stays in bounds' rather than 'always degrades' -- empirically confirmed real scanners correctly tolerate most payload-region single-byte flips as valid (if anomalous) data
+- [Phase ?]: 03-10: TS truncation at 10/50/90% needs truncate_to_fraction_off_stride -- ts_single.ts's 1270-packet count is evenly divisible by 10, so naive byte-fraction truncation coincidentally lands on packet boundaries and produces a validly-short (not corrupt) stream
+- [Phase ?]: 03-10: TSDuck goldens captured via scripts/capture_tsduck_golden.sh (developer-only), compared read-only in CI via scripts/lint_tsduck_goldens.sh -- TSDuck never linked/installed on CI (TRUST-09, D-04 closed)
+- [Phase ?]: 03-11: sanitize_for_display sanitizes before elision (never after), so an invisible escape sequence in a truncated tag value cannot corrupt width accounting or reappear unescaped past the ellipsis
+- [Phase ?]: 03-11: inspect_render.h is a deliberate 4th sanitize_for_display call site (inspect's own text render), following Task 2's specific action text over the plan's summary verification line -- grep now shows 4 render call sites, which is correct
+- [Phase ?]: 03-11: json.cpp/junit.cpp deliberately NOT sanitized -- wire-level JSON/XML escaping already applies; double-escaping would corrupt goldens
+- [Phase ?]: 03-11: TRUST-06's corruption-catches-a-regression proof done manually once against a non-committed scratch fixture, per the plan's own acceptance criterion not to commit the corruption
+- [Phase ?]: 03-11: DOC-03's gate calls the real CLI binary for every declared pair, matching every sibling integration test's convention; every trigger/clean pair verified empirically against the real binary before being written into the table
+- [Phase ?]: [03-12]: kMaxProbeMemoryBudgetMb=1048576 MB / kMaxProbeTimeoutSeconds=86400s, bounded at both TOML loader and CLI parse boundary; resolve_probe_memory_budget_bytes is the single MB-to-bytes conversion point for all four command entry points.
+- [Phase 03]: 03-13: Same-timebase tick-value ordering replaces compare_ticks_checked in container.mp4.fragment_duration's median (CR-02) -- valid because every duration compared shares one already-positive-validated timebase by construction, never a general substitute for cross-timebase comparisons
+- [Phase 03]: 03-13: WR-02 (ts.cpp byte-offset checked_sub) and WR-03 (pass.h/orchestrator.cpp stale ts_scan consumer comments) fixed in the same plan as CR-01/CR-02 since both touch files this plan already opened; sanitizer (ASan/UBSan) build remains deferred per this plan's own flagged_assumptions
+- [Phase 03]: [Phase 03, 03-15]: T-2-33 completed across every output format -- xml_escape's own \xHH escaping closes JUnit XML (CR-03, no XML numeric character reference, which is equally illegal); one CLI diagnostic sink (report_cli_error) closes the 44-site stderr gap (WR-01); lint scan-list generalized + a second stderr-sink rule closes IN-02; 02-SECURITY.md corrected (not re-marked) to show the 03-11 closure was premature
+- [Phase 03]: 03-14: Fixed check_corpus.sh's mapfile (bash-4-only) with a while-read loop for macOS bash 3.2 compatibility -- confirmed necessary by a real CI run (PR #3, run 33951407521); findings 2-4 (ebml_scan.cpp NOMINMAX clash, ffmpeg-version-drifted goldens, vcpkg NuGet feed credentials) are out of scope, recorded in WINDOWS.md #9-#11, not fixed
+- [Phase 03]: [Phase 3, 03-16]: Pinned fixture-synthesis ffmpeg by URL+SHA-256 (martin-riedl.de for Linux/macOS, BtbN/FFmpeg-Builds LGPL for Windows) replacing rolling apt/brew/choco installs; conda-forge rejected as each package needs ~40 separate shared-library dependencies, incompatible with a single-file checksum-verified install.
+- [Phase 03]: [Phase 3, 03-16]: Discovered the same checksum-verified pinned ffmpeg binary produces different fixture bytes on GitHub's x64-linux runner than on a local workstation (CPU SIMD-dispatch difference, not a build/version difference) -- goldens must be captured from the real blocking-leg CI runner via a temporary diagnostic step, never assumed portable from a dev machine even with an identical pinned binary.
+- [Phase 03]: Suppressed only NOMINMAX (not WIN32_LEAN_AND_MEAN) via a per-target CMake function applied to all four first-party targets, fixing the x64-windows-static-md C2059 build failure at the source level — WIN32_LEAN_AND_MEAN would remove declarations src/cli/main.cpp and src/util/fs.h depend on; fixing once in CMake avoids per-call-site parenthesization that would hide the defect at future sites
+- [Phase 03]: Kept JUnit's backslash-doubling fix local to xml_escape rather than routing through sanitize_for_display — Routing through sanitize_for_display would double-escape the four XML metacharacters and move every committed JUnit golden
+- [Phase 03]: 03-18: comments in the two fixed lints omit the literal words mapfile/readarray so Task 1's raw grep -c acceptance check reports 0; lint_bash4_builtins.sh's own self-matching pattern-def/label/fixture lines carry # bash4-allow so the lint can include itself in scope — check_corpus.sh's verbatim comment mentions the builtin by name and is excluded from this raw grep scope, but the two Task-1 files ARE scanned by the literal grep, so their explanatory comments had to be rephrased without the literal builtin names while restating the same rationale in full
+- [Phase 03]: D-GAP-01 corpus-identity policy: designated (not uniform) — chosen by the developer on Task 1's real-run evidence (run 33983460934): x64-linux/x64-windows-static-md byte-identical on all 80 fixtures, arm64-osx diverging on 76/80; byte-exact fixture-derived goldens are pinned to x64-linux only, exclusion elsewhere is named and counted (EXPECTED_EXCLUDED_COUNT=5), never loosened
+- [Phase 03]: 03-20: SC5 reported NOT closed on direct run-log evidence (run 33990099158) -- 2 of 3 blocking legs green (arm64-osx and x64-windows-static-md both fail at Build for reasons unrelated to TRUST-06, WINDOWS.md #13/#16); only 2 of 4 required trust06_idempotence Passed lines observed since arm64-osx's Test step never runs
+- [Phase 03]: 03-20: WINDOWS.md corrected -- entry #10's ffmpeg-version claim fixed to 6.1.1-3ubuntu5 (not 9.0.1); entry #9 closed on narrow cited evidence (ebml_scan.cpp compiles cleanly under MSVC, not on the false claim that Build succeeded); new entries #15 (macOS bash-3.2 crash, closed), #16 (Windows report_cli_error defect, open, NOT fixed -- out of plan scope), #17 (designated-leg narrowed golden coverage, open)
+- [Phase 03]: 03-21: Stopped Task 3's CI round-trip loop at round 2 of 4 once its own literal acceptance criteria (blocking legs Build==success count=3, Test!=skipped count=3) were met on real CI run 34021508083 -- first time all three blocking legs reach Test in this phase's history
+- [Phase 03]: 03-21: Reverted a speculative scripts/gen_corpus.sh fixture-margin fix for arm64-osx's size.stream_bitrate test failure after determining it requires regenerating tests/golden/CORPUS_DIGEST.txt from real designated-leg CI output; recorded as WINDOWS.md #20 (open) for next round instead
+- [Phase 03]: ROADMAP SC5 closed on real CI run 34023871831 (head 64bc168): all three blocking legs + lint conclude success at the job level, four trust06_idempotence Passed lines observed, x64-windows-static-md Test step observed concluding for the first time in this phase's history.
+- [Phase 03]: Fixed two newly-discovered blocking-leg CI defects (WINDOWS.md #21 GITHUB_PATH format bug, #20 arm64-osx bitrate margin) within Task 1's 3-round-trip budget; recorded but deliberately left open a third (#22, x64-linux corpus-digest run-to-run non-reproducibility on mkv_opus_a/b.webm).
+- [Phase 1]: [Quick 260908-oax]: WINDOWS.md #22 waived (not fixed) -- scripts/assert_corpus_digest.sh excludes mkv_opus_a.webm, mkv_opus_b.webm and the derived CORPUS_DIGEST_SUMMARY line (exactly 3, count-guarded) from D-GAP-01's byte-exact comparison; libopus's cross-host CPU-feature dispatch is not fixable at this layer. Residual gap tracked openly at WINDOWS.md #24.
 
 ### Pending Todos
 
@@ -141,6 +215,7 @@ None yet.
 - **Priming extraction spike is open.** Research flagged (v2 EXT-05) whether lightweight audio-priming extraction from container metadata is feasible ahead of the Phase 6 decode path. Until answered, Phase 5's `timeline.av_offset`/`av_drift` ship with `priming: unknown` on the common case — covered by TIME-10 fixtures, not closed.
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
+- **RESOLVED by 03-14 (real CI evidence, PR #3, run 33951407521; WINDOWS.md #8 marked fixed).** `scripts/gen_corpus.sh` is now invoked, unconditionally, before `Configure` on every matrix leg. **Correction to the original scope:** the gap covered all 5 legs, not 4 — the Windows leg's `gen_corpus.ps1` generated zero fixtures and ran after `Test`, so the `Test` step ran without media fixtures on every leg, not just Linux/macOS. The real run confirmed the corpus steps execute in the correct order on all five legs; the macOS legs' only failure was `check_corpus.sh`'s own bash-3.2 incompatibility (`mapfile`), fixed same-plan (`91d9d2f`). Full five-leg green is **not yet achieved**: x64-windows-static-md and x64-linux both fail for reasons unrelated to the corpus (WINDOWS.md #9: `ebml_scan.cpp:348` NOMINMAX/`std::max` macro clash on MSVC; WINDOWS.md #10: committed byte-level goldens generated against a different ffmpeg build than CI's installed 9.0.1). arm64-linux's non-blocking `Register vcpkg NuGet feed` credentials failure is WINDOWS.md #11. BUILD-01/BUILD-05/BUILD-06 (below) remain unproven pending a fully green run.
 
 ### Quick Tasks Completed
 
@@ -148,6 +223,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260815-m5g | Pin Python to 3.11+ in CI so the Phase 2 registry generator can rely on stdlib tomllib | 2026-08-15 | 2a628fd | [260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-](./quick/260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-/) |
 | 260902-it6 | Migrate CLI option binding from shared_ptr to CLI::Option* (03-CONTEXT.md D-05) | 2026-09-02 | 8258c83 | [260902-it6-migrate-cli-option-binding-from-shared-p](./quick/260902-it6-migrate-cli-option-binding-from-shared-p/) |
+| 260908-oax | Narrow the corpus digest assertion to exclude the two libopus fixtures from byte-exact comparison (WINDOWS.md #22) | 2026-09-08 | ae0efaf | [260908-oax-narrow-the-corpus-digest-assertion-to-ex](./quick/260908-oax-narrow-the-corpus-digest-assertion-to-ex/) |
 
 ## Deferred Items
 
@@ -159,6 +235,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-08-15T20:23:07.053Z
-Stopped at: Completed 02-11-PLAN.md (final plan of phase 02-core-engine)
+Last session: 2026-09-08T15:48:02.140Z
+Stopped at: Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)
 Resume file: None

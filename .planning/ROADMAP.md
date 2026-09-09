@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Foundation & Toolchain** - Static binary builds and runs on three platforms, with every toolchain decision recorded
 - [x] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements (completed 2026-08-18)
-- [ ] **Phase 3: Probe Layer, Container & Size** - Real media enters: header pass, packet sweep, raw scanners, all `container.*`/`meta.*`/`size.*` checks
+- [x] **Phase 3: Probe Layer, Container & Size** - Real media enters: header pass, packet sweep, raw scanners, all `container.*`/`meta.*`/`size.*` checks (completed 2026-09-06)
 - [ ] **Phase 4: Video Analysis** - Parser pass plus every `video.*` parameter, GOP, colorimetry and HDR check
 - [ ] **Phase 5: Timeline Analysis** - Every `timeline.*` check and the flagship A/V drift algorithm on integer/rational math
 - [ ] **Phase 6: Audio Analysis** - Audio decode path, determinism classes in practice, every `audio.*` check plus sample hashing
@@ -171,7 +171,88 @@ Plans:
   4. Each file is read exactly once: analyzers declare the passes they need, the orchestrator runs the union, packet-interval statistics are computed once as a shared probe-level primitive available to both the video and timeline families, and peak memory per in-flight file is measured and bounded so `--threads N` is an honest memory knob.
   5. Encoding a fixture twice with identical settings and comparing under `sw-encoder` comes back clean as a CI release blocker; every check above has both a triggering fixture pair and a clean one; and `ts_scan`'s output agrees with TSDuck's analysis of the same fixtures through a manual jig.
 
-**Plans**: TBD
+**Plans**: 22/22 plans executed (20/22 executed; 2 further gap-closure plans added after gap-closure round 2's re-verification left ROADMAP SC5 open on two one-line source defects)
+
+Plans:
+**Wave 1**
+
+- [x] 03-01-PLAN.md — Core-model prerequisites: extend `SkipReason` across all four consuming sites, add `Measurement.estimated` and `Finding.evidence`, add `checked_div`, approve the 27-id check roster
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 03-02-PLAN.md — TRACER: `DemuxSession` + pass seam + `fingerprint_input`, `container.format` end-to-end through all four CLI commands
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 03-03-PLAN.md — `PacketScan` sweep, D-01 memory budget divided by threads, PROBE-10 shared primitive, `--threads` ceiling
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 03-04-PLAN.md — Topology expansion (`track_count`/`track_types`/`track_order`/`chapters`) plus `meta.tags` and `meta.tags.language`
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 03-05-PLAN.md — `bmff_scan` bounded box walk and the six `container.mp4.*` checks
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 03-06-PLAN.md — `ebml_scan` vint walk, the four `container.mkv.*` checks, and CONT-02 cross-container demotion
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [x] 03-07-PLAN.md — `ts_scan`: stride autodetect, bounded PID table, PCR/PSI parsing, mux-rate estimate, ISO 13818-1 continuity carve-outs
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [x] 03-08-PLAN.md — The six `container.ts.*` checks, D-03's estimated marker, and CONT-08 program-number scoping
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [x] 03-09-PLAN.md — The four `size.*` checks with DTS-in-ticks windowing and D-02's truncated-scan refusal
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [x] 03-10-PLAN.md — PROBE-09 deterministic degradation smoke across every scanner, plus TRUST-09's TSDuck goldens
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [x] 03-11-PLAN.md — Close T-2-33, render the `inspect` container section, TRUST-06 release blocker, DOC-03 coverage gate
+
+**Wave 12** *(gap closure — blocked on Wave 11; TRACER: one gap closed end-to-end before expansion)*
+
+- [x] 03-12-PLAN.md — GAP 2: bound and `checked_mul` the probe budget/timeout so an ordinary flag value can never silently blank every `size.*` check (SIZE-01, DIR-06)
+
+**Wave 13** *(gap closure — blocked on Wave 12; three independent plans, zero file overlap)*
+
+- [x] 03-13-PLAN.md — GAP 1: remove the reachable UB in `container.mp4.fragment_duration` (checked deltas, a total order that cannot overflow) plus an extreme-DTS regression test (CONT-05, PROBE-09)
+- [x] 03-14-PLAN.md — GAP 3: generate and verify the media corpus before the Test step on every CI leg, so TRUST-06 can actually run as a release blocker (TRUST-06, DOC-03)
+- [x] 03-15-PLAN.md — Complete the T-2-33 choke point: control-byte-safe JUnit XML, one sanitizing CLI diagnostic helper, lint scan list corrected (CONT-03, CONT-04)
+
+**Wave 14** *(gap closure round 2 — blocked on Wave 13; TRACER: one blocking leg proven green end-to-end on real CI before expansion)*
+
+- [x] 03-16-PLAN.md — SC5/D-GAP-01: pin the fixture-synthesis ffmpeg by URL + SHA-256 on all five legs, re-baseline the fixture-derived goldens once against that build, prove x64-linux green on a real run with TRUST-06 observed passing (TRUST-06, TRUST-09, DOC-03)
+
+**Wave 15** *(gap closure round 2 — blocked on Wave 14; two independent plans, zero file overlap)*
+
+- [x] 03-17-PLAN.md — D-GAP-02 (a)+(d): suppress the Windows min/max macros for every first-party target so the MSVC leg builds, add the standard header ebml_scan actually needs, and make the JUnit escaper's control-byte output unambiguous (CONT-06, CONT-02, CONT-03, CONT-04)
+- [x] 03-18-PLAN.md — D-GAP-02 (c): remove the last bash-4-only builtins from `scripts/` and add a permanent bash-3.2 portability gate to the required lint job (TRUST-06, DOC-03)
+
+**Wave 16** *(gap closure round 2 — blocked on Wave 15)*
+
+- [x] 03-19-PLAN.md — Prove or disprove cross-platform corpus byte-identity under the pin from real per-leg digests, then make the confirmed policy a standing CI gate (TRUST-06, TRUST-09, DOC-03)
+
+**Wave 17** *(gap closure round 2 — blocked on Wave 16)*
+
+- [x] 03-20-PLAN.md — Close SC5 on observed run-log evidence (three blocking legs green, TRUST-06 passing on x64-linux and arm64-osx) and correct the stale WINDOWS.md / 03-VERIFICATION.md records (TRUST-06, DOC-03)
+
+**Wave 18** *(gap closure round 3 — TRACER: the two blocking-leg build defects proven end-to-end from source edit to observed CI Build conclusions before any expansion)*
+
+- [x] 03-21-PLAN.md — Remove the unused `kClusterId` constant's AppleClang `-Werror` failure by giving it the untested unknown-size-Cluster case it was meant for, qualify `report_cli_error` inside `wmain` for MSVC, close code-review WR-01 (two lint-gate bypasses plus per-check self-test fixtures) and WR-02 (tar.xz path-traversal validation), then drive all three blocking legs to Build success and a reached Test step (TRUST-06, PROBE-05)
+
+**Wave 19** *(gap closure round 3 — blocked on Wave 18)*
+
+- [x] 03-22-PLAN.md — Close SC5 on observed run-log evidence (four `trust06_idempotence` Passed lines on x64-linux and arm64-osx, and the x64-windows-static-md Test step concluding for the first time in this phase's history), then reconcile the WINDOWS.md defect ledger and the REQUIREMENTS.md TRUST-06 status against that evidence (TRUST-06, TRUST-09, DOC-03)
+
 **Source doc**: `claude_docs/02-container-analysis.md` (design-doc phase 2), plus `size.*` from `claude_docs/06-content-and-size-analysis.md` §4
 
 ### Phase 4: Video Analysis
@@ -251,7 +332,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Toolchain | 4/5 | In Progress|  |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
-| 3. Probe Layer, Container & Size | 0/TBD | Not started | - |
+| 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 0/TBD | Not started | - |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |

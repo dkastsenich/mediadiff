@@ -70,12 +70,13 @@ struct Summary {
   int fail = 0;
   int skipped = 0;
   int error = 0;
-  // The highest resolved Severity among every finding this Summary was
-  // computed over (Severity::ignore when there are none) -- a different
-  // axis from the Status counts above: a tol comparator's two-threshold
-  // form can resolve Status::pass on a check whose own severity is
-  // Severity::fail, so worst_gating is computed from severity alone,
-  // independently of status.
+  // The highest resolved Severity among every finding that actually gates
+  // this run (Status::warn, Status::fail or Status::error -- see
+  // report/model.cpp's accumulate() for the full rationale, corrected by
+  // 03-02-PLAN.md: severity alone cannot distinguish "this check could
+  // gate if it differed" from "this check did"). Severity::ignore when
+  // there are none, including when every evaluated check resolved
+  // Status::pass regardless of its own declared severity.
   Severity worst_gating = Severity::ignore;
 
   bool operator==(const Summary&) const = default;

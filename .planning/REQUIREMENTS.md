@@ -79,32 +79,32 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **DIR-03**: `dir` output rolls up per-file summaries, corpus totals, and a worst-N table in TTY, with a `files[]` layer in JSON using the same finding schema
 - [x] **DIR-04**: File processing order is deterministic (sorted relative paths) so reports diff cleanly across runs
 - [x] **DIR-05**: `--threads N` bounds a worker pool across files while analyzer code stays single-file-synchronous
-- [ ] **DIR-06**: **[R]** Peak memory per in-flight file is bounded and asserted, since `--threads` is simultaneously the concurrency and the memory knob (research: ARCHITECTURE)
+- [x] **DIR-06**: **[R]** Peak memory per in-flight file is bounded and asserted, since `--threads` is simultaneously the concurrency and the memory knob (research: ARCHITECTURE)
 
 ### Probe Layer
 
-- [ ] **PROBE-01**: `DemuxSession` opens any supported input with `AVFMT_FLAG_GENPTS` **off**, a hard wall-clock budget via interrupt callback, and captures libav warnings into fingerprint diagnostics
-- [ ] **PROBE-02**: `PacketScan` performs one `av_read_frame` sweep with no decode, recording per-stream `{pts, dts, duration, size, flags, pos}` and byte totals, capping at 5M packets/stream with `partial:true` beyond
+- [x] **PROBE-01**: `DemuxSession` opens any supported input with `AVFMT_FLAG_GENPTS` **off**, a hard wall-clock budget via interrupt callback, and captures libav warnings into fingerprint diagnostics
+- [x] **PROBE-02**: `PacketScan` performs one `av_read_frame` sweep with no decode, recording per-stream `{pts, dts, duration, size, flags, pos}` and byte totals, capping at 5M packets/stream with `partial:true` beyond
 - [ ] **PROBE-03**: `ParserScan` extends the same sweep to record per-access-unit `pict_type`, `key_frame`, `repeat_pict`, `field_order`, plus NAL-type sequences for H.264/HEVC, at under 10% overhead over plain PacketScan
-- [ ] **PROBE-04**: `bmff_scan` reads MP4/MOV top-level box order and offsets, `ftyp` brands, `mvhd`/`mdhd` timescales, `elst` entries, and `moof`/`sidx` presence without loading payloads
-- [ ] **PROBE-05**: `ebml_scan` reads Matroska/WebM element offsets (SeekHead, Info, Tracks, first Cluster, Cues), `TimestampScale`, `Duration` presence, and per-track `CodecDelay`/`SeekPreRoll`
-- [ ] **PROBE-06**: `ts_scan` resyncs on 0x47 with 188/192/204 autodetect and extracts per-PID counts, continuity-counter state, PCR values, PAT/PMT parsing with version tracking, and null-packet counts
-- [ ] **PROBE-07**: **[R]** `ts_scan` implements the ISO 13818-1 §2.4.3.3 continuity-counter carve-outs explicitly — increment only on payload-carrying packets, one duplicate allowed, `discontinuity_indicator` resets counted separately (research: PITFALLS — hand-rolled CC logic false-alarms without these)
-- [ ] **PROBE-08**: Every analyzer declares which passes it needs and the orchestrator runs the union exactly once per file — no analyzer re-reads the file
-- [ ] **PROBE-09**: Unparseable structure degrades to `skipped:unparsed_mechanism` with a byte offset in evidence — never a crash, never a silent pass; truncated and garbage inputs exit `65` cleanly
-- [ ] **PROBE-10**: **[R]** Packet-interval statistics are computed once as a shared probe-level primitive consumed by both `video.frame_rate.measured` and `timeline.*`, resolving the phase-3-depends-on-phase-4 inversion (research: ARCHITECTURE hazard A)
+- [x] **PROBE-04**: `bmff_scan` reads MP4/MOV top-level box order and offsets, `ftyp` brands, `mvhd`/`mdhd` timescales, `elst` entries, and `moof`/`sidx` presence without loading payloads
+- [x] **PROBE-05**: `ebml_scan` reads Matroska/WebM element offsets (SeekHead, Info, Tracks, first Cluster, Cues), `TimestampScale`, `Duration` presence, and per-track `CodecDelay`/`SeekPreRoll`
+- [x] **PROBE-06**: `ts_scan` resyncs on 0x47 with 188/192/204 autodetect and extracts per-PID counts, continuity-counter state, PCR values, PAT/PMT parsing with version tracking, and null-packet counts
+- [x] **PROBE-07**: **[R]** `ts_scan` implements the ISO 13818-1 §2.4.3.3 continuity-counter carve-outs explicitly — increment only on payload-carrying packets, one duplicate allowed, `discontinuity_indicator` resets counted separately (research: PITFALLS — hand-rolled CC logic false-alarms without these)
+- [x] **PROBE-08**: Every analyzer declares which passes it needs and the orchestrator runs the union exactly once per file — no analyzer re-reads the file
+- [x] **PROBE-09**: Unparseable structure degrades to `skipped:unparsed_mechanism` with a byte offset in evidence — never a crash, never a silent pass; truncated and garbage inputs exit `65` cleanly
+- [x] **PROBE-10**: **[R]** Packet-interval statistics are computed once as a shared probe-level primitive consumed by both `video.frame_rate.measured` and `timeline.*`, resolving the phase-3-depends-on-phase-4 inversion (research: ARCHITECTURE hazard A)
 
 ### Container & Metadata Checks
 
-- [ ] **CONT-01**: Container-agnostic topology checks work: `container.format`, `track_count`, `track_types`, `track_order`, `chapters`
-- [ ] **CONT-02**: A cross-container migration demotes cleanly — `container.<fmt>.*` on both sides becomes `skipped:cross_container` and comparison proceeds at the semantic layer
-- [ ] **CONT-03**: `meta.tags` compares as a set with a volatile ignore list (`creation_time`, `encoder`, `handler_name`, `encoding_tool`), showing ignored-but-differing values under `-v`
-- [ ] **CONT-04**: `meta.tags.language` treats `und` and absent as equal, since that divergence is a muxer artifact and not a regression
-- [ ] **CONT-05**: MP4/MOV checks work: `faststart`, `brands`, `fragmentation`, `edit_list`, `timescale`
-- [ ] **CONT-06**: Matroska/WebM checks work: `cues_placement`, `codec_delay`, `timestamp_scale`, `duration_element`
-- [ ] **CONT-07**: MPEG-TS checks work: `cc_errors`, `pcr_interval`, `psi_interval`, `null_ratio`
-- [ ] **CONT-08**: Multi-program TS emits program-scoped measurements paired by `program_number`, with unpaired programs reported as a topology failure
-- [ ] **CONT-09**: **[R]** Subtitle and caption track presence is explicitly covered and tested, not merely assumed to fall out of generic stream-presence checks (research: FEATURES gap 4)
+- [x] **CONT-01**: Container-agnostic topology checks work: `container.format`, `track_count`, `track_types`, `track_order`, `chapters`
+- [x] **CONT-02**: A cross-container migration demotes cleanly — `container.<fmt>.*` on both sides becomes `skipped:cross_container` and comparison proceeds at the semantic layer
+- [x] **CONT-03**: `meta.tags` compares as a set with a volatile ignore list (`creation_time`, `encoder`, `handler_name`, `encoding_tool`), showing ignored-but-differing values under `-v`
+- [x] **CONT-04**: `meta.tags.language` treats `und` and absent as equal, since that divergence is a muxer artifact and not a regression
+- [x] **CONT-05**: MP4/MOV checks work: `faststart`, `brands`, `fragmentation`, `edit_list`, `timescale`
+- [x] **CONT-06**: Matroska/WebM checks work: `cues_placement`, `codec_delay`, `timestamp_scale`, `duration_element`
+- [x] **CONT-07**: MPEG-TS checks work: `cc_errors`, `pcr_interval`, `psi_interval`, `null_ratio`
+- [x] **CONT-08**: Multi-program TS emits program-scoped measurements paired by `program_number`, with unpaired programs reported as a topology failure
+- [x] **CONT-09**: **[R]** Subtitle and caption track presence is explicitly covered and tested, not merely assumed to fall out of generic stream-presence checks (research: FEATURES gap 4)
 
 ### Video Checks
 
@@ -150,7 +150,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Content, Quality & Size Checks
 
-- [ ] **SIZE-01**: `size.file`, `size.stream_bitrate`, `size.peak_bitrate`, and `size.overhead` work, with peak windowing defined on DTS in ticks and rational bounds for cross-platform identity
+- [x] **SIZE-01**: `size.file`, `size.stream_bitrate`, `size.peak_bitrate`, and `size.overhead` work, with peak windowing defined on DTS in ticks and rational bounds for cross-platform identity
 - [ ] **CONTENT-01**: `content.video.frame_hash` hashes exactly `bytes_per_row(width) × height` per plane — never `linesize` — chained with PTS, pix_fmt and dimensions
 - [ ] **CONTENT-02**: A hash mismatch reports the first divergent frame (index + PTS), contiguous divergent ranges merged at 1-frame gaps, and the total differing count
 - [ ] **CONTENT-03**: `--sample N` marks the fingerprint `sampled:N` and only equal-N fingerprints compare; mismatched sampling reports `skipped:sampling_mismatch`
@@ -170,16 +170,16 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
 - [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
 - [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
-- [ ] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
+- [x] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
 - [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains
 - [x] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
-- [ ] **TRUST-09**: `ts_scan` output is cross-checked against TSDuck's analysis of the same fixtures via a manual test jig, without linking TSDuck
+- [x] **TRUST-09**: `ts_scan` output is cross-checked against TSDuck's analysis of the same fixtures via a manual test jig, without linking TSDuck
 
 ### Documentation & Explainability
 
 - [x] **DOC-01**: Every registered check has a `docs/checks/<id>.md` file, enforced by the build rather than by review discipline
 - [x] **DOC-02**: Every check's `--explain` text states what the check measures, why it matters, and how to accept, tune, or silence it
-- [ ] **DOC-03**: Every check is demonstrated by at least one fixture pair that triggers it and one that comes back clean
+- [x] **DOC-03**: Every check is demonstrated by at least one fixture pair that triggers it and one that comes back clean
 - [ ] **DOC-04**: Timeline fixtures assert the *no-others* clause — the intended finding fires and nothing else does
 
 ### Performance
@@ -299,26 +299,26 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | DIR-03 | Phase 2 | Complete |
 | DIR-04 | Phase 2 | Complete |
 | DIR-05 | Phase 2 | Complete |
-| DIR-06 | Phase 3 | Pending |
-| PROBE-01 | Phase 3 | Pending |
-| PROBE-02 | Phase 3 | Pending |
+| DIR-06 | Phase 3 | Complete |
+| PROBE-01 | Phase 3 | Complete |
+| PROBE-02 | Phase 3 | Complete |
 | PROBE-03 | Phase 4 | Pending |
-| PROBE-04 | Phase 3 | Pending |
-| PROBE-05 | Phase 3 | Pending |
-| PROBE-06 | Phase 3 | Pending |
-| PROBE-07 | Phase 3 | Pending |
-| PROBE-08 | Phase 3 | Pending |
-| PROBE-09 | Phase 3 | Pending |
-| PROBE-10 | Phase 3 | Pending |
-| CONT-01 | Phase 3 | Pending |
-| CONT-02 | Phase 3 | Pending |
-| CONT-03 | Phase 3 | Pending |
-| CONT-04 | Phase 3 | Pending |
-| CONT-05 | Phase 3 | Pending |
-| CONT-06 | Phase 3 | Pending |
-| CONT-07 | Phase 3 | Pending |
-| CONT-08 | Phase 3 | Pending |
-| CONT-09 | Phase 3 | Pending |
+| PROBE-04 | Phase 3 | Complete |
+| PROBE-05 | Phase 3 | Complete |
+| PROBE-06 | Phase 3 | Complete |
+| PROBE-07 | Phase 3 | Complete |
+| PROBE-08 | Phase 3 | Complete |
+| PROBE-09 | Phase 3 | Complete |
+| PROBE-10 | Phase 3 | Complete |
+| CONT-01 | Phase 3 | Complete |
+| CONT-02 | Phase 3 | Complete |
+| CONT-03 | Phase 3 | Complete |
+| CONT-04 | Phase 3 | Complete |
+| CONT-05 | Phase 3 | Complete |
+| CONT-06 | Phase 3 | Complete |
+| CONT-07 | Phase 3 | Complete |
+| CONT-08 | Phase 3 | Complete |
+| CONT-09 | Phase 3 | Complete |
 | VIDEO-01 | Phase 4 | Pending |
 | VIDEO-02 | Phase 4 | Pending |
 | VIDEO-03 | Phase 4 | Pending |
@@ -352,7 +352,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | AUDIO-08 | Phase 6 | Pending |
 | AUDIO-09 | Phase 6 | Pending |
 | AUDIO-10 | Phase 6 | Pending |
-| SIZE-01 | Phase 3 | Pending |
+| SIZE-01 | Phase 3 | Complete |
 | CONTENT-01 | Phase 7 | Pending |
 | CONTENT-02 | Phase 7 | Pending |
 | CONTENT-03 | Phase 7 | Pending |
@@ -369,13 +369,13 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TRUST-03 | Phase 2 | Complete |
 | TRUST-04 | Phase 7 | Pending |
 | TRUST-05 | Phase 2 | Complete |
-| TRUST-06 | Phase 3 | Pending |
+| TRUST-06 | Phase 3 | Complete |
 | TRUST-07 | Phase 7 | Pending |
 | TRUST-08 | Phase 2 | Complete |
-| TRUST-09 | Phase 3 | Pending |
+| TRUST-09 | Phase 3 | Complete |
 | DOC-01 | Phase 2 | Complete |
 | DOC-02 | Phase 2 | Complete |
-| DOC-03 | Phase 3 | Pending |
+| DOC-03 | Phase 3 | Complete |
 | DOC-04 | Phase 5 | Pending |
 | PERF-01 | Phase 5 | Pending |
 | PERF-02 | Phase 7 | Pending |

@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "G-02-2 — arm64-osx CI leg aborts in its own ctest test-count sanity guard before running any test. Error: could not parse a test count from 'ctest -N' in build/arm64-osx — refusing to assume the suite is healthy."
 created: 2026-08-16T00:00:00Z
-updated: 2026-08-16T00:00:00Z
+updated: 2026-09-06T00:00:00Z
 mode: find_root_cause_only
 bug_class: Bohrbug (deterministic — reproduces on every arm64-osx run; platform-conditional, not transient)
 ---
@@ -183,9 +183,34 @@ root_cause: |
 
 fix: NOT APPLIED — diagnose-only mode (goal: find_root_cause_only). gsd-planner owns the fix.
 
-verification: n/a — no fix applied this session.
+resolved_at: 2026-09-06
+resolved_by: "closed retroactively during /gsd-debug triage — the fix landed in later phase work, this session was never marked resolved"
 
-files_changed: []
+fix: |
+  Applied as suggested. `.github/workflows/ci.yml` now parses the count with the
+  POSIX-portable form at both guard sites:
+
+    TOTAL=$(ctest --test-dir "$TEST_DIR" -N | sed -n 's/^Total Tests: \([0-9][0-9]*\)$/\1/p' || true)
+
+  ci.yml:345 (unfiltered count) and ci.yml:375 (filtered count, for the designated-leg
+  golden exclusion added later by 03-19). No `\+` BRE quantifier remains anywhere in the
+  workflow. The step also carries an 11-line comment (ci.yml:334-344) recording that this
+  pipeline runs under BSD sed on the macOS legs and that the original defect shipped
+  behind a GNU-sed-only verification claim — the second follow-up this session asked for.
+
+verification: |
+  Real CI run 34033745470 (head f278060, conclusion: success): `build (arm64-osx)` concludes
+  Build=success AND Test=success. The suite now executes on macOS rather than aborting in the
+  count guard. Confirmed green across three consecutive runs (34023871831, 34024554848,
+  34033745470).
+
+  The session's own caveat — "fixing this UNBLOCKS the step but does not guarantee a green
+  leg" — proved accurate: genuine macOS failures did surface behind the guard and were closed
+  separately as WINDOWS.md #13 (AppleClang unused-const-variable) and #20 (doc03_coverage
+  fixture bitrate margin) during Phase 3 gap-closure rounds 2 and 3.
+
+files_changed:
+  - .github/workflows/ci.yml
 
 suggested_fix_direction: |
   Make the pattern dialect-independent at ci.yml:246. Preferred, most conservative:

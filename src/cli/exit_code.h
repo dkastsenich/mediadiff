@@ -32,9 +32,9 @@ int exit_code_for(ErrorKind kind);
 
 // The second half of the exit-code contract (doc 00 section 3.1, CLI-06):
 // derives the process exit code from a compare run's worst resolved
-// GATING severity (Summary::worst_gating -- an axis independent of any
-// individual finding's Status, src/report/model.h's own comment on why)
-// and whether --strict was given. `kExitFail` when the worst gating
+// GATING severity (Summary::worst_gating -- only a finding whose STATUS
+// itself signals a problem contributes, src/report/model.h's own comment
+// on why) and whether --strict was given. `kExitFail` when the worst gating
 // severity is `Severity::fail` (unconditional -- --strict never changes
 // whether `fail` fails); `kExitWarnStrict` when the worst is
 // `Severity::warn` and `strict` is true; `kExitClean` otherwise (including
