@@ -27,7 +27,7 @@ The journey: a static binary that builds on three platforms → a complete compa
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Toolchain** - Static binary builds and runs on three platforms, with every toolchain decision recorded
+- [x] **Phase 1: Foundation & Toolchain** - Static binary builds and runs on three platforms, with every toolchain decision recorded (completed 2026-08-15)
 - [x] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements (completed 2026-08-18)
 - [x] **Phase 3: Probe Layer, Container & Size** - Real media enters: header pass, packet sweep, raw scanners, all `container.*`/`meta.*`/`size.*` checks (completed 2026-09-06)
 - [ ] **Phase 4: Video Analysis** - Parser pass plus every `video.*` parameter, GOP, colorimetry and HDR check
@@ -53,7 +53,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
   > **Amended 2026-08-15.** As originally written this criterion also required "color output still rendering". That clause was not verifiable in Phase 1 and never could have been: mediadiff emits no styled output at this stage — no ANSI escapes, no `fmt` styling — and `NO_COLOR` is unread, because colour handling is CLI-08, which this roadmap maps to Phase 2. A human asked to confirm the rendering would have been confirming that nothing renders as nothing. The criterion conflated a Phase 1 capability (the Windows VT plumbing) with a Phase 2 one (the styled output that plumbing carries). The plumbing half is retained above and was verified on real hardware — `GetConsoleMode` reports `ENABLE_VIRTUAL_TERMINAL_PROCESSING` set after the call, with no pre-existing console flags disturbed (`conhost.exe`, 3 assertions; see `01-03-SUMMARY.md`). The rendering half moves to Phase 2 criterion 3, where there will be output to render.
 
-**Plans**: 4/5 plans executed in 3 waves
+**Plans**: 5/5 plans executed in 3 waves
 Plans:
 **Wave 1**
 
@@ -62,7 +62,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 01-02-PLAN.md — Integration harness asserting all four `--version` fields, the optional quality-metric feature absent by default, and no FFmpeg shared-library dependency in the shipped executable
-- [ ] 01-03-PLAN.md — Windows UTF-8 text handling: `util/fs.h` shim, UTF-16 argv conversion at entry, UTF-8 code-page manifest, VT output, non-ASCII round-trip test
+- [x] 01-03-PLAN.md — Windows UTF-8 text handling: `util/fs.h` shim, UTF-16 argv conversion at entry, UTF-8 code-page manifest, VT output, non-ASCII round-trip test
 - [x] 01-04-PLAN.md — Repository tree, licence/notice/format/ignore files, the ENG-16 library-boundary lint, and the deterministic `gen_corpus` skeleton with recorded generator identity
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -330,7 +330,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Toolchain | 4/5 | In Progress|  |
+| 1. Foundation & Toolchain | 5/5 | Complete | 2026-08-15 |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 0/TBD | Not started | - |

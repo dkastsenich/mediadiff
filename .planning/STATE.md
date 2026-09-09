@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.1
-current_phase: 1
-current_phase_name: Foundation & Toolchain
-status: "Phase 3 shipped — PR #3"
+current_phase: 4
+current_phase_name: Video Analysis
+status: "Phase 3 merged to main (PR #3, merge commit 4b1c2e4)"
 stopped_at: "Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)"
-last_updated: "2026-09-09T07:34:56.042Z"
+last_updated: "2026-09-09T12:14:21.331Z"
 last_activity: 2026-09-09
-state_head: 75329554af81a4e446e48515c0c4593adce26db6
+state_head: 233c769d27798f517017aa6bd5044a193368bad2
 progress:
   total_phases: 7
   completed_phases: 3
@@ -23,13 +23,13 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 03 — Probe Layer, Container & Size
+**Current focus:** Phase 04 — Video Analysis
 
 ## Current Position
 
-Phase: 1 — Foundation & Toolchain
+Phase: 4 — Video Analysis
 Plan: Not started
-Status: Phase 3 shipped — PR #3
+Status: Phase 3 merged to main (PR #3, merge commit 4b1c2e4)
 Last activity: 2026-09-09
 
 Progress: [█████████░] 92%
@@ -224,6 +224,7 @@ None yet.
 | 260815-m5g | Pin Python to 3.11+ in CI so the Phase 2 registry generator can rely on stdlib tomllib | 2026-08-15 | 2a628fd | [260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-](./quick/260815-m5g-pin-python-to-3-11-in-ci-so-the-phase-2-/) |
 | 260902-it6 | Migrate CLI option binding from shared_ptr to CLI::Option* (03-CONTEXT.md D-05) | 2026-09-02 | 8258c83 | [260902-it6-migrate-cli-option-binding-from-shared-p](./quick/260902-it6-migrate-cli-option-binding-from-shared-p/) |
 | 260908-oax | Narrow the corpus digest assertion to exclude the two libopus fixtures from byte-exact comparison (WINDOWS.md #22) | 2026-09-08 | ae0efaf | [260908-oax-narrow-the-corpus-digest-assertion-to-ex](./quick/260908-oax-narrow-the-corpus-digest-assertion-to-ex/) |
+| 260909-ji8 | Fix Phase 1 bookkeeping drift — ROADMAP 01-03 tick, 4/5→5/5, header + progress table, STATE.md repointed at Phase 4 | 2026-09-09 | 233c769 | [260909-ji8-fix-phase-1-bookkeeping-tick-01-03-in-ro](./quick/260909-ji8-fix-phase-1-bookkeeping-tick-01-03-in-ro/) |
 
 ## Deferred Items
 
