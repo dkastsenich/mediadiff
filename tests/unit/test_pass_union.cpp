@@ -242,3 +242,80 @@ TEST_CASE("pass_union - neither analyzer opens the input file; the whole call ma
   REQUIRE(g_obs_byte_sum.read_frame_call_count == g_obs_byte_sum.packet_count + 1);
   REQUIRE(g_obs_pts_delta.read_frame_call_count == g_obs_byte_sum.read_frame_call_count);
 }
+
+// --- PROBE-03 (04-01-PLAN.md Task 2/3): an analyzer that declares ONLY
+// Pass::parser_scan still gets a real packet_scan sweep --
+// src/probe/orchestrator.cpp's own "parser_scan implies packet_scan"
+// implication -- and Pass::parser_scan itself is logged exactly once when
+// requested, never when it wasn't. Generalises this file's own PROBE-08
+// "each pass runs exactly once" cases above to the newest pass.
+
+namespace {
+
+bool g_parser_only_observed_packet_scan = false;
+
+void parser_only_run(const ProbeResults& results, Fingerprint& /*fp*/) {
+  g_parser_only_observed_packet_scan = results.packet_scan.has_value();
+}
+
+}  // namespace
+
+TEST_CASE("pass_union - an analyzer declaring ONLY Pass::parser_scan still causes Pass::packet_scan to run",
+          "[unit]") {
+  g_parser_only_observed_packet_scan = false;
+  const std::vector<AnalyzerSpec> analyzers = {
+      AnalyzerSpec{"synthetic.parser_only", PassSet{Pass::demux_header, Pass::parser_scan}, ContainerFamily::other,
+                   &parser_only_run},
+  };
+
+  PassExecutionLog log;
+  auto result = mediadiff::detail::run_probe(tracer_mp4(), analyzers, &log);
+
+  REQUIRE(result.has_value());
+  // ProbeResults::packet_scan was populated even though NO analyzer
+  // declared Pass::packet_scan directly -- the implication is what made
+  // this happen, not a coincidence of default-construction.
+  REQUIRE(g_parser_only_observed_packet_scan);
+
+  int packet_scan_occurrences = 0;
+  for (Pass p : log) {
+    if (p == Pass::packet_scan) {
+      ++packet_scan_occurrences;
+    }
+  }
+  REQUIRE(packet_scan_occurrences == 1);
+}
+
+TEST_CASE("pass_union - Pass::parser_scan is logged exactly once when an analyzer requested it", "[unit]") {
+  const std::vector<AnalyzerSpec> analyzers = {
+      AnalyzerSpec{"synthetic.parser_only", PassSet{Pass::demux_header, Pass::parser_scan}, ContainerFamily::other,
+                   &parser_only_run},
+  };
+
+  PassExecutionLog log;
+  auto result = mediadiff::detail::run_probe(tracer_mp4(), analyzers, &log);
+  REQUIRE(result.has_value());
+
+  int parser_scan_occurrences = 0;
+  for (Pass p : log) {
+    if (p == Pass::parser_scan) {
+      ++parser_scan_occurrences;
+    }
+  }
+  REQUIRE(parser_scan_occurrences == 1);
+}
+
+TEST_CASE("pass_union - Pass::parser_scan never appears in the log when no analyzer requested it", "[unit]") {
+  const std::vector<AnalyzerSpec> analyzers = {
+      AnalyzerSpec{"synthetic.packet_only", PassSet{Pass::demux_header, Pass::packet_scan}, ContainerFamily::other,
+                   &noop_run},
+  };
+
+  PassExecutionLog log;
+  auto result = mediadiff::detail::run_probe(tracer_mp4(), analyzers, &log);
+  REQUIRE(result.has_value());
+
+  for (Pass p : log) {
+    REQUIRE(p != Pass::parser_scan);
+  }
+}

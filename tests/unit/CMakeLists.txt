@@ -52,6 +52,14 @@ add_executable(mediadiff_unit_tests
   # budget/threads derivation, and the T-2-41 --threads/[dir] threads
   # ceiling (03-03-PLAN.md Task 2).
   test_packet_budget.cpp
+  # PROBE-03: the single-sweep invariant (read_frame_call_count equality
+  # with/without parsing enabled), the one-mpeg4-packet-is-one-access-unit
+  # count, the key_frame-vs-packet-flag agreement, the parser-disabled
+  # nullopt/unchanged-shape case, the hand-verified H.264/HEVC NAL-type
+  # walk (including the truncated-NAL and kMaxNalsPerAccessUnit bounds),
+  # and the shared T-4-01 byte-budget exhaustion setting `partial` on both
+  # the packet and parser results (04-01-PLAN.md Task 3).
+  test_parser_scan.cpp
   # CONT-01/CONT-09: container.track_count/track_types/track_order/chapters
   # -- the four remaining container-agnostic topology checks, expanding the
   # tracer's own container.format (03-04-PLAN.md Task 1).
