@@ -230,7 +230,7 @@ None yet.
 | 260902-it6 | Migrate CLI option binding from shared_ptr to CLI::Option* (03-CONTEXT.md D-05) | 2026-09-02 | 8258c83 | [260902-it6-migrate-cli-option-binding-from-shared-p](./quick/260902-it6-migrate-cli-option-binding-from-shared-p/) |
 | 260908-oax | Narrow the corpus digest assertion to exclude the two libopus fixtures from byte-exact comparison (WINDOWS.md #22) | 2026-09-08 | ae0efaf | [260908-oax-narrow-the-corpus-digest-assertion-to-ex](./quick/260908-oax-narrow-the-corpus-digest-assertion-to-ex/) |
 | 260909-ji8 | Fix Phase 1 bookkeeping drift — ROADMAP 01-03 tick, 4/5→5/5, header + progress table, STATE.md repointed at Phase 4 | 2026-09-09 | 233c769 | [260909-ji8-fix-phase-1-bookkeeping-tick-01-03-in-ro](./quick/260909-ji8-fix-phase-1-bookkeeping-tick-01-03-in-ro/) |
-| 260910-vvp | Harden gen_corpus.sh's ffmpeg resolution — pinned-first + release-identity gate against scripts/ffmpeg_pin.json, PATH still permitted (Tasks 1-3; Task 4 gen_corpus.ps1 parity declined by orchestrator instruction) | 2026-09-10 | 31d285a | [260910-vvp-harden-gen-corpus-sh-ffmpeg-pin-resoluti](./quick/260910-vvp-harden-gen-corpus-sh-ffmpeg-pin-resoluti/) |
+| 260910-vvp | Harden gen_corpus.sh's ffmpeg resolution — pinned-first + release-identity gate against scripts/ffmpeg_pin.json, PATH still permitted (Tasks 1-3; Task 4 gen_corpus.ps1 parity deferred for separate user approval, not judged unnecessary) | 2026-09-10 | 31d285a | [260910-vvp-harden-gen-corpus-sh-ffmpeg-pin-resoluti](./quick/260910-vvp-harden-gen-corpus-sh-ffmpeg-pin-resoluti/) |
 
 ## Deferred Items
 
