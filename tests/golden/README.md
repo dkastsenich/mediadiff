@@ -82,6 +82,54 @@ believe already matches the designated leg, confirm with
 Full diagnosis of the incident that produced this section:
 `.planning/debug/resolved/corpus-fixture-byte-drift.md`.
 
+## The corpus must come from the pinned generator
+
+This section sits next to the goldens themselves, not in `scripts/gen_corpus.sh`'s
+own comments, because it is a property of the five fixture-derived goldens above
+and of `CORPUS_DIGEST.txt` below, not a detail of the generator script: those
+files pin bytes produced by one specific encoder build, so which build produced
+them matters to anyone reading this directory, not just to whoever last edited
+the generator.
+
+`scripts/gen_corpus.sh` resolves which `ffmpeg` to invoke in this order:
+
+1. `MEDIADIFF_FFMPEG`, when set and non-empty.
+2. Otherwise, the repo-local pinned install under `.ffmpeg-pinned/`
+   (installed by `bash scripts/install_pinned_ffmpeg.sh`).
+3. Otherwise, `ffmpeg` on `PATH`.
+
+Whatever is selected is checked against `scripts/ffmpeg_pin.json`'s `version`
+field, and a mismatch aborts the run before a single fixture byte is written.
+If you see that abort, the fix is:
+
+```sh
+bash scripts/install_pinned_ffmpeg.sh
+```
+
+Every run of `scripts/gen_corpus.sh` (and of `scripts/resolve_pinned_ffmpeg.sh`
+directly, which answers "which ffmpeg would the corpus use?" without running
+the generator) prints which binary it resolved and by which route to stderr,
+so a corpus-generation log answers "which build made these bytes?" without
+inference.
+
+**The escape hatch:** setting `MEDIADIFF_ALLOW_UNPINNED_FFMPEG` (non-empty)
+downgrades a version mismatch from a hard failure to a loud warning, for
+deliberate experimentation only. A corpus generated under it must never be
+used to refresh a golden or `CORPUS_DIGEST.txt` -- see "To refresh one:"
+above for the only correct path for the five fixture-derived goldens, and
+the `CORPUS_DIGEST.txt` section below for that file's own refresh rule.
+
+**What this check does NOT prove:** it confirms the selected binary reports
+the same FFmpeg *release* the pin names, not that it is byte-for-byte the
+pinned artifact -- `scripts/ffmpeg_pin.json` records a SHA-256 of the
+downloaded archive, never of the extracted binary. This does not make the
+goldens portable: as the section above explains, the pinned binary itself
+already produces different fixture bytes on different host CPUs
+(`WINDOWS.md` #12), and this check has no bearing on that. It closes a
+different hole -- an entirely different FFmpeg build silently generating
+the corpus, undetected -- documented at
+`.planning/debug/resolved/corpus-fixture-byte-drift.md`.
+
 ## `CORPUS_DIGEST.txt` (D-GAP-01, WINDOWS.md #22)
 
 `CORPUS_DIGEST.txt` is the full listing `scripts/corpus_digest.sh` prints
