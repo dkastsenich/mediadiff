@@ -119,4 +119,83 @@ void check_golden(std::string_view case_name, std::string_view actual) {
   FAIL(*result);
 }
 
+DesignatedLegGoldenAction designated_leg_golden_action(bool designated_leg, bool update_goldens) {
+  if (update_goldens) {
+    return DesignatedLegGoldenAction::kRefuseRefresh;
+  }
+  return designated_leg ? DesignatedLegGoldenAction::kAssert : DesignatedLegGoldenAction::kSkip;
+}
+
+bool on_designated_leg() {
+  const auto value = getenv_utf8("MEDIADIFF_DESIGNATED_LEG");
+  return value.has_value() && !value->empty();
+}
+
+std::string designated_leg_skip_reason(std::string_view case_name) {
+  std::ostringstream message;
+  message
+      << "golden '" << case_name
+      << "' is a byte-exact FIXTURE-DERIVED golden: its expected values are read out of the "
+         "synthesized media in tests/fixtures/, so they are a property of the HOST that encoded "
+         "the corpus, not of mediadiff's own code. The committed bytes were captured on the "
+         "designated leg (x64-linux, GitHub Actions). This run is not on it "
+         "(MEDIADIFF_DESIGNATED_LEG is unset or empty), so it is SKIPPED rather than compared.\n"
+      << "  Why: the pinned ffmpeg (scripts/ffmpeg_pin.json) is checksum-verified and byte-identical "
+         "everywhere, but it dispatches its DSP on the host's CPU features at RUNTIME, and "
+         "-flags +bitexact -fflags +bitexact does not reach that decision. Measured on one "
+         "unchanged binary: -cpuflags 0 alone moves tracer_a.mp4 from 141218 to 141194 bytes; "
+         "across two real x86_64 hosts, 76 of 81 fixtures differ. See WINDOWS.md #12 (x64-linux "
+         "workstation vs runner), #20 (arm64-osx), #22 (libopus, run-to-run).\n"
+      << "  So a mismatch here, off the designated leg, is EXPECTED and is not evidence of a "
+         "regression in mediadiff or in scripts/gen_corpus.sh.\n"
+      << "  To assert it: run it on the designated leg, or set MEDIADIFF_DESIGNATED_LEG=1 on a host "
+         "whose tests/fixtures/ already matches tests/golden/CORPUS_DIGEST.txt (verify with "
+         "scripts/assert_corpus_digest.sh). Do NOT re-baseline it locally -- see "
+         "tests/golden/README.md.";
+  return message.str();
+}
+
+std::string designated_leg_refresh_refusal(std::string_view case_name) {
+  std::ostringstream message;
+  message
+      << "UPDATE_GOLDENS refused for '" << case_name
+      << "': this is a byte-exact fixture-derived golden, captured on the designated leg "
+         "(x64-linux CI). Rewriting it from THIS host's bytes would mint local encoder output as "
+         "the expected answer and break the designated leg the moment it is pushed.\n"
+      << "  This is not hypothetical: 13ea9db baselined these goldens from a workstation and "
+         "bc09705 had to overwrite them from the real x64-linux runner 23 minutes later.\n"
+      << "  The only correct refresh for this class is to transcribe the designated leg's own CI "
+         "output (D-GAP-01; tests/golden/README.md), reviewed by a human in the diff.";
+  return message.str();
+}
+
+void check_golden_designated_leg(std::string_view case_name, std::string_view actual) {
+  // Both FAIL and SKIP abort the enclosing test case by throwing, so neither
+  // needs (nor may have -- scripts/lint_dead_code_after_fail.sh) a trailing
+  // `return`. Only kAssert reaches the comparison below.
+  const DesignatedLegGoldenAction action =
+      designated_leg_golden_action(on_designated_leg(), update_goldens_requested());
+  if (action == DesignatedLegGoldenAction::kRefuseRefresh) {
+    FAIL(designated_leg_refresh_refusal(case_name));
+  }
+  if (action == DesignatedLegGoldenAction::kSkip) {
+    SKIP(designated_leg_skip_reason(case_name));
+  }
+
+  // Deliberately NOT check_golden(): its diagnostic ends with "refresh
+  // locally with UPDATE_GOLDENS=1", which is correct for a renderer golden
+  // and actively harmful for this class -- following it is what produced
+  // 13ea9db. Same byte-for-byte comparison, corrected remedy.
+  const std::optional<std::string> result = golden_check_result(case_name, actual);
+  if (!result.has_value()) {
+    SUCCEED("designated-leg golden '" << case_name << "' matches");
+    return;
+  }
+  FAIL(*result << "\n  NOTE: this is a fixture-derived golden asserted on the designated leg. Do "
+                  "NOT refresh it with UPDATE_GOLDENS (refused for this class) -- either "
+                  "tests/fixtures/ no longer matches tests/golden/CORPUS_DIGEST.txt on this host "
+                  "(check scripts/assert_corpus_digest.sh first), or the change is real and the "
+                  "golden must be transcribed from the designated leg's own CI output.");
+}
+
 }  // namespace mediadiff::test

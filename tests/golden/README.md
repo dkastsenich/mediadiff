@@ -15,6 +15,11 @@ The refresh must appear as a reviewable diff in the pull request that
 changed the renderer -- a human confirms the new output is intentional
 before it becomes the new expected answer.
 
+This applies to renderer goldens only. The five fixture-derived goldens
+listed in the next section refuse `UPDATE_GOLDENS` outright, and the three
+`ts_scan_ts_*.txt` files refuse it for a second, independent reason
+(TRUST-09, below).
+
 ## CI never sets UPDATE_GOLDENS
 
 CI always runs read-only. A missing golden file, or one that no longer
@@ -22,6 +27,60 @@ matches, is a hard test failure there -- never an implicit create. Running
 the broken renderer once and having it mint its own wrong output as the
 "expected" answer is exactly the failure this harness exists to prevent
 (D-12).
+
+## Two kinds of golden live here
+
+Most files here are **renderer goldens**: they pin mediadiff's own output
+for a canned input, they are host-portable, and `UPDATE_GOLDENS=1` is the
+correct way to refresh them.
+
+Five are **fixture-derived goldens**. They pin numbers read out of the
+synthesized media in `tests/fixtures/`, so their expected bytes are a
+property of the machine that *encoded the corpus*, not of this
+repository's code:
+
+| golden | asserted by |
+|---|---|
+| `inspect_container.txt` | `unit.inspect_container - golden: ...` |
+| `size_checks_size_crf20.txt` | `integration.size_checks - the size.* findings are pinned ...` |
+| `ts_scan_ts_single.txt` | `unit.ts_scan_golden - ts_single.ts ...` |
+| `ts_scan_ts_multiprogram.txt` | `unit.ts_scan_golden - ts_multiprogram.ts ...` |
+| `ts_scan_ts_204.txt` | `unit.ts_scan_golden - ts_204.ts ...` |
+
+The pinned ffmpeg (`scripts/ffmpeg_pin.json`) is checksum-verified and
+byte-identical on every machine, but it dispatches its DSP on the host's
+CPU features at runtime and `-flags +bitexact -fflags +bitexact` does not
+reach that decision. Measured on one unchanged binary: `-cpuflags 0` alone
+moves `tracer_a.mp4` from 141218 to 141194 bytes. Across two real x86_64
+hosts, 76 of 81 fixtures differ (WINDOWS.md #12; arm64-osx: #20; run-to-run
+within one leg: #22).
+
+So these five are captured on, and asserted on, the **designated leg**
+(x64-linux CI) only — the same policy `CORPUS_DIGEST.txt` follows below.
+`tests/support/golden.h`'s `check_golden_designated_leg()` enforces it:
+
+- **On the designated leg** (`MEDIADIFF_DESIGNATED_LEG` set and non-empty,
+  which `.github/workflows/ci.yml` sets on x64-linux): byte-for-byte, exactly
+  as before. The assertion is never loosened.
+- **Anywhere else** — including every developer workstation — the test
+  **SKIPs with its reason**. A mismatch there would be expected host
+  divergence, and a test cannot honestly report a regression it is unable to
+  distinguish from one.
+- **`UPDATE_GOLDENS=1` is refused for these five on every leg.** There is no
+  local refresh path. Rewriting them from workstation bytes mints local
+  encoder output as the expected answer and breaks the designated leg — that
+  is not hypothetical, it is `13ea9db`, which `bc09705` had to overwrite from
+  the real runner 23 minutes later.
+
+**To refresh one:** take the values from the designated leg's own CI run
+output and transcribe them into the file, as a reviewable diff (D-GAP-01;
+this is what `bc09705` and `64bc168` did). To assert them on a machine you
+believe already matches the designated leg, confirm with
+`scripts/assert_corpus_digest.sh` first, then run with
+`MEDIADIFF_DESIGNATED_LEG=1`.
+
+Full diagnosis of the incident that produced this section:
+`.planning/debug/resolved/corpus-fixture-byte-drift.md`.
 
 ## `CORPUS_DIGEST.txt` (D-GAP-01, WINDOWS.md #22)
 

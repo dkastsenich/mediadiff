@@ -240,7 +240,7 @@ TEST_CASE("inspect_container - golden: the container+meta section for one repres
   golden_text += "== ts: ts_multiprogram.ts ==\n";
   golden_text += container_and_meta_section(ts_text);
 
-  mediadiff::test::check_golden("inspect_container", golden_text);
+  mediadiff::test::check_golden_designated_leg("inspect_container", golden_text);
 }
 
 // render_inspect_json still contains no evidence key of its own re-derived

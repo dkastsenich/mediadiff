@@ -149,19 +149,19 @@ TEST_CASE("ts_scan_golden - ts_single.ts matches the committed TSDuck-derived go
   const auto result = run_ts_scan(fixture("ts_single.ts"));
   REQUIRE(result.has_value());
   REQUIRE(result->complete);
-  mediadiff::test::check_golden("ts_scan_ts_single", canonical_json_for(*result));
+  mediadiff::test::check_golden_designated_leg("ts_scan_ts_single", canonical_json_for(*result));
 }
 
 TEST_CASE("ts_scan_golden - ts_multiprogram.ts matches the committed TSDuck-derived golden", "[unit]") {
   const auto result = run_ts_scan(fixture("ts_multiprogram.ts"));
   REQUIRE(result.has_value());
   REQUIRE(result->complete);
-  mediadiff::test::check_golden("ts_scan_ts_multiprogram", canonical_json_for(*result));
+  mediadiff::test::check_golden_designated_leg("ts_scan_ts_multiprogram", canonical_json_for(*result));
 }
 
 TEST_CASE("ts_scan_golden - ts_204.ts matches the committed TSDuck-derived golden", "[unit]") {
   const auto result = run_ts_scan(fixture("ts_204.ts"));
   REQUIRE(result.has_value());
   REQUIRE(result->complete);
-  mediadiff::test::check_golden("ts_scan_ts_204", canonical_json_for(*result));
+  mediadiff::test::check_golden_designated_leg("ts_scan_ts_204", canonical_json_for(*result));
 }

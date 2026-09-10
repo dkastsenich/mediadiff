@@ -383,7 +383,47 @@ jobs:
           EXPECTED_EXCLUDED_COUNT=5
 
           if [ "${{ matrix.preset }}" = "$DESIGNATED_LEG" ]; then
-            ctest --test-dir "$TEST_DIR" --output-on-failure
+            # MEDIADIFF_DESIGNATED_LEG is load-bearing, not decorative. Those
+            # same five byte-exact fixture-derived goldens now carry the
+            # designated-leg policy in the harness itself
+            # (tests/support/golden.h), because a `ctest -E` regex living only
+            # in this file could never reach a developer running ctest
+            # directly: they saw five red tests whose text recommended
+            # UPDATE_GOLDENS=1, the one remedy that must never be applied to
+            # this class (13ea9db, reverted by bc09705 23 minutes later; full
+            # diagnosis in .planning/debug/resolved/corpus-fixture-byte-drift.md).
+            #
+            # The harness SKIPs them wherever this variable is unset. So on the
+            # designated leg — the ONLY leg that asserts them — failing to set
+            # it would turn all five gates into green skips: a gate that
+            # quietly stops gating, the same defect class the exclusion-count
+            # guard below exists to prevent. Hence the post-run assertion:
+            # CTest lists skipped tests under "The following tests did not
+            # run:", so if any of the five appears there on this leg, the gate
+            # did not run and the leg must fail.
+            #
+            # errexit is suspended across the pipeline on purpose. Actions runs
+            # this step under `bash -e -o pipefail`, so a failing ctest would
+            # kill the step at the pipe and the two guards below would never
+            # run — including on the one path that matters, where ctest exits
+            # 0 precisely BECAUSE the five gates degraded to skips. The real
+            # ctest status is captured and re-raised verbatim at the end, so
+            # nothing is swallowed.
+            set +e
+            MEDIADIFF_DESIGNATED_LEG=1 ctest --test-dir "$TEST_DIR" --output-on-failure 2>&1 | tee "$TEST_DIR/ctest-designated.log"
+            CTEST_STATUS=${PIPESTATUS[0]}
+            set -e
+            if grep -E "$EXCLUDED_TEST_REGEX" "$TEST_DIR/ctest-designated.log" | grep -q 'Skipped'; then
+              echo "::error::a byte-exact fixture-derived golden test was SKIPPED on the designated leg ($DESIGNATED_LEG) — MEDIADIFF_DESIGNATED_LEG did not reach the test binary, so these five gates silently stopped gating."
+              grep -E "$EXCLUDED_TEST_REGEX" "$TEST_DIR/ctest-designated.log" | grep 'Skipped'
+              exit 1
+            fi
+            SKIP_GUARD_SEEN=$(grep -cE "$EXCLUDED_TEST_REGEX" "$TEST_DIR/ctest-designated.log" || true)
+            if [ "$SKIP_GUARD_SEEN" -eq 0 ]; then
+              echo "::error::none of the byte-exact fixture-derived golden tests appear in the designated leg's ctest output at all — the guard above cannot have checked anything, which is itself a gate that stopped gating."
+              exit 1
+            fi
+            exit "$CTEST_STATUS"
           else
             FILTERED_TOTAL=$(ctest --test-dir "$TEST_DIR" -N -E "$EXCLUDED_TEST_REGEX" | sed -n 's/^Total Tests: \([0-9][0-9]*\)$/\1/p' || true)
             if [ -z "$FILTERED_TOTAL" ]; then
