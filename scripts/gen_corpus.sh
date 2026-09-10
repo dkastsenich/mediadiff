@@ -12,56 +12,32 @@
 # regression, or did someone's system ffmpeg change? The manifest is what
 # makes that question answerable at all, and is the prerequisite for ever
 # pinning the generator later without a churn of unexplained fixture diffs.
+#
+# Binary resolution (MEDIADIFF_FFMPEG override -> the repo-local pinned
+# install -> PATH), the version floor, and a release-identity gate against
+# scripts/ffmpeg_pin.json all live in scripts/resolve_pinned_ffmpeg.sh,
+# sourced below. Any other script needing this same generator's ffmpeg
+# resolved the same way (e.g. a future scripts/measure_parser_overhead.sh)
+# should source that file rather than copy this logic.
 
 set -euo pipefail
 
-# The version floor, held as named constants rather than inlined into the
-# comparison below.
-readonly MIN_MAJOR=6
-readonly MIN_MINOR=1
-
-# Resolve which binary to invoke from MEDIADIFF_FFMPEG (defaulting to the
-# bare name "ffmpeg" on PATH), so a developer can point this at a specific
-# build and so the absent/too-old failure branches below are testable
-# without mutating PATH itself.
-FFMPEG_BIN="${MEDIADIFF_FFMPEG:-ffmpeg}"
-
-if ! command -v "$FFMPEG_BIN" >/dev/null 2>&1; then
-  echo "gen_corpus requires a system ffmpeg >= ${MIN_MAJOR}.${MIN_MINOR} on PATH (or MEDIADIFF_FFMPEG pointing at one); '${FFMPEG_BIN}' was not found." >&2
+# Binary resolution + the version floor + the release-identity gate now
+# live in the sibling file below (see this file's own header above). A
+# missing sibling fails loudly rather than degrading to the old inline
+# behavior.
+RESOLVE_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/resolve_pinned_ffmpeg.sh"
+if [ ! -f "$RESOLVE_SCRIPT" ]; then
+  echo "gen_corpus error: required sibling script '${RESOLVE_SCRIPT}' is missing." >&2
   exit 1
 fi
+# shellcheck source=resolve_pinned_ffmpeg.sh
+source "$RESOLVE_SCRIPT"
 
-VERSION_OUTPUT=$("$FFMPEG_BIN" -version)
-FFMPEG_VERSION_LINE=$(printf '%s\n' "$VERSION_OUTPUT" | head -n1)
-FFMPEG_CONFIG_LINE=$(printf '%s\n' "$VERSION_OUTPUT" | grep '^configuration:' || true)
-
-# "ffmpeg version <TOKEN> Copyright (c) ..." — pull just the version token.
-VERSION_TOKEN=$(printf '%s\n' "$FFMPEG_VERSION_LINE" | sed -E 's/^ffmpeg version ([^ ]+).*/\1/')
-
-VERSION_OK=0
-if [[ "$VERSION_TOKEN" =~ ^[nN]-[0-9]+-g[0-9a-fA-F]+ ]]; then
-  # A git-describe "N-<commits-since-tag>-g<hash>" snapshot build — this is
-  # what ffmpeg's own -version reports for a git-master checkout built past
-  # its last tagged release (e.g. "N-126086-ge5ecfe8970-20260812"). It
-  # carries no bare MAJOR.MINOR to compare, but by construction it is always
-  # newer than the release tag it is offset from, which is itself far above
-  # this script's ${MIN_MAJOR}.${MIN_MINOR} floor. Treat it as satisfying the
-  # floor rather than rejecting it for lacking a parseable release number.
-  VERSION_OK=1
-elif [[ "$VERSION_TOKEN" =~ ^[nN]?([0-9]+)\.([0-9]+) ]]; then
-  # A normal release version, optionally "n"-prefixed by some distro builds
-  # (e.g. "7.0.2" or "n7.0.2").
-  MAJOR="${BASH_REMATCH[1]}"
-  MINOR="${BASH_REMATCH[2]}"
-  if [ "$MAJOR" -gt "$MIN_MAJOR" ] || { [ "$MAJOR" -eq "$MIN_MAJOR" ] && [ "$MINOR" -ge "$MIN_MINOR" ]; }; then
-    VERSION_OK=1
-  fi
-fi
-
-if [ "$VERSION_OK" -ne 1 ]; then
-  echo "gen_corpus requires a system ffmpeg >= ${MIN_MAJOR}.${MIN_MINOR}; found: ${FFMPEG_VERSION_LINE}" >&2
-  exit 1
-fi
+# Sets FFMPEG_BIN (invoked by every fixture recipe below), FFMPEG_ROUTE,
+# FFMPEG_VERSION_LINE and FFMPEG_CONFIG_LINE, or aborts before a byte of
+# this manifest or any fixture is written.
+mediadiff_resolve_ffmpeg gen_corpus
 
 OUT_DIR="tests/fixtures"
 mkdir -p "$OUT_DIR"
