@@ -1,11 +1,14 @@
-# Phase 4 Check-ID Roster — PENDING APPROVAL
+# Phase 4 Check-ID Roster — Approved
 
-**Status:** Drafted by 04-01-PLAN.md Task 1, awaiting human decision at a `gate="blocking-human"`
-checkpoint. The orchestrator has disabled auto-approval for this checkpoint (unlike Phase 3's
-`gate="blocking"` roster, which auto-selected under auto-mode's standard
-`checkpoint:decision` rule). **This roster is NOT yet approved.** No id below may be registered
-into `src/core/checks.def` until a human selects one of the three options in 04-01-PLAN.md Task 1
-and this file is updated to reflect the decision (including any `approve-with-edits` changes).
+**Approval decision:** `approve-as-proposed` — all 31 ids exactly as drafted, including the 7
+one-semantic-per-id splits and the three attribute choices recorded below.
+
+**Approved by:** Human reviewer, at 04-01-PLAN.md Task 1's `checkpoint:decision` gate.
+The orchestrator disabled auto-mode's standard `checkpoint:decision` auto-select for this
+checkpoint and presented the roster for a human decision. This differs from Phase 3, whose
+27-id roster was auto-selected without human review.
+
+**Approved on:** 2026-09-10
 
 **Date drafted:** 2026-09-09
 **Drafted by:** GSD executor (04-01-PLAN.md Task 1)
@@ -69,7 +72,7 @@ Every one is forced by the same one-semantic-per-id constraint Phase 3 already r
 `video.hdr.coherence` (D-10) is a locked addition from Phase 4's own context-gathering, not a
 doc-03-row split, and is listed for spelling confirmation only.
 
-## SAR-conflict resolution — NEEDS HUMAN DECISION
+## SAR-conflict resolution — DECIDED: own check id
 
 VIDEO-04 requires the container-versus-bitstream SAR conflict to be "flagged as `info`" while the
 effective SAR value is compared normally via `video.sar`. Doc 03 §2 words this as "noted `info` in
@@ -84,10 +87,11 @@ a preference**:
 - **Evidence-only alternative:** drop `video.sar.conflict` as a check id; VIDEO-04's third clause
   becomes a `-v`-visible evidence field on `video.sar` instead, with no independent status.
 
-This file currently reflects the **as-proposed** (own check id) resolution pending the reviewer's
-choice.
+**Decision: `video.sar.conflict` is its own `info`-severity check id**, as drafted. The reviewer
+chose the check-id resolution over the evidence-only alternative, so VIDEO-04's third clause is a
+real, comparable, `--explain`-documented finding. Plan 04-07 implements it on that basis.
 
-## Scope decisions folded in and needing confirmation
+## Scope decisions folded in and confirmed by this approval
 
 - **`video.color.range` carries no `[check.profile_severity]` and no `[check.profile_tolerance]`
   at all.** VIDEO-07 and doc 03 §3/§5 both require fail in every profile with no exceptions,
@@ -103,9 +107,17 @@ choice.
   "the resolution identity check that would carry it in production lands in Phase 4" — this is
   that check. `src/compare/exact.cpp:92` is the consumer.
 
-## Awaiting
+## Out of scope, confirmed at this gate
 
-A human reviewer must select one of 04-01-PLAN.md Task 1's three options
-(`approve-as-proposed`, `approve-with-edits`, `collapse-additions`) and, if edits are chosen, state
-each edit precisely — this file is the single source of truth downstream plans read for id
-spellings and attributes, so an unrecorded edit would silently revert.
+`video.closed_captions` (VIDEO-11) is **not** in this roster. The reviewer confirmed it stays in
+Phase 7, matching `04-CONTEXT.md` ("explicitly NOT in scope") and `REQUIREMENTS.md:332`.
+`ROADMAP.md:381` still says Phase 4 registers it and ships the `skipped:requires_decode` path;
+the reviewer chose to leave that note as-is rather than amend it, so **the ROADMAP note and this
+roster disagree by decision, not by oversight.** Phase 7 adds the id — permitted, since
+CLAUDE.md's rule is "additions fine".
+
+## Status
+
+**APPROVED.** This file is the single source of truth for Phase 4 check-id spellings and
+attributes. A plan that registers an id absent from this file, or with different attributes, is a
+defect. Later phases may add ids; they may not rename these.
