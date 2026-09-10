@@ -575,3 +575,6 @@ jobs:
 
       - name: Run bash-3.2 portability lint (macOS CI guard)
         run: bash scripts/lint_bash4_builtins.sh
+
+      - name: Run gen_corpus pinned-ffmpeg resolution gate test
+        run: bash scripts/test_gen_corpus_pin_gate.sh
