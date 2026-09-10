@@ -155,6 +155,7 @@ add_library(libmediadiff STATIC
   src/report/junit.cpp
   src/probe/demux_session.cpp
   src/probe/packet_scan.cpp
+  src/probe/parser_scan.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
   src/probe/ts_scan.cpp
@@ -165,6 +166,7 @@ add_library(libmediadiff STATIC
   src/analyzers/container/mkv.cpp
   src/analyzers/container/ts.cpp
   src/analyzers/size/size.cpp
+  src/analyzers/video/gop.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -216,12 +218,14 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/pass.h
   src/probe/demux_session.h
   src/probe/packet_scan.h
+  src/probe/parser_scan.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
   src/probe/ts_scan.h
   src/probe/orchestrator.h
   src/analyzers/container/analyzers.h
   src/analyzers/size/analyzers.h
+  src/analyzers/video/analyzers.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 

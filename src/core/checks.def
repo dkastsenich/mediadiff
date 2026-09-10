@@ -476,3 +476,23 @@ unit = "percent"
 value_kind = "rational"
 severity = "info"
 tolerance = "5%"
+
+# Phase 4's tracer (04-01-PLAN.md Task 2, PROBE-03/VIDEO-05), src/analyzers/
+# video/gop.cpp. The median keyframe-to-keyframe access-unit distance,
+# derived from ParserScanResult::key_frame flags -- Pass::parser_scan's own
+# first production consumer, fused into the SAME av_read_frame sweep
+# PacketScan already performs (never a second sweep -- see
+# src/probe/orchestrator.cpp's own comment on Pass::parser_scan). Kept as
+# an exact RationalValue (num=median distance, den=1), never pre-divided.
+# Approved at 04-CHECK-ROSTER.md (the frozen Phase-4 id roster). Skip-reason
+# vocabulary: `insufficient_data` (fewer than two keyframes on the stream),
+# `no_parser` (VIDEO-12 -- a codec with no registered libav parser),
+# `partial_scan` (D-02 -- either PacketScan or ParserScan truncated).
+[[check]]
+id = "video.gop.length"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "10%"

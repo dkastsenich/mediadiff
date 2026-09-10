@@ -28,3 +28,4 @@ size.file  severity=fail  tolerance=8/1 % (warn 3/1)
 size.stream_bitrate  severity=fail  tolerance=10/1 % (warn 3/1)
 size.peak_bitrate  severity=fail  tolerance=15/1 % (warn 5/1)
 size.overhead  severity=info  tolerance=5/1 %
+video.gop.length  severity=fail  tolerance=10/1 %

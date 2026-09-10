@@ -7,6 +7,7 @@
 
 #include "analyzers/container/analyzers.h"
 #include "analyzers/size/analyzers.h"
+#include "analyzers/video/analyzers.h"
 #include "core/snapshot.h"
 #include "probe/bmff_scan.h"
 #include "probe/demux_session.h"
@@ -96,6 +97,12 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // Declares Pass::packet_scan, PROBE-10's shared array -- no second
       // sweep, no pre-computed statistics struct.
       size_analyzer(),
+      // 04-01-PLAN.md Task 2 (PROBE-03, VIDEO-05): video.gop.length, the
+      // phase's tracer check -- Pass::parser_scan's own first production
+      // consumer. Declares Pass::parser_scan explicitly (not left to this
+      // file's own parser_scan-implies-packet_scan rule below) so this
+      // AnalyzerSpec's own required_passes is self-describing.
+      video_gop_analyzer(),
   };
   return registry;
 }
@@ -132,6 +139,15 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     }
     applicable.push_back(&spec);
     union_passes |= spec.required_passes;
+  }
+
+  // PROBE-03 (04-01-PLAN.md Task 2): an analyzer that declared ONLY
+  // Pass::parser_scan would otherwise get no sweep run at all -- the
+  // parser's own data is produced INSIDE Pass::packet_scan's own arm
+  // below (the fused loop in probe/packet_scan.cpp), so packet_scan must
+  // always be in the union whenever parser_scan is.
+  if (union_passes.test(Pass::parser_scan)) {
+    union_passes.set(Pass::packet_scan);
   }
 
   ProbeResults results;
@@ -188,7 +204,8 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
         bmff_scan_error = mediadiff::unexpected(scan_result.error());
       }
     } else if (pass == Pass::packet_scan) {
-      // PROBE-02/PROBE-10 (03-03-PLAN.md Task 1): one av_read_frame sweep,
+      // PROBE-02/PROBE-03/PROBE-10 (03-03-PLAN.md Task 1, extended by
+      // 04-01-PLAN.md Task 2): still exactly one av_read_frame sweep --
       // stored once in ProbeResults and handed to every applicable
       // analyzer as a const reference -- PassSet's own "each pass runs
       // exactly once" guarantee (PROBE-08) is what makes this a SINGLE
@@ -197,9 +214,18 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
       // default_packet_scan_max_bytes() -- the per-file cap this
       // invocation's own command entry point already resolved and set
       // (D-01) -- so this call site never has to know that value itself.
-      auto scan_result = run_packet_scan(session, PacketScanLimits{});
+      // `parse_access_units` fuses Pass::parser_scan's own per-AU walk
+      // INSIDE this same call (never a second dispatch arm; the
+      // implication just above guarantees packet_scan is always in
+      // `union_passes` whenever parser_scan is, so this IS the only place
+      // either pass's own data is ever produced).
+      PacketScanRequest request;
+      request.limits = PacketScanLimits{};
+      request.parse_access_units = union_passes.test(Pass::parser_scan);
+      auto scan_result = run_packet_scan(session, request);
       if (scan_result) {
-        results.packet_scan = std::move(*scan_result);
+        results.packet_scan = std::move(scan_result->packets);
+        results.parser_scan = std::move(scan_result->access_units);
       } else {
         packet_scan_error = mediadiff::unexpected(scan_result.error());
       }

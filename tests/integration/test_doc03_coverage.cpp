@@ -11,8 +11,10 @@
 //
 // Twenty-seven checks were registered across plans 03-02, 03-04, 03-05,
 // 03-06, 03-08 and 03-09, joining Phase 2's original three
-// (meta.tool_version/missing_candidate/extra_candidate) -- thirty in
-// total as of this plan. This file is where a gap becomes visible.
+// (meta.tool_version/missing_candidate/extra_candidate) -- thirty as of
+// Phase 3. 04-01-PLAN.md registers Phase 4's tracer, `video.gop.length`,
+// bringing the total to thirty-one. This file is where a gap becomes
+// visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -183,6 +185,11 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"size.overhead",
        {fixture("size_crf20.mp4"), fixture("size_crf23.mp4"), fixture("size_near_a.mp4"),
         fixture("size_near_b.mp4")}},
+
+      // --- video.gop.length (04-01-PLAN.md, Phase 4's tracer) ---
+      {"video.gop.length",
+       {fixture("video_gop_g48.mp4"), fixture("video_gop_g96.mp4"), fixture("video_gop_g48.mp4"),
+        fixture("video_gop_g48_copy.mp4")}},
   };
   return pairs;
 }
