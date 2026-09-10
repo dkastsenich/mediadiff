@@ -1,18 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.1
-current_phase: 4
+current_phase: 04
 current_phase_name: Video Analysis
-status: Phase 4 planned — 12 plans, 11 waves
-stopped_at: "Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)"
-last_updated: "2026-09-09T20:02:48.631Z"
+status: executing
+stopped_at: Completed 04-01-PLAN.md (video.gop.length, ParserScan fusion)
+last_updated: "2026-09-10T19:28:28.155Z"
 last_activity: 2026-09-09
-state_head: 7afbc8d111c1dc92a088e0a4eeee89d4283e78b5
+last_activity_desc: Phase 04 execution started
+state_head: aa9c71f3cd67911d6fa9c06eb52b1f3f5aa50409
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 46
-  completed_plans: 46
+  total_plans: 58
+  completed_plans: 47
 milestone_name: milestone
 ---
 
@@ -27,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 
 ## Current Position
 
-Phase: 4 — Video Analysis
-Plan: Not started
-Status: Phase 4 planned — 12 plans, 11 waves
-Last activity: 2026-09-09
+Phase: 04 (Video Analysis) — EXECUTING
+Plan: 2 of 12
+Status: Ready to execute
+Last activity: 2026-09-09 — Phase 04 execution started
 
 Progress: [█████████░] 92%
 
@@ -95,6 +96,7 @@ Progress: [█████████░] 92%
 | Phase 03 P20 | 35min | 2 tasks | 2 files |
 | Phase 03 P21 | 46min | 3 tasks | 7 files |
 | Phase 03 P22 | 41min | 2 tasks | 4 files |
+| Phase 04 P01 | 28min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -204,6 +206,9 @@ Recent decisions affecting current work:
 - [Phase 03]: ROADMAP SC5 closed on real CI run 34023871831 (head 64bc168): all three blocking legs + lint conclude success at the job level, four trust06_idempotence Passed lines observed, x64-windows-static-md Test step observed concluding for the first time in this phase's history.
 - [Phase 03]: Fixed two newly-discovered blocking-leg CI defects (WINDOWS.md #21 GITHUB_PATH format bug, #20 arm64-osx bitrate margin) within Task 1's 3-round-trip budget; recorded but deliberately left open a third (#22, x64-linux corpus-digest run-to-run non-reproducibility on mkv_opus_a/b.webm).
 - [Phase 1]: [Quick 260908-oax]: WINDOWS.md #22 waived (not fixed) -- scripts/assert_corpus_digest.sh excludes mkv_opus_a.webm, mkv_opus_b.webm and the derived CORPUS_DIGEST_SUMMARY line (exactly 3, count-guarded) from D-GAP-01's byte-exact comparison; libopus's cross-host CPU-feature dispatch is not fixable at this layer. Residual gap tracked openly at WINDOWS.md #24.
+- [Phase 04]: Phase-4 31-id video.* check roster approved as-proposed (04-CHECK-ROSTER.md)
+- [Phase 04]: PacketScanRequest/PacketScanOutputs live in packet_scan.h, not parser_scan.h, to avoid a circular include
+- [Phase 04]: AVCodecParserContext needs PARSER_FLAG_COMPLETE_FRAMES set explicitly (mirrors libavformat's AVSTREAM_PARSE_HEADERS) or mpeg4video_parser.c halves every measured GOP length
 
 ### Pending Todos
 
@@ -236,6 +241,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-08T15:48:02.140Z
-Stopped at: Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)
+Last session: 2026-09-10T19:28:28.022Z
+Stopped at: Completed 04-01-PLAN.md (video.gop.length, ParserScan fusion)
 Resume file: None
