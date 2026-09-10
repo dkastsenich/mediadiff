@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
-status: executing
-stopped_at: Completed 04-01-PLAN.md (video.gop.length, ParserScan fusion)
+status: paused — Phase 04 halted after wave 1 pending corpus-determinism debug
+stopped_at: "Wave 1 complete (04-01). Waves 2-11 HELD: 76/81 fixtures drifted from their 2026-09-05 baseline under an identical pinned generator; 5 golden tests red. Debugging before more goldens are written."
 last_updated: "2026-09-10T19:28:28.155Z"
-last_activity: 2026-09-09
-last_activity_desc: Phase 04 execution started
+last_activity: 2026-09-10
+last_activity_desc: Phase 04 wave 1 complete; execution paused for corpus-determinism debug
 state_head: aa9c71f3cd67911d6fa9c06eb52b1f3f5aa50409
 progress:
   total_phases: 7
