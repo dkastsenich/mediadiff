@@ -1264,4 +1264,77 @@ cat "$ILACE_SEG_A" "$ILACE_SEG_B" > "$ILACE_MIXED_RAW"
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_ilace_mixed.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4."
+# --- 04-04-PLAN.md Task 1 (VIDEO-09, D-09): MDCV/CLL fixtures, each
+# isolating one comparison dimension -----------------------------------
+#
+# D-09: MDCV/CLL are written as container-level boxes (mp4 `mdcv`/`clli`)
+# around an ordinary `mpeg4` encode, never as in-bitstream SEI. This is
+# achieved with FFmpeg's generic, CODEC-INDEPENDENT per-stream INPUT
+# options `-mastering_display`/`-content_light` -- they attach
+# AVMasteringDisplayMetadata/AVContentLightMetadata to the demuxed/generated
+# input stream itself, so they MUST be placed BEFORE `-i`. Placing them
+# after `-i` errors ("you are trying to apply an input option to an output
+# file") -- do not "tidy" them to output position, that would silently
+# break the whole HDR family. 04-RESEARCH.md Priority Finding 1 confirms
+# libavformat/mov.c writes real `mdcv`/`clli` ISOBMFF boxes from these and
+# that libavformat/mov.c populates st->codecpar->coded_side_data on
+# read-back -- the exact stream-level source VIDEO-09 names first, with no
+# decode pass required. Every fixture here is a plain `mpeg4` encode
+# (never libx264/libx265/libsvtav1), which is what keeps this recipe
+# reproducible on the Windows `-lgpl` pinned build.
+#
+# video_hdr_a.mp4 is the baseline every HDR pair compares against
+# (chromaticities/luminance/content-light values from the research pass's
+# own verified recipe). Each _b variant changes exactly ONE of
+# {luminance, chromaticities, content light} from the baseline so each
+# check (video.hdr.mdcv.luminance / .primaries / video.hdr.cll.max/.avg)
+# has a fixture that isolates its own dimension. video_hdr_none.mp4 omits
+# both metadata options entirely -- the presence partner for
+# video.hdr.mdcv/video.hdr.cll.
+"$FFMPEG_BIN" \
+  -mastering_display "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)" \
+  -content_light "1000,400" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_a.mp4"
+
+cp "$OUT_DIR/video_hdr_a.mp4" "$OUT_DIR/video_hdr_a_copy.mp4"
+
+# Isolates video.hdr.mdcv.luminance: identical chromaticities and content
+# light, max_luminance 400 cd/m^2 (L(4000000,50), i.e. 4000000/10000)
+# instead of the baseline's 1000 cd/m^2 -- far more than the 5% tolerance.
+"$FFMPEG_BIN" \
+  -mastering_display "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(4000000,50)" \
+  -content_light "1000,400" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_lum_b.mp4"
+
+# Isolates video.hdr.mdcv.primaries: identical luminance and content
+# light, BT.2020 chromaticities instead of the baseline's DCI-P3-ish set --
+# a substantially larger delta than one 0.0002 quantisation-grid step (A2).
+"$FFMPEG_BIN" \
+  -mastering_display "G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(10000000,1)" \
+  -content_light "1000,400" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_prim_b.mp4"
+
+# Isolates video.hdr.cll.max/video.hdr.cll.avg: identical mastering
+# display, MaxCLL/MaxFALL of 400/120 instead of the baseline's 1000/400 --
+# far more than the 5% tolerance on both.
+"$FFMPEG_BIN" \
+  -mastering_display "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)" \
+  -content_light "400,120" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_cll_b.mp4"
+
+# The presence partner for video.hdr.mdcv/video.hdr.cll: the same encode
+# with NEITHER metadata option -- no mdcv/clli box, no HDR side data at
+# all on read-back.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_none.mp4"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4."
