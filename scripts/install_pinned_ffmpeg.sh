@@ -303,7 +303,20 @@ fi
 chmod +x "$REAL_CANDIDATE_PATH" 2>/dev/null || true
 
 # --- Assert the codec/muxer surface scripts/gen_corpus.sh's recipes need ----
-REQUIRED_ENCODERS="mpeg4 mpeg2video aac mp2 pcm_s16le libopus"
+# `mjpeg` and `ffv1` (04-02-PLAN.md Task 1) close 04-RESEARCH.md's
+# assumption A3: both were confirmed present only on the Linux pinned
+# build during Phase 4 planning/research, never on the Windows `-lgpl`
+# artifact this same manifest also pins. Asserting them here, before
+# scripts/gen_corpus.sh runs on any leg, turns a missing encoder into a
+# named failure at install time rather than an inexplicable missing
+# fixture at generation time.
+#   - `mjpeg` is the only built-in LGPL encoder that accepts `yuvj420p` as
+#     input (neither `mpeg4` nor `mpeg2video` does) -- required for
+#     VIDEO-03's signature yuvj/range-fold fixture trio.
+#   - `ffv1` is the LGPL-safe native codec chosen for VIDEO-12's
+#     no-parser-degradation fixture (an intraframe-lossless codec for
+#     which `av_parser_init` is expected to return null).
+REQUIRED_ENCODERS="mpeg4 mpeg2video aac mp2 pcm_s16le libopus mjpeg ffv1"
 REQUIRED_MUXERS="mp4 mov matroska webm mpegts srt ffmetadata"
 
 if ! VERSION_OUTPUT="$("$REAL_CANDIDATE_PATH" -version 2>&1)"; then
