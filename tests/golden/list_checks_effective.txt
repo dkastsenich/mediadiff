@@ -45,3 +45,5 @@ video.color.primaries  severity=fail  tolerance=<none>
 video.color.transfer  severity=fail  tolerance=<none>
 video.color.matrix  severity=fail  tolerance=<none>
 video.color.chroma_loc  severity=warn  tolerance=<none>
+video.gop.idr_interval  severity=fail  tolerance=10/1 %
+video.gop.closed  severity=fail  tolerance=<none>

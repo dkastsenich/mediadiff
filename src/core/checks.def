@@ -766,3 +766,42 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "warn"
+
+# 04-09-PLAN.md Task 1 (VIDEO-05, VIDEO-12), src/analyzers/video/gop.cpp --
+# the IDR cadence and the open/closed GOP classification, extending
+# video.gop.length above. Approved at 04-CHECK-ROSTER.md (the frozen
+# Phase-4 id roster). Classification reads the leading VCL NAL type
+# directly, NEVER the `key_frame` boolean (04-RESEARCH.md Priority
+# Finding 3: HEVC sets key_frame for every IRAP including CRA_NUT, and the
+# H.264 parser's own ref-count heuristic can mark a non-IDR I slice as a
+# keyframe too) -- see docs/checks/video.gop.closed.md's own "Why it
+# matters" for the segment-alignment consequence this is meant to catch.
+# Skip-reason vocabulary, shared by both ids below: `insufficient_data`
+# (fewer than two IDRs for the interval; no random-access point at all for
+# the classification; or more access units than
+# detail::kMaxAccessUnitsForGopClassification's own bound, T-4-40),
+# `no_parser` (either no registered libav parser, or a codec with no NAL
+# layer at all -- evidence names the codec in the second case), and
+# `partial_scan` (D-02, checked ahead of everything else).
+[[check]]
+id = "video.gop.idr_interval"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "10%"
+
+# Split from video.gop.idr_interval above (04-CHECK-ROSTER.md's own one-
+# semantic-per-id rule -- doc 03's single row words both an interval
+# tolerance and an exact open/closed classification, which a CheckDef
+# cannot carry at once). The classification itself, as an exact string
+# ("open"/"closed"), with the three random-access-point-kind counts in
+# evidence so a reader can see WHY the classification came out as it did.
+[[check]]
+id = "video.gop.closed"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"

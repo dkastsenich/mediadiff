@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
+#include <string>
 #include <vector>
 
 #include "core/check_id.h"
@@ -150,6 +152,103 @@ void emit_gop_length(const StreamParserScan& pstream, Scope scope, Fingerprint& 
   fp.measurements.push_back(std::move(measurement));
 }
 
+// video.gop.idr_interval: the median distance between IDR access units, as
+// an exact RationalValue (num=median distance, den=1). Evidence carries
+// min/median/max and the raw IDR count -- same shape as emit_gop_length,
+// deliberately: both are "median of consecutive index deltas over an
+// access-unit array", just over a differently-selected index set.
+void emit_gop_idr_interval(const detail::GopClassificationResult& classification, Scope scope, Fingerprint& fp) {
+  if (classification.idr_indices.size() < 2) {
+    // VIDEO-05-E1: fewer than two IDR access units has nothing to measure
+    // a distance over -- never a fabricated zero.
+    push_skip(CheckId::video_gop_idr_interval, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+
+  std::vector<std::int64_t> distances;
+  distances.reserve(classification.idr_indices.size() - 1);
+  for (std::size_t i = 1; i < classification.idr_indices.size(); ++i) {
+    distances.push_back(classification.idr_indices[i] - classification.idr_indices[i - 1]);
+  }
+  std::sort(distances.begin(), distances.end());
+
+  const std::size_t n = distances.size();
+  const std::int64_t median = (n % 2 == 1) ? distances[n / 2] : distances[(n / 2) - 1];
+
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_gop_idr_interval);
+  measurement.scope = scope;
+  measurement.value = RationalValue{median, 1, Rational{1, 1}};
+  measurement.evidence = nlohmann::ordered_json{
+      {"min", distances.front()},
+      {"median", median},
+      {"max", distances.back()},
+      {"idr_count", static_cast<std::int64_t>(classification.idr_indices.size())}};
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.gop.closed: "closed" when every random-access point this stream's
+// classification walk observed is a real IDR; "open" when it observed ANY
+// CRA/BLA or non-IDR-intra random-access point -- never derived from the
+// `key_frame` boolean (this plan's own prohibition; the unit table pins a
+// CRA row and an IDR row with IDENTICAL key_frame flags and different
+// classifications, side by side). Evidence carries all three RAP-kind
+// counts so a reader can see WHY the classification came out as it did.
+void emit_gop_closed(const detail::GopClassificationResult& classification, Scope scope, Fingerprint& fp) {
+  const std::int64_t total_rap =
+      classification.idr_count + classification.cra_or_bla_count + classification.non_idr_intra_count;
+  if (total_rap == 0) {
+    // No random-access point at all -- nothing to classify.
+    push_skip(CheckId::video_gop_closed, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+  const bool closed = classification.cra_or_bla_count == 0 && classification.non_idr_intra_count == 0;
+
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_gop_closed);
+  measurement.scope = scope;
+  measurement.value = std::string(closed ? "closed" : "open");
+  measurement.evidence = nlohmann::ordered_json{{"idr_count", classification.idr_count},
+                                                  {"cra_or_bla_count", classification.cra_or_bla_count},
+                                                  {"non_idr_intra_count", classification.non_idr_intra_count}};
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// codec_name (DemuxSession::stream_info's own libav-stable string, e.g.
+// "h264"/"hevc") -> the NalCodec the classification walk needs -- the same
+// string-compare convention src/analyzers/video/stream_params.cpp's own
+// render_level_value already uses ("codec_name == \"h264\"" etc.), applied
+// here since StreamParserScan itself does not carry which NalCodec drove
+// its own walk (that choice lives inside probe/parser_scan.cpp's
+// StreamParserState, private to that translation unit).
+detail::NalCodec nal_codec_for_name(const std::string& codec_name) {
+  if (codec_name == "h264") {
+    return detail::NalCodec::h264;
+  }
+  if (codec_name == "hevc") {
+    return detail::NalCodec::hevc;
+  }
+  return detail::NalCodec::none;
+}
+
+// Both video.gop.idr_interval and video.gop.closed emit
+// SkipReason::no_parser when the stream's codec has no NAL layer at all
+// (VIDEO-12's own "no NAL layer" half, this plan's Task 1 action text) --
+// evidence names the codec so the skip is actionable, not merely
+// mysterious.
+void push_no_nal_layer_skips(const std::string& codec_name, Scope scope, Fingerprint& fp) {
+  const nlohmann::ordered_json evidence{{"codec", codec_name}};
+  for (CheckId id : {CheckId::video_gop_idr_interval, CheckId::video_gop_closed}) {
+    Measurement measurement;
+    measurement.check_index = static_cast<std::uint32_t>(id);
+    measurement.scope = scope;
+    measurement.value = Absent{};
+    measurement.skip_reason = SkipReason::no_parser;
+    measurement.evidence = evidence;
+    fp.measurements.push_back(std::move(measurement));
+  }
+}
+
 // video_gop_analyzer's run(): every video-scoped stream gets exactly one
 // video.gop.length Measurement (a real value, or one of the three skip
 // reasons below).
@@ -168,22 +267,25 @@ void run_video_gop(const ProbeResults& results, Fingerprint& fp) {
   const std::vector<std::optional<Scope>> scopes = compute_stream_scopes(demux, packet_scan.per_stream.size());
 
   if (packet_scan.partial || parser_scan.partial) {
-    // D-02: a GOP length computed from a truncated parse is a confidently
-    // wrong number (03-CONTEXT.md) -- every video-scoped stream refuses,
-    // mirroring size.cpp's own emit_partial_scan_skips shape. The resolved
-    // byte cap rides in evidence so a user knows to raise
-    // --probe-memory-budget-mb.
+    // D-02: a GOP length/interval/classification computed from a truncated
+    // parse is a confidently wrong number (03-CONTEXT.md) -- every
+    // video-scoped stream refuses, mirroring size.cpp's own
+    // emit_partial_scan_skips shape. The resolved byte cap rides in
+    // evidence so a user knows to raise --probe-memory-budget-mb.
     for (std::size_t i = 0; i < scopes.size(); ++i) {
       if (!scopes[i].has_value() || scopes[i]->kind != Scope::Kind::video) {
         continue;
       }
-      Measurement measurement;
-      measurement.check_index = static_cast<std::uint32_t>(CheckId::video_gop_length);
-      measurement.scope = *scopes[i];
-      measurement.value = Absent{};
-      measurement.skip_reason = SkipReason::partial_scan;
-      measurement.evidence = nlohmann::ordered_json{{"probe_memory_cap_bytes", default_packet_scan_max_bytes()}};
-      fp.measurements.push_back(std::move(measurement));
+      const nlohmann::ordered_json evidence{{"probe_memory_cap_bytes", default_packet_scan_max_bytes()}};
+      for (CheckId id : {CheckId::video_gop_length, CheckId::video_gop_idr_interval, CheckId::video_gop_closed}) {
+        Measurement measurement;
+        measurement.check_index = static_cast<std::uint32_t>(id);
+        measurement.scope = *scopes[i];
+        measurement.value = Absent{};
+        measurement.skip_reason = SkipReason::partial_scan;
+        measurement.evidence = evidence;
+        fp.measurements.push_back(std::move(measurement));
+      }
     }
     return;
   }
@@ -203,13 +305,115 @@ void run_video_gop(const ProbeResults& results, Fingerprint& fp) {
       // not container-inapplicable, so no_parser, never
       // not_applicable_container.
       push_skip(CheckId::video_gop_length, *scopes[i], SkipReason::no_parser, fp);
+      push_skip(CheckId::video_gop_idr_interval, *scopes[i], SkipReason::no_parser, fp);
+      push_skip(CheckId::video_gop_closed, *scopes[i], SkipReason::no_parser, fp);
       continue;
     }
     emit_gop_length(pstream, *scopes[i], fp);
+
+    const std::string codec_name = demux.stream_info(static_cast<int>(i)).codec_name;
+    const detail::NalCodec nal_codec = nal_codec_for_name(codec_name);
+    const detail::GopClassificationResult classification =
+        detail::classify_gop(std::span<const AccessUnitRecord>(pstream.access_units), nal_codec);
+
+    switch (classification.status) {
+      case detail::GopClassificationResult::Status::no_nal_layer:
+        // VIDEO-12: a codec with a registered parser but no NAL layer at
+        // all (e.g. mpeg4) -- distinct from `!pstream.has_parser` above,
+        // and from `bound_exceeded` below.
+        push_no_nal_layer_skips(codec_name, *scopes[i], fp);
+        break;
+      case detail::GopClassificationResult::Status::bound_exceeded:
+        // T-4-40: more access units than this walk's own bound -- refuses
+        // rather than classifying from a partial view that might disagree
+        // with the untruncated answer.
+        push_skip(CheckId::video_gop_idr_interval, *scopes[i], SkipReason::insufficient_data, fp);
+        push_skip(CheckId::video_gop_closed, *scopes[i], SkipReason::insufficient_data, fp);
+        break;
+      case detail::GopClassificationResult::Status::ok:
+        emit_gop_idr_interval(classification, *scopes[i], fp);
+        emit_gop_closed(classification, *scopes[i], fp);
+        break;
+    }
   }
 }
 
 }  // namespace
+
+namespace detail {
+
+// Classifies ONE access unit's leading VCL NAL type (plus, for H.264 only,
+// its own parsed picture type) into the RandomAccessKind it contributes to
+// GOP classification -- transcribed from 04-RESEARCH.md's Priority
+// Finding 3 tables, never from recall (this plan's own action text). NEVER
+// reads AccessUnitRecord::key_frame: that boolean cannot distinguish an
+// IDR from a CRA (HEVC sets it for every IRAP) or from a heuristically-
+// flagged non-IDR I slice (H.264's own ref-count heuristic) -- exactly the
+// signal 04-RESEARCH.md's Pitfall 2 warns is invisible to it.
+RandomAccessKind classify_access_unit(NalCodec codec, std::uint8_t first_vcl_nal_type, int pict_type) {
+  if (codec == NalCodec::h264) {
+    if (first_vcl_nal_type == kH264NalIdrSlice) {
+      return RandomAccessKind::idr;
+    }
+    if (first_vcl_nal_type == kH264NalNonIdrSlice && pict_type == kPictureTypeI) {
+      return RandomAccessKind::non_idr_intra;
+    }
+    return RandomAccessKind::none;
+  }
+  if (codec == NalCodec::hevc) {
+    if (first_vcl_nal_type == kHevcNalIdrWRadl || first_vcl_nal_type == kHevcNalIdrNLp) {
+      return RandomAccessKind::idr;
+    }
+    if (first_vcl_nal_type >= kHevcNalIrapFirst && first_vcl_nal_type <= kHevcNalIrapLast) {
+      return RandomAccessKind::cra_or_bla;
+    }
+    return RandomAccessKind::none;
+  }
+  // NalCodec::none -- no NAL layer at all; the caller checks this BEFORE
+  // ever reaching this function (classify_gop's own no_nal_layer status),
+  // so this branch is defensive only.
+  return RandomAccessKind::none;
+}
+
+GopClassificationResult classify_gop(std::span<const AccessUnitRecord> access_units, NalCodec codec) {
+  GopClassificationResult result;
+  if (codec == NalCodec::none) {
+    result.status = GopClassificationResult::Status::no_nal_layer;
+    return result;
+  }
+
+  // T-4-40: the bound is checked BEFORE the loop begins, following
+  // src/analyzers/size/size.cpp's own compute_peak_window/kMaxWindowSteps
+  // precedent exactly -- a stream past the bound is refused outright
+  // (bound_exceeded), never partially walked.
+  if (access_units.size() > kMaxAccessUnitsForGopClassification) {
+    result.status = GopClassificationResult::Status::bound_exceeded;
+    return result;
+  }
+
+  result.status = GopClassificationResult::Status::ok;
+  for (std::size_t i = 0; i < access_units.size(); ++i) {
+    const RandomAccessKind kind =
+        classify_access_unit(codec, access_units[i].first_vcl_nal_type, access_units[i].pict_type);
+    switch (kind) {
+      case RandomAccessKind::idr:
+        ++result.idr_count;
+        result.idr_indices.push_back(static_cast<std::int64_t>(i));
+        break;
+      case RandomAccessKind::cra_or_bla:
+        ++result.cra_or_bla_count;
+        break;
+      case RandomAccessKind::non_idr_intra:
+        ++result.non_idr_intra_count;
+        break;
+      case RandomAccessKind::none:
+        break;
+    }
+  }
+  return result;
+}
+
+}  // namespace detail
 
 const AnalyzerSpec& video_gop_analyzer() {
   static const AnalyzerSpec spec{"video_gop", PassSet{Pass::demux_header, Pass::packet_scan, Pass::parser_scan},

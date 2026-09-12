@@ -158,6 +158,16 @@ add_executable(mediadiff_unit_tests
   # wrapped-value, driven directly against hand-built PacketRecord arrays
   # with hand-computed expected values (no fixture on disk).
   test_cadence.cpp
+  # VIDEO-05/VIDEO-12 (04-09-PLAN.md): the open/closed GOP classification's
+  # own hand-verified NAL-type table, driven directly through
+  # detail::classify_access_unit/detail::classify_gop -- every expected
+  # value hand-verified against 04-RESEARCH.md's Priority Finding 3 before
+  # the assertion was written, never captured from the implementation
+  # (test_ts_continuity.cpp's own governing discipline, inherited
+  # verbatim). Extended in Task 3 with the H.264 SPS reference-frame
+  # reader's own hand-built payload table (`detail::
+  # read_h264_max_num_ref_frames`).
+  test_gop_classification.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the

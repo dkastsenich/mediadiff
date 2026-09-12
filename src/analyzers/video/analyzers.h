@@ -8,9 +8,12 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "probe/parser_scan.h"
 #include "probe/pass.h"
 
 namespace mediadiff {
@@ -132,6 +135,99 @@ EffectiveSar resolve_sar(std::int64_t raw_num, std::int64_t raw_den);
 // dimensions; exposed here so Test 7 can drive the refusal directly).
 std::optional<std::pair<std::int64_t, std::int64_t>> compute_dar(std::int64_t width, std::int64_t height,
                                                                     std::int64_t sar_num, std::int64_t sar_den);
+
+// video.gop.idr_interval/video.gop.closed's own classification rule
+// (04-09-PLAN.md Task 1, VIDEO-05), transcribed from 04-RESEARCH.md's
+// Priority Finding 3 -- NEVER from recall. An access unit is an IDR when
+// its leading VCL NAL type is H.264 type 5, or HEVC type 19/20
+// (IDR_W_RADL/IDR_N_LP). It is a non-IDR random-access point when the type
+// is HEVC 16-23 excluding 19/20 (the BLA/CRA/reserved-IRAP family,
+// `cra_or_bla` below). It is a non-IDR intra picture when the type is
+// H.264 1 and the parsed picture type is I (`non_idr_intra` below) -- an
+// open-GOP recovery point invisible to `key_frame` alone (04-RESEARCH.md
+// Pitfall 2, this plan's own must_haves truth). `none` covers every other
+// access unit (a P/B slice, or a NAL type this codec's walk never reports
+// as VCL) and never contributes to classification.
+enum class RandomAccessKind : std::uint8_t {
+  none,
+  idr,
+  cra_or_bla,
+  non_idr_intra,
+};
+
+// H.264 NAL type values this classifier reads (libavcodec/h264.h, cited
+// in 04-RESEARCH.md Priority Finding 3) -- named and cited so a reader can
+// check each against the research citation rather than against a memory
+// of the specification (this plan's own action text).
+inline constexpr std::uint8_t kH264NalNonIdrSlice = 1;  // H264_NAL_SLICE
+inline constexpr std::uint8_t kH264NalIdrSlice = 5;     // H264_NAL_IDR_SLICE
+
+// HEVC NAL type values this classifier reads (libavcodec/hevc/hevc.h /
+// hevc/parser.c's own IS_IRAP_NAL range, cited in 04-RESEARCH.md Priority
+// Finding 3).
+inline constexpr std::uint8_t kHevcNalIrapFirst = 16;  // BLA_W_LP -- parser.c:37's own IS_IRAP_NAL lower bound
+inline constexpr std::uint8_t kHevcNalIrapLast = 23;   // parser.c:37's own IS_IRAP_NAL upper bound
+inline constexpr std::uint8_t kHevcNalIdrWRadl = 19;
+inline constexpr std::uint8_t kHevcNalIdrNLp = 20;
+
+// AVPictureType's own I ordinal (libavutil/avutil.h: AV_PICTURE_TYPE_NONE=0,
+// ..._I=1) -- hardcoded per this project's "src/analyzers/ never includes
+// a libav header directly" convention (mirrors
+// stream_params.cpp's own kUnknownProfileOrLevel precedent).
+inline constexpr int kPictureTypeI = 1;
+
+// Classifies ONE access unit's leading VCL NAL type (plus, for H.264 only,
+// its own parsed picture type) into the RandomAccessKind it contributes to
+// GOP classification -- the pure, single-AU seam
+// tests/unit/test_gop_classification.cpp drives directly, and the ONLY
+// place this project reads NAL types for this purpose (never the
+// `key_frame` boolean, this plan's own prohibition).
+RandomAccessKind classify_access_unit(NalCodec codec, std::uint8_t first_vcl_nal_type, int pict_type);
+
+// T-4-40's own mitigation (mirrors src/analyzers/size/size.cpp's own
+// kMaxWindowSteps precedent): classify_gop refuses to iterate more than
+// this many access units, established BEFORE the loop begins -- a crafted
+// stream with a hostile access-unit count costs a bounded amount, and a
+// classification that could only be reached by reading past this bound is
+// reported as `insufficient_data` rather than computed from a partial
+// view that might disagree with the untruncated answer (D-02's own
+// "confidently wrong" concern, applied here to bitstream classification
+// rather than a scan byte budget). Named so no bare literal appears at any
+// call site (this project's own acceptance criterion), and exported here
+// so tests/unit/test_gop_classification.cpp's own truncation test can
+// drive the bound directly at an economical size.
+inline constexpr std::size_t kMaxAccessUnitsForGopClassification = 200'000;
+
+// video.gop.idr_interval/video.gop.closed/video.gop.refs' own shared
+// classification walk over one stream's full access-unit array --
+// computed ONCE per stream, since both checks need the SAME counts (this
+// plan's own action text: "a classification function ... returning the
+// open/closed classification plus the IDR cadence").
+struct GopClassificationResult {
+  enum class Status : std::uint8_t {
+    ok,
+    // `codec == NalCodec::none` -- this stream's codec has no NAL layer at
+    // all (VIDEO-12's own "no NAL layer" half, mirrors `no_parser` in
+    // evidence-naming spirit; the caller emits SkipReason::no_parser with
+    // the codec named in evidence, per this plan's own Task 1 action
+    // text).
+    no_nal_layer,
+    // More access units than kMaxAccessUnitsForGopClassification -- the
+    // caller emits SkipReason::insufficient_data (T-4-40).
+    bound_exceeded,
+  };
+  Status status = Status::no_nal_layer;
+  std::int64_t idr_count = 0;
+  std::int64_t cra_or_bla_count = 0;
+  std::int64_t non_idr_intra_count = 0;
+  // Ascending access-unit-array indices of every IDR access unit --
+  // video.gop.idr_interval's own median is derived from the consecutive
+  // deltas of this list (mirrors emit_gop_length's own "distances" vector,
+  // gop.cpp); video.gop.closed never reads it.
+  std::vector<std::int64_t> idr_indices;
+};
+
+GopClassificationResult classify_gop(std::span<const AccessUnitRecord> access_units, NalCodec codec);
 
 }  // namespace detail
 
