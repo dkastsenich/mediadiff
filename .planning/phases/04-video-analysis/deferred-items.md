@@ -76,3 +76,37 @@ recipe more tightly (e.g. an explicit `-threads 1` if encoder threading is
 the cause) or documents the expected per-environment variance the way
 `scripts/assert_corpus_digest.sh` already does for `mkv_opus_a.webm`/
 `mkv_opus_b.webm`.
+
+## 04-08-PLAN.md — VIDEO-03 signature evidence (orchestrator finding, needs a human decision)
+
+**Test #688 is vacuous.** `integration.video_yuvj - yuvj420p vs yuv420p-full-range (the SAME
+intent, two spellings) produces ZERO non-pass findings` compares `video_yuvj420p.mp4` against
+`video_yuv420p_pc.mp4`, and those two files are **byte-identical** (sha256 `f9d92aff10ff030a…`).
+
+- Root cause: the pinned FFmpeg 8.1 mjpeg encoder normalizes `-pix_fmt yuv420p -color_range pc`
+  to `yuvj420p` before muxing; both files read back as `yuvj420p(pc, …)`. The "two spellings"
+  distinction never reaches the file with mjpeg. Verified byte-identical on BOTH a `testsrc2` and
+  a flat `color=c=gray` source, so 04-08's source switch did not cause it.
+- Origin: the mjpeg signature pair was recommended by the orchestrator's addendum to
+  `04-RESEARCH.md` (closing Open Question 1). That addendum verified mjpeg *accepts* yuvj420p but
+  never verified the candidate spelling *survives* as a distinct spelling. It does not.
+- Mutation evidence (fold disabled via `if (false && …)` in `detail::fold_pix_fmt_range`, then
+  restored): #689 (yuvj vs limited, count==1) FAILED, #690 and #686 FAILED — all load-bearing.
+  **#688 PASSED with no fold at all.**
+
+**The fold itself is correct and genuinely verified** by #689, #690 and #686. Only #688 carries no
+evidence.
+
+**VIDEO-03's literal text conflicts with correct behaviour.** It says "a `yuvj420p` → `yuv420p` +
+full-range change produces exactly **one** finding, on `video.color.range`". After the fold both
+sides are `(yuv420p, pc)`, so a correct implementation reports **zero**; emitting a `fail` on
+`video.color.range` (no profile override) would be a P0 false positive. The tests encode the
+defensible reading (full→0, limited→1). The requirement text appears to be the error.
+
+Decisions owed to a human:
+1. Replace #688's fixture pair with one where yuvj420p and yuv420p+pc survive as distinct
+   spellings (a codec/container that does not collapse them, within the LGPL pin) — or accept that
+   the case is unconstructible here and delete #688 rather than keep a test that proves nothing.
+2. Amend VIDEO-03's text to match the tested behaviour.
+3. VIDEO-03 remains marked Complete: its load-bearing claim (range-folding runs before comparison,
+   so the spelling change does not also fire `video.pix_fmt`) is proven by #689.
