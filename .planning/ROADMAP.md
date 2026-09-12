@@ -269,12 +269,12 @@ Plans:
   4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source (stream-level vs first-frame) recorded, and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
   5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the parser pass measures at under 10% overhead over a plain packet scan on the 10-minute reference file.
 
-**Plans**: 1/12 plans executed in 11 waves
+**Plans**: 2/12 plans executed in 11 waves
 
 Plans:
 
 - [x] 04-01-PLAN.md — Tracer: ParserScan fused into the existing sweep, carrying `video.gop.length` end to end (+ check-id roster gate)
-- [ ] 04-02-PLAN.md — Encoder-based video fixtures and the `mjpeg`/`ffv1` pinned-build preflight
+- [x] 04-02-PLAN.md — Encoder-based video fixtures and the `mjpeg`/`ffv1` pinned-build preflight
 - [ ] 04-03-PLAN.md — Parser-overhead measurement harness, recorded not gated (D-11/D-12)
 - [ ] 04-04-PLAN.md — HDR MDCV/CLL and coherence fixtures via codec-independent metadata options (D-09)
 - [ ] 04-05-PLAN.md — Hand-constructed H.264/HEVC Annex-B streams, the `dvcC` box and the SAR-conflict patch (D-01/D-02/D-03)
@@ -349,7 +349,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 1. Foundation & Toolchain | 5/5 | Complete | 2026-08-15 |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
-| 4. Video Analysis | 1/12 | In Progress|  |
+| 4. Video Analysis | 2/12 | In Progress|  |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |
 | 7. Content & Quality | 0/TBD | Not started | - |
