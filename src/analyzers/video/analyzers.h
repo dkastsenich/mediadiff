@@ -66,6 +66,23 @@ const AnalyzerSpec& video_stream_params_analyzer();
 // Pass::packet_scan (none counts anything).
 const AnalyzerSpec& video_color_analyzer();
 
+// video.interlace (04-10-PLAN.md, VIDEO-06): the declared field order
+// (codecpar->field_order, via DemuxSession::stream_info) cross-checked
+// against the PER-ACCESS-UNIT field order ParserScanResult recorded --
+// reporting only the declared value would satisfy neither VIDEO-06 nor
+// this check's own name. Scoped ContainerFamily::other (codec-scoped, not
+// container-scoped). required_passes = {Pass::demux_header,
+// Pass::packet_scan, Pass::parser_scan} -- same trio as
+// video_gop_analyzer(), since the per-frame cross-check needs
+// ParserScanResult. Unlike video_gop_analyzer()/video_frame_types_
+// analyzer(), this check does NOT skip `no_parser` when a stream's codec
+// has no registered parser (or a registered parser that never sets
+// field_order, e.g. mpeg4video_parser.c) -- the declared value is real
+// information the container carries regardless, so it is always reported,
+// with evidence recording whether a per-frame cross-check was possible
+// (VIDEO-06-E1). Only `partial_scan` (either scan truncated, D-02) skips.
+const AnalyzerSpec& video_interlace_analyzer();
+
 namespace detail {
 
 // video.pix_fmt/video.color.range's own single fold seam (VIDEO-03,
@@ -241,6 +258,60 @@ struct GopClassificationResult {
 };
 
 GopClassificationResult classify_gop(std::span<const AccessUnitRecord> access_units, NalCodec codec);
+
+// video.interlace's own hand-written AVFieldOrder name table (VIDEO-06,
+// 04-10-PLAN.md): no libav accessor exists for this field (unlike
+// pix_fmt/color_range/etc., video/color.cpp's own precedent) -- mirrors
+// stream_params.cpp's own render_level_value precedent for "this project's
+// own table, not libav's, when none exists." Every one of the six
+// AVFieldOrder enumerators (libavcodec/defs.h: UNKNOWN=0, PROGRESSIVE=1,
+// TT=2, BB=3, TB=4, BT=5) has a defined spelling; a raw value outside that
+// set (never produced by a real codecpar, since AVFieldOrder is a closed
+// enum, but not undefined behavior to receive here either) falls through
+// to its own decimal spelling, mirroring render_profile_value's identical
+// fallback for an unresolved value.
+std::string field_order_name(int field_order_raw);
+
+// video.interlace's own per-access-unit tally-and-classify step (VIDEO-06,
+// 04-10-PLAN.md), exposed here so tests/unit/test_video_interlace.cpp's
+// Tests 3-5 can drive it directly over hand-built AccessUnitRecord arrays
+// -- the only way to reach the mixed and disagreeing cases reliably
+// (04-10-PLAN.md's own flagged assumption A1: whether the real
+// video_ilace_mixed.mp4 fixture's own per-frame variation actually
+// exercises `mixed` is a property of the encoder, verified empirically in
+// this plan's own SUMMARY, not assumed here).
+struct InterlaceClassification {
+  enum class Kind : std::uint8_t {
+    // Fewer than one access unit carried a KNOWN (non-AV_FIELD_UNKNOWN)
+    // field_order -- covers both "no access unit reported one" and
+    // `StreamParserScan::has_parser == false` (where `access_units` is
+    // empty), which this plan's own Test 6 requires to take the SAME path.
+    no_cross_check,
+    // Exactly one distinct known field_order value was observed across
+    // every access unit.
+    single,
+    // More than one distinct known field_order value was observed.
+    mixed,
+  };
+  Kind kind = Kind::no_cross_check;
+  // Meaningful only when kind == single: the one distinct observed raw
+  // field_order value.
+  int single_value = 0;
+  // One entry per DISTINCT known field_order raw value observed, in
+  // ascending raw-value order -- a fixed, deterministic iteration order
+  // (VIDEO-06-E2: two runs over the same input must produce byte-identical
+  // evidence, including the proportions; iterating a hash-keyed tally in
+  // whatever order it happens to occupy would not guarantee that).
+  std::vector<std::pair<int, std::int64_t>> counts;
+  // Sum of every entry in `counts` -- the proportion denominator.
+  std::int64_t total_observed = 0;
+  // Count of access units with a nonzero repeat_pict -- pulldown is the
+  // usual reason a stream's declared field order and its frames disagree,
+  // so it always rides in evidence (04-10-PLAN.md's own action text).
+  std::int64_t repeat_pict_count = 0;
+};
+
+InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> access_units);
 
 }  // namespace detail
 

@@ -384,6 +384,12 @@ StreamInfo DemuxSession::stream_info(int index) const {
   if (chroma_location_name != nullptr) {
     info.chroma_location_name = chroma_location_name;
   }
+
+  // 04-10-PLAN.md (VIDEO-06): the raw AVFieldOrder ordinal, same
+  // per-field boundary as every other codecpar value above -- resolved to
+  // a name only at the src/analyzers/video/interlace.cpp edge (no
+  // av_field_order_name exists to call here).
+  info.field_order_raw = static_cast<std::int64_t>(codecpar->field_order);
   return info;
 }
 

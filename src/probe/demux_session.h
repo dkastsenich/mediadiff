@@ -272,6 +272,17 @@ struct StreamInfo {
   std::int64_t color_matrix_raw = 2;  // AVCOL_SPC_UNSPECIFIED
   std::optional<std::string> chroma_location_name;
   std::int64_t chroma_location_raw = 0;  // AVCHROMA_LOC_UNSPECIFIED
+
+  // 04-10-PLAN.md (VIDEO-06): codecpar->field_order verbatim -- the raw
+  // AVFieldOrder ordinal (avcodec/defs.h: UNKNOWN=0, PROGRESSIVE=1, TT=2,
+  // BB=3, TB=4, BT=5), the container/bitstream-header-level DECLARED field
+  // order. Unlike pix_fmt/color_range/etc. above, libav exposes no
+  // av_field_order_name accessor to resolve this to a string -- the same
+  // "no libav table exists" situation video.level's own render_level_value
+  // already handles for codecpar->level -- so video.interlace's own
+  // hand-written name table lives in src/analyzers/video/interlace.cpp
+  // (detail::field_order_name), never here.
+  std::int64_t field_order_raw = 0;  // AV_FIELD_UNKNOWN
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

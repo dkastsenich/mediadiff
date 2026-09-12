@@ -859,3 +859,28 @@ remux = "fail"
 
 [check.profile_tolerance]
 hw_encoder = "10%"
+
+# 04-10-PLAN.md (VIDEO-06), src/analyzers/video/interlace.cpp -- the
+# declared field order (codecpar->field_order) cross-checked against the
+# PER-ACCESS-UNIT field order ParserScanResult records, never reported as
+# the value without recording whether that cross-check was possible.
+# Approved at 04-CHECK-ROSTER.md (the frozen Phase-4 id roster). The
+# observed value wins whenever a cross-check was possible; a uniform
+# observed value that disagrees with the declared one is still the
+# compared value, with the disagreement recorded in evidence only (never
+# gating the comparison). Non-uniform observed content is reported as
+# `mixed`, with one exact num/den rational proportion per distinct
+# observed field order in evidence -- never a floating-point percentage
+# (T-4-45). Skip-reason vocabulary: `partial_scan` (either scan
+# truncated, D-02, checked ahead of everything else). Deliberately never
+# `no_parser` -- unlike video.gop.*/video.frame_types above, a codec with
+# no registered parser (or a registered parser that never sets
+# field_order) still reports the declared value, with evidence recording
+# that no per-frame cross-check was possible (VIDEO-06-E1).
+[[check]]
+id = "video.interlace"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"

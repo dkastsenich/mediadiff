@@ -177,6 +177,7 @@ add_library(libmediadiff STATIC
   src/analyzers/video/gop.cpp
   src/analyzers/video/frame_types.cpp
   src/analyzers/video/color.cpp
+  src/analyzers/video/interlace.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

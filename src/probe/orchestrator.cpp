@@ -122,6 +122,11 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // produce) stays grouped in the stable, hand-written analyzer order
       // (TRUST-05).
       video_frame_types_analyzer(),
+      // 04-10-PLAN.md (VIDEO-06): video.interlace -- listed directly after
+      // video_frame_types_analyzer() so every ParserScan-consuming video
+      // analyzer stays grouped in the stable, hand-written analyzer order
+      // (TRUST-05).
+      video_interlace_analyzer(),
   };
   return registry;
 }
