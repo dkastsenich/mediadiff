@@ -941,3 +941,45 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 04-11-PLAN.md (VIDEO-09), src/analyzers/video/hdr.cpp -- HDR10 content-
+# light metadata (AVContentLightMetadata, AV_PKT_DATA_CONTENT_LIGHT_LEVEL)
+# -- the SAME stream-level-only extraction and the SAME could/could-not-
+# carry distinction as video.hdr.mdcv above, sharing one extraction seam
+# and one codec-capability decision (hdr.cpp's own resolve_hdr_source /
+# detail::could_carry_frame_level_hdr, never a second, independently-
+# written copy).
+[[check]]
+id = "video.hdr.cll"
+group = "video"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# Split from video.hdr.cll (the presence check above) for MaxCLL --
+# AVContentLightMetadata's own plain unsigned integer, cd/m^2 directly (no
+# rational wrapping, unlike the mastering-display family -- 04-RESEARCH.md's
+# own "Anti-Patterns to Avoid": the two families are not symmetric). Five
+# percent tolerance, same reasoning as video.hdr.mdcv.luminance's own
+# comment.
+[[check]]
+id = "video.hdr.cll.max"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "int64"
+severity = "fail"
+tolerance = "5%"
+
+# Split from video.hdr.cll for MaxFALL -- its OWN id, never evidence riding
+# on video.hdr.cll.max, so a pipeline that halved MaxFALL alone is still
+# caught (04-CHECK-ROSTER.md's own addition rationale).
+[[check]]
+id = "video.hdr.cll.avg"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "int64"
+severity = "fail"
+tolerance = "5%"

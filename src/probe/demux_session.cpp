@@ -439,6 +439,19 @@ StreamInfo DemuxSession::stream_info(int index) const {
     }
   }
 
+  const AVPacketSideData* cll_side_data = av_packet_side_data_get(
+      codecpar->coded_side_data, codecpar->nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL);
+  if (cll_side_data != nullptr) {
+    if (cll_side_data->size < sizeof(AVContentLightMetadata)) {
+      info.cll_short_payload = true;
+    } else {
+      const auto* cll = reinterpret_cast<const AVContentLightMetadata*>(cll_side_data->data);
+      info.cll_present = true;
+      info.cll_max_cll = static_cast<std::int64_t>(cll->MaxCLL);
+      info.cll_max_fall = static_cast<std::int64_t>(cll->MaxFALL);
+    }
+  }
+
   return info;
 }
 

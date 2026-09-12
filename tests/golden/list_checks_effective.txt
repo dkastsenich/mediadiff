@@ -53,3 +53,6 @@ video.interlace  severity=fail  tolerance=<none>
 video.hdr.mdcv  severity=fail  tolerance=<none>
 video.hdr.mdcv.luminance  severity=fail  tolerance=5/1 %
 video.hdr.mdcv.primaries  severity=fail  tolerance=<none>
+video.hdr.cll  severity=fail  tolerance=<none>
+video.hdr.cll.max  severity=fail  tolerance=5/1 %
+video.hdr.cll.avg  severity=fail  tolerance=5/1 %

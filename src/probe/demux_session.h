@@ -332,6 +332,19 @@ struct StreamInfo {
   std::int64_t mdcv_min_luminance_den = 1;
   std::int64_t mdcv_max_luminance_num = 0;
   std::int64_t mdcv_max_luminance_den = 1;
+
+  // 04-11-PLAN.md (VIDEO-09): HDR10 content-light metadata, read from
+  // codecpar->coded_side_data (AV_PKT_DATA_CONTENT_LIGHT_LEVEL) -- the
+  // SAME extraction boundary and short-payload discipline (T-4-48) as the
+  // mdcv_* fields above. Unlike AVMasteringDisplayMetadata's rationals,
+  // AVContentLightMetadata's MaxCLL/MaxFALL are already plain unsigned
+  // integers in cd/m^2 (04-RESEARCH.md's own "Anti-Patterns to Avoid" --
+  // the two families are NOT symmetric) -- carried verbatim as int64, no
+  // rational wrapping needed.
+  bool cll_present = false;
+  bool cll_short_payload = false;
+  std::int64_t cll_max_cll = 0;
+  std::int64_t cll_max_fall = 0;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

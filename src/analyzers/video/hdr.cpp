@@ -205,6 +205,8 @@ HdrSourceKind resolve_hdr_source(bool stream_present, const std::string& codec_n
 
 HdrSourceKind resolve_mdcv_source(const StreamInfo& info) { return resolve_hdr_source(info.mdcv_present, info.codec_name); }
 
+HdrSourceKind resolve_cll_source(const StreamInfo& info) { return resolve_hdr_source(info.cll_present, info.codec_name); }
+
 // video.hdr.mdcv: the `presence` semantic (doc 01 section 3) -- a short
 // canonical string ("present") when the stream-level source fired,
 // Absent{} otherwise. compare/presence.cpp never inspects the VALUE, only
@@ -370,13 +372,90 @@ void emit_mdcv_primaries(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
-// video_hdr_analyzer's run(): every video-scoped stream gets all three
-// mastering-display checks unconditionally -- codecpar alone, no scan
-// dependency of any kind (matches video_color_analyzer()'s own
-// Pass::demux_header-only shape). Task 2 (04-11-PLAN.md) adds the
-// content-light family's own emit_cll/emit_cll_max/emit_cll_avg calls
-// here, reusing this exact loop and the shared resolve_hdr_source seam
-// above -- never a second, independently-written copy.
+// video.hdr.cll: the content-light family's own `presence` check --
+// IDENTICAL shape to emit_mdcv above, reusing resolve_cll_source (the SAME
+// shared resolve_hdr_source seam, never a second copy, per this plan's own
+// Task 2 instruction).
+void emit_cll(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_cll);
+  measurement.scope = scope;
+
+  const HdrSourceKind source = resolve_cll_source(info);
+  if (source == HdrSourceKind::stream) {
+    measurement.value = std::string("present");
+    measurement.evidence = nlohmann::ordered_json{
+        {"source", "stream"},
+        {"max_cll", info.cll_max_cll},
+        {"max_fall", info.cll_max_fall},
+        {"short_payload", info.cll_short_payload},
+    };
+  } else {
+    measurement.value = Absent{};
+    measurement.evidence = nlohmann::ordered_json{
+        {"codec", info.codec_name},
+        {"could_carry_frame_level", source == HdrSourceKind::requires_decode},
+        {"short_payload", info.cll_short_payload},
+    };
+    if (source == HdrSourceKind::requires_decode) {
+      measurement.skip_reason = SkipReason::requires_decode;
+    }
+  }
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.hdr.cll.max: split from video.hdr.cll for MaxCLL --
+// AVContentLightMetadata's own plain unsigned integer (cd/m^2, no rational
+// wrapping, unlike the mastering-display family). `tol` at five percent;
+// "nothing to measure" (source != stream) emits the same shared
+// requires_decode skip as the mdcv value checks, never Absent{}.
+void emit_cll_max(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_cll_max);
+  measurement.scope = scope;
+
+  const HdrSourceKind source = resolve_cll_source(info);
+  if (source == HdrSourceKind::stream) {
+    measurement.value = info.cll_max_cll;
+    measurement.evidence = nlohmann::ordered_json{{"source", "stream"}};
+  } else {
+    measurement.value = Absent{};
+    measurement.skip_reason = SkipReason::requires_decode;
+    measurement.evidence = nlohmann::ordered_json{
+        {"codec", info.codec_name}, {"could_carry_frame_level", source == HdrSourceKind::requires_decode}};
+  }
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.hdr.cll.avg: split from video.hdr.cll for MaxFALL -- its OWN id,
+// never evidence riding on video.hdr.cll.max, so a pipeline that halved
+// MaxFALL alone is still caught (04-CHECK-ROSTER.md's own addition
+// rationale; T-4 threat model's own "a halved MDCV would report pass"
+// reasoning applies identically here).
+void emit_cll_avg(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_cll_avg);
+  measurement.scope = scope;
+
+  const HdrSourceKind source = resolve_cll_source(info);
+  if (source == HdrSourceKind::stream) {
+    measurement.value = info.cll_max_fall;
+    measurement.evidence = nlohmann::ordered_json{{"source", "stream"}};
+  } else {
+    measurement.value = Absent{};
+    measurement.skip_reason = SkipReason::requires_decode;
+    measurement.evidence = nlohmann::ordered_json{
+        {"codec", info.codec_name}, {"could_carry_frame_level", source == HdrSourceKind::requires_decode}};
+  }
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video_hdr_analyzer's run(): every video-scoped stream gets all six HDR
+// checks unconditionally -- codecpar alone, no scan dependency of any kind
+// (matches video_color_analyzer()'s own Pass::demux_header-only shape).
+// Task 2 (04-11-PLAN.md) reuses this exact loop and Task 1's shared
+// resolve_hdr_source seam for the content-light family below -- never a
+// second, independently-written copy.
 void run_video_hdr(const ProbeResults& results, Fingerprint& fp) {
   if (results.demux == nullptr) {
     // Unreachable in practice -- Pass::demux_header is unconditionally in
@@ -399,6 +478,9 @@ void run_video_hdr(const ProbeResults& results, Fingerprint& fp) {
     emit_mdcv(info, scope, fp);
     emit_mdcv_luminance(info, scope, fp);
     emit_mdcv_primaries(info, scope, fp);
+    emit_cll(info, scope, fp);
+    emit_cll_max(info, scope, fp);
+    emit_cll_avg(info, scope, fp);
   }
 }
 
