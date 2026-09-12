@@ -20,7 +20,9 @@
 // checks, bringing the total to forty-one. 04-08-PLAN.md registers
 // video.pix_fmt and the five colour-identity checks
 // (video.color.range/primaries/transfer/matrix/chroma_loc), bringing the
-// total to forty-seven. This file is where a gap becomes visible.
+// total to forty-seven. 04-09-PLAN.md registers video.gop.idr_interval,
+// video.gop.closed, video.gop.refs and video.frame_types, bringing the
+// total to fifty-one. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -275,6 +277,27 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"video.color.chroma_loc",
        {fixture("video_chroma_left.mkv"), fixture("video_chroma_center.mkv"), fixture("video_color_bt709.mp4"),
         fixture("video_color_bt709_copy.mp4")}},
+
+      // --- video.gop.idr_interval/video.gop.closed/video.gop.refs/
+      // video.frame_types (04-09-PLAN.md, PROBE-03/VIDEO-05/VIDEO-12) ---
+      // The GOP-family clean pair is a byte-identical copy of
+      // video_h264_closed.h264 (added to scripts/gen_corpus.sh by this
+      // task) rather than an unrelated codec/container's own clean pair --
+      // a clean pair drawn from a different codec family would prove
+      // something other than "this check passes when nothing changed"
+      // (this plan's own action text).
+      {"video.gop.idr_interval",
+       {fixture("video_h264_closed.h264"), fixture("video_h264_idr48.h264"), fixture("video_h264_closed.h264"),
+        fixture("video_h264_closed_copy.h264")}},
+      {"video.gop.closed",
+       {fixture("video_h264_closed.h264"), fixture("video_h264_open.h264"), fixture("video_h264_closed.h264"),
+        fixture("video_h264_closed_copy.h264")}},
+      {"video.gop.refs",
+       {fixture("video_h264_refs1.h264"), fixture("video_h264_refs4.h264"), fixture("video_h264_closed.h264"),
+        fixture("video_h264_closed_copy.h264")}},
+      {"video.frame_types",
+       {fixture("video_base.mp4"), fixture("video_bf3.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
   };
   return pairs;
 }

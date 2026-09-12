@@ -125,6 +125,98 @@ TEST_CASE(
   REQUIRE(result.non_idr_intra_count == 0);
 }
 
+// --- Task 3 Test 1 (04-09-PLAN.md): HEVC BLA_W_LP(16)-led sequence -- the
+// other half of the CRA/BLA family (kHevcNalIrapFirst..kHevcNalIrapLast
+// excluding IDR_W_RADL/IDR_N_LP), classifies open exactly like the CRA_NUT
+// row above -- hand-verified against 04-RESEARCH.md Priority Finding 3's
+// HEVC table (hevc/parser.c:37's own IS_IRAP_NAL range, [16,23]) before
+// this assertion was written -----------------------------------------------
+
+TEST_CASE("gop_classification - HEVC BLA_W_LP(16) sequence (the other end of the IRAP-excluding-IDR range): open",
+          "[unit]") {
+  std::vector<AccessUnitRecord> aus = {au_with(16), au_with(0), au_with(0), au_with(16), au_with(0), au_with(0)};
+  const GopClassificationResult result = classify_gop(aus, NalCodec::hevc);
+  REQUIRE(result.status == GopClassificationResult::Status::ok);
+  REQUIRE(result.idr_count == 0);
+  REQUIRE(result.cra_or_bla_count == 2);
+  REQUIRE(result.non_idr_intra_count == 0);
+}
+
+// --- Task 3 Test 2 (04-09-PLAN.md): the HEVC IDR_W_RADL row and the HEVC
+// CRA_NUT row, asserted SIDE BY SIDE in one test body with IDENTICAL
+// key_frame flags and DIFFERENT classifications -- the single test the
+// plan's own action text calls for, so the distinction is visible in the
+// source without cross-referencing two separate TEST_CASEs above. Both
+// AccessUnitRecords here set key_frame=1 on every access unit (as the real
+// linked HEVC parser does for ANY IRAP NAL, IDR or CRA alike --
+// hevc/parser.c:74-76, 04-RESEARCH.md Priority Finding 3) -- proving
+// key_frame alone could not have told these two sequences apart. -----------
+
+TEST_CASE(
+    "gop_classification - HEVC IDR_W_RADL row and HEVC CRA_NUT row, side by side: identical key_frame=1 on every "
+    "access unit, opposite classification (closed vs open)",
+    "[unit]") {
+  auto au_keyframe = [](std::uint8_t first_vcl_nal_type) {
+    AccessUnitRecord au{};
+    au.first_vcl_nal_type = first_vcl_nal_type;
+    au.pict_type = 0;
+    au.key_frame = 1;  // set on BOTH rows below -- the boolean is identical
+    return au;
+  };
+
+  const std::vector<AccessUnitRecord> idr_row = {au_keyframe(19), au_keyframe(19), au_keyframe(19)};
+  const std::vector<AccessUnitRecord> cra_row = {au_keyframe(21), au_keyframe(21), au_keyframe(21)};
+
+  // Identical key_frame flags on both rows -- the premise this test exists
+  // to establish, checked directly rather than assumed.
+  for (const AccessUnitRecord& au : idr_row) REQUIRE(au.key_frame == 1);
+  for (const AccessUnitRecord& au : cra_row) REQUIRE(au.key_frame == 1);
+
+  const GopClassificationResult idr_result = classify_gop(idr_row, NalCodec::hevc);
+  const GopClassificationResult cra_result = classify_gop(cra_row, NalCodec::hevc);
+
+  REQUIRE(idr_result.status == GopClassificationResult::Status::ok);
+  REQUIRE(cra_result.status == GopClassificationResult::Status::ok);
+
+  const bool idr_row_closed = idr_result.cra_or_bla_count == 0 && idr_result.non_idr_intra_count == 0;
+  const bool cra_row_closed = cra_result.cra_or_bla_count == 0 && cra_result.non_idr_intra_count == 0;
+  REQUIRE(idr_row_closed);          // IDR_W_RADL-only: closed
+  REQUIRE_FALSE(cra_row_closed);    // CRA_NUT-only: open
+  REQUIRE(idr_result.idr_count == 3);
+  REQUIRE(cra_result.cra_or_bla_count == 3);
+}
+
+// --- Task 3 Test 4 (04-09-PLAN.md): a sequence exceeding
+// kMaxAccessUnitsForGopClassification refuses outright (bound_exceeded)
+// rather than classifying over a partial view -- T-4-40's own regression
+// pin, mirroring size.cpp's compute_peak_window/kMaxWindowSteps precedent
+// this file's own header comment already cites. The bound is checked
+// BEFORE the loop begins (gop.cpp), so a stream one AU past it never
+// contributes even its first access unit to idr_count. -------------------
+
+TEST_CASE(
+    "gop_classification - a sequence exceeding kMaxAccessUnitsForGopClassification reports bound_exceeded, never a "
+    "classification computed from a partial walk",
+    "[unit]") {
+  std::vector<AccessUnitRecord> aus(mediadiff::detail::kMaxAccessUnitsForGopClassification + 1, au_with(5));
+  const GopClassificationResult result = classify_gop(aus, NalCodec::h264);
+  REQUIRE(result.status == GopClassificationResult::Status::bound_exceeded);
+  // Refused outright, not partially walked: none of the counting fields
+  // were touched.
+  REQUIRE(result.idr_count == 0);
+  REQUIRE(result.idr_indices.empty());
+}
+
+TEST_CASE(
+    "gop_classification - a sequence exactly AT kMaxAccessUnitsForGopClassification (the boundary itself) still "
+    "classifies normally",
+    "[unit]") {
+  std::vector<AccessUnitRecord> aus(mediadiff::detail::kMaxAccessUnitsForGopClassification, au_with(5));
+  const GopClassificationResult result = classify_gop(aus, NalCodec::h264);
+  REQUIRE(result.status == GopClassificationResult::Status::ok);
+  REQUIRE(result.idr_count == static_cast<std::int64_t>(mediadiff::detail::kMaxAccessUnitsForGopClassification));
+}
+
 // --- Test 4: a codec with no NAL layer at all skips classification -------
 
 TEST_CASE("gop_classification - NalCodec::none (a codec with no NAL layer, e.g. mpeg4) yields no_nal_layer",
