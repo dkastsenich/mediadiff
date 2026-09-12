@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-09-12T17:32:43.402Z"
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-09-12T17:46:10.999Z"
 last_activity: 2026-09-12
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 266c25680d6c82785d177bc3e089baf27d1c114d
+state_head: 36642839cd16cfd710cd17ef8d450b3084183ed9
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 58
-  completed_plans: 48
+  completed_plans: 49
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 2 of 12
+Plan: 3 of 12
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 04 execution started
 
@@ -98,6 +98,7 @@ Progress: [█████████░] 92%
 | Phase 03 P22 | 41min | 2 tasks | 4 files |
 | Phase 04 P01 | 28min | 3 tasks | 20 files |
 | Phase 04 P02 | 45min | 3 tasks | 4 files |
+| Phase 04-video-analysis P03 | 32min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -211,6 +212,8 @@ Recent decisions affecting current work:
 - [Phase 04]: PacketScanRequest/PacketScanOutputs live in packet_scan.h, not parser_scan.h, to avoid a circular include
 - [Phase 04]: AVCodecParserContext needs PARSER_FLAG_COMPLETE_FRAMES set explicitly (mirrors libavformat's AVSTREAM_PARSE_HEADERS) or mpeg4video_parser.c halves every measured GOP length
 - [Phase 04]: video_chroma_left/center mux to Matroska not MP4 (movenc.c has no chroma-location box); video_ilace_tff/bff/mixed use mpeg2video not mpeg4 (mpeg4video_parser.c never sets field_order); huffyuv replaces ffv1 for VIDEO-12's no-parser fixture (ffv1/prores both gained parsers upstream).
+- [Phase 04]: Duration/frame-size/frame-rate/output-byte-size in measure_parser_overhead.sh are env-var-overridable, each validated against a same-named MAX constant rather than fixed inline literals (T-4-11)
+- [Phase 04]: Raised mediadiff_parser_overhead's repeat count to 20 at the measure_parser_overhead.sh call site (not the tool's own default) after observing 3-repetition noise on a sub-5ms probe pass
 
 ### Pending Todos
 
@@ -244,6 +247,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T17:32:43.273Z
-Stopped at: Completed 04-02-PLAN.md
+Last session: 2026-09-12T17:46:10.860Z
+Stopped at: Completed 04-03-PLAN.md
 Resume file: None
