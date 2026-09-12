@@ -665,3 +665,53 @@ unit = "percent"
 value_kind = "rational"
 severity = "warn"
 tolerance = "0.1%"
+
+# 04-08-PLAN.md (VIDEO-03, VIDEO-07, VIDEO-08), src/analyzers/video/
+# color.cpp -- video.pix_fmt and the five colour-identity checks. Approved
+# at 04-CHECK-ROSTER.md (the frozen Phase-4 id roster). All six are
+# codec-scoped (ContainerFamily::other), extracted directly from
+# AVStream.codecpar after the header pass alone -- no scan of any kind
+# needed.
+
+# av_get_pix_fmt_name of the FOLDED pixel format (VIDEO-03's yuvj-trap
+# fold, detail::fold_pix_fmt_range) -- the five deprecated yuvj* names
+# fold to their plain counterpart before this value is computed, so a
+# yuvj420p file and an equivalent yuv420p-with-full-range file compare
+# EQUAL here; the range delta itself is owned solely by the colour-range
+# check below. `transform`: an intentional transcode is expected to change the
+# pixel format, hence `info` there, matching video.codec's own reasoning.
+[[check]]
+id = "video.pix_fmt"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[check.profile_severity]
+transform = "info"
+
+# av_color_range_name of the EFFECTIVE colour range after
+# detail::fold_pix_fmt_range's SAME fold seam video.pix_fmt reads above
+# (VIDEO-03) -- never a second, independently-written branch, which is
+# what makes "yuvj420p vs yuv420p+full-range produces ZERO findings, but
+# yuvj420p vs yuv420p+limited-range produces EXACTLY ONE (this check)" a
+# provable property rather than an accident of two branches agreeing.
+#
+# DELIBERATELY carries NO [check.profile_severity] and NO
+# [check.profile_tolerance] sub-table of any kind, in ANY profile,
+# including `transform` -- VIDEO-07 and doc 03 section 5 require this
+# check to fail in EVERY profile with no exceptions: preserving colour
+# intent through an intentional transformation is exactly the invariant
+# the `transform` profile exists to protect. Do NOT add a `transform`
+# demotion here for symmetry with video.pix_fmt's own `info` override
+# above -- that would silently break this guarantee. The absence of a
+# declared override IS the mechanism (04-CHECK-ROSTER.md's own scope
+# decision on this id).
+[[check]]
+id = "video.color.range"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"

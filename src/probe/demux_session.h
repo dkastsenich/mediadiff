@@ -239,6 +239,39 @@ struct StreamInfo {
   std::int64_t sar_container_den = 1;
   std::int64_t sar_bitstream_num = 0;
   std::int64_t sar_bitstream_den = 1;
+
+  // 04-08-PLAN.md (VIDEO-03/VIDEO-07/VIDEO-08): the six colorimetry fields,
+  // resolved HERE via av_get_pix_fmt_name/av_color_range_name/
+  // av_color_primaries_name/av_color_transfer_name/av_color_space_name/
+  // av_chroma_location_name -- the SAME per-field boundary as every other
+  // codecpar value above ("no libav header crosses this file's public
+  // surface"). src/analyzers/video/color.cpp performs VIDEO-03's yuvj*
+  // range-fold on these NAME STRINGS, never on the raw AVPixelFormat/
+  // AVColorRange ordinals below (which src/analyzers/ never sees) -- the
+  // fold needs no libav header at all this way. Each `_name` is nullopt
+  // only when libav's own name table has no entry for the raw value
+  // (never observed for a real codecpar; every UNSPECIFIED sentinel below
+  // DOES have a name, "unknown" or, for chroma location, "unspecified")
+  // -- video/color.cpp falls through to the raw integer's own decimal
+  // spelling in that case, mirroring render_profile_value's precedent.
+  // Raw ints are always carried too, evidence-only, exactly like
+  // codec_id_raw/codec_tag_raw above.
+  std::optional<std::string> pix_fmt_name;
+  std::int64_t pix_fmt_raw = -1;  // AV_PIX_FMT_NONE
+  std::optional<std::string> color_range_name;
+  std::int64_t color_range_raw = 0;  // AVCOL_RANGE_UNSPECIFIED
+  std::optional<std::string> color_primaries_name;
+  std::int64_t color_primaries_raw = 2;  // AVCOL_PRI_UNSPECIFIED
+  std::optional<std::string> color_transfer_name;
+  std::int64_t color_transfer_raw = 2;  // AVCOL_TRC_UNSPECIFIED
+  // codecpar->color_space -- video.color.matrix's own source (libav's own
+  // "colorspace"/AVColorSpace is what this project's checks.def/doc 03
+  // call the YCbCr conversion MATRIX; "color_space" is libav's naming, not
+  // this project's).
+  std::optional<std::string> color_matrix_name;
+  std::int64_t color_matrix_raw = 2;  // AVCOL_SPC_UNSPECIFIED
+  std::optional<std::string> chroma_location_name;
+  std::int64_t chroma_location_raw = 0;  // AVCHROMA_LOC_UNSPECIFIED
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

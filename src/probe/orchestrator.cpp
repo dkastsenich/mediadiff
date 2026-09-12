@@ -104,6 +104,12 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // hand-written analyzer order (TRUST-05) keeps the "identity"
       // checks first.
       video_stream_params_analyzer(),
+      // 04-08-PLAN.md (VIDEO-03, VIDEO-07, VIDEO-08): video.pix_fmt and
+      // the five colour-identity checks -- codecpar-only extraction, no
+      // scan of any kind required. Listed directly after
+      // video_stream_params_analyzer() so the "identity" checks
+      // (TRUST-05's stable, hand-written analyzer order) stay grouped.
+      video_color_analyzer(),
       // 04-01-PLAN.md Task 2 (PROBE-03, VIDEO-05): video.gop.length, the
       // phase's tracer check -- Pass::parser_scan's own first production
       // consumer. Declares Pass::parser_scan explicitly (not left to this

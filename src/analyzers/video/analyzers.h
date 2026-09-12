@@ -39,7 +39,48 @@ const AnalyzerSpec& video_gop_analyzer();
 // other four checks need nothing past demux_header.
 const AnalyzerSpec& video_stream_params_analyzer();
 
+// video.pix_fmt/video.color.range/video.color.primaries/video.color.
+// transfer/video.color.matrix/video.color.chroma_loc (04-08-PLAN.md,
+// VIDEO-03/VIDEO-07/VIDEO-08): six colorimetry identity checks, extracted
+// directly from AVStream.codecpar (via DemuxSession::stream_info) after
+// the header pass alone -- no scan of any kind needed, matching
+// video_stream_params_analyzer()'s own codec-scoped shape (ContainerFamily
+// ::other). required_passes = {Pass::demux_header} only -- unlike
+// video_stream_params_analyzer(), none of these six needs
+// Pass::packet_scan (none counts anything).
+const AnalyzerSpec& video_color_analyzer();
+
 namespace detail {
+
+// video.pix_fmt/video.color.range's own single fold seam (VIDEO-03,
+// 04-08-PLAN.md): the five deprecated `yuvj*` pixel-format NAMES (never
+// the raw AVPixelFormat ordinals -- src/analyzers/ never sees those) fold
+// to their plain counterpart with the effective colour range forced to
+// `"pc"` (av_color_range_name(AVCOL_RANGE_JPEG), i.e. full range) --
+// exactly what libavutil/pixfmt.h's own enum comment for each of the five
+// says ("full scale (JPEG), deprecated in favor of AV_PIX_FMT_<plain> and
+// setting color_range"). A non-yuvj declared format passes BOTH fields
+// through unchanged, so a `yuv420p` file that already declares a limited
+// range keeps it (Test 3, 04-08-PLAN.md Task 1) -- the fold never
+// overwrites an already-correct declaration.
+//
+// This is the ONE code path both video.pix_fmt and video.color.range
+// read (never two independently-written branches) -- VIDEO-03's "exactly
+// one finding" property is provable only because there is a single fold
+// seam to point at, matching mp4.cpp's own detail::
+// compute_median_fragment_duration precedent for an exposed, directly
+// unit-testable seam.
+struct ColorFold {
+  std::string pix_fmt;
+  std::string color_range;
+  // True only when `pix_fmt` (the DECLARED name passed in) was one of the
+  // five deprecated yuvj* names -- evidence rides this so a user can see
+  // that a fold happened rather than wondering why the report says
+  // "yuv420p" for a file they know is "yuvj420p".
+  bool folded = false;
+};
+
+ColorFold fold_pix_fmt_range(const std::string& declared_pix_fmt, const std::string& declared_color_range);
 
 // video.profile's own compared-value rule (VIDEO-01-E2, 04-06-PLAN.md):
 // the resolved profile name when avcodec_profile_name found one,

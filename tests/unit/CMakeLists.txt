@@ -144,6 +144,13 @@ add_executable(mediadiff_unit_tests
   # skip, and detail::render_profile_value/render_level_value's own rules
   # (VIDEO-01-E2, the level table) driven directly (04-06-PLAN.md).
   test_video_stream_params.cpp
+  # 04-08-PLAN.md (VIDEO-03/VIDEO-07/VIDEO-08): video.pix_fmt and the five
+  # colour-identity checks -- the five-entry yuvj* range-fold table driven
+  # directly via detail::fold_pix_fmt_range, the "already-explicit range
+  # is never overwritten" behavior, the folded value's identity across the
+  # yuvj420p/yuv420p-full-range spelling pair, and the effective range
+  # split between the full-range and limited-range fixtures.
+  test_video_color.cpp
   # 04-07-PLAN.md Task 1 (D-05/D-06/D-07): derive_cadence's nine
   # hand-verified behaviors -- mode-interval selection, PTS-then-DTS axis
   # fallback, the no_timing_data/insufficient_data split, shuffled-order

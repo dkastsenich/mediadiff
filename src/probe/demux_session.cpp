@@ -18,6 +18,7 @@ extern "C" {
 #include <libavutil/dict.h>
 #include <libavutil/error.h>
 #include <libavutil/log.h>
+#include <libavutil/pixdesc.h>
 }
 
 #include <cerrno>
@@ -347,6 +348,42 @@ StreamInfo DemuxSession::stream_info(int index) const {
   info.sar_container_den = stream->sample_aspect_ratio.den;
   info.sar_bitstream_num = codecpar->sample_aspect_ratio.num;
   info.sar_bitstream_den = codecpar->sample_aspect_ratio.den;
+
+  // 04-08-PLAN.md (VIDEO-03/VIDEO-07/VIDEO-08): resolved here, same
+  // per-field boundary as every other codecpar value above -- never past
+  // this file's own opaque-AVFormatContext boundary. `codecpar->format` is
+  // an AVPixelFormat for a video stream (the only stream kind this check
+  // family ever scopes to).
+  info.pix_fmt_raw = static_cast<std::int64_t>(codecpar->format);
+  const char* pix_fmt_name = av_get_pix_fmt_name(static_cast<AVPixelFormat>(codecpar->format));
+  if (pix_fmt_name != nullptr) {
+    info.pix_fmt_name = pix_fmt_name;
+  }
+  info.color_range_raw = static_cast<std::int64_t>(codecpar->color_range);
+  const char* color_range_name = av_color_range_name(codecpar->color_range);
+  if (color_range_name != nullptr) {
+    info.color_range_name = color_range_name;
+  }
+  info.color_primaries_raw = static_cast<std::int64_t>(codecpar->color_primaries);
+  const char* color_primaries_name = av_color_primaries_name(codecpar->color_primaries);
+  if (color_primaries_name != nullptr) {
+    info.color_primaries_name = color_primaries_name;
+  }
+  info.color_transfer_raw = static_cast<std::int64_t>(codecpar->color_trc);
+  const char* color_transfer_name = av_color_transfer_name(codecpar->color_trc);
+  if (color_transfer_name != nullptr) {
+    info.color_transfer_name = color_transfer_name;
+  }
+  info.color_matrix_raw = static_cast<std::int64_t>(codecpar->color_space);
+  const char* color_matrix_name = av_color_space_name(codecpar->color_space);
+  if (color_matrix_name != nullptr) {
+    info.color_matrix_name = color_matrix_name;
+  }
+  info.chroma_location_raw = static_cast<std::int64_t>(codecpar->chroma_location);
+  const char* chroma_location_name = av_chroma_location_name(codecpar->chroma_location);
+  if (chroma_location_name != nullptr) {
+    info.chroma_location_name = chroma_location_name;
+  }
   return info;
 }
 
