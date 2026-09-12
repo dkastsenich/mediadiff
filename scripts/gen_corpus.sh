@@ -1012,4 +1012,106 @@ cp "$OUT_DIR/video_gop_g48.mp4" "$OUT_DIR/video_gop_g48_copy.mp4"
   -c:v mpeg4 -g 96 -bf 0 -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_gop_g96.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4."
+# --- 04-02-PLAN.md Task 2: stream-parameter, GOP and no-parser fixtures ----
+# Every pair below is D-04's "real encoder wherever it can express the
+# check" -- `mpeg4`/`mpeg2video`/`huffyuv`, never a GPL encoder -- and
+# differs from `video_base.mp4` in exactly one dimension, verified by
+# reading the produced file back rather than trusting the CLI flag was
+# accepted (see this task's own read-back table in 04-02-SUMMARY.md).
+
+# Baseline (VIDEO-01/02/04/05) and its byte-identical clean partner: the
+# shared "differs in nothing" half of every pair below that compares
+# against video_base.mp4.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_base.mp4"
+
+cp "$OUT_DIR/video_base.mp4" "$OUT_DIR/video_base_copy.mp4"
+
+# video.codec (VIDEO-01): same geometry/frame-count as video_base.mp4,
+# different codec_name only.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg2video -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_codec_mpeg2.mp4"
+
+# video.profile / video.level (VIDEO-01): `-profile:v`/`-level` values read
+# from `"$FFMPEG_BIN" -hide_banner -h encoder=mpeg2video`'s own accepted
+# range (0-11 per libavcodec/mpeg12enc.c's profile table) and verified by
+# reading the two produced files back -- `4`/`8` reads back as profile
+# "Main", level 8; `5`/`10` reads back as profile "Simple", level 10, two
+# genuinely distinct integer pairs (not merely distinct display strings).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg2video -profile:v 4 -level:v 8 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_prof_a.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg2video -profile:v 5 -level:v 10 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_prof_b.mp4"
+
+# video.resolution (VIDEO-01), and the first shipped `transform_affected`
+# check's fixture: an exact 2x scale of video_base.mp4's 320x240, so a
+# `transform` profile's declared "2x" expectation has a real pair to be
+# satisfied by.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=640x480:rate=25:duration=4" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_res_640.mp4"
+
+# video.frame_count (VIDEO-02): identical to the baseline except a 2s
+# source (50 packets vs the baseline's 100) -- always counted from the
+# scan, never from a container-reported `nb_frames`.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frames_50.mp4"
+
+# video.sar / video.dar (VIDEO-01): `setsar=4/3` against the baseline's
+# implicit 1:1, otherwise identical.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -vf "setsar=4/3" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_sar_4_3.mp4"
+
+# video.frame_rate.declared (VIDEO-01): 30fps source against the
+# baseline's 25fps, otherwise identical.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=30:duration=4" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_fps_30.mp4"
+
+# video.frame_rate.measured (VIDEO-01, D-05/D-06/D-07): a deterministic,
+# non-uniform frame selection over the baseline source -- drops every 7th
+# frame's 4th-from-start member (`mod(n,7)==3`), producing genuinely
+# unequal packet PTS deltas (verified: 512/1024 tick deltas, never all
+# equal) rather than a silently re-timed CFR stream. This is the CFR/VFR
+# distinction plan 04-07 classifies.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -vf "select='not(eq(mod(n\,7),3))'" -fps_mode vfr \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_vfr.mp4"
+
+# video.frame_types (VIDEO-05): `-bf 3` against the baseline's `-bf 0` --
+# verified: video_base.mp4 has zero B-pictures, video_bf3.mp4 has 74.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg4 -g 48 -bf 3 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_bf3.mp4"
+
+# VIDEO-12's no-parser-degradation fixture. 04-02-PLAN.md's own text named
+# `ffv1` (falling back to `prores` if it turned out to have a parser) as
+# the candidate LGPL-safe no-parser codec; both were verified against an
+# OLDER FFmpeg source tree during research. Empirically, against THIS
+# phase's actually-linked FFmpeg 8.1 (build/x64-linux/vcpkg_installed),
+# `ffv1_parser.c` and `prores_parser.c` both now exist and
+# `av_parser_init` returns NON-null for both codec ids -- so neither
+# candidate exercises VIDEO-12's no-parser path any more. `huffyuv` has no
+# `*_parser.c` file at all in the same linked source tree, and a
+# throwaway `av_parser_init(AV_CODEC_ID_HUFFYUV)` probe against the linked
+# libavcodec returned null, confirming the no-parser path this fixture
+# needs. `huffyuv` is a native, always-built-in lossless codec with the
+# same LGPL-safety profile as the two candidates it replaces (see
+# scripts/install_pinned_ffmpeg.sh's REQUIRED_ENCODERS comment for the
+# encoder-availability half of this same finding).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v huffyuv -g 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_noparser.mkv"
+
+cp "$OUT_DIR/video_noparser.mkv" "$OUT_DIR/video_noparser_copy.mkv"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv."
