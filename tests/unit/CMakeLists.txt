@@ -177,6 +177,14 @@ add_executable(mediadiff_unit_tests
   # hand-built ProbeResults) for the TFF/BFF/progressive/no-parser/
   # partial-scan/mixed/determinism behaviors.
   test_video_interlace.cpp
+  # VIDEO-09 (04-11-PLAN.md): video.hdr.mdcv/.luminance/.primaries and
+  # video.hdr.cll/.max/.avg -- detail::quantize_chromaticity and
+  # detail::could_carry_frame_level_hdr driven directly (hand-computed
+  # tables, including the fixed away-from-zero midpoint-rounding rule),
+  # plus video_hdr_analyzer()'s own run() end to end against the real
+  # HDR fixture corpus (plan 04-04) for the mastering-display/content-
+  # light presence, value and cross-family-independence behaviors.
+  test_video_hdr.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the

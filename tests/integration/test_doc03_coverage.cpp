@@ -23,7 +23,9 @@
 // total to forty-seven. 04-09-PLAN.md registers video.gop.idr_interval,
 // video.gop.closed, video.gop.refs and video.frame_types, bringing the
 // total to fifty-one. 04-10-PLAN.md registers video.interlace, bringing
-// the total to fifty-two. This file is where a gap becomes visible.
+// the total to fifty-two. 04-11-PLAN.md registers video.hdr.mdcv/.
+// luminance/.primaries and video.hdr.cll/.max/.avg, bringing the total to
+// fifty-eight. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -308,6 +310,45 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"video.interlace",
        {fixture("video_ilace_tff.mp4"), fixture("video_ilace_bff.mp4"), fixture("video_ilace_tff.mp4"),
         fixture("video_ilace_tff_copy.mp4")}},
+
+      // --- video.hdr.mdcv/.luminance/.primaries and video.hdr.cll/.max/
+      // .avg (04-11-PLAN.md, VIDEO-09) --- every trigger pair below was
+      // proven empirically against the real binary before being written
+      // here (this task's own commit message carries the transcript).
+      // Known coverage gap, recorded rather than papered over (this
+      // plan's own Task 3 instruction, following the precedent
+      // container.ts.psi_interval already set in this file): the CLEAN
+      // pair for the three VALUE checks (.luminance/.primaries/.max/.avg)
+      // is a byte-identical copy of video_hdr_a.mp4 rather than a
+      // differing-but-within-tolerance pair. A within-tolerance pair (a
+      // luminance/MaxCLL/MaxFALL value shifted by less than the five
+      // percent tolerance, or a chromaticity shifted by less than one
+      // 0.0002 grid step) would be the STRONGER clean case -- it would
+      // prove the tolerance/quantisation math itself accepts a genuine
+      // small difference, not merely that identical values compare
+      // identical -- but no such fixture exists in this phase's corpus
+      // (plan 04-04 built each `_b` variant to isolate exactly one
+      // dimension at a value CLEARLY outside tolerance, never a
+      // within-tolerance nudge). A future phase that extends the HDR
+      // fixture corpus could add one.
+      {"video.hdr.mdcv",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_none.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.mdcv.luminance",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_lum_b.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.mdcv.primaries",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_prim_b.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.cll",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_none.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.cll.max",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_cll_b.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.cll.avg",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_cll_b.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
   };
   return pairs;
 }
