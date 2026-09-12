@@ -26,6 +26,7 @@
 #include "analyzers/video/analyzers.h"
 #include "core/check_id.h"
 #include "core/model.h"
+#include "core/rational.h"
 #include "core/value.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
@@ -41,6 +42,8 @@ using mediadiff::Fingerprint;
 using mediadiff::Measurement;
 using mediadiff::PacketScanRequest;
 using mediadiff::ProbeResults;
+using mediadiff::Rational;
+using mediadiff::RationalValue;
 using mediadiff::Scope;
 using mediadiff::SkipReason;
 using mediadiff::detail::render_level_value;
@@ -305,4 +308,190 @@ TEST_CASE("video_stream_params - video_prof_a.mp4 and video_prof_b.mp4 differ in
   REQUIRE(level_a != nullptr);
   REQUIRE(level_b != nullptr);
   REQUIRE_FALSE(level_a->value == level_b->value);
+}
+
+// --- 04-07-PLAN.md Task 2 (VIDEO-01): video.frame_rate.declared and
+// video.frame_rate.measured ------------------------------------------------
+
+// Test 1/2: video.frame_rate.declared emits an exact rational (never a
+// non-integer rendering), with r_frame_rate riding in evidence.
+TEST_CASE("video_stream_params - video.frame_rate.declared for video_base.mp4 emits an exact 25/1 rational",
+          "[unit]") {
+  ScanBundle bundle = scan_or_fail(fixture("video_base.mp4"));
+  ProbeResults results;
+  results.demux = &bundle.session;
+  results.packet_scan = bundle.outputs.packets;
+  results.parser_scan = bundle.outputs.access_units;
+
+  const Fingerprint fp = run_analyzer(results);
+  const Measurement* declared = find(fp, CheckId::video_frame_rate_declared);
+  REQUIRE(declared != nullptr);
+  REQUIRE(declared->skip_reason == SkipReason::none);
+  const auto value = std::get<RationalValue>(declared->value);
+  REQUIRE(value.num == 25);
+  REQUIRE(value.den == 1);
+  REQUIRE(declared->evidence.contains("r_frame_rate"));
+}
+
+// Test 3: video_base.mp4 vs video_fps_30.mp4 -- the declared rate differs
+// (a real, non-pass finding when actually compared through `compare`,
+// empirically proven at plan-verification time; here the underlying
+// Measurement values themselves are shown to differ, the same proxy Test 6
+// above already established for video.profile/video.level).
+TEST_CASE("video_stream_params - video_base.mp4 and video_fps_30.mp4 differ in the declared frame rate",
+          "[unit]") {
+  ScanBundle a = scan_or_fail(fixture("video_base.mp4"));
+  ProbeResults results_a;
+  results_a.demux = &a.session;
+  results_a.packet_scan = a.outputs.packets;
+  results_a.parser_scan = a.outputs.access_units;
+  const Fingerprint fp_a = run_analyzer(results_a);
+
+  ScanBundle b = scan_or_fail(fixture("video_fps_30.mp4"));
+  ProbeResults results_b;
+  results_b.demux = &b.session;
+  results_b.packet_scan = b.outputs.packets;
+  results_b.parser_scan = b.outputs.access_units;
+  const Fingerprint fp_b = run_analyzer(results_b);
+
+  const Measurement* declared_a = find(fp_a, CheckId::video_frame_rate_declared);
+  const Measurement* declared_b = find(fp_b, CheckId::video_frame_rate_declared);
+  REQUIRE(declared_a != nullptr);
+  REQUIRE(declared_b != nullptr);
+  REQUIRE_FALSE(declared_a->value == declared_b->value);
+}
+
+// Test 4/5: video.frame_rate.measured reads src/probe/cadence.h's shared
+// derivation -- an exact 25/1 rational for video_base.mp4, with the axis,
+// mode interval, interval counts and CFR class all in evidence.
+TEST_CASE("video_stream_params - video.frame_rate.measured for video_base.mp4 reads the shared cadence derivation",
+          "[unit]") {
+  ScanBundle bundle = scan_or_fail(fixture("video_base.mp4"));
+  ProbeResults results;
+  results.demux = &bundle.session;
+  results.packet_scan = bundle.outputs.packets;
+  results.parser_scan = bundle.outputs.access_units;
+
+  const Fingerprint fp = run_analyzer(results);
+  const Measurement* measured = find(fp, CheckId::video_frame_rate_measured);
+  REQUIRE(measured != nullptr);
+  REQUIRE(measured->skip_reason == SkipReason::none);
+  const auto value = std::get<RationalValue>(measured->value);
+  REQUIRE(value.num == 25);
+  REQUIRE(value.den == 1);
+
+  REQUIRE(measured->evidence.contains("axis"));
+  REQUIRE(measured->evidence.at("axis").get<std::string>() == "pts");
+  REQUIRE(measured->evidence.contains("mode_interval_ticks"));
+  REQUIRE(measured->evidence.contains("matching_intervals"));
+  REQUIRE(measured->evidence.contains("total_intervals"));
+  REQUIRE(measured->evidence.at("class").get<std::string>() == "cfr");
+  // video_base.mp4's declared and measured rates agree exactly (both 25/1).
+  REQUIRE(measured->evidence.at("declared_agrees").get<bool>());
+}
+
+// Test 6: video_vfr.mp4 classifies VFR and still reports a measured rate
+// from the mode interval -- a VFR stream has a meaningful modal cadence
+// even though its jitter does not, so this check never skips for VFR
+// alone. The declared-vs-measured internal mismatch (doc 03's own signal)
+// is also visible: video_vfr.mp4's declared and measured rates genuinely
+// disagree.
+TEST_CASE("video_stream_params - video_vfr.mp4 classifies VFR, still reports a measured rate, and flags the "
+          "declared/measured mismatch",
+          "[unit]") {
+  ScanBundle bundle = scan_or_fail(fixture("video_vfr.mp4"));
+  ProbeResults results;
+  results.demux = &bundle.session;
+  results.packet_scan = bundle.outputs.packets;
+  results.parser_scan = bundle.outputs.access_units;
+
+  const Fingerprint fp = run_analyzer(results);
+  const Measurement* measured = find(fp, CheckId::video_frame_rate_measured);
+  REQUIRE(measured != nullptr);
+  REQUIRE(measured->skip_reason == SkipReason::none);
+  REQUIRE(std::holds_alternative<RationalValue>(measured->value));
+  REQUIRE(measured->evidence.at("class").get<std::string>() == "vfr");
+  REQUIRE_FALSE(measured->evidence.at("declared_agrees").get<bool>());
+}
+
+// Test 7: the skip-reason vocabulary -- no_timing_data, insufficient_data,
+// and partial_scan (ahead of the derivation itself, D-02).
+TEST_CASE("video_stream_params - video.frame_rate.measured skips no_timing_data when every packet lacks a "
+          "usable timestamp",
+          "[unit]") {
+  ScanBundle bundle = scan_or_fail(fixture("video_base.mp4"));
+  ProbeResults results;
+  results.demux = &bundle.session;
+
+  // Every packet's pts/dts forced to the absent sentinel -- a real
+  // StreamPacketScan can never produce this from a real fixture (every
+  // muxer synthesizes a pts), so this is driven directly, mirroring
+  // packet_scan.h's own detail::make_packet_record precedent for the
+  // identical problem shape.
+  mediadiff::PacketScanResult scan = bundle.outputs.packets;
+  REQUIRE_FALSE(scan.per_stream.empty());
+  for (mediadiff::PacketRecord& record : scan.per_stream[0].packets) {
+    record.pts = INT64_MIN;
+    record.dts = INT64_MIN;
+  }
+  results.packet_scan = scan;
+
+  const Fingerprint fp = run_analyzer(results);
+  const Measurement* measured = find(fp, CheckId::video_frame_rate_measured);
+  REQUIRE(measured != nullptr);
+  REQUIRE(measured->skip_reason == SkipReason::no_timing_data);
+  REQUIRE(std::holds_alternative<Absent>(measured->value));
+}
+
+TEST_CASE("video_stream_params - video.frame_rate.measured skips insufficient_data with fewer than two usable "
+          "timestamps",
+          "[unit]") {
+  ScanBundle bundle = scan_or_fail(fixture("video_base.mp4"));
+  ProbeResults results;
+  results.demux = &bundle.session;
+
+  mediadiff::PacketScanResult scan = bundle.outputs.packets;
+  REQUIRE_FALSE(scan.per_stream.empty());
+  auto& packets = scan.per_stream[0].packets;
+  REQUIRE(packets.size() >= 2);
+  packets[0].pts = 1000;
+  for (std::size_t i = 1; i < packets.size(); ++i) {
+    packets[i].pts = INT64_MIN;
+    packets[i].dts = INT64_MIN;
+  }
+  results.packet_scan = scan;
+
+  const Fingerprint fp = run_analyzer(results);
+  const Measurement* measured = find(fp, CheckId::video_frame_rate_measured);
+  REQUIRE(measured != nullptr);
+  REQUIRE(measured->skip_reason == SkipReason::insufficient_data);
+}
+
+TEST_CASE("video_stream_params - video.frame_rate.measured skips partial_scan ahead of the derivation itself, "
+          "but video.frame_rate.declared still reports",
+          "[unit]") {
+  DemuxSession session = open_or_fail(fixture("video_base.mp4"));
+  PacketScanRequest request;
+  request.parse_access_units = false;
+  request.limits.max_bytes = 5 * static_cast<std::int64_t>(sizeof(mediadiff::PacketRecord));
+  auto scan_result = mediadiff::run_packet_scan(session, request);
+  REQUIRE(scan_result.has_value());
+  REQUIRE(scan_result->packets.partial);
+
+  ProbeResults results;
+  results.demux = &session;
+  results.packet_scan = scan_result->packets;
+  results.parser_scan = scan_result->access_units;
+
+  const Fingerprint fp = run_analyzer(results);
+  const Measurement* measured = find(fp, CheckId::video_frame_rate_measured);
+  REQUIRE(measured != nullptr);
+  REQUIRE(measured->skip_reason == SkipReason::partial_scan);
+  REQUIRE(std::holds_alternative<Absent>(measured->value));
+
+  // frame_rate.declared is codecpar-only -- unaffected by packet-scan
+  // truncation.
+  const Measurement* declared = find(fp, CheckId::video_frame_rate_declared);
+  REQUIRE(declared != nullptr);
+  REQUIRE(declared->skip_reason == SkipReason::none);
 }

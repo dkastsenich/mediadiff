@@ -215,6 +215,16 @@ struct StreamInfo {
   // compared value (the count must always be counted from the packet/parser
   // scan, never trusted from the container).
   std::int64_t declared_frame_count = 0;
+
+  // 04-07-PLAN.md (VIDEO-01): AVStream::avg_frame_rate/r_frame_rate
+  // verbatim, 0/0 when libav has no opinion -- video.frame_rate.declared's
+  // own extraction (avg_frame_rate primary, r_frame_rate evidence-only,
+  // claude_docs/03-video-analysis.md section 2). Never rendered as a float
+  // for comparison (30000/1001 vs 29.97 must never meet as floats).
+  std::int64_t avg_frame_rate_num = 0;
+  std::int64_t avg_frame_rate_den = 0;
+  std::int64_t r_frame_rate_num = 0;
+  std::int64_t r_frame_rate_den = 0;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

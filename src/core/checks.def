@@ -586,3 +586,38 @@ unit = "frames"
 value_kind = "int64"
 severity = "fail"
 tolerance = "0frames"
+
+# 04-07-PLAN.md (VIDEO-01, VIDEO-04), src/analyzers/video/stream_params.cpp
+# -- the two frame-rate checks (the aspect-ratio pair and the
+# container-vs-bitstream conflict follow directly below, registered by this
+# same plan's Task 3). Approved at 04-CHECK-ROSTER.md (the frozen Phase-4 id
+# roster). Both are codec-scoped (ContainerFamily::other).
+
+# avg_frame_rate as an exact RationalValue with the stream's own timebase --
+# r_frame_rate rides in evidence. 30000/1001 vs 29.97 must never be compared
+# as floats (doc 03's own line); this check never renders either value to a
+# float at any point.
+[[check]]
+id = "video.frame_rate.declared"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "rational"
+severity = "fail"
+
+# D-05/D-06/D-07 (04-CONTEXT.md): the shared probe-level cadence
+# derivation's (src/probe/cadence.h) mode interval, expressed as a rate --
+# never a second sweep, never re-derived independently of
+# derive_cadence. `±0.1%` is deliberately tight: a measured cadence that
+# moves at all is usually a real rate change, not noise. Skip-reason
+# vocabulary: `no_timing_data`/`insufficient_data` (from the derivation
+# itself), `partial_scan` (D-02, ahead of both -- a rate derived from a
+# truncated sweep is a confidently wrong number).
+[[check]]
+id = "video.frame_rate.measured"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "warn"
+tolerance = "0.1%"

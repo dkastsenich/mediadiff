@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@
 
 #include "core/check_id.h"
 #include "core/model.h"
+#include "core/rational.h"
 
 // GCC 13's -O3 flow analysis produces a -Wmaybe-uninitialized false
 // positive on core/value.h's Value std::variant, the same class
@@ -20,6 +22,7 @@
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
+#include "probe/cadence.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
 #include "probe/parser_scan.h"
@@ -35,6 +38,22 @@ namespace {
 // own MKTAG-confirmed-against-source precedent for kPacketFlagKeyframe --
 // src/analyzers/ never includes a libav header directly.
 constexpr int kUnknownProfileOrLevel = -99;
+
+// Shared skip-emission helper (04-PATTERNS.md's own "Skip-emission"
+// pattern, src/analyzers/container/mp4.cpp:138-145 / src/analyzers/size/
+// size.cpp:41-48) -- copied file-local per this project's established
+// per-file-duplication convention, added here since 04-06-PLAN.md's own
+// video.frame_count skip path used an inline Measurement construction
+// instead (kept as-is below; this helper is for the checks 04-07-PLAN.md
+// adds).
+void push_skip(CheckId id, Scope scope, SkipReason reason, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(id);
+  measurement.scope = scope;
+  measurement.value = Absent{};
+  measurement.skip_reason = reason;
+  fp.measurements.push_back(std::move(measurement));
+}
 
 // StreamMediaType -> the Scope::Kind a stream is scoped under, identical
 // mapping to src/analyzers/size/size.cpp's own scope_kind_for_stream (this
@@ -180,6 +199,138 @@ void emit_frame_count(const StreamPacketScan& packet_stream, const StreamParserS
   fp.measurements.push_back(std::move(measurement));
 }
 
+// video.frame_rate.declared: AVStream::avg_frame_rate verbatim, an exact
+// RationalValue with a unit timebase (this is a RATE, not a time value --
+// core/value.h's own note that RationalValue serves any rational
+// measurement) -- r_frame_rate rides in evidence only. Never rendered as a
+// non-integer approximation for comparison (doc 03: 30000/1001 and its
+// decimal approximation must never be compared that way). A non-positive
+// denominator means libav had no opinion at all -- skips rather than
+// reporting a degenerate rational (this plan's own prohibition).
+void emit_frame_rate_declared(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  if (info.avg_frame_rate_den <= 0) {
+    push_skip(CheckId::video_frame_rate_declared, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_frame_rate_declared);
+  measurement.scope = scope;
+  measurement.value = RationalValue{info.avg_frame_rate_num, info.avg_frame_rate_den, Rational{1, 1}};
+  measurement.evidence = nlohmann::ordered_json{
+      {"r_frame_rate", nlohmann::ordered_json{{"num", info.r_frame_rate_num}, {"den", info.r_frame_rate_den}}},
+  };
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// The declared-vs-measured internal mismatch doc 03 assigns to THIS check's
+// own evidence: the same relative-tolerance cross-multiplication
+// src/compare/tol.cpp applies for a real baseline/candidate comparison
+// (never a division), evaluated here between one file's OWN declared and
+// measured rates, at video.frame_rate.measured's own registered default
+// tolerance (checks.def: "0.1%" == 1/10 percent). Returns false (rather
+// than propagating an error) on any checked-arithmetic overflow -- this is
+// an evidence-only convenience flag, not itself a compared Value, so
+// "cannot determine" degrades to "not flagged as agreeing" rather than
+// aborting the whole measurement.
+bool declared_measured_agree(std::int64_t declared_num, std::int64_t declared_den, std::int64_t measured_num,
+                              std::int64_t measured_den) {
+  if (declared_den <= 0 || measured_den <= 0) {
+    return false;
+  }
+  std::int64_t lhs = 0;
+  std::int64_t rhs = 0;
+  if (!detail::checked_mul(measured_num, declared_den, &lhs) || !detail::checked_mul(declared_num, measured_den, &rhs)) {
+    return false;
+  }
+  std::int64_t delta = 0;
+  if (!detail::checked_sub(lhs, rhs, &delta)) {
+    return false;
+  }
+  if (delta < 0 && !detail::checked_negate(delta, &delta)) {
+    return false;
+  }
+  std::int64_t abs_declared_num = declared_num;
+  if (abs_declared_num < 0 && !detail::checked_negate(abs_declared_num, &abs_declared_num)) {
+    return false;
+  }
+  // checks.def's own "0.1%" tolerance == 1/10 percent -- 0.1% tolerance
+  // grammar (core/tolerance.cpp) parses a percent magnitude as an exact
+  // num/den rational with den a power of ten, one per fractional digit;
+  // "0.1" is num=1, den=10. Mirrored here as a local named pair rather than
+  // re-parsing the string, since this flag is evidence-only, never itself
+  // routed through the tolerance grammar.
+  constexpr std::int64_t kAgreeToleranceNum = 1;
+  constexpr std::int64_t kAgreeToleranceDen = 10;
+  // relative: delta / |declared| <= toleranceNum / (toleranceDen * 100)
+  // <=> delta * toleranceDen * 100 <= toleranceNum * |declared| * measured_den
+  std::int64_t tol_lhs = 0;
+  std::int64_t tol_rhs = 0;
+  if (!detail::checked_mul(delta, kAgreeToleranceDen, &tol_lhs) || !detail::checked_mul(tol_lhs, 100, &tol_lhs)) {
+    return false;
+  }
+  if (!detail::checked_mul(kAgreeToleranceNum, abs_declared_num, &tol_rhs) ||
+      !detail::checked_mul(tol_rhs, measured_den, &tol_rhs)) {
+    return false;
+  }
+  return tol_lhs <= tol_rhs;
+}
+
+// video.frame_rate.measured: src/probe/cadence.h's shared PURE derivation
+// (D-05) is this check's entire computation -- never a second sweep, never
+// a statistic this file re-derives on its own. D-02: a truncated packet
+// scan skips ahead of the derivation itself, since a rate from an
+// incomplete sweep is a confidently wrong number.
+void emit_frame_rate_measured(const StreamInfo& info, const StreamPacketScan& stream, bool packet_scan_partial,
+                               Scope scope, Fingerprint& fp) {
+  if (packet_scan_partial) {
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::partial_scan, fp);
+    return;
+  }
+
+  const Cadence cadence = derive_cadence(stream.packets, stream.tb);
+  if (cadence.status == CadenceStatus::no_timing_data) {
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::no_timing_data, fp);
+    return;
+  }
+  if (cadence.status == CadenceStatus::insufficient_data) {
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+
+  // rate = tb.den / (tb.num * mode_interval_ticks) -- cross-multiplied via
+  // the checked helpers, never a division, then GCD-reduced so the same
+  // true rate always renders as the identical canonical num/den pair
+  // (byte-identical --json across runs and across files sharing a rate).
+  std::int64_t den = 0;
+  if (!detail::checked_mul(cadence.tb.num, cadence.mode_interval_ticks, &den) || den <= 0) {
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+  std::int64_t num = cadence.tb.den;
+  const std::int64_t divisor = std::gcd(num, den);
+  if (divisor > 1) {
+    num /= divisor;
+    den /= divisor;
+  }
+
+  const bool declared_agrees =
+      declared_measured_agree(info.avg_frame_rate_num, info.avg_frame_rate_den, num, den);
+
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_frame_rate_measured);
+  measurement.scope = scope;
+  measurement.value = RationalValue{num, den, cadence.tb};
+  measurement.evidence = nlohmann::ordered_json{
+      {"axis", cadence.axis == CadenceAxis::pts ? "pts" : "dts"},
+      {"mode_interval_ticks", cadence.mode_interval_ticks},
+      {"matching_intervals", cadence.matching_intervals},
+      {"total_intervals", cadence.total_intervals},
+      {"class", cadence.klass == CadenceClass::cfr ? "cfr" : "vfr"},
+      {"declared_agrees", declared_agrees},
+  };
+  fp.measurements.push_back(std::move(measurement));
+}
+
 // video_stream_params_analyzer's run(): every video-scoped stream gets
 // video.codec/profile/level/resolution unconditionally (codecpar alone,
 // no scan dependency at all) plus video.frame_count, which additionally
@@ -214,12 +365,20 @@ void run_video_stream_params(const ProbeResults& results, Fingerprint& fp) {
     emit_profile(info, scope, fp);
     emit_level(info, scope, fp);
     emit_resolution(info, scope, fp);
+    emit_frame_rate_declared(info, scope, fp);
 
     if (i >= packet_scan.per_stream.size()) {
       // Defensive only -- packet_scan.per_stream is sized from
       // demux.stream_count() by construction (probe/packet_scan.cpp).
       continue;
     }
+
+    // video.frame_rate.measured depends ONLY on the packet scan (D-05's
+    // shared derivation reads StreamPacketScan::packets directly, never
+    // ParserScanResult) -- gated on packet_scan.partial alone, independent
+    // of frame_count_partial below (which also folds in the parser scan's
+    // own completeness, a dependency this check does not have).
+    emit_frame_rate_measured(info, packet_scan.per_stream[i], packet_scan.partial, scope, fp);
 
     if (frame_count_partial) {
       // Inline rather than push_skip (which leaves evidence unset): the

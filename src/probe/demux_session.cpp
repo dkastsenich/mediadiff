@@ -331,6 +331,14 @@ StreamInfo DemuxSession::stream_info(int index) const {
   info.width = codecpar->width;
   info.height = codecpar->height;
   info.declared_frame_count = static_cast<std::int64_t>(stream->nb_frames);
+
+  // 04-07-PLAN.md (VIDEO-01): resolved here, same boundary as every other
+  // codecpar/AVStream field above -- never past this file's own
+  // opaque-AVFormatContext boundary.
+  info.avg_frame_rate_num = stream->avg_frame_rate.num;
+  info.avg_frame_rate_den = stream->avg_frame_rate.den;
+  info.r_frame_rate_num = stream->r_frame_rate.num;
+  info.r_frame_rate_den = stream->r_frame_rate.den;
   return info;
 }
 
