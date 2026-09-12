@@ -317,6 +317,20 @@ StreamInfo DemuxSession::stream_info(int index) const {
   // dispatch table, keyed on this exact codec_tag).
   info.is_timecode = codecpar->codec_tag == MKTAG('t', 'm', 'c', 'd');
   info.is_caption = codecpar->codec_id == AV_CODEC_ID_EIA_608;
+
+  // 04-06-PLAN.md (VIDEO-01/02): resolved here, never past this file's own
+  // opaque-AVFormatContext boundary -- see StreamInfo's own comment.
+  info.codec_id_raw = static_cast<std::int64_t>(codecpar->codec_id);
+  info.codec_tag_raw = static_cast<std::int64_t>(codecpar->codec_tag);
+  info.profile = codecpar->profile;
+  const char* profile_name = avcodec_profile_name(codecpar->codec_id, codecpar->profile);
+  if (profile_name != nullptr) {
+    info.profile_name = profile_name;
+  }
+  info.level = codecpar->level;
+  info.width = codecpar->width;
+  info.height = codecpar->height;
+  info.declared_frame_count = static_cast<std::int64_t>(stream->nb_frames);
   return info;
 }
 

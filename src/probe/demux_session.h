@@ -176,6 +176,45 @@ struct StreamInfo {
   // confirmed present in this pinned FFmpeg's libavcodec/codec_id.h.
   // CONT-09's caption-track counterpart to is_timecode above.
   bool is_caption = false;
+
+  // 04-06-PLAN.md (VIDEO-01/02): the remaining codecpar fields
+  // video.codec/profile/level/resolution/frame_count extract directly --
+  // resolved HERE, never by handing a raw AVCodecParameters* to
+  // src/analyzers/ (this file's own top-of-file boundary: "no libav header
+  // crosses this file's public surface").
+  //
+  // Raw enum AVCodecID ordinal, evidence-only (VIDEO-01: `codec_name`
+  // above, not this, is the compared value -- an enum ordinal can renumber
+  // across an FFmpeg version bump, per doc 02's own codec_name rationale).
+  std::int64_t codec_id_raw = 0;
+  // codecpar->codec_tag, evidence-only, so a codec whose name is shared
+  // across container-level fourcc tags is still distinguishable under -v.
+  std::int64_t codec_tag_raw = 0;
+  // codecpar->profile verbatim, including AV_PROFILE_UNKNOWN (-99) when
+  // absent -- video.profile's own compared value is derived from this raw
+  // integer, never from profile_name alone (VIDEO-01-E2: two different
+  // unrecognised profiles must compare as different, not collapse to one
+  // shared "unknown" string).
+  int profile = 0;
+  // avcodec_profile_name(codec_id, profile) resolved once, here -- nullopt
+  // when it does not resolve for this codec_id/profile pair (an unknown or
+  // codec-inapplicable profile number).
+  std::optional<std::string> profile_name;
+  // codecpar->level verbatim, including AV_LEVEL_UNKNOWN (-99) when
+  // absent.
+  int level = 0;
+  // codecpar->width/height -- the container/bitstream-probed display
+  // dimensions. No decode pass exists in this phase (04-CONTEXT.md D-08/
+  // D-09), so the coded (pre-crop) dimensions AVCodecContext would carry
+  // post-avcodec_open2 are not available here; video.resolution's evidence
+  // is scoped to what codecpar alone can provide.
+  std::int64_t width = 0;
+  std::int64_t height = 0;
+  // AVStream::nb_frames -- the CONTAINER's own declared frame count.
+  // Evidence-only: VIDEO-02 forbids this from ever being video.frame_count's
+  // compared value (the count must always be counted from the packet/parser
+  // scan, never trusted from the container).
+  std::int64_t declared_frame_count = 0;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

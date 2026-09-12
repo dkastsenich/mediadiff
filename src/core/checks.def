@@ -22,10 +22,10 @@
 #                 check the `transform` profile's declared expectation
 #                 converts into a comparison against that expectation
 #                 rather than baseline equality (doc 01 section 5, ENG-10).
-#                 The key exists as of 02-05-PLAN.md but no check below
-#                 declares it yet: the resolution identity check that would
-#                 carry it in production lands in Phase 4. Proven against a
-#                 test-only check in tests/support/test_checks.def instead.
+#                 The key exists as of 02-05-PLAN.md; `video.resolution`
+#                 (04-06-PLAN.md, below) is the first shipped check to
+#                 declare it. Also proven against a test-only check in
+#                 tests/support/test_checks.def.
 #   aliases       optional array of deprecated-alias id strings that now
 #                 resolve to this check (doc 01 section 2)
 #
@@ -496,3 +496,93 @@ unit = "percent"
 value_kind = "rational"
 severity = "fail"
 tolerance = "10%"
+
+# 04-06-PLAN.md (VIDEO-01, VIDEO-02), src/analyzers/video/stream_params.cpp
+# -- the five per-video-stream identity checks: what codec, what profile,
+# what level, what resolution, and how many frames. Approved at
+# 04-CHECK-ROSTER.md (the frozen Phase-4 id roster). All five are
+# codec-scoped, not container-scoped (ContainerFamily::other): every one
+# extracts directly from AVStream.codecpar after the header pass alone, no
+# registered parser required -- none of the five ever emits
+# skipped:no_parser (that skip reason is reserved for a check that needs a
+# real libav parser, e.g. video.gop.length above).
+
+# codecpar->codec_id -> avcodec_get_name. `transform`: an intentional
+# transcode is expected to change the codec, hence `info` there.
+[[check]]
+id = "video.codec"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[check.profile_severity]
+transform = "info"
+
+# codecpar->profile -> avcodec_profile_name when it resolves, the raw
+# integer's decimal spelling when it does not (VIDEO-01-E2: two different
+# unrecognised profiles must compare as different, never as one shared
+# "unknown" word). The raw integer, including AV_PROFILE_UNKNOWN (-99), is
+# always in evidence.
+[[check]]
+id = "video.profile"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[check.profile_severity]
+transform = "info"
+
+# codecpar->level -> this project's own codec-specific human-string table
+# (H.264 level_idc/10, HEVC general_level_idc/30, AV1's 2+idx/4 . idx%4);
+# an uncovered codec or level renders its raw integer rather than guessing
+# -- a wrong rendered string would be permanent once it enters a committed
+# snapshot. HEVC tier is NOT folded into the rendered string:
+# general_tier_flag is not exposed by any public libav surface reachable
+# without a decode pass (docs/checks/video.level.md records the empirical
+# finding in full; this phase has no decode pass, 04-CONTEXT.md D-08/D-09).
+[[check]]
+id = "video.level"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[check.profile_severity]
+transform = "info"
+
+# codecpar->width/height as "WIDTHxHEIGHT". The first shipped check to
+# declare transform_affected = true (src/compare/exact.cpp's own
+# transform_active branch is the consumer) -- under `transform` with a
+# declared expect.resolution, the candidate is compared against the
+# derived target instead of against the baseline.
+[[check]]
+id = "video.resolution"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+transform_affected = true
+
+# Counted from the shared packet scan (or the parser scan's own
+# access-unit count when available, preferred for codecs where one packet
+# is not one access unit) -- NEVER read from AVStream::nb_frames, which
+# rides in evidence only (VIDEO-02: a container-trusted count would not be
+# comparable across container types). A zero-magnitude tolerance
+# ("0frames"), not `exact`, so `--tol video.frame_count=2frames` stays
+# meaningful. Skip-reason vocabulary: `partial_scan` (either scan
+# truncated -- a count from an incomplete sweep is a confidently wrong
+# number, D-02).
+[[check]]
+id = "video.frame_count"
+group = "video"
+semantic = "tol"
+unit = "frames"
+value_kind = "int64"
+severity = "fail"
+tolerance = "0frames"

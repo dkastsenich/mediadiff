@@ -97,6 +97,13 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // Declares Pass::packet_scan, PROBE-10's shared array -- no second
       // sweep, no pre-computed statistics struct.
       size_analyzer(),
+      // 04-06-PLAN.md (VIDEO-01, VIDEO-02): the five per-video-stream
+      // identity checks (video.codec/profile/level/resolution/frame_count)
+      // -- codecpar-only extraction, no registered parser required.
+      // Listed before video_gop_analyzer() (below) so a stable,
+      // hand-written analyzer order (TRUST-05) keeps the "identity"
+      // checks first.
+      video_stream_params_analyzer(),
       // 04-01-PLAN.md Task 2 (PROBE-03, VIDEO-05): video.gop.length, the
       // phase's tracer check -- Pass::parser_scan's own first production
       // consumer. Declares Pass::parser_scan explicitly (not left to this

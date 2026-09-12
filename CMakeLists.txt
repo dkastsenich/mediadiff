@@ -172,6 +172,7 @@ add_library(libmediadiff STATIC
   src/analyzers/container/mkv.cpp
   src/analyzers/container/ts.cpp
   src/analyzers/size/size.cpp
+  src/analyzers/video/stream_params.cpp
   src/analyzers/video/gop.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
