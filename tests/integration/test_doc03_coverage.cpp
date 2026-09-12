@@ -13,8 +13,10 @@
 // 03-06, 03-08 and 03-09, joining Phase 2's original three
 // (meta.tool_version/missing_candidate/extra_candidate) -- thirty as of
 // Phase 3. 04-01-PLAN.md registers Phase 4's tracer, `video.gop.length`,
-// bringing the total to thirty-one. This file is where a gap becomes
-// visible.
+// bringing the total to thirty-one; 04-06-PLAN.md registers the five
+// per-video-stream identity checks (video.codec/profile/level/resolution/
+// frame_count), bringing the total to thirty-six. This file is where a
+// gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -190,6 +192,29 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"video.gop.length",
        {fixture("video_gop_g48.mp4"), fixture("video_gop_g96.mp4"), fixture("video_gop_g48.mp4"),
         fixture("video_gop_g48_copy.mp4")}},
+
+      // --- video.codec/profile/level/resolution/frame_count
+      // (04-06-PLAN.md, VIDEO-01/VIDEO-02) --- video.profile and
+      // video.level deliberately SHARE their triggering pair: a single
+      // mpeg2video profile change (Main/level 8 -> Simple/level 10, see
+      // 04-02-SUMMARY.md's own read-back table) moves both at once -- a
+      // real property of the codec, not a shortcut, so this is not
+      // "fixed" into two separate pairs.
+      {"video.codec",
+       {fixture("video_base.mp4"), fixture("video_codec_mpeg2.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.profile",
+       {fixture("video_prof_a.mp4"), fixture("video_prof_b.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.level",
+       {fixture("video_prof_a.mp4"), fixture("video_prof_b.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.resolution",
+       {fixture("video_base.mp4"), fixture("video_res_640.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.frame_count",
+       {fixture("video_base.mp4"), fixture("video_frames_50.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
   };
   return pairs;
 }

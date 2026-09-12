@@ -136,6 +136,14 @@ add_executable(mediadiff_unit_tests
   # stream whose every packet lacks a DTS) via direct PacketScanResult
   # construction (03-09-PLAN.md Task 1).
   test_size_analyzer.cpp
+  # VIDEO-01/VIDEO-02: video.codec/profile/level/resolution/frame_count --
+  # one Measurement per video stream, the right Value alternative per
+  # check, none on a file with no video stream, the transform-affected
+  # resolution flag's own compared-value shape, the container-declared vs
+  # counted frame-count disagreement (VIDEO-02-E1), the D-02 partial_scan
+  # skip, and detail::render_profile_value/render_level_value's own rules
+  # (VIDEO-01-E2, the level table) driven directly (04-06-PLAN.md).
+  test_video_stream_params.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the
