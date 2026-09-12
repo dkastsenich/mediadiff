@@ -116,6 +116,12 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // file's own parser_scan-implies-packet_scan rule below) so this
       // AnalyzerSpec's own required_passes is self-describing.
       video_gop_analyzer(),
+      // 04-09-PLAN.md Task 2 (VIDEO-01/VIDEO-05, VIDEO-12): video.frame_types
+      // -- listed directly after video_gop_analyzer() so the GOP/frame-type
+      // family (the checks this phase's ParserScan-consuming analyzers
+      // produce) stays grouped in the stable, hand-written analyzer order
+      // (TRUST-05).
+      video_frame_types_analyzer(),
   };
   return registry;
 }

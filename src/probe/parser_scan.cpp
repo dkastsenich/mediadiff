@@ -2,13 +2,24 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 }
 
 namespace mediadiff {
+
+std::string picture_type_name(int pict_type) {
+  return std::string(1, av_get_picture_type_char(static_cast<AVPictureType>(pict_type)));
+}
+
 namespace detail {
+
+// H.264 NAL type 7 -- SPS (libavcodec/h264.h, cited in 04-RESEARCH.md
+// Priority Finding 3, the same table `kH264NalIdrSlice`-equivalent
+// constants in src/analyzers/video/gop.cpp are transcribed from).
+constexpr std::uint8_t kH264NalTypeSps = 7;
 
 NalWalkResult walk_annex_b_nal_types(std::span<const std::uint8_t> data, NalCodec codec) {
   NalWalkResult result;
@@ -21,6 +32,14 @@ NalWalkResult walk_annex_b_nal_types(std::span<const std::uint8_t> data, NalCode
   const std::size_t size = data.size();
   int nal_count = 0;
   std::size_t i = 0;
+  // 04-09-PLAN.md Task 2: tracks the RBSP payload of the FIRST H.264 SPS
+  // seen so far in THIS call -- closed off (becoming `result.h264_sps_range`)
+  // the moment the walk finds ANOTHER start code (everything between a
+  // NAL's own header and the NEXT start code IS that NAL's payload, by
+  // Annex-B construction) or, failing that, at the walk's own natural end
+  // below (the SPS was the last NAL this call observed).
+  std::optional<std::size_t> pending_sps_payload_start;
+
   // Bounded Annex-B start-code search: every index dereferenced below is
   // checked against `size` first (T-4-03), and the loop stops after
   // kMaxNalsPerAccessUnit matches regardless of how many more start codes
@@ -32,6 +51,11 @@ NalWalkResult walk_annex_b_nal_types(std::span<const std::uint8_t> data, NalCode
       ++i;
       continue;
     }
+
+    if (pending_sps_payload_start.has_value() && !result.h264_sps_range.has_value()) {
+      result.h264_sps_range = std::make_pair(*pending_sps_payload_start, i - *pending_sps_payload_start);
+    }
+    pending_sps_payload_start.reset();
 
     const std::size_t header_start = i + 3;
     if (codec == NalCodec::h264) {
@@ -48,6 +72,9 @@ NalWalkResult walk_annex_b_nal_types(std::span<const std::uint8_t> data, NalCode
       // (libavcodec/h264.h, cited in 04-RESEARCH.md Priority Finding 3).
       if (nal_type >= 1 && nal_type <= 5 && result.first_vcl_nal_type == 0xFF) {
         result.first_vcl_nal_type = nal_type;
+      }
+      if (nal_type == kH264NalTypeSps && !result.h264_sps_range.has_value()) {
+        pending_sps_payload_start = header_start + 1;
       }
       ++nal_count;
       i = header_start + 1;
@@ -71,7 +98,194 @@ NalWalkResult walk_annex_b_nal_types(std::span<const std::uint8_t> data, NalCode
     }
   }
 
+  // The walk ended (EOF, the kMaxNalsPerAccessUnit bound, or a trailing
+  // truncated NAL breaking out of the loop above) with an SPS payload
+  // still pending -- close it off against `i`, the walk's own last
+  // start-code-search position (approximately the end of `data`; a NAL
+  // with nothing after it runs to the end of the buffer by construction).
+  if (pending_sps_payload_start.has_value() && !result.h264_sps_range.has_value() &&
+      i > *pending_sps_payload_start) {
+    result.h264_sps_range = std::make_pair(*pending_sps_payload_start, i - *pending_sps_payload_start);
+  }
+
   return result;
+}
+
+// A plain, unoptimized bit-at-a-time reader over an already-emulation-
+// prevention-stripped RBSP payload -- symmetric with
+// tools/gen_video_fixtures.py's own BitWriter (04-05-SUMMARY.md). Every
+// read checks `bit_pos_`'s own byte index against `data_.size()` BEFORE
+// consuming a bit (T-4-38): a read that would run past the end sets
+// `overflowed_` and returns 0 from that point forward, never
+// dereferencing past the payload's own declared size.
+class RbspBitReader {
+ public:
+  explicit RbspBitReader(std::span<const std::uint8_t> data) : data_(data) {}
+
+  bool overflowed() const { return overflowed_; }
+
+  // u(n): a fixed-width unsigned field, MSB first.
+  std::uint32_t u(int n) {
+    std::uint32_t value = 0;
+    for (int i = 0; i < n; ++i) {
+      value = (value << 1) | read_bit();
+    }
+    return value;
+  }
+
+  // ue(): unsigned Exp-Golomb -- a bounded count of leading zero bits
+  // (kMaxExpGolombLeadingZeroBits below, T-4-38's own DoS half: an
+  // all-zero payload cannot force an unbounded leading-zero count) then
+  // that many info bits. `se(v)` fields (offset_for_non_ref_pic and
+  // friends, pic_order_cnt_type==1's own branch below) are skipped via
+  // this SAME function -- se(v)'s signed reinterpretation of the code
+  // changes only how the VALUE is decoded, never how many bits it
+  // consumes, and this reader only ever needs to skip past those fields,
+  // never their value.
+  std::uint32_t ue() {
+    int leading_zero_bits = 0;
+    while (!overflowed_ && read_bit() == 0) {
+      ++leading_zero_bits;
+      if (leading_zero_bits > kMaxExpGolombLeadingZeroBits) {
+        overflowed_ = true;
+        return 0;
+      }
+    }
+    if (overflowed_) {
+      return 0;
+    }
+    const std::uint32_t info = (leading_zero_bits > 0) ? u(leading_zero_bits) : 0;
+    return (std::uint32_t{1} << leading_zero_bits) - 1 + info;
+  }
+
+ private:
+  // A 32-bit Exp-Golomb value's own leading-zero-bit count can never
+  // legally exceed 31 (u(leading_zero_bits) would itself overflow a
+  // uint32_t past that) -- refuses rather than shifting by an
+  // out-of-range amount on a crafted all-zero payload.
+  static constexpr int kMaxExpGolombLeadingZeroBits = 31;
+
+  std::uint32_t read_bit() {
+    const std::size_t byte_index = bit_pos_ / 8;
+    if (overflowed_ || byte_index >= data_.size()) {
+      overflowed_ = true;
+      return 0;
+    }
+    const int bit_index = 7 - static_cast<int>(bit_pos_ % 8);
+    ++bit_pos_;
+    return (data_[byte_index] >> bit_index) & 1U;
+  }
+
+  std::span<const std::uint8_t> data_;
+  std::size_t bit_pos_ = 0;
+  bool overflowed_ = false;
+};
+
+std::vector<std::uint8_t> strip_emulation_prevention(std::span<const std::uint8_t> data) {
+  std::vector<std::uint8_t> out;
+  out.reserve(data.size());
+  int zero_run = 0;
+  for (const std::uint8_t byte : data) {
+    if (zero_run >= 2 && byte == 0x03) {
+      // The inserted emulation-prevention byte itself -- dropped, and the
+      // run resets: the byte immediately after it (the NEXT loop
+      // iteration) starts a fresh count, exactly inverting
+      // tools/gen_video_fixtures.py's own emulation_prevention() writer.
+      zero_run = 0;
+      continue;
+    }
+    out.push_back(byte);
+    zero_run = (byte == 0) ? zero_run + 1 : 0;
+  }
+  return out;
+}
+
+namespace {
+
+// H.264 profile_idc values whose SPS carries the chroma_format_idc/bit-
+// depth/scaling-list block BEFORE log2_max_frame_num_minus4 (H.264 spec
+// 7.3.2.1.1) -- Baseline/Main/Extended (66/77/88, this project's own
+// fixtures among them) do not.
+bool is_high_profile_idc(std::uint32_t profile_idc) {
+  switch (profile_idc) {
+    case 100:
+    case 110:
+    case 122:
+    case 244:
+    case 44:
+    case 83:
+    case 86:
+    case 118:
+    case 128:
+    case 138:
+    case 139:
+    case 134:
+    case 135:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// num_ref_frames_in_pic_order_cnt_cycle's own spec-legal range (H.264
+// spec 7.4.2.1.1: "shall be in the range of 0 to 255, inclusive") -- a
+// crafted SPS could still encode an arbitrarily large ue(v) here; this
+// bound refuses to loop past the spec's own legal maximum rather than
+// trusting a hostile field value (T-4-38's DoS half, mirrors
+// kMaxNalsPerAccessUnit's own "named constant checked before the loop"
+// precedent).
+constexpr std::uint32_t kMaxRefFramesInPocCycle = 255;
+
+}  // namespace
+
+std::optional<std::int64_t> read_h264_max_num_ref_frames(std::span<const std::uint8_t> rbsp) {
+  RbspBitReader reader(rbsp);
+  const std::uint32_t profile_idc = reader.u(8);
+  reader.u(8);  // constraint_set0_flag..constraint_set5_flag (6 bits) + reserved_zero_2bits (2 bits)
+  reader.u(8);  // level_idc
+  reader.ue();  // seq_parameter_set_id
+
+  if (is_high_profile_idc(profile_idc)) {
+    const std::uint32_t chroma_format_idc = reader.ue();
+    if (chroma_format_idc == 3) {
+      reader.u(1);  // separate_colour_plane_flag
+    }
+    reader.ue();  // bit_depth_luma_minus8
+    reader.ue();  // bit_depth_chroma_minus8
+    reader.u(1);  // qpprime_y_zero_transform_bypass_flag
+    const std::uint32_t seq_scaling_matrix_present_flag = reader.u(1);
+    if (seq_scaling_matrix_present_flag != 0) {
+      // Deliberate scope boundary (this function's own header comment,
+      // parser_scan.h) -- refuses rather than decoding an arbitrary
+      // scaling list and risking a misaligned read past this point.
+      return std::nullopt;
+    }
+  }
+
+  reader.ue();  // log2_max_frame_num_minus4
+  const std::uint32_t pic_order_cnt_type = reader.ue();
+  if (pic_order_cnt_type == 0) {
+    reader.ue();  // log2_max_pic_order_cnt_lsb_minus4
+  } else if (pic_order_cnt_type == 1) {
+    reader.u(1);  // delta_pic_order_always_zero_flag
+    reader.ue();  // offset_for_non_ref_pic (se(v) -- see RbspBitReader::ue's own comment)
+    reader.ue();  // offset_for_top_to_bottom_field (se(v))
+    const std::uint32_t num_ref_frames_in_poc_cycle = reader.ue();
+    if (num_ref_frames_in_poc_cycle > kMaxRefFramesInPocCycle) {
+      return std::nullopt;
+    }
+    for (std::uint32_t i = 0; i < num_ref_frames_in_poc_cycle; ++i) {
+      reader.ue();  // offset_for_ref_frame[i] (se(v))
+    }
+  }
+  // pic_order_cnt_type == 2: no further POC syntax at all (H.264 spec) --
+  // falls straight through to max_num_ref_frames below.
+
+  const std::uint32_t max_num_ref_frames = reader.ue();
+  if (reader.overflowed()) {
+    return std::nullopt;
+  }
+  return static_cast<std::int64_t>(max_num_ref_frames);
 }
 
 StreamParserState::~StreamParserState() {
@@ -88,12 +302,16 @@ StreamParserState::StreamParserState(StreamParserState&& other) noexcept
       codec_ctx_(other.codec_ctx_),
       attempted_init_(other.attempted_init_),
       has_parser_(other.has_parser_),
-      nal_codec_(other.nal_codec_) {
+      nal_codec_(other.nal_codec_),
+      ref_frame_count_(other.ref_frame_count_),
+      ref_frame_count_attempted_(other.ref_frame_count_attempted_) {
   other.parser_ = nullptr;
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.has_parser_ = false;
   other.nal_codec_ = NalCodec::none;
+  other.ref_frame_count_.reset();
+  other.ref_frame_count_attempted_ = false;
 }
 
 StreamParserState& StreamParserState::operator=(StreamParserState&& other) noexcept {
@@ -111,11 +329,15 @@ StreamParserState& StreamParserState::operator=(StreamParserState&& other) noexc
   attempted_init_ = other.attempted_init_;
   has_parser_ = other.has_parser_;
   nal_codec_ = other.nal_codec_;
+  ref_frame_count_ = other.ref_frame_count_;
+  ref_frame_count_attempted_ = other.ref_frame_count_attempted_;
   other.parser_ = nullptr;
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.has_parser_ = false;
   other.nal_codec_ = NalCodec::none;
+  other.ref_frame_count_.reset();
+  other.ref_frame_count_attempted_ = false;
   return *this;
 }
 
@@ -220,6 +442,24 @@ bool StreamParserState::parse_packet(const std::uint8_t* data, int size, std::in
       walk_annex_b_nal_types(std::span<const std::uint8_t>(data, static_cast<std::size_t>(size)), nal_codec_);
   out->nal_type_mask = nal_result.nal_type_mask;
   out->first_vcl_nal_type = nal_result.first_vcl_nal_type;
+
+  // 04-09-PLAN.md Task 2 (`video.gop.refs`): the FIRST time this stream's
+  // own SPS is seen -- across every packet, not only this one -- read its
+  // `max_num_ref_frames` and never attempt again, regardless of success
+  // (this field's own "populated the first time an SPS is seen" contract,
+  // parser_scan.h). `nal_result.h264_sps_range` is only ever populated for
+  // `nal_codec_ == NalCodec::h264` (the walk's own contract above), so the
+  // codec check here is a self-documenting belt, not the only guard.
+  if (!ref_frame_count_attempted_ && nal_codec_ == NalCodec::h264 && nal_result.h264_sps_range.has_value()) {
+    ref_frame_count_attempted_ = true;
+    const auto [sps_offset, sps_length] = *nal_result.h264_sps_range;
+    const std::size_t data_size = static_cast<std::size_t>(size);
+    if (sps_offset <= data_size && sps_length <= data_size - sps_offset) {
+      const std::vector<std::uint8_t> stripped =
+          strip_emulation_prevention(std::span<const std::uint8_t>(data + sps_offset, sps_length));
+      ref_frame_count_ = read_h264_max_num_ref_frames(stripped);
+    }
+  }
 
   return true;
 }

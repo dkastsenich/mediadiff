@@ -32,6 +32,8 @@ using mediadiff::detail::GopClassificationResult;
 using mediadiff::detail::kPictureTypeI;
 using mediadiff::detail::NalCodec;
 using mediadiff::detail::RandomAccessKind;
+using mediadiff::detail::read_h264_max_num_ref_frames;
+using mediadiff::detail::strip_emulation_prevention;
 
 namespace {
 
@@ -172,4 +174,190 @@ TEST_CASE("gop_classification - classify_access_unit: HEVC type 23 (IS_IRAP_NAL'
 TEST_CASE("gop_classification - classify_access_unit: HEVC type 24 (one past IS_IRAP_NAL's own upper bound) is none",
           "[unit]") {
   REQUIRE(classify_access_unit(NalCodec::hevc, 24, 0) == RandomAccessKind::none);
+}
+
+// --- read_h264_max_num_ref_frames, driven directly over hand-built SPS
+// RBSP payloads (04-09-PLAN.md Task 2) -- a minimal local bit writer
+// mirroring tools/gen_video_fixtures.py's own BitWriter (symmetric with
+// the production reader, per this project's own "writer/reader are
+// symmetric" design note, parser_scan.h). Every field value below is
+// hand-verified against the H.264 spec's own field order (7.3.2.1.1)
+// BEFORE the assertion is written.
+
+namespace {
+
+class SpsBitWriter {
+ public:
+  void u(int n, std::uint32_t value) {
+    for (int i = n - 1; i >= 0; --i) {
+      bits_.push_back((value >> i) & 1U);
+    }
+  }
+  void ue(std::uint32_t value) {
+    const std::uint32_t v_plus1 = value + 1;
+    int nbits = 0;
+    while ((v_plus1 >> nbits) != 0) {
+      ++nbits;
+    }
+    --nbits;
+    u(nbits, 0);
+    u(nbits + 1, v_plus1);
+  }
+  void rbsp_trailing_bits() {
+    bits_.push_back(1);
+    while (bits_.size() % 8 != 0) {
+      bits_.push_back(0);
+    }
+  }
+  std::vector<std::uint8_t> to_bytes() const {
+    std::vector<std::uint8_t> out;
+    std::size_t i = 0;
+    while (i < bits_.size()) {
+      std::uint8_t byte = 0;
+      for (int b = 0; b < 8; ++b) {
+        byte = static_cast<std::uint8_t>((byte << 1) | (i < bits_.size() ? bits_[i] : 0));
+        ++i;
+      }
+      out.push_back(byte);
+    }
+    return out;
+  }
+
+ private:
+  std::vector<std::uint32_t> bits_;
+};
+
+}  // namespace
+
+TEST_CASE("gop_classification - read_h264_max_num_ref_frames: Baseline profile, pic_order_cnt_type=2 (mirrors "
+          "tools/gen_video_fixtures.py's own build_h264_sps)",
+          "[unit]") {
+  SpsBitWriter w;
+  w.u(8, 66);   // profile_idc = Baseline
+  w.u(8, 0);    // 6 constraint flags + 2 reserved bits
+  w.u(8, 30);   // level_idc
+  w.ue(0);      // seq_parameter_set_id
+  w.ue(0);      // log2_max_frame_num_minus4
+  w.ue(2);      // pic_order_cnt_type = 2 -- no further POC syntax
+  w.ue(1);      // max_num_ref_frames = 1
+  w.u(1, 0);    // gaps_in_frame_num_value_allowed_flag
+  w.rbsp_trailing_bits();
+  const auto result = read_h264_max_num_ref_frames(w.to_bytes());
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 1);
+}
+
+TEST_CASE("gop_classification - read_h264_max_num_ref_frames: pic_order_cnt_type=0 reads past "
+          "log2_max_pic_order_cnt_lsb_minus4 correctly",
+          "[unit]") {
+  SpsBitWriter w;
+  w.u(8, 77);  // profile_idc = Main -- not a high profile, no chroma block
+  w.u(8, 0);
+  w.u(8, 30);
+  w.ue(0);  // seq_parameter_set_id
+  w.ue(0);  // log2_max_frame_num_minus4
+  w.ue(0);  // pic_order_cnt_type = 0
+  w.ue(9);  // log2_max_pic_order_cnt_lsb_minus4 -- must be skipped, not misread as max_num_ref_frames
+            // (deliberately a DIFFERENT value from max_num_ref_frames below, so a reader that
+            // skips this branch entirely would misread THIS field's own bits and report the
+            // wrong number rather than coincidentally the right one)
+  w.ue(2);  // max_num_ref_frames = 2
+  w.u(1, 0);
+  w.rbsp_trailing_bits();
+  const auto result = read_h264_max_num_ref_frames(w.to_bytes());
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 2);
+}
+
+TEST_CASE("gop_classification - read_h264_max_num_ref_frames: pic_order_cnt_type=1 skips its own five-field "
+          "branch, including the offset_for_ref_frame[] loop",
+          "[unit]") {
+  SpsBitWriter w;
+  w.u(8, 77);
+  w.u(8, 0);
+  w.u(8, 30);
+  w.ue(0);  // seq_parameter_set_id
+  w.ue(0);  // log2_max_frame_num_minus4
+  w.ue(1);  // pic_order_cnt_type = 1
+  w.u(1, 0);  // delta_pic_order_always_zero_flag
+  w.ue(0);  // offset_for_non_ref_pic (se(v) -- 0 encodes identically for ue/se)
+  w.ue(0);  // offset_for_top_to_bottom_field (se(v))
+  w.ue(2);  // num_ref_frames_in_pic_order_cnt_cycle = 2
+  w.ue(0);  // offset_for_ref_frame[0]
+  w.ue(0);  // offset_for_ref_frame[1]
+  w.ue(3);  // max_num_ref_frames = 3
+  w.u(1, 0);
+  w.rbsp_trailing_bits();
+  const auto result = read_h264_max_num_ref_frames(w.to_bytes());
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 3);
+}
+
+TEST_CASE("gop_classification - read_h264_max_num_ref_frames: a high profile_idc (100) with no scaling matrix "
+          "correctly skips the chroma_format_idc/bit-depth block",
+          "[unit]") {
+  SpsBitWriter w;
+  w.u(8, 100);  // profile_idc = High
+  w.u(8, 0);
+  w.u(8, 30);
+  w.ue(0);    // seq_parameter_set_id
+  w.ue(1);    // chroma_format_idc = 1 (4:2:0, not 3 -- no separate_colour_plane_flag)
+  w.ue(5);    // bit_depth_luma_minus8 -- deliberately non-zero (and distinct from every
+              // other field's own value below) so a reader that skips this whole
+              // high-profile block entirely misaligns onto a DIFFERENT bit sequence,
+              // rather than coincidentally reading the same value back by chance
+  w.ue(3);    // bit_depth_chroma_minus8 -- also non-zero and distinct
+  w.u(1, 1);  // qpprime_y_zero_transform_bypass_flag
+  w.u(1, 0);  // seq_scaling_matrix_present_flag = 0
+  w.ue(0);    // log2_max_frame_num_minus4
+  w.ue(2);    // pic_order_cnt_type = 2
+  w.ue(11);   // max_num_ref_frames = 11
+  w.u(1, 0);
+  w.rbsp_trailing_bits();
+  const auto result = read_h264_max_num_ref_frames(w.to_bytes());
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 11);
+}
+
+TEST_CASE("gop_classification - read_h264_max_num_ref_frames: a high profile SPS declaring "
+          "seq_scaling_matrix_present_flag refuses (a deliberate, documented scope boundary)",
+          "[unit]") {
+  SpsBitWriter w;
+  w.u(8, 100);
+  w.u(8, 0);
+  w.u(8, 30);
+  w.ue(0);
+  w.ue(1);    // chroma_format_idc
+  w.ue(0);
+  w.ue(0);
+  w.u(1, 0);
+  w.u(1, 1);  // seq_scaling_matrix_present_flag = 1 -- this reader refuses past here
+  const auto result = read_h264_max_num_ref_frames(w.to_bytes());
+  REQUIRE_FALSE(result.has_value());
+}
+
+TEST_CASE("gop_classification - read_h264_max_num_ref_frames: a truncated SPS (payload runs out before "
+          "max_num_ref_frames) yields nullopt, never a fabricated value",
+          "[unit]") {
+  // Only profile_idc + 1 byte -- nowhere near enough for even
+  // seq_parameter_set_id, let alone max_num_ref_frames. T-4-38's own
+  // regression pin: every read is bounds-checked, never reads past the
+  // buffer.
+  const std::vector<std::uint8_t> truncated = {66, 0};
+  const auto result = read_h264_max_num_ref_frames(truncated);
+  REQUIRE_FALSE(result.has_value());
+}
+
+TEST_CASE("gop_classification - strip_emulation_prevention: removes the 0x03 inserted after a 00 00 run before a "
+          "byte <= 0x03, exact inverse of tools/gen_video_fixtures.py's own emulation_prevention() writer",
+          "[unit]") {
+  const std::vector<std::uint8_t> escaped = {0x00, 0x00, 0x03, 0x00, 0x01, 0xAB};
+  const std::vector<std::uint8_t> expected = {0x00, 0x00, 0x00, 0x01, 0xAB};
+  REQUIRE(strip_emulation_prevention(escaped) == expected);
+}
+
+TEST_CASE("gop_classification - strip_emulation_prevention: a payload with no escape sequence is unchanged",
+          "[unit]") {
+  const std::vector<std::uint8_t> data = {0x67, 0xAB, 0xCD, 0x01, 0x02};
+  REQUIRE(strip_emulation_prevention(data) == data);
 }

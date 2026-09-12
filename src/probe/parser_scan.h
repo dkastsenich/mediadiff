@@ -23,7 +23,10 @@
 // this is not a reshape.
 
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <string>
+#include <utility>
 #include <vector>
 
 // Opaque forward declarations, at global scope matching libav's own C
@@ -82,6 +85,17 @@ struct StreamParserScan {
   std::vector<AccessUnitRecord> access_units;
   bool has_parser = false;
   bool partial = false;
+  // 04-09-PLAN.md Task 2 (VIDEO-05, `video.gop.refs`): the H.264 SPS's own
+  // `max_num_ref_frames` field, read once -- the first time this stream's
+  // own SPS NAL is seen, by `detail::StreamParserState::parse_packet` --
+  // and never re-attempted afterward, per this field's own "populated the
+  // first time an SPS is seen" contract. `nullopt` for every codec other
+  // than H.264 (mpeg4/mpeg2video have no SPS concept at all; HEVC's own
+  // SPS is a structurally different layout this reader does not parse --
+  // see `detail::read_h264_max_num_ref_frames`'s own header comment), and
+  // for an H.264 stream whose SPS was truncated, unreadable, or carries a
+  // scaling-list block this reader deliberately does not decode.
+  std::optional<std::int64_t> ref_frame_count;
 };
 
 // The whole parser scan's result: one StreamParserScan per AVStream, plus
@@ -91,6 +105,18 @@ struct ParserScanResult {
   std::vector<StreamParserScan> per_stream;
   bool partial = false;
 };
+
+// 04-09-PLAN.md Task 2 (`video.frame_types`): libav's own single-letter
+// picture-type spelling (`av_get_picture_type_char`, libavutil/avutil.h --
+// 'I'/'P'/'B'/'S'/'i'/'p'/'s'/'b'/'?'), resolved HERE (the one place
+// src/probe/*.cpp includes libavcodec/avcodec.h) so `src/analyzers/`
+// never has to -- mirrors `probe/demux_session.h`'s own "resolve behind
+// the libav-including .cpp, expose a plain std::string" boundary
+// (`DemuxSession::stream_info`'s own `*_name` fields) for the identical
+// reason. Every `AccessUnitRecord::pict_type` value has a defined mapping
+// (libav's own default case in `av_get_picture_type_char` returns '?' for
+// anything outside its switch, never a crash).
+std::string picture_type_name(int pict_type);
 
 // T-4-04's own mitigation: the Annex-B NAL walk stops after this many NALs
 // per access unit, bounding a crafted packet of millions of three-byte
@@ -114,6 +140,18 @@ enum class NalCodec : std::uint8_t {
 struct NalWalkResult {
   std::uint64_t nal_type_mask = 0;
   std::uint8_t first_vcl_nal_type = 0xFF;
+  // 04-09-PLAN.md Task 2 (`video.gop.refs`): the byte offset/length of the
+  // FIRST H.264 SPS (type 7) NAL's own RBSP payload within the `data` span
+  // this walk was called with -- the NAL header byte excluded, emulation-
+  // prevention bytes still present (the caller strips those; see
+  // `detail::strip_emulation_prevention`). `nullopt` when no SPS was
+  // observed in THIS call's own `data` (a later packet may still carry
+  // one -- `detail::StreamParserState` tracks "has an SPS been resolved
+  // yet" across calls, not this per-call walk). Populated only for
+  // `NalCodec::h264` -- HEVC's own SPS is a structurally different layout
+  // this project does not read (see `read_h264_max_num_ref_frames`'s own
+  // header comment).
+  std::optional<std::pair<std::size_t, std::size_t>> h264_sps_range;
 };
 
 // Test-only/production-shared extraction point (T-4-03/T-4-04's own
@@ -130,6 +168,51 @@ struct NalWalkResult {
 // (T-4-04). `codec == NalCodec::none` returns the zero-mask/0xFF-sentinel
 // result unconditionally -- no walk is attempted.
 NalWalkResult walk_annex_b_nal_types(std::span<const std::uint8_t> data, NalCodec codec);
+
+// Removes Annex-B emulation-prevention bytes (a `0x03` inserted after any
+// `00 00` run immediately before a byte `<= 0x03`) from an already-
+// extracted RBSP payload -- symmetric with, and the exact inverse of,
+// `tools/gen_video_fixtures.py`'s own `emulation_prevention()` writer
+// (04-05-SUMMARY.md: "the reader and the writer are symmetric and the
+// writer's fixtures are the reader's test vectors"). Exposed here so
+// tests/unit/test_gop_classification.cpp can drive it directly over
+// hand-built escaped byte sequences.
+std::vector<std::uint8_t> strip_emulation_prevention(std::span<const std::uint8_t> data);
+
+// Reads `max_num_ref_frames` from an already-emulation-prevention-stripped
+// H.264 SPS RBSP payload (`rbsp`, the 1-byte NAL header already excluded)
+// -- 04-09-PLAN.md Task 2, flagged assumption A1: no public libav accessor
+// exposes this value (`AVCodecParameters` carries no reference-frame
+// count, and `AVCodecParserContext` does not publish the H.264 parser's
+// own internal `sps->ref_frame_count` either), so this reader walks the
+// SPS's own Exp-Golomb-coded fields directly, symmetric with
+// `tools/gen_video_fixtures.py`'s own `build_h264_sps` writer.
+//
+// Walks every field up to and including `max_num_ref_frames` per the H.264
+// spec's own field order (7.3.2.1.1): the high-profile
+// chroma_format_idc/bit-depth block when `profile_idc` names one of the
+// thirteen profiles that carries it, then the `pic_order_cnt_type`-gated
+// branch (0/1/2 each read their own, different, set of fields before
+// `max_num_ref_frames`) -- every REAL H.264 stream this check will ever
+// see takes one of these three branches, not only the `pic_order_cnt_type
+// == 2` shape `tools/gen_video_fixtures.py`'s own fixtures use, so this
+// reader does not hardcode that shortcut.
+//
+// Returns nullopt (never a fabricated value) when: the payload runs out
+// before `max_num_ref_frames` is reached (a truncated or malformed SPS --
+// T-4-38's own mitigation: every read is bounds-checked against `rbsp`'s
+// own length before it executes); `num_ref_frames_in_pic_order_cnt_cycle`
+// (a `pic_order_cnt_type == 1` field) exceeds its own spec-legal maximum
+// (T-4-38's DoS half -- refuses to loop an attacker-inflated count); or
+// the SPS declares `seq_scaling_matrix_present_flag` (a deliberate,
+// documented scope boundary -- decoding an arbitrary scaling list is
+// materially more complex than every other field this reader touches, no
+// fixture in this project's corpus exercises it, and refusing rather than
+// guessing at the resulting bit alignment is what keeps a genuinely
+// unreadable SPS from producing a confidently wrong reference count).
+// Exposed here so tests/unit/test_gop_classification.cpp can drive it
+// directly over hand-built SPS payloads, without a fixture file.
+std::optional<std::int64_t> read_h264_max_num_ref_frames(std::span<const std::uint8_t> rbsp);
 
 // One stream's own parser lifetime (T-4-02's mitigation): one
 // AVCodecParserContext* plus one AVCodecContext* (av_parser_parse2's own
@@ -182,12 +265,22 @@ class StreamParserState {
   bool parse_packet(const std::uint8_t* data, int size, std::int64_t pts, std::int64_t dts, std::int64_t pos,
                      bool is_key, AccessUnitRecord* out);
 
+  // 04-09-PLAN.md Task 2 (`video.gop.refs`): the H.264 SPS's own
+  // `max_num_ref_frames`, resolved (attempted exactly once, the first time
+  // this stream's own SPS NAL is seen, regardless of success) as a side
+  // effect of `parse_packet`'s own NAL walk -- `nullopt` before any SPS has
+  // been observed, after an observed SPS could not be read, or for any
+  // codec other than H.264.
+  std::optional<std::int64_t> ref_frame_count() const { return ref_frame_count_; }
+
  private:
   AVCodecParserContext* parser_ = nullptr;
   AVCodecContext* codec_ctx_ = nullptr;
   bool attempted_init_ = false;
   bool has_parser_ = false;
   NalCodec nal_codec_ = NalCodec::none;
+  std::optional<std::int64_t> ref_frame_count_;
+  bool ref_frame_count_attempted_ = false;
 };
 
 }  // namespace detail

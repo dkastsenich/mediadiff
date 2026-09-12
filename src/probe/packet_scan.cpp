@@ -240,6 +240,12 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
           }
         }
       }
+      // 04-09-PLAN.md Task 2 (`video.gop.refs`): not per-AU-budgeted (a
+      // single optional int64 per stream, unlike AccessUnitRecord) --
+      // refreshed every iteration rather than only once, so it reflects
+      // `pstate`'s own state as soon as its first SPS resolves, whether or
+      // not this particular packet produced an access unit.
+      pstream.ref_frame_count = pstate.ref_frame_count();
     }
 
     pkt.unref();

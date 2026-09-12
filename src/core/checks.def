@@ -805,3 +805,57 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 04-09-PLAN.md Task 2 (VIDEO-05), src/probe/parser_scan.{h,cpp}'s own
+# bounded Exp-Golomb SPS reader -- the H.264 SPS's own `max_num_ref_frames`
+# field. No public libav accessor exposes this value (this plan's own
+# flagged assumption A1: `AVCodecParameters` carries no reference-frame
+# count, and `AVCodecParserContext` does not publish the H.264 parser's
+# own internal `sps->ref_frame_count` either). `warn`, not `fail`
+# (04-CHECK-ROSTER.md): a real, worth-noticing reference-structure signal,
+# not on its own a shipping blocker. Skip-reason vocabulary: `no_parser`
+# (no registered libav parser, OR a codec this reader does not extract a
+# reference count from -- mpeg4/mpeg2video have no SPS concept at all,
+# HEVC's own SPS is a structurally different layout this reader does not
+# parse -- evidence names the codec either way), `unparsed_mechanism` (a
+# truncated, unreadable, or scaling-list-carrying SPS, matching PROBE-09's
+# established degradation shape), `partial_scan` (D-02).
+[[check]]
+id = "video.gop.refs"
+group = "video"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "warn"
+
+# 04-09-PLAN.md Task 2 (VIDEO-01/VIDEO-05, VIDEO-12), src/analyzers/video/
+# frame_types.cpp -- the I/P/B (and S/SI/SP/BI) picture-type distribution,
+# as a proportion histogram (`dist`'s own normalisation happens at
+# comparison time -- this check emits raw bin COUNTS, never a pre-divided
+# percentage). Bin names are libav's own single-letter picture-type
+# spelling (`av_get_picture_type_char`, `probe/parser_scan.h`'s own
+# `picture_type_name`). VIDEO-12's own degradation: a codec with no
+# registered parser still reports a keyframe-vs-non-keyframe two-bin
+# histogram from `PacketRecord::flags`' own keyframe bit, never a skip --
+# doc 03 section 1's own "frame-type distribution DEGRADES to
+# keyframe-flag granularity" wording. `warn` baseline, escalated to `fail`
+# under `strict_bitexact`/`remux` (an unexpected B-picture disappearance is
+# exactly the silent configuration regression those two profiles exist to
+# catch) and widened to `10%` under `hw_encoder` (hardware rate control
+# legitimately redistributes picture types more than a software encoder
+# would, doc 03 section 5).
+[[check]]
+id = "video.frame_types"
+group = "video"
+semantic = "dist"
+unit = "percent"
+value_kind = "histogram"
+severity = "warn"
+tolerance = "5%"
+
+[check.profile_severity]
+strict_bitexact = "fail"
+remux = "fail"
+
+[check.profile_tolerance]
+hw_encoder = "10%"

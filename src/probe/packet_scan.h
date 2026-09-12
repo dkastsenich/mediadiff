@@ -111,6 +111,18 @@ struct PacketRecord {
   int flags = 0;
 };
 
+// AVPacket::flags' AV_PKT_FLAG_KEY bit (libavcodec/packet.h) -- confirmed
+// stable at 0x0001 since the flag's introduction. Exposed here, next to
+// `PacketRecord::flags` itself (rather than hardcoded per-file, this
+// project's usual convention for a libav-derived sentinel -- see
+// stream_params.cpp's own `kUnknownProfileOrLevel` comment), because TWO
+// independent analyzer families need the IDENTICAL bit value:
+// src/analyzers/container/mp4.cpp's fragment-duration keyframe walk, and
+// src/analyzers/video/frame_types.cpp's VIDEO-12 keyframe-vs-non-keyframe
+// degraded histogram (04-09-PLAN.md) -- a single source of truth here is
+// what keeps the two from silently drifting apart.
+inline constexpr int kPacketFlagKeyframe = 0x0001;
+
 // One stream's own packet array plus its byte total and timebase. `tb` is
 // held ONCE per stream, not once per record -- every packet in a stream
 // shares its stream's timebase, and per-record duplication would

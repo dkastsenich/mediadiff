@@ -249,6 +249,40 @@ void push_no_nal_layer_skips(const std::string& codec_name, Scope scope, Fingerp
   }
 }
 
+// video.gop.refs: the H.264 SPS's own max_num_ref_frames, as an exact
+// int64 (04-CHECK-ROSTER.md's own `warn` severity). `nal_codec != h264`
+// covers every codec this reader does not extract a reference count from
+// -- mpeg4/mpeg2video have no SPS concept at all, HEVC's own SPS is a
+// structurally different layout this project does not read -- with the
+// codec named in evidence either way. `pstream.ref_frame_count` is
+// nullopt for an H.264 stream whose SPS was never resolved (never seen,
+// truncated, unreadable, or carrying a scaling-list block this reader
+// deliberately does not decode, probe/parser_scan.cpp's own
+// read_h264_max_num_ref_frames) -- `unparsed_mechanism`, matching
+// PROBE-09's established degradation shape.
+void emit_gop_refs(const StreamParserScan& pstream, const std::string& codec_name, detail::NalCodec nal_codec,
+                    Scope scope, Fingerprint& fp) {
+  if (nal_codec != detail::NalCodec::h264) {
+    Measurement measurement;
+    measurement.check_index = static_cast<std::uint32_t>(CheckId::video_gop_refs);
+    measurement.scope = scope;
+    measurement.value = Absent{};
+    measurement.skip_reason = SkipReason::no_parser;
+    measurement.evidence = nlohmann::ordered_json{{"codec", codec_name}};
+    fp.measurements.push_back(std::move(measurement));
+    return;
+  }
+  if (!pstream.ref_frame_count.has_value()) {
+    push_skip(CheckId::video_gop_refs, scope, SkipReason::unparsed_mechanism, fp);
+    return;
+  }
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_gop_refs);
+  measurement.scope = scope;
+  measurement.value = *pstream.ref_frame_count;
+  fp.measurements.push_back(std::move(measurement));
+}
+
 // video_gop_analyzer's run(): every video-scoped stream gets exactly one
 // video.gop.length Measurement (a real value, or one of the three skip
 // reasons below).
@@ -277,7 +311,8 @@ void run_video_gop(const ProbeResults& results, Fingerprint& fp) {
         continue;
       }
       const nlohmann::ordered_json evidence{{"probe_memory_cap_bytes", default_packet_scan_max_bytes()}};
-      for (CheckId id : {CheckId::video_gop_length, CheckId::video_gop_idr_interval, CheckId::video_gop_closed}) {
+      for (CheckId id : {CheckId::video_gop_length, CheckId::video_gop_idr_interval, CheckId::video_gop_closed,
+                          CheckId::video_gop_refs}) {
         Measurement measurement;
         measurement.check_index = static_cast<std::uint32_t>(id);
         measurement.scope = *scopes[i];
@@ -307,12 +342,14 @@ void run_video_gop(const ProbeResults& results, Fingerprint& fp) {
       push_skip(CheckId::video_gop_length, *scopes[i], SkipReason::no_parser, fp);
       push_skip(CheckId::video_gop_idr_interval, *scopes[i], SkipReason::no_parser, fp);
       push_skip(CheckId::video_gop_closed, *scopes[i], SkipReason::no_parser, fp);
+      push_skip(CheckId::video_gop_refs, *scopes[i], SkipReason::no_parser, fp);
       continue;
     }
     emit_gop_length(pstream, *scopes[i], fp);
 
     const std::string codec_name = demux.stream_info(static_cast<int>(i)).codec_name;
     const detail::NalCodec nal_codec = nal_codec_for_name(codec_name);
+    emit_gop_refs(pstream, codec_name, nal_codec, *scopes[i], fp);
     const detail::GopClassificationResult classification =
         detail::classify_gop(std::span<const AccessUnitRecord>(pstream.access_units), nal_codec);
 

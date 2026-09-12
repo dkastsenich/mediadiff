@@ -31,6 +31,19 @@ namespace mediadiff {
 // self-describing.
 const AnalyzerSpec& video_gop_analyzer();
 
+// video.frame_types (04-09-PLAN.md Task 2, VIDEO-01/VIDEO-05/VIDEO-12): the
+// I/P/B (and S/SI/SP/BI) picture-type distribution -- a `Histogram` of raw
+// counts, `dist`'s own normalisation happening at comparison time, never
+// here. A SEPARATE translation unit from gop.cpp (this plan's own action
+// text): its VIDEO-12 fallback reads the PACKET array
+// (`PacketRecord::flags`) while the GOP family reads the PARSER array, and
+// mixing the two in one file would make that split harder to see. Scoped
+// `ContainerFamily::other` (codec-scoped, not container-scoped).
+// required_passes = {Pass::demux_header, Pass::packet_scan,
+// Pass::parser_scan} -- the fallback needs `Pass::packet_scan` even when
+// `Pass::parser_scan` finds no registered parser for this stream's codec.
+const AnalyzerSpec& video_frame_types_analyzer();
+
 // video.codec/profile/level/resolution/frame_count (04-06-PLAN.md, VIDEO-01/
 // VIDEO-02): the five per-video-stream identity checks, extracted directly
 // from AVStream.codecpar (via DemuxSession::stream_info) after the header
