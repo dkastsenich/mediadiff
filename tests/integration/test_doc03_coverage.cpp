@@ -17,8 +17,10 @@
 // per-video-stream identity checks (video.codec/profile/level/resolution/
 // frame_count), bringing the total to thirty-six. 04-07-PLAN.md registers
 // video.sar/video.dar/video.sar.conflict and the two video.frame_rate.*
-// checks, bringing the total to forty-one. This file is where a gap
-// becomes visible.
+// checks, bringing the total to forty-one. 04-08-PLAN.md registers
+// video.pix_fmt and the five colour-identity checks
+// (video.color.range/primaries/transfer/matrix/chroma_loc), bringing the
+// total to forty-seven. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -235,6 +237,44 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"video.frame_rate.measured",
        {fixture("video_base.mp4"), fixture("video_fps_30.mp4"), fixture("video_base.mp4"),
         fixture("video_base_copy.mp4")}},
+
+      // --- video.pix_fmt/video.color.range/video.color.primaries/
+      // video.color.transfer/video.color.matrix/video.color.chroma_loc
+      // (04-08-PLAN.md, VIDEO-03/VIDEO-07/VIDEO-08) ---
+      //
+      // video.pix_fmt's CLEAN pair is deliberately the two-spellings pair
+      // (video_yuvj420p.mp4/video_yuv420p_pc.mp4) rather than a
+      // byte-identical copy: a copy would prove only that equal files
+      // compare equal, while this pair proves the fold made two
+      // genuinely different declarations (yuvj420p vs yuv420p+pc, which
+      // read back as the SAME raw pix_fmt post-fold, see 04-02-SUMMARY.md's
+      // own read-back table) compare equal -- the property that matters.
+      // Its TRIGGER pair could not reuse the plan's own literal suggestion
+      // (video_base.mp4/video_yuvj420p.mp4): both fold to the identical
+      // "yuv420p" name (video_base.mp4 was never yuvj* to begin with), so
+      // that pair compares `pass`, not a trigger at all -- proven
+      // empirically against the real binary before being rejected.
+      // video_noparser.mkv (huffyuv, 04-02's own no-parser VIDEO-12
+      // fixture) is yuv422p, a genuinely different declared format from
+      // video_base.mp4's yuv420p, and was substituted instead.
+      {"video.pix_fmt",
+       {fixture("video_base.mp4"), fixture("video_noparser.mkv"), fixture("video_yuvj420p.mp4"),
+        fixture("video_yuv420p_pc.mp4")}},
+      {"video.color.range",
+       {fixture("video_range_pc.mp4"), fixture("video_color_bt709.mp4"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+      {"video.color.primaries",
+       {fixture("video_color_bt709.mp4"), fixture("video_color_bt601.mp4"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+      {"video.color.transfer",
+       {fixture("video_color_bt709.mp4"), fixture("video_color_bt601.mp4"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+      {"video.color.matrix",
+       {fixture("video_color_bt709.mp4"), fixture("video_color_bt601.mp4"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+      {"video.color.chroma_loc",
+       {fixture("video_chroma_left.mkv"), fixture("video_chroma_center.mkv"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
   };
   return pairs;
 }

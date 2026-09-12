@@ -39,3 +39,9 @@ video.dar  severity=fail  tolerance=<none>
 video.sar.conflict  severity=info  tolerance=<none>
 video.frame_rate.declared  severity=fail  tolerance=<none>
 video.frame_rate.measured  severity=warn  tolerance=1/10 %
+video.pix_fmt  severity=fail  tolerance=<none>
+video.color.range  severity=fail  tolerance=<none>
+video.color.primaries  severity=fail  tolerance=<none>
+video.color.transfer  severity=fail  tolerance=<none>
+video.color.matrix  severity=fail  tolerance=<none>
+video.color.chroma_loc  severity=warn  tolerance=<none>

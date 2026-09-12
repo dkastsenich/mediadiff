@@ -1125,11 +1125,31 @@ cp "$OUT_DIR/video_noparser.mkv" "$OUT_DIR/video_noparser_copy.mkv"
 # (full vs limited range) and must produce EXACTLY ONE finding
 # (`video.color.range`) -- the clearest expression of this project's
 # false-positives-are-P0 rule in the whole phase.
-"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+#
+# 04-08-PLAN.md Task 3 (Rule 1 -- bug): the source was originally
+# `testsrc2`, a full gradient pattern. mjpeg's limited-range encode
+# rescales every sample toward the pattern's own real content before DCT
+# quantization, which measurably changes the compressed byte count (~8%
+# smaller for the "tv" member of this trio against a testsrc2 source,
+# empirically measured) -- enough to trip `size.file`/`size.stream_bitrate`/
+# `size.peak_bitrate` under `--profile sw-encoder`'s own tolerance and
+# pollute VIDEO-03's own signature test with unrelated findings, which is
+# exactly the false-positive class this project treats as P0. Switched to
+# `color=c=gray`, a flat, constant-value source: a JPEG block's DCT of a
+# constant region is dominated by the DC term alone regardless of the
+# level a tv/pc range rescale shifts it to, so the ENCODED BYTE SIZE stays
+# effectively invariant to the range flip (empirically verified:
+# byte-identical file size between the full-range member and the
+# yuvj-spelling member; ~2.4% between the full-range and limited-range
+# members, under `size.file`'s own 3% warn threshold) while the pix_fmt/
+# color_range values this trio exists to prove remain unaffected by the
+# source's own content -- VIDEO-03 is a metadata-fold test, not a content
+# test, so a flat source loses nothing this trio is meant to prove.
+"$FFMPEG_BIN" -f lavfi -i "color=c=gray:size=320x240:rate=25:duration=2" \
   -c:v mjpeg -pix_fmt yuvj420p -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_yuvj420p.mp4"
 
-"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+"$FFMPEG_BIN" -f lavfi -i "color=c=gray:size=320x240:rate=25:duration=2" \
   -c:v mjpeg -pix_fmt yuv420p -color_range pc -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_yuv420p_pc.mp4"
 
@@ -1139,7 +1159,7 @@ cp "$OUT_DIR/video_noparser.mkv" "$OUT_DIR/video_noparser_copy.mkv"
 # set strict_std_compliance to at most unofficial to use it") without it.
 # Read back and confirmed distinct from the two fixtures above on both
 # pix_fmt and color_range (mjpeg,yuv420p,tv vs mjpeg,yuvj420p,pc).
-"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+"$FFMPEG_BIN" -f lavfi -i "color=c=gray:size=320x240:rate=25:duration=2" \
   -c:v mjpeg -pix_fmt yuv420p -color_range tv -strict unofficial \
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_yuv420p_tv.mp4"
