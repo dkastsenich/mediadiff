@@ -225,6 +225,20 @@ struct StreamInfo {
   std::int64_t avg_frame_rate_den = 0;
   std::int64_t r_frame_rate_num = 0;
   std::int64_t r_frame_rate_den = 0;
+
+  // 04-07-PLAN.md (VIDEO-04): the container-level sample aspect ratio
+  // (AVStream::sample_aspect_ratio, populated from e.g. mp4's own `pasp`
+  // box) and the bitstream-level one (codecpar->sample_aspect_ratio, the
+  // VUI/VOL-header value) -- 04-05-SUMMARY.md's own empirical finding is
+  // that these are two DISTINCT libav fields once avformat_find_stream_info's
+  // internal decode probe has run, not two views of the same one. Verbatim,
+  // including a 0 numerator (doc 03's own "0/1 treated as 1:1 with `unset`
+  // evidence" rule) -- resolved to an effective ratio only at the
+  // src/analyzers/video/ edge, never here.
+  std::int64_t sar_container_num = 0;
+  std::int64_t sar_container_den = 1;
+  std::int64_t sar_bitstream_num = 0;
+  std::int64_t sar_bitstream_den = 1;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

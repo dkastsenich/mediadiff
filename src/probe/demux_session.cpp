@@ -339,6 +339,14 @@ StreamInfo DemuxSession::stream_info(int index) const {
   info.avg_frame_rate_den = stream->avg_frame_rate.den;
   info.r_frame_rate_num = stream->r_frame_rate.num;
   info.r_frame_rate_den = stream->r_frame_rate.den;
+
+  // 04-07-PLAN.md (VIDEO-04): the SAME per-field boundary as above --
+  // container-level from AVStream, bitstream-level from codecpar, both
+  // verbatim (including a 0 numerator).
+  info.sar_container_num = stream->sample_aspect_ratio.num;
+  info.sar_container_den = stream->sample_aspect_ratio.den;
+  info.sar_bitstream_num = codecpar->sample_aspect_ratio.num;
+  info.sar_bitstream_den = codecpar->sample_aspect_ratio.den;
   return info;
 }
 

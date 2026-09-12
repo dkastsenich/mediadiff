@@ -588,10 +588,54 @@ severity = "fail"
 tolerance = "0frames"
 
 # 04-07-PLAN.md (VIDEO-01, VIDEO-04), src/analyzers/video/stream_params.cpp
-# -- the two frame-rate checks (the aspect-ratio pair and the
-# container-vs-bitstream conflict follow directly below, registered by this
-# same plan's Task 3). Approved at 04-CHECK-ROSTER.md (the frozen Phase-4 id
-# roster). Both are codec-scoped (ContainerFamily::other).
+# -- the aspect-ratio pair, the container-vs-bitstream conflict, and the two
+# frame-rate checks. Approved at 04-CHECK-ROSTER.md (the frozen Phase-4 id
+# roster). All five are codec-scoped (ContainerFamily::other).
+
+# The EFFECTIVE sample aspect ratio: AVStream::sample_aspect_ratio
+# (container, e.g. mp4's own `pasp`) wins per libav's own resolution and
+# doc 03's explicit instruction. A 0/1 in either position means unset,
+# treated as 1:1 for comparison -- `unset` rides in evidence for whichever
+# position actually was (VIDEO-01-E1: a stream declaring nothing must stay
+# distinguishable in evidence from one explicitly declaring 1:1, even
+# though both compare equal).
+[[check]]
+id = "video.sar"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "rational"
+severity = "fail"
+
+# width*sar_num / height*sar_den, reduced by the greatest common divisor,
+# every step through the checked helpers -- never a non-integer division. A
+# zero width/height/sar-denominator skips insufficient_data rather than
+# reporting a rational this project would then have to render.
+[[check]]
+id = "video.dar"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "rational"
+severity = "fail"
+
+# VIDEO-04's third clause, its own check id (04-CHECK-ROSTER.md's own
+# SAR-conflict resolution -- decided at the roster's checkpoint: a real,
+# comparable, --explain-documented finding, same shape as
+# container.ts.cc_discontinuities, not an evidence field on video.sar).
+# Compares the EFFECTIVE (unset-normalized) container and bitstream SAR
+# values: an unset container SAR resolving to the same effective ratio as
+# an explicit bitstream one is NOT a conflict (VIDEO-04-E1 -- a conflict
+# check that fires on every well-formed file is exactly the noise this
+# project treats as P0). `info` severity: informational by design, never
+# gates the exit code under normal severity policy.
+[[check]]
+id = "video.sar.conflict"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "info"
 
 # avg_frame_rate as an exact RationalValue with the stream's own timebase --
 # r_frame_rate rides in evidence. 30000/1001 vs 29.97 must never be compared

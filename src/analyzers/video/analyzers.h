@@ -6,8 +6,10 @@
 // src/analyzers/{container,size}/analyzers.h's own established convention
 // exactly.
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "probe/pass.h"
 
@@ -64,6 +66,31 @@ std::string render_profile_value(const std::optional<std::string>& profile_name,
 // finding (general_tier_flag is not exposed by any public libav surface
 // reachable without a decode pass, which this phase does not have).
 std::string render_level_value(const std::string& codec_name, int level);
+
+// video.sar/video.dar/video.sar.conflict's own "0/1 means unset, treated as
+// 1:1" rule (VIDEO-01-E1, 04-07-PLAN.md, doc 03 section 2's own wording).
+// `num`/`den` are always a valid, positive-denominator rational usable
+// directly for comparison; `unset` records whether the RAW value this was
+// resolved from was actually `0/den` (any den), so a stream that declares
+// nothing stays distinguishable in evidence from one explicitly declaring
+// `1:1`, even though both resolve to the identical comparable ratio.
+// Exposed here so tests/unit/test_video_stream_params.cpp can drive the
+// unset/explicit-1:1 distinction directly.
+struct EffectiveSar {
+  std::int64_t num = 1;
+  std::int64_t den = 1;
+  bool unset = false;
+};
+
+EffectiveSar resolve_sar(std::int64_t raw_num, std::int64_t raw_den);
+
+// video.dar's own rational derivation: width*sar_num over height*sar_den,
+// reduced by the greatest common divisor, every step through the checked
+// integer helpers -- nullopt on a zero width, height, or sar denominator
+// (no real fixture can produce this, every real video has nonzero
+// dimensions; exposed here so Test 7 can drive the refusal directly).
+std::optional<std::pair<std::int64_t, std::int64_t>> compute_dar(std::int64_t width, std::int64_t height,
+                                                                    std::int64_t sar_num, std::int64_t sar_den);
 
 }  // namespace detail
 

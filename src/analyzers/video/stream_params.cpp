@@ -5,6 +5,7 @@
 #include <numeric>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
@@ -169,6 +170,78 @@ void emit_resolution(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   measurement.check_index = static_cast<std::uint32_t>(CheckId::video_resolution);
   measurement.scope = scope;
   measurement.value = fmt::format("{}x{}", info.width, info.height);
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.sar: the EFFECTIVE sample aspect ratio -- the container's value
+// (AVStream::sample_aspect_ratio) wins per libav's own resolution and doc
+// 03's explicit instruction (VIDEO-04). Evidence records BOTH the
+// container's and the bitstream's raw values (including whichever is
+// literally `0/den`) plus each position's own `unset` flag (VIDEO-01-E1),
+// so a stream declaring nothing stays distinguishable from one explicitly
+// declaring 1:1 even though both compare equal.
+void emit_sar(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  const detail::EffectiveSar container = detail::resolve_sar(info.sar_container_num, info.sar_container_den);
+  const detail::EffectiveSar bitstream = detail::resolve_sar(info.sar_bitstream_num, info.sar_bitstream_den);
+
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_sar);
+  measurement.scope = scope;
+  measurement.value = RationalValue{container.num, container.den, Rational{1, 1}};
+  measurement.evidence = nlohmann::ordered_json{
+      {"container", nlohmann::ordered_json{{"num", info.sar_container_num},
+                                             {"den", info.sar_container_den},
+                                             {"unset", container.unset}}},
+      {"bitstream", nlohmann::ordered_json{{"num", info.sar_bitstream_num},
+                                             {"den", info.sar_bitstream_den},
+                                             {"unset", bitstream.unset}}},
+  };
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.dar: width*sar_num over height*sar_den (the container's own
+// EFFECTIVE SAR, matching video.sar's own compared value), reduced by the
+// greatest common divisor -- every step through the checked helpers. A
+// zero width/height (or, defensively, a zero effective denominator, which
+// resolve_sar never actually produces) skips insufficient_data rather than
+// reporting a degenerate rational.
+void emit_dar(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  const detail::EffectiveSar container = detail::resolve_sar(info.sar_container_num, info.sar_container_den);
+  const auto dar = detail::compute_dar(info.width, info.height, container.num, container.den);
+  if (!dar.has_value()) {
+    push_skip(CheckId::video_dar, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_dar);
+  measurement.scope = scope;
+  measurement.value = RationalValue{dar->first, dar->second, Rational{1, 1}};
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.sar.conflict (VIDEO-04's third clause, its own check id per
+// 04-CHECK-ROSTER.md's SAR-conflict resolution): compares the EFFECTIVE
+// (unset-normalized) container and bitstream ratios -- an unset container
+// SAR resolving to the same effective ratio as an explicit bitstream one is
+// NOT a conflict (VIDEO-04-E1). `"agree"` when they match; otherwise a
+// rendering of both divergent ratios, so two DIFFERENT conflicts compare as
+// different values under this check's own `exact` semantic.
+void emit_sar_conflict(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  const detail::EffectiveSar container = detail::resolve_sar(info.sar_container_num, info.sar_container_den);
+  const detail::EffectiveSar bitstream = detail::resolve_sar(info.sar_bitstream_num, info.sar_bitstream_den);
+  const bool agrees = container.num == bitstream.num && container.den == bitstream.den;
+
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_sar_conflict);
+  measurement.scope = scope;
+  measurement.value = agrees ? std::string("agree")
+                              : fmt::format("container={}/{} bitstream={}/{}", container.num, container.den,
+                                            bitstream.num, bitstream.den);
+  measurement.evidence = nlohmann::ordered_json{
+      {"container", nlohmann::ordered_json{{"num", info.sar_container_num}, {"den", info.sar_container_den}}},
+      {"bitstream", nlohmann::ordered_json{{"num", info.sar_bitstream_num}, {"den", info.sar_bitstream_den}}},
+      {"agrees", agrees},
+  };
   fp.measurements.push_back(std::move(measurement));
 }
 
@@ -365,6 +438,9 @@ void run_video_stream_params(const ProbeResults& results, Fingerprint& fp) {
     emit_profile(info, scope, fp);
     emit_level(info, scope, fp);
     emit_resolution(info, scope, fp);
+    emit_sar(info, scope, fp);
+    emit_dar(info, scope, fp);
+    emit_sar_conflict(info, scope, fp);
     emit_frame_rate_declared(info, scope, fp);
 
     if (i >= packet_scan.per_stream.size()) {
@@ -435,6 +511,36 @@ std::string render_level_value(const std::string& codec_name, int level) {
     return fmt::format("{}.{}", 2 + (level / 4), level % 4);
   }
   return fmt::format("{}", level);
+}
+
+EffectiveSar resolve_sar(std::int64_t raw_num, std::int64_t raw_den) {
+  if (raw_num == 0) {
+    return EffectiveSar{1, 1, true};
+  }
+  return EffectiveSar{raw_num, raw_den, false};
+}
+
+std::optional<std::pair<std::int64_t, std::int64_t>> compute_dar(std::int64_t width, std::int64_t height,
+                                                                    std::int64_t sar_num, std::int64_t sar_den) {
+  if (width <= 0 || height <= 0 || sar_num <= 0 || sar_den <= 0) {
+    return std::nullopt;
+  }
+  // Already inside `mediadiff::detail` here -- core/rational.h's own
+  // checked_mul lives in this SAME namespace (both this file's detail::
+  // block and core/rational.h's are `mediadiff::detail`), so it is called
+  // unqualified rather than as `detail::checked_mul` (which would look for
+  // a nonexistent `mediadiff::detail::detail`).
+  std::int64_t num = 0;
+  std::int64_t den = 0;
+  if (!checked_mul(width, sar_num, &num) || !checked_mul(height, sar_den, &den)) {
+    return std::nullopt;
+  }
+  const std::int64_t divisor = std::gcd(num, den);
+  if (divisor > 1) {
+    num /= divisor;
+    den /= divisor;
+  }
+  return std::make_pair(num, den);
 }
 
 }  // namespace detail

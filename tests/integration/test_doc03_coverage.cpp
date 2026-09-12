@@ -15,8 +15,10 @@
 // Phase 3. 04-01-PLAN.md registers Phase 4's tracer, `video.gop.length`,
 // bringing the total to thirty-one; 04-06-PLAN.md registers the five
 // per-video-stream identity checks (video.codec/profile/level/resolution/
-// frame_count), bringing the total to thirty-six. This file is where a
-// gap becomes visible.
+// frame_count), bringing the total to thirty-six. 04-07-PLAN.md registers
+// video.sar/video.dar/video.sar.conflict and the two video.frame_rate.*
+// checks, bringing the total to forty-one. This file is where a gap
+// becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -214,6 +216,24 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
         fixture("video_base_copy.mp4")}},
       {"video.frame_count",
        {fixture("video_base.mp4"), fixture("video_frames_50.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+
+      // --- video.sar/video.dar/video.sar.conflict/video.frame_rate.*
+      // (04-07-PLAN.md, VIDEO-01/VIDEO-04) ---
+      {"video.sar",
+       {fixture("video_base.mp4"), fixture("video_sar_4_3.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.dar",
+       {fixture("video_base.mp4"), fixture("video_sar_4_3.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.sar.conflict",
+       {fixture("video_sar_4_3.mp4"), fixture("video_sar_conflict.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.frame_rate.declared",
+       {fixture("video_base.mp4"), fixture("video_fps_30.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.frame_rate.measured",
+       {fixture("video_base.mp4"), fixture("video_fps_30.mp4"), fixture("video_base.mp4"),
         fixture("video_base_copy.mp4")}},
   };
   return pairs;

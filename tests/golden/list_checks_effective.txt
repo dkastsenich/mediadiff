@@ -34,3 +34,8 @@ video.profile  severity=fail  tolerance=<none>
 video.level  severity=fail  tolerance=<none>
 video.resolution  severity=fail  tolerance=<none>
 video.frame_count  severity=fail  tolerance=0/1 frames
+video.sar  severity=fail  tolerance=<none>
+video.dar  severity=fail  tolerance=<none>
+video.sar.conflict  severity=info  tolerance=<none>
+video.frame_rate.declared  severity=fail  tolerance=<none>
+video.frame_rate.measured  severity=warn  tolerance=1/10 %
