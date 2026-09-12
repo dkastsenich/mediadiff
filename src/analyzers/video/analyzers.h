@@ -83,6 +83,21 @@ const AnalyzerSpec& video_color_analyzer();
 // (VIDEO-06-E1). Only `partial_scan` (either scan truncated, D-02) skips.
 const AnalyzerSpec& video_interlace_analyzer();
 
+// video.hdr.mdcv/video.hdr.mdcv.luminance/video.hdr.mdcv.primaries/
+// video.hdr.cll/video.hdr.cll.max/video.hdr.cll.avg (04-11-PLAN.md,
+// VIDEO-09): HDR10 mastering-display and content-light metadata read from
+// codecpar->coded_side_data (via DemuxSession::stream_info's own
+// mdcv_*/cll_* fields) -- no decode pass exists in this phase (D-08/D-09),
+// so this is the ONLY precedence arm this phase can wire; the second arm
+// (first-frame side data, Phase 7) is declared in hdr.cpp's own
+// resolve_hdr_source, named and reachable, but returns
+// `skipped:requires_decode` rather than a real value until Phase 7 fills
+// it. Scoped ContainerFamily::other (codec-scoped, not container-scoped:
+// the mp4/mkv demuxers both attach coded_side_data the identical way).
+// required_passes = {Pass::demux_header} only -- codecpar alone, no scan
+// of any kind, matching video_color_analyzer()'s own shape exactly.
+const AnalyzerSpec& video_hdr_analyzer();
+
 namespace detail {
 
 // video.pix_fmt/video.color.range's own single fold seam (VIDEO-03,
@@ -330,6 +345,44 @@ struct InterlaceClassification {
 
 InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> access_units,
                                             int declared_field_order_raw);
+
+// video.hdr.mdcv/.cll's own could/could-not-carry-frame-level-HDR-metadata
+// decision (D-08, VIDEO-09-E1): HEVC and AV1 both define SEI messages (HEVC)
+// or metadata OBUs (AV1) carrying mastering-display/content-light data at
+// the FRAME level -- decoding either could, in principle, surface data this
+// phase's stream-level-only extraction missed, which is exactly what makes
+// their own absence `skipped:requires_decode` rather than an ordinary
+// absence. mpeg4 (MPEG-4 Part 2) and mpeg2video have no such SEI/OBU
+// mechanism at all -- no decode pass, now or in Phase 7, will ever produce
+// frame-level HDR metadata for them, so their own absence is real,
+// permanent information, never a skip. A deliberately small, closed table
+// (04-CHECK-ROSTER.md/this plan's own read_first name exactly these four
+// codecs) keyed on `codec_name` STRINGS -- never a raw libav AVCodecID
+// ordinal (src/analyzers/ never sees one, mirrors every other
+// codec-name-keyed table in this project). Exposed here so
+// tests/unit/test_video_hdr.cpp's own Task 3 Test 2 can drive it directly
+// for all four named codecs, never through a fixture (no HEVC/AV1 fixture
+// exists in this phase's corpus -- every HDR fixture plan 04-04 built is a
+// plain mpeg4 encode with container-level mdcv/clli boxes, D-09).
+bool could_carry_frame_level_hdr(const std::string& codec_name);
+
+// video.hdr.mdcv.primaries' own chromaticity/white-point quantisation
+// (04-CHECK-ROSTER.md's approved resolution of flagged assumption A1): doc
+// 03 section 4's 0.0002 absolute tolerance, expressed as "round to the
+// nearest 1/5000th" so the entire comparison stays integer arithmetic --
+// never a floating-point division anywhere in this path (PROJECT.md's
+// rational-everywhere rule). Rounds an exact grid-midpoint case AWAY FROM
+// ZERO, a fixed rule documented again at the check's own `--explain` Tune
+// section, so a value on a boundary quantises identically on every
+// platform and in every run. Returns nullopt on a non-positive denominator
+// (T-4-49: never divides by zero or a negative magnitude) or on integer
+// overflow anywhere in the computation (T-4-50) -- the caller treats
+// either the same as "nothing to measure". Exposed here so
+// tests/unit/test_video_hdr.cpp's own Task 3 Test 1 (including the
+// midpoint case) can drive it directly with hand-computed rationals,
+// mirroring detail::classify_interlace's identical "the only reliable way
+// to reach this case" precedent above.
+std::optional<std::int64_t> quantize_chromaticity(std::int64_t num, std::int64_t den);
 
 }  // namespace detail
 

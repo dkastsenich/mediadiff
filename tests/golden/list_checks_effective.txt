@@ -50,3 +50,6 @@ video.gop.closed  severity=fail  tolerance=<none>
 video.gop.refs  severity=warn  tolerance=<none>
 video.frame_types  severity=warn  tolerance=5/1 %
 video.interlace  severity=fail  tolerance=<none>
+video.hdr.mdcv  severity=fail  tolerance=<none>
+video.hdr.mdcv.luminance  severity=fail  tolerance=5/1 %
+video.hdr.mdcv.primaries  severity=fail  tolerance=<none>

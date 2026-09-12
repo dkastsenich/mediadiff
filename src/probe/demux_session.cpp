@@ -18,6 +18,11 @@ extern "C" {
 #include <libavutil/dict.h>
 #include <libavutil/error.h>
 #include <libavutil/log.h>
+// 04-11-PLAN.md (VIDEO-09): AVMasteringDisplayMetadata/
+// AVContentLightMetadata's own struct layouts -- AVPacketSideData itself
+// and av_packet_side_data_get() already come in transitively via
+// libavcodec/codec_par.h's own #include "packet.h" above.
+#include <libavutil/mastering_display_metadata.h>
 #include <libavutil/pixdesc.h>
 }
 
@@ -390,6 +395,50 @@ StreamInfo DemuxSession::stream_info(int index) const {
   // a name only at the src/analyzers/video/interlace.cpp edge (no
   // av_field_order_name exists to call here).
   info.field_order_raw = static_cast<std::int64_t>(codecpar->field_order);
+
+  // 04-11-PLAN.md (VIDEO-09): codecpar->coded_side_data, resolved here --
+  // the ONLY place this project reads an AVPacketSideData/
+  // AVMasteringDisplayMetadata/AVContentLightMetadata pointer;
+  // src/analyzers/video/hdr.cpp only ever sees the plain StreamInfo
+  // fields above. Populated at DEMUX time (D-08/D-09), never by a decode
+  // pass.
+  const AVPacketSideData* mdcv_side_data = av_packet_side_data_get(
+      codecpar->coded_side_data, codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA);
+  if (mdcv_side_data != nullptr) {
+    // T-4-48: a payload whose reported size is smaller than the struct it
+    // would be read as is never read past its end -- treated as though
+    // the entry were absent, with the short-payload observation recorded
+    // so it is visible rather than silent.
+    if (mdcv_side_data->size < sizeof(AVMasteringDisplayMetadata)) {
+      info.mdcv_short_payload = true;
+    } else {
+      const auto* mdcv = reinterpret_cast<const AVMasteringDisplayMetadata*>(mdcv_side_data->data);
+      info.mdcv_present = true;
+      info.mdcv_has_primaries = mdcv->has_primaries != 0;
+      info.mdcv_has_luminance = mdcv->has_luminance != 0;
+      info.mdcv_r_x_num = mdcv->display_primaries[0][0].num;
+      info.mdcv_r_x_den = mdcv->display_primaries[0][0].den;
+      info.mdcv_r_y_num = mdcv->display_primaries[0][1].num;
+      info.mdcv_r_y_den = mdcv->display_primaries[0][1].den;
+      info.mdcv_g_x_num = mdcv->display_primaries[1][0].num;
+      info.mdcv_g_x_den = mdcv->display_primaries[1][0].den;
+      info.mdcv_g_y_num = mdcv->display_primaries[1][1].num;
+      info.mdcv_g_y_den = mdcv->display_primaries[1][1].den;
+      info.mdcv_b_x_num = mdcv->display_primaries[2][0].num;
+      info.mdcv_b_x_den = mdcv->display_primaries[2][0].den;
+      info.mdcv_b_y_num = mdcv->display_primaries[2][1].num;
+      info.mdcv_b_y_den = mdcv->display_primaries[2][1].den;
+      info.mdcv_wp_x_num = mdcv->white_point[0].num;
+      info.mdcv_wp_x_den = mdcv->white_point[0].den;
+      info.mdcv_wp_y_num = mdcv->white_point[1].num;
+      info.mdcv_wp_y_den = mdcv->white_point[1].den;
+      info.mdcv_min_luminance_num = mdcv->min_luminance.num;
+      info.mdcv_min_luminance_den = mdcv->min_luminance.den;
+      info.mdcv_max_luminance_num = mdcv->max_luminance.num;
+      info.mdcv_max_luminance_den = mdcv->max_luminance.den;
+    }
+  }
+
   return info;
 }
 

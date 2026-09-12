@@ -884,3 +884,60 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 04-11-PLAN.md (VIDEO-09), src/analyzers/video/hdr.cpp -- HDR10 mastering-
+# display metadata read from codecpar->coded_side_data
+# (AV_PKT_DATA_MASTERING_DISPLAY_METADATA), populated at DEMUX time (mov.c's
+# own av_packet_side_data_add path for the mp4 `mdcv` box, D-09) -- no
+# decode pass exists in this phase (D-08). `presence` semantic: Absent{}
+# when this codec cannot carry frame-level HDR metadata either (mpeg4,
+# mpeg2video -- an ordinary, permanent absence); `skipped:requires_decode`
+# when it COULD (HEVC, AV1) but the stream-level source was empty -- the
+# precedence seam's second arm (first-frame side data) is declared in
+# hdr.cpp's own resolve_hdr_source but not wired until Phase 7. Approved at
+# 04-CHECK-ROSTER.md.
+[[check]]
+id = "video.hdr.mdcv"
+group = "video"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# Split from video.hdr.mdcv (the presence check above) per src/compare/
+# presence.cpp's own documented "a value comparison is a separate tol check
+# on the same extraction" rule (04-CHECK-ROSTER.md's own addition
+# rationale). Max luminance compared under a five percent tolerance (doc 03
+# section 4) -- a pipeline that re-derives mastering metadata from pixels
+# legitimately drifts slightly, so treating any nonzero delta as a
+# regression would be a false positive. Skips `requires_decode` (never
+# Absent{} -- src/compare/tol.cpp turns Absent into Status::error) when
+# mdcv is not present at the stream level, is present but its own
+# has_luminance flag is false, or its max_luminance denominator is invalid
+# (T-4-49).
+[[check]]
+id = "video.hdr.mdcv.luminance"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "5%"
+
+# Split from video.hdr.mdcv, same rationale as .luminance above. Eight
+# chromaticities (the three display primaries plus the white point, each an
+# x/y pair) compared `exact` over a canonical string of each rational
+# QUANTISED to the 0.0002 grid via integer arithmetic
+# (detail::quantize_chromaticity) -- the design doc's absolute tolerance
+# expressed as fixed-epsilon integer quantisation, never a literal ±0.0002
+# `tol` (a `tol` check compares exactly one scalar; eight chromaticities
+# need one canonical value, 04-CHECK-ROSTER.md's own approved resolution of
+# flagged assumption A1). Skips `requires_decode` under the identical
+# conditions as .luminance, substituting has_primaries for has_luminance.
+[[check]]
+id = "video.hdr.mdcv.primaries"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"

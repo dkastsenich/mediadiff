@@ -283,6 +283,55 @@ struct StreamInfo {
   // hand-written name table lives in src/analyzers/video/interlace.cpp
   // (detail::field_order_name), never here.
   std::int64_t field_order_raw = 0;  // AV_FIELD_UNKNOWN
+
+  // 04-11-PLAN.md (VIDEO-09): HDR10 mastering-display metadata, read from
+  // codecpar->coded_side_data (AV_PKT_DATA_MASTERING_DISPLAY_METADATA) --
+  // populated at DEMUX time (av_packet_side_data_add, confirmed against
+  // libavformat/mov.c:11080-11095's own attach-at-open-time path for the
+  // MP4 mdcv/clli boxes D-09 targets), never by a decode pass, which this
+  // phase does not have. Resolved HERE, same per-field boundary as every
+  // other codecpar value above -- src/analyzers/video/hdr.cpp never sees
+  // an AVPacketSideData/AVMasteringDisplayMetadata pointer, only these
+  // plain fields. Every rational is AVMasteringDisplayMetadata's own
+  // verbatim AVRational (already real CIE-xy chromaticity / cd-per-m^2
+  // luminance units, confirmed against this project's linked FFmpeg 8.1 --
+  // 04-RESEARCH.md's own re-verification found e.g. red_x=34000/50000 and
+  // max_luminance=10000000/10000 surviving intact) -- never rescaled,
+  // never converted to floating point anywhere in this path.
+  //
+  // `mdcv_present` is false both when the side data entry is simply absent
+  // AND when it was present but its reported size was smaller than
+  // sizeof(AVMasteringDisplayMetadata) (T-4-48: a short, possibly
+  // attacker-shortened payload is never read past its end) --
+  // `mdcv_short_payload` distinguishes the second case in evidence so it
+  // is visible rather than silently indistinguishable from "no entry at
+  // all". `mdcv_has_primaries`/`mdcv_has_luminance` mirror the struct's
+  // own has_primaries/has_luminance flags verbatim, so a partially
+  // populated payload (one flag set, the other not) is visible too.
+  bool mdcv_present = false;
+  bool mdcv_short_payload = false;
+  bool mdcv_has_primaries = false;
+  bool mdcv_has_luminance = false;
+  std::int64_t mdcv_r_x_num = 0;
+  std::int64_t mdcv_r_x_den = 1;
+  std::int64_t mdcv_r_y_num = 0;
+  std::int64_t mdcv_r_y_den = 1;
+  std::int64_t mdcv_g_x_num = 0;
+  std::int64_t mdcv_g_x_den = 1;
+  std::int64_t mdcv_g_y_num = 0;
+  std::int64_t mdcv_g_y_den = 1;
+  std::int64_t mdcv_b_x_num = 0;
+  std::int64_t mdcv_b_x_den = 1;
+  std::int64_t mdcv_b_y_num = 0;
+  std::int64_t mdcv_b_y_den = 1;
+  std::int64_t mdcv_wp_x_num = 0;
+  std::int64_t mdcv_wp_x_den = 1;
+  std::int64_t mdcv_wp_y_num = 0;
+  std::int64_t mdcv_wp_y_den = 1;
+  std::int64_t mdcv_min_luminance_num = 0;
+  std::int64_t mdcv_min_luminance_den = 1;
+  std::int64_t mdcv_max_luminance_num = 0;
+  std::int64_t mdcv_max_luminance_den = 1;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

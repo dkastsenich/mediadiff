@@ -127,6 +127,14 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // analyzer stays grouped in the stable, hand-written analyzer order
       // (TRUST-05).
       video_interlace_analyzer(),
+      // 04-11-PLAN.md (VIDEO-09): video.hdr.mdcv/.luminance/.primaries and
+      // video.hdr.cll/.max/.avg -- listed directly after
+      // video_interlace_analyzer() so every codecpar-only-extraction video
+      // analyzer (video_color_analyzer(), and now this one) stays grouped
+      // with the "identity" checks in the stable, hand-written analyzer
+      // order (TRUST-05), rather than interleaved among the ParserScan-
+      // consuming ones just above it.
+      video_hdr_analyzer(),
   };
   return registry;
 }
