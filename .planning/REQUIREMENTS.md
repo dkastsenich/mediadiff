@@ -109,7 +109,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 ### Video Checks
 
 - [ ] **VIDEO-01**: Stream-parameter checks work: `codec`, `profile`, `level`, `resolution`, `sar`/`dar`, `pix_fmt`, `frame_rate.declared`, `frame_rate.measured`, `frame_count`
-- [ ] **VIDEO-02**: `video.frame_count` is always counted from the packet/parser scan, never taken from `nb_frames`, so counts are comparable across container types
+- [x] **VIDEO-02**: `video.frame_count` is always counted from the packet/parser scan, never taken from `nb_frames`, so counts are comparable across container types
 - [ ] **VIDEO-03**: A `yuvj420p` â†’ `yuv420p` + full-range change produces exactly **one** finding, on `video.color.range`, because pix_fmt range-folding runs before comparison
 - [ ] **VIDEO-04**: Container SAR and bitstream VUI SAR conflicts record both values, compare the effective one, and flag the conflict itself as `info`
 - [ ] **VIDEO-05**: GOP checks work: `gop.length`, `gop.idr_interval` with open/closed classification via NAL types, `gop.refs`, `frame_types` distribution
@@ -320,7 +320,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONT-08 | Phase 3 | Complete |
 | CONT-09 | Phase 3 | Complete |
 | VIDEO-01 | Phase 4 | Pending |
-| VIDEO-02 | Phase 4 | Pending |
+| VIDEO-02 | Phase 4 | Complete |
 | VIDEO-03 | Phase 4 | Pending |
 | VIDEO-04 | Phase 4 | Pending |
 | VIDEO-05 | Phase 4 | Pending |
