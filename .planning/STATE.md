@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-04-PLAN.md
-last_updated: "2026-09-12T17:55:28.951Z"
+stopped_at: Completed 04-05-PLAN.md
+last_updated: "2026-09-12T20:01:22.537Z"
 last_activity: 2026-09-12
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 589f46ae4968323a10b60c86e4ae8826d09f12b2
+state_head: 94713ad6613aedde607c9644649e7c4972f12da3
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 58
-  completed_plans: 50
+  completed_plans: 51
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 4 of 12
+Plan: 5 of 12
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 04 execution started
 
@@ -100,6 +100,7 @@ Progress: [█████████░] 92%
 | Phase 04 P02 | 45min | 3 tasks | 4 files |
 | Phase 04-video-analysis P03 | 32min | 2 tasks | 4 files |
 | Phase 04 P04 | 30min | 2 tasks | 3 files |
+| Phase 04 P05 | 55min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -217,6 +218,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Raised mediadiff_parser_overhead's repeat count to 20 at the measure_parser_overhead.sh call site (not the tool's own default) after observing 3-repetition noise on a sub-5ms probe pass
 - [Phase 04]: 04-04: All HDR/coherence fixtures are plain mpeg4 encodes with codec-independent -mastering_display/-content_light input options and setparams+write_colr colorimetry -- no GPL/HDR encoder needed, no deviation from D-09/D-01.
 - [Phase 04]: 04-04: Open Question 2 answered YES -- Matroska HDR side data round-trips identically to MP4; no Matroska HDR fixture added, this phase's HDR family stays MP4-only by design.
+- [Phase 04]: H.264 SPS uses pic_order_cnt_type=2, eliminating all POC syntax so av_parser_parse2 returns right after frame_num/idr_pic_id (04-05)
+- [Phase 04]: HEVC VPS-less known-bad control asserted via diagnostics.probe_warnings, not pict_type staying unset -- empirical correction to plan wording (04-05)
+- [Phase 04]: SAR conflict fixtures must read AVStream::sample_aspect_ratio (container/pasp) vs AVCodecParameters::sample_aspect_ratio (bitstream, overwritten during avformat_find_stream_info's probe) -- two distinct libav fields (04-05)
 
 ### Pending Todos
 
@@ -250,6 +254,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T17:55:28.825Z
-Stopped at: Completed 04-04-PLAN.md
+Last session: 2026-09-12T20:01:11.023Z
+Stopped at: Completed 04-05-PLAN.md
 Resume file: None
