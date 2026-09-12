@@ -110,3 +110,27 @@ Decisions owed to a human:
 2. Amend VIDEO-03's text to match the tested behaviour.
 3. VIDEO-03 remains marked Complete: its load-bearing claim (range-folding runs before comparison,
    so the spelling change does not also fire `video.pix_fmt`) is proven by #689.
+
+## 04-10-PLAN.md — `video.interlace` disagreement signal is always true on valid input (orchestrator finding)
+
+`src/analyzers/video/interlace.cpp:206` sets
+`result.disagreement = result.value != declared_field_order_raw;` — a raw `AVFieldOrder` ordinal
+comparison. The container's `fiel` atom declares `AV_FIELD_TB`/`AV_FIELD_BT` for frame-coded
+interlaced content, while every per-frame parser (`mpegvideo_parser.c`, `h264_parser.c`) emits only
+`AV_FIELD_TT`/`AV_FIELD_BB`/`PROGRESSIVE`/`UNKNOWN`. So a correctly-encoded top-field-first file
+compares `TT != TB` and reports `"disagreement": true`.
+
+- **Effect:** `disagreement` is true on 100% of valid interlaced inputs, so it carries no information.
+  A `-v` reader learns to ignore it, and then ignores the file where it is genuinely true — the "cries
+  wolf gets muted" failure at the evidence layer.
+- **Not a false-positive finding:** `disagreement` is evidence-only; the compare engine never reads it.
+  The COMPARED value is correct (verified: tff→`top_field_first`, bff→`bottom_field_first`,
+  mixed→`mixed`, progressive mpeg4→`unknown`).
+- **The source comment at lines 49-52 calls this "harmless BY DESIGN"**, which records the defect as
+  intent. It is not intent: `TT` vs `TB` differ in field *coding*, not field *order*.
+- **Fix:** compare temporal field order (top-first vs bottom-first), treating `TT`≡`TB` and `BB`≡`BT`,
+  and correct the comment.
+
+VIDEO-06 stays marked Complete: its text ("cross-checks declared field order against per-frame parser
+flags and reports `mixed` with proportions") is literally implemented and the compared value and
+exact-rational proportions are correct. The cross-check's *evidence* is miscalibrated. Decision owed.
