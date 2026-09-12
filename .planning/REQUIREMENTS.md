@@ -113,7 +113,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [x] **VIDEO-03**: A `yuvj420p` â†’ `yuv420p` + full-range change produces exactly **one** finding, on `video.color.range`, because pix_fmt range-folding runs before comparison
 - [x] **VIDEO-04**: Container SAR and bitstream VUI SAR conflicts record both values, compare the effective one, and flag the conflict itself as `info`
 - [x] **VIDEO-05**: GOP checks work: `gop.length`, `gop.idr_interval` with open/closed classification via NAL types, `gop.refs`, `frame_types` distribution
-- [ ] **VIDEO-06**: `video.interlace` cross-checks declared field order against per-frame parser flags and reports `mixed` with proportions when content is mixed
+- [x] **VIDEO-06**: `video.interlace` cross-checks declared field order against per-frame parser flags and reports `mixed` with proportions when content is mixed
 - [x] **VIDEO-07**: Colorimetry checks work: `color.range` (fail in every profile, no exceptions), `color.primaries`, `color.transfer`, `color.matrix`, `color.chroma_loc`
 - [x] **VIDEO-08**: A change **to** `unspecified` is reported as a regression (metadata loss), not treated as a wildcard match
 - [ ] **VIDEO-09**: HDR checks work: `hdr.mdcv`, `hdr.cll`, `hdr.dovi`, with extraction precedence from stream-level `coded_side_data` then first-frame side data, recording which source was used
@@ -324,7 +324,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | VIDEO-03 | Phase 4 | Complete |
 | VIDEO-04 | Phase 4 | Complete |
 | VIDEO-05 | Phase 4 | Complete |
-| VIDEO-06 | Phase 4 | Pending |
+| VIDEO-06 | Phase 4 | Complete |
 | VIDEO-07 | Phase 4 | Complete |
 | VIDEO-08 | Phase 4 | Complete |
 | VIDEO-09 | Phase 4 | Pending |

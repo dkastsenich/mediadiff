@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-09-PLAN.md
-last_updated: "2026-09-12T22:23:46.101Z"
+stopped_at: Completed 04-10-PLAN.md
+last_updated: "2026-09-12T22:50:17.793Z"
 last_activity: 2026-09-12
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 9ba54ba79ce82ebfd4cb41557a2120ea386e487a
+state_head: 4cc5027cdedcd972da97f47cc6a63b9560628383
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 58
-  completed_plans: 55
+  completed_plans: 56
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 9 of 12
+Plan: 10 of 12
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 04 execution started
 
@@ -105,6 +105,7 @@ Progress: [█████████░] 92%
 | Phase 04 P07 | 28min | 3 tasks | 18 files |
 | Phase 04 P08 | 30min | 3 tasks | 23 files |
 | Phase 04 P09 | 50min | 3 tasks | 20 files |
+| Phase 04 P10 | 55min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -233,6 +234,8 @@ Recent decisions affecting current work:
 - [Phase 04]: Classification reads the leading VCL NAL type only, never key_frame -- HEVC sets key_frame=1 for any IRAP including CRA_NUT
 - [Phase 04]: H.264 SPS reader implements full correctness for all three pic_order_cnt_type branches and the high-profile block, not just the fixture's narrow shape, to avoid silently misreading real-world streams
 - [Phase 04]: PROBE-03 held from completion despite passing requirements.ready-ids: 04-03's measurement showed 46% overhead, contradicting the requirement's under-10% clause
+- [Phase 04]: video.interlace deliberately never skips no_parser -- declared value reported with cross_checked=false instead
+- [Phase 04]: AVFieldOrder's per-frame TT/BB vs container-declared TB/BT are two subsets of the same enum for the same real property -- disagreement fires harmlessly on every real interlace fixture, evidence-only
 
 ### Pending Todos
 
@@ -266,6 +269,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T22:23:45.962Z
-Stopped at: Completed 04-09-PLAN.md
+Last session: 2026-09-12T22:50:17.659Z
+Stopped at: Completed 04-10-PLAN.md
 Resume file: None
