@@ -22,7 +22,8 @@
 // (video.color.range/primaries/transfer/matrix/chroma_loc), bringing the
 // total to forty-seven. 04-09-PLAN.md registers video.gop.idr_interval,
 // video.gop.closed, video.gop.refs and video.frame_types, bringing the
-// total to fifty-one. This file is where a gap becomes visible.
+// total to fifty-one. 04-10-PLAN.md registers video.interlace, bringing
+// the total to fifty-two. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -298,6 +299,15 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"video.frame_types",
        {fixture("video_base.mp4"), fixture("video_bf3.mp4"), fixture("video_base.mp4"),
         fixture("video_base_copy.mp4")}},
+
+      // --- video.interlace (04-10-PLAN.md, VIDEO-06) --- trigger: a real
+      // top-field-first vs bottom-field-first flip; clean: a byte-identical
+      // copy of the TFF fixture (proven distinct/identical by SHA-256 in
+      // this plan's own dispatched test_evidence_guard, and re-verified
+      // against the real binary before being written here).
+      {"video.interlace",
+       {fixture("video_ilace_tff.mp4"), fixture("video_ilace_bff.mp4"), fixture("video_ilace_tff.mp4"),
+        fixture("video_ilace_tff_copy.mp4")}},
   };
   return pairs;
 }

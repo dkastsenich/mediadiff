@@ -272,10 +272,13 @@ GopClassificationResult classify_gop(std::span<const AccessUnitRecord> access_un
 // fallback for an unresolved value.
 std::string field_order_name(int field_order_raw);
 
-// video.interlace's own per-access-unit tally-and-classify step (VIDEO-06,
-// 04-10-PLAN.md), exposed here so tests/unit/test_video_interlace.cpp's
-// Tests 3-5 can drive it directly over hand-built AccessUnitRecord arrays
-// -- the only way to reach the mixed and disagreeing cases reliably
+// video.interlace's own per-access-unit tally-and-cross-check step
+// (VIDEO-06, 04-10-PLAN.md), taking the declared field order alongside the
+// access-unit span (this plan's own action text) so the classified VALUE,
+// the per-field-order counts, and the disagreement flag all come out of
+// ONE seam -- exposed here so tests/unit/test_video_interlace.cpp's
+// Tests 3-6 can drive it directly over hand-built AccessUnitRecord arrays,
+// the only way to reach the mixed and disagreeing cases reliably
 // (04-10-PLAN.md's own flagged assumption A1: whether the real
 // video_ilace_mixed.mp4 fixture's own per-frame variation actually
 // exercises `mixed` is a property of the encoder, verified empirically in
@@ -294,14 +297,28 @@ struct InterlaceClassification {
     mixed,
   };
   Kind kind = Kind::no_cross_check;
-  // Meaningful only when kind == single: the one distinct observed raw
-  // field_order value.
-  int single_value = 0;
+  // Whether a per-frame cross-check was possible at all (kind != no_cross_
+  // check) -- VIDEO-06-E1's own flag, named explicitly (rather than left
+  // implicit in `kind` alone) so every evidence-building call site reads
+  // it directly.
+  bool cross_check_possible = false;
+  // The classified, COMPARED raw field_order value: the declared value
+  // verbatim when kind == no_cross_check (never fabricated -- the
+  // declaration is real information, reported as itself), or the single
+  // observed value when kind == single. Meaningless when kind == mixed
+  // (the compared value there is the literal string "mixed", never any
+  // one raw field_order).
+  int value = 0;
+  // Meaningful only when kind == single: whether `value` (the observed
+  // one) differs from the declared field_order passed in. Never gates the
+  // comparison -- evidence-only (this plan's own must_haves).
+  bool disagreement = false;
   // One entry per DISTINCT known field_order raw value observed, in
   // ascending raw-value order -- a fixed, deterministic iteration order
   // (VIDEO-06-E2: two runs over the same input must produce byte-identical
   // evidence, including the proportions; iterating a hash-keyed tally in
-  // whatever order it happens to occupy would not guarantee that).
+  // whatever order it happens to occupy would not guarantee that). Empty
+  // when kind == no_cross_check.
   std::vector<std::pair<int, std::int64_t>> counts;
   // Sum of every entry in `counts` -- the proportion denominator.
   std::int64_t total_observed = 0;
@@ -311,7 +328,8 @@ struct InterlaceClassification {
   std::int64_t repeat_pict_count = 0;
 };
 
-InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> access_units);
+InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> access_units,
+                                            int declared_field_order_raw);
 
 }  // namespace detail
 

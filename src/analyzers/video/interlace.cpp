@@ -160,7 +160,8 @@ std::string field_order_name(int field_order_raw) {
   }
 }
 
-InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> access_units) {
+InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> access_units,
+                                            int declared_field_order_raw) {
   InterlaceClassification result;
   for (const AccessUnitRecord& au : access_units) {
     if (au.repeat_pict != 0) {
@@ -191,12 +192,21 @@ InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> acc
             });
 
   if (result.counts.empty()) {
+    // VIDEO-06-E1: no access unit reported a usable field order (or
+    // `access_units` was empty to begin with, StreamParserScan::has_parser
+    // == false's own shape, this plan's own Test 6) -- the declared value
+    // is the classified value, reported honestly as unverified.
     result.kind = InterlaceClassification::Kind::no_cross_check;
+    result.cross_check_possible = false;
+    result.value = declared_field_order_raw;
   } else if (result.counts.size() == 1) {
     result.kind = InterlaceClassification::Kind::single;
-    result.single_value = result.counts.front().first;
+    result.cross_check_possible = true;
+    result.value = result.counts.front().first;
+    result.disagreement = result.value != declared_field_order_raw;
   } else {
     result.kind = InterlaceClassification::Kind::mixed;
+    result.cross_check_possible = true;
   }
   return result;
 }
@@ -205,9 +215,9 @@ InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> acc
 
 namespace {
 
-// video.interlace: one Measurement per video-scoped stream, cross-checking
-// `declared_field_order_raw` (codecpar, via DemuxSession::stream_info)
-// against `classification` (the per-access-unit tally above).
+// video.interlace: one Measurement per video-scoped stream, rendering
+// `classification` (detail::classify_interlace's own already-cross-checked
+// result) into a compared string value plus evidence.
 void emit_video_interlace(std::int64_t declared_field_order_raw, const detail::InterlaceClassification& classification,
                             Scope scope, Fingerprint& fp) {
   Measurement measurement;
@@ -215,19 +225,19 @@ void emit_video_interlace(std::int64_t declared_field_order_raw, const detail::I
   measurement.scope = scope;
 
   nlohmann::ordered_json evidence;
-  const std::string declared_name = detail::field_order_name(static_cast<int>(declared_field_order_raw));
-  evidence["declared"] = declared_name;
+  evidence["declared"] = detail::field_order_name(static_cast<int>(declared_field_order_raw));
   evidence["repeat_pict_count"] = classification.repeat_pict_count;
+  evidence["cross_checked"] = classification.cross_check_possible;
 
   switch (classification.kind) {
     case detail::InterlaceClassification::Kind::no_cross_check: {
       // VIDEO-06-E1: no access unit reported a usable field order (or
       // StreamParserScan::has_parser was false, which yields the same
       // empty `access_units` span) -- the declared value is reported, but
-      // evidence says out loud that it was never verified against the
-      // frames, never presenting it as if it had been.
-      measurement.value = declared_name;
-      evidence["cross_checked"] = false;
+      // evidence already says out loud (cross_checked=false) that it was
+      // never verified against the frames, never presenting it as if it
+      // had been.
+      measurement.value = detail::field_order_name(classification.value);
       break;
     }
     case detail::InterlaceClassification::Kind::single: {
@@ -235,12 +245,10 @@ void emit_video_interlace(std::int64_t declared_field_order_raw, const detail::I
       // plan's own must_haves) -- `disagreement` records whether it
       // matched the declared raw value, but never gates the compared
       // value itself.
-      const std::string observed_name = detail::field_order_name(classification.single_value);
-      measurement.value = observed_name;
-      evidence["cross_checked"] = true;
-      evidence["observed"] = observed_name;
+      measurement.value = detail::field_order_name(classification.value);
+      evidence["observed"] = detail::field_order_name(classification.value);
       evidence["total_observed"] = classification.total_observed;
-      evidence["disagreement"] = classification.single_value != static_cast<int>(declared_field_order_raw);
+      evidence["disagreement"] = classification.disagreement;
       break;
     }
     case detail::InterlaceClassification::Kind::mixed: {
@@ -251,7 +259,6 @@ void emit_video_interlace(std::int64_t declared_field_order_raw, const detail::I
       // Every proportion stays an integer pair, never a fractional
       // approximation, anywhere in this evidence (VIDEO-06-E2, T-4-45).
       measurement.value = std::string("mixed");
-      evidence["cross_checked"] = true;
       evidence["total_observed"] = classification.total_observed;
       nlohmann::ordered_json proportions = nlohmann::ordered_json::array();
       for (const std::pair<int, std::int64_t>& entry : classification.counts) {
@@ -321,8 +328,8 @@ void run_video_interlace(const ProbeResults& results, Fingerprint& fp) {
     // classify_interlace naturally reports `no_cross_check` in both cases,
     // and the declared value is still reported rather than skipped (this
     // plan's own Test 6).
-    const detail::InterlaceClassification classification =
-        detail::classify_interlace(std::span<const AccessUnitRecord>(pstream.access_units));
+    const detail::InterlaceClassification classification = detail::classify_interlace(
+        std::span<const AccessUnitRecord>(pstream.access_units), static_cast<int>(info.field_order_raw));
     emit_video_interlace(info.field_order_raw, classification, *scopes[i], fp);
   }
 }

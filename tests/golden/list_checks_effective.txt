@@ -49,3 +49,4 @@ video.gop.idr_interval  severity=fail  tolerance=10/1 %
 video.gop.closed  severity=fail  tolerance=<none>
 video.gop.refs  severity=warn  tolerance=<none>
 video.frame_types  severity=warn  tolerance=5/1 %
+video.interlace  severity=fail  tolerance=<none>

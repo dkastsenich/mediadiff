@@ -168,6 +168,15 @@ add_executable(mediadiff_unit_tests
   # reader's own hand-built payload table (`detail::
   # read_h264_max_num_ref_frames`).
   test_gop_classification.cpp
+  # VIDEO-06 (04-10-PLAN.md): video.interlace's own cross-check --
+  # detail::classify_interlace driven directly over hand-built
+  # AccessUnitRecord arrays for the mixed/disagreement/no-cross-check
+  # cases (the only reliable way to reach them, this plan's own flagged
+  # assumption A1), plus video_interlace_analyzer() run end to end against
+  # real interlace fixtures (a real run_packet_scan sweep, never a
+  # hand-built ProbeResults) for the TFF/BFF/progressive/no-parser/
+  # partial-scan/mixed/determinism behaviors.
+  test_video_interlace.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the
