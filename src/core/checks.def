@@ -715,3 +715,54 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 04-08-PLAN.md Task 2 (VIDEO-07, VIDEO-08): the remaining three colour-
+# primaries/transfer-characteristic/matrix identity checks, each a DIRECT
+# codecpar field rendered through its own av_color_*_name counterpart --
+# no fold, no seam. `unspecified` compares as its OWN value in both
+# directions (VIDEO-08): no wildcard, no absent-treated-as-match. This is
+# a deliberate omission of an "obvious" convenience, not an oversight.
+[[check]]
+id = "video.color.primaries"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# av_color_transfer_name(codecpar->color_trc) -- see
+# docs/checks/video.color.transfer.md's own "Why it matters" for PQ
+# (smpte2084) and HLG (arib-std-b67) named explicitly.
+[[check]]
+id = "video.color.transfer"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# av_color_space_name(codecpar->color_space) -- libav's own field/enum
+# name is "color_space" (AVColorSpace); this project's own id and doc 03
+# call the identical YCbCr conversion matrix "matrix".
+[[check]]
+id = "video.color.matrix"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# av_chroma_location_name(codecpar->chroma_location) -- `warn`, not
+# `fail`, per 04-CHECK-ROSTER.md: a scaler-chain drift tell, real but
+# rarely a shipping blocker on its own (see
+# docs/checks/video.color.chroma_loc.md's own "### Tune"). `unspecified`
+# (this field's own UNSPECIFIED spelling, distinct from the other three
+# fields' "unknown") compares as its own value in both directions, same
+# VIDEO-08 rule as the three checks above.
+[[check]]
+id = "video.color.chroma_loc"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"

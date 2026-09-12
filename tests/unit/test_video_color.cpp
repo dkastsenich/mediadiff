@@ -25,19 +25,28 @@
 #include <vector>
 
 #include "analyzers/video/analyzers.h"
+#include "compare/engine.h"
 #include "core/check_id.h"
 #include "core/model.h"
+#include "core/policy.h"
+#include "core/registry.h"
 #include "probe/demux_session.h"
 #include "probe/pass.h"
 #include "support/fixture_paths.h"
 
+using mediadiff::builtin_registry;
 using mediadiff::CheckId;
+using mediadiff::compare_fingerprints;
 using mediadiff::DemuxOptions;
 using mediadiff::DemuxSession;
+using mediadiff::Finding;
 using mediadiff::Fingerprint;
 using mediadiff::Measurement;
+using mediadiff::Policy;
 using mediadiff::ProbeResults;
+using mediadiff::ProfileId;
 using mediadiff::Scope;
+using mediadiff::Status;
 using mediadiff::SkipReason;
 using mediadiff::detail::ColorFold;
 using mediadiff::detail::fold_pix_fmt_range;
@@ -63,6 +72,26 @@ const Measurement* find(const Fingerprint& fp, CheckId id, Scope::Kind kind = Sc
   for (const Measurement& m : fp.measurements) {
     if (m.check_index == want && m.scope.kind == kind && m.scope.index == index) {
       return &m;
+    }
+  }
+  return nullptr;
+}
+
+// Runs video_color_analyzer() end to end against a real fixture, for
+// Tests 3-7's real compare_fingerprints() assertions (04-08-PLAN.md
+// Task 2) -- the builtin, production CheckRegistry (never test_registry(),
+// since video.color.* are real shipped checks, not synthetic ones).
+Fingerprint color_fingerprint(const std::string& path) {
+  DemuxSession session = open_or_fail(path);
+  ProbeResults results;
+  results.demux = &session;
+  return run_analyzer(results);
+}
+
+const Finding* find_finding(const std::vector<Finding>& findings, const std::string& id) {
+  for (const Finding& finding : findings) {
+    if (finding.id == id) {
+      return &finding;
     }
   }
   return nullptr;
@@ -176,4 +205,103 @@ TEST_CASE("video_color - a file with no video stream emits neither check", "[uni
   const Fingerprint fp = run_analyzer(results);
   REQUIRE(find(fp, CheckId::video_pix_fmt) == nullptr);
   REQUIRE(find(fp, CheckId::video_color_range) == nullptr);
+}
+
+// --- 04-08-PLAN.md Task 2 (VIDEO-07, VIDEO-08): primaries/transfer/
+// matrix/chroma_loc, and `unspecified` as its own ordinary value --------
+
+// --- Test 1/2: bt709-family vs smpte170m-family renderings, verified
+// against 04-02-SUMMARY.md's own read-back table -----------------------
+
+TEST_CASE("video_color - video_color_bt709.mp4 emits the bt709-family renderings on all four checks", "[unit]") {
+  const Fingerprint fp = color_fingerprint(fixture("video_color_bt709.mp4"));
+  REQUIRE(std::get<std::string>(find(fp, CheckId::video_color_primaries)->value) == "bt709");
+  REQUIRE(std::get<std::string>(find(fp, CheckId::video_color_transfer)->value) == "bt709");
+  REQUIRE(std::get<std::string>(find(fp, CheckId::video_color_matrix)->value) == "bt709");
+  REQUIRE(std::get<std::string>(find(fp, CheckId::video_color_chroma_loc)->value) == "left");
+}
+
+TEST_CASE(
+    "video_color - video_color_bt601.mp4 emits the smpte170m-family renderings, distinct from bt709 on "
+    "primaries/transfer/matrix",
+    "[unit]") {
+  const Fingerprint fp = color_fingerprint(fixture("video_color_bt601.mp4"));
+  REQUIRE(std::get<std::string>(find(fp, CheckId::video_color_primaries)->value) == "smpte170m");
+  REQUIRE(std::get<std::string>(find(fp, CheckId::video_color_transfer)->value) == "smpte170m");
+  REQUIRE(std::get<std::string>(find(fp, CheckId::video_color_matrix)->value) == "smpte170m");
+}
+
+// --- Test 3/4/5: comparing bt709 vs bt601, bt709 vs unspecified (both
+// directions) reports non-pass on primaries/transfer/matrix -------------
+
+namespace {
+
+void require_three_colorimetry_non_pass(const Fingerprint& baseline, const Fingerprint& candidate) {
+  const Policy policy{ProfileId::sw_encoder};
+  auto findings = compare_fingerprints(baseline, candidate, policy, builtin_registry());
+  REQUIRE(findings.has_value());
+  for (const char* id : {"video.color.primaries", "video.color.transfer", "video.color.matrix"}) {
+    const Finding* finding = find_finding(*findings, id);
+    REQUIRE(finding != nullptr);
+    REQUIRE(finding->status != Status::pass);
+  }
+}
+
+}  // namespace
+
+TEST_CASE("video_color - comparing video_color_bt709.mp4 against video_color_bt601.mp4 reports non-pass on "
+          "primaries/transfer/matrix",
+          "[unit]") {
+  require_three_colorimetry_non_pass(color_fingerprint(fixture("video_color_bt709.mp4")),
+                                      color_fingerprint(fixture("video_color_bt601.mp4")));
+}
+
+TEST_CASE("video_color - comparing video_color_bt709.mp4 against video_color_unspec.mp4 reports non-pass on "
+          "primaries/transfer/matrix (a change TO unspecified is a difference)",
+          "[unit]") {
+  require_three_colorimetry_non_pass(color_fingerprint(fixture("video_color_bt709.mp4")),
+                                      color_fingerprint(fixture("video_color_unspec.mp4")));
+}
+
+TEST_CASE("video_color - comparing video_color_unspec.mp4 against video_color_bt709.mp4 (the reverse direction) "
+          "also reports non-pass on primaries/transfer/matrix",
+          "[unit]") {
+  require_three_colorimetry_non_pass(color_fingerprint(fixture("video_color_unspec.mp4")),
+                                      color_fingerprint(fixture("video_color_bt709.mp4")));
+}
+
+// --- Test 6/7: chroma_loc at warn, and unspecified-vs-left is a real
+// difference, not a match ------------------------------------------------
+
+TEST_CASE("video_color - comparing video_chroma_left.mkv against video_chroma_center.mkv reports "
+          "video.color.chroma_loc at warn",
+          "[unit]") {
+  const Policy policy{ProfileId::sw_encoder};
+  auto findings = compare_fingerprints(color_fingerprint(fixture("video_chroma_left.mkv")),
+                                        color_fingerprint(fixture("video_chroma_center.mkv")), policy,
+                                        builtin_registry());
+  REQUIRE(findings.has_value());
+  const Finding* finding = find_finding(*findings, "video.color.chroma_loc");
+  REQUIRE(finding != nullptr);
+  REQUIRE(finding->status == Status::warn);
+}
+
+TEST_CASE("video_color - an unspecified chroma location compared against an explicit \"left\" is a real "
+          "difference, not equivalent (VIDEO-07-E1)",
+          "[unit]") {
+  // video_h264_closed.h264 (04-05's own raw elementary-stream fixture,
+  // no container box and no VUI chroma-location opinion at all) reads
+  // back chroma_location=unspecified -- verified directly against the
+  // real binary before writing this assertion (`mediadiff inspect
+  // tests/fixtures/video_h264_closed.h264 --json`).
+  const Fingerprint unspecified_fp = color_fingerprint(fixture("video_h264_closed.h264"));
+  REQUIRE(std::get<std::string>(find(unspecified_fp, CheckId::video_color_chroma_loc)->value) == "unspecified");
+
+  const Policy policy{ProfileId::sw_encoder};
+  auto findings = compare_fingerprints(unspecified_fp, color_fingerprint(fixture("video_color_bt709.mp4")), policy,
+                                        builtin_registry());
+  REQUIRE(findings.has_value());
+  const Finding* finding = find_finding(*findings, "video.color.chroma_loc");
+  REQUIRE(finding != nullptr);
+  REQUIRE(finding->status != Status::pass);
 }

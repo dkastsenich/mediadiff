@@ -194,6 +194,68 @@ void emit_color_range(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
+// video.color.primaries/transfer/matrix/chroma_loc (VIDEO-07, VIDEO-08):
+// each a DIRECT codecpar field rendered through its own av_color_*_name/
+// av_chroma_location_name counterpart -- no fold, no seam, no special
+// case. `unspecified` (chroma_loc) / `"unknown"` (the other three) is
+// rendered and compared EXACTLY like any other resolved name: the `exact`
+// comparator's own ordinary string equality already makes a change TO or
+// FROM that value a real, reported difference in both directions
+// (VIDEO-08) -- the deliberate absence of a wildcard/match-anything
+// special case for it is the whole point, not an oversight, and is why
+// this comment says so explicitly rather than leaving the omission
+// unexplained. Evidence always carries the raw integer alongside the
+// name, so two values that happen to render to the same string (were
+// there ever such a collision) would still be distinguishable under -v.
+void emit_primaries(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_color_primaries);
+  measurement.scope = scope;
+  measurement.value = render_named_value(info.color_primaries_name, info.color_primaries_raw);
+  measurement.evidence = nlohmann::ordered_json{{"raw", info.color_primaries_raw}};
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.color.transfer: av_color_transfer_name(codecpar->color_trc).
+// `docs/checks/video.color.transfer.md`'s own "Why it matters" section
+// names PQ (`smpte2084`) and HLG (`arib-std-b67`) explicitly -- the two
+// transfer characteristics an SDR-to-HDR transition actually changes.
+void emit_transfer(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_color_transfer);
+  measurement.scope = scope;
+  measurement.value = render_named_value(info.color_transfer_name, info.color_transfer_raw);
+  measurement.evidence = nlohmann::ordered_json{{"raw", info.color_transfer_raw}};
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.color.matrix: av_color_space_name(codecpar->color_space) -- libav
+// calls this field/enum "color_space" (AVColorSpace); this project's own
+// checks.def/doc 03 call the same YCbCr conversion matrix "matrix", so
+// the id is video.color.matrix while the extracted field and its render
+// function keep libav's own name.
+void emit_matrix(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_color_matrix);
+  measurement.scope = scope;
+  measurement.value = render_named_value(info.color_matrix_name, info.color_matrix_raw);
+  measurement.evidence = nlohmann::ordered_json{{"raw", info.color_matrix_raw}};
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// video.color.chroma_loc: av_chroma_location_name(codecpar->
+// chroma_location) -- `warn` severity per 04-CHECK-ROSTER.md (a
+// scaler-chain drift tell, real but rarely a shipping blocker on its
+// own), unlike the other three colorimetry fields' `fail`.
+void emit_chroma_loc(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_color_chroma_loc);
+  measurement.scope = scope;
+  measurement.value = render_named_value(info.chroma_location_name, info.chroma_location_raw);
+  measurement.evidence = nlohmann::ordered_json{{"raw", info.chroma_location_raw}};
+  fp.measurements.push_back(std::move(measurement));
+}
+
 // video_color_analyzer's run(): every video-scoped stream gets all six
 // colorimetry checks unconditionally -- codecpar alone, no scan
 // dependency of any kind (unlike video_stream_params_analyzer's own
@@ -218,6 +280,10 @@ void run_video_color(const ProbeResults& results, Fingerprint& fp) {
 
     emit_pix_fmt(info, scope, fp);
     emit_color_range(info, scope, fp);
+    emit_primaries(info, scope, fp);
+    emit_transfer(info, scope, fp);
+    emit_matrix(info, scope, fp);
+    emit_chroma_loc(info, scope, fp);
   }
 }
 
