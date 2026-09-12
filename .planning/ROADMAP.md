@@ -269,7 +269,7 @@ Plans:
   4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source (stream-level vs first-frame) recorded, and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
   5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the parser pass measures at under 10% overhead over a plain packet scan on the 10-minute reference file.
 
-**Plans**: 6/12 plans executed in 11 waves
+**Plans**: 7/12 plans executed in 11 waves
 
 Plans:
 
@@ -279,7 +279,7 @@ Plans:
 - [x] 04-04-PLAN.md — HDR MDCV/CLL and coherence fixtures via codec-independent metadata options (D-09)
 - [x] 04-05-PLAN.md — Hand-constructed H.264/HEVC Annex-B streams, the `dvcC` box and the SAR-conflict patch (D-01/D-02/D-03)
 - [x] 04-06-PLAN.md — Stream parameters: codec, profile, level, resolution, frame_count (VIDEO-01/02)
-- [ ] 04-07-PLAN.md — Shared cadence derivation (D-05/D-06/D-07), SAR/DAR/conflict and frame rate (VIDEO-01/04)
+- [x] 04-07-PLAN.md — Shared cadence derivation (D-05/D-06/D-07), SAR/DAR/conflict and frame rate (VIDEO-01/04)
 - [ ] 04-08-PLAN.md — pix_fmt range fold and colorimetry, with the exactly-one-finding signature test (VIDEO-03/07/08)
 - [ ] 04-09-PLAN.md — GOP family: IDR cadence, open/closed from NAL types, refs, frame types, no-parser degradation (VIDEO-05/12)
 - [ ] 04-10-PLAN.md — `video.interlace`, declared field order cross-checked against per-frame flags (VIDEO-06)
@@ -349,7 +349,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 1. Foundation & Toolchain | 5/5 | Complete | 2026-08-15 |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
-| 4. Video Analysis | 6/12 | In Progress|  |
+| 4. Video Analysis | 7/12 | In Progress|  |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |
 | 7. Content & Quality | 0/TBD | Not started | - |

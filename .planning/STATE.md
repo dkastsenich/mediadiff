@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-09-12T20:24:59.634Z"
+stopped_at: Completed 04-07-PLAN.md
+last_updated: "2026-09-12T20:56:39.427Z"
 last_activity: 2026-09-12
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 061a1ca796acc4170170700072a40d6c7fb65398
+state_head: e1b2aa004e200c832e90db3d793e2fb3f7895cd0
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 58
-  completed_plans: 52
+  completed_plans: 53
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 6 of 12
+Plan: 7 of 12
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 04 execution started
 
@@ -102,6 +102,7 @@ Progress: [█████████░] 92%
 | Phase 04 P04 | 30min | 2 tasks | 3 files |
 | Phase 04 P05 | 55min | 3 tasks | 4 files |
 | Phase 04 P06 | 22min | 3 tasks | 16 files |
+| Phase 04 P07 | 28min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -223,6 +224,9 @@ Recent decisions affecting current work:
 - [Phase 04]: HEVC VPS-less known-bad control asserted via diagnostics.probe_warnings, not pict_type staying unset -- empirical correction to plan wording (04-05)
 - [Phase 04]: SAR conflict fixtures must read AVStream::sample_aspect_ratio (container/pasp) vs AVCodecParameters::sample_aspect_ratio (bitstream, overwritten during avformat_find_stream_info's probe) -- two distinct libav fields (04-05)
 - [Phase 04]: video.resolution registered with transform_affected=true (first shipped check to carry it); HEVC tier deliberately not folded into video.level (no public libav surface exposes it without a decode pass); DemuxSession::StreamInfo extended with codecpar profile/level/width/height/nb_frames fields.
+- [Phase 04]: derive_cadence lives in src/probe/cadence.h, beside StreamPacketScan::packets, not under src/analyzers/ -- D-05's shared pure derivation with Phase 5's timeline.* as its designed second consumer
+- [Phase 04]: CFR/VFR classified by exact-tick equality (epsilon=0) against a fixed 99.5% matching-proportion threshold transcribed from claude_docs/04-timeline-analysis.md -- no floating point, no runtime-computed mean (D-07)
+- [Phase 04]: video.sar.conflict compares EFFECTIVE (unset-normalized) container/bitstream ratios so an unset-vs-explicit-1:1 pair is not a manufactured conflict (VIDEO-04-E1)
 
 ### Pending Todos
 
@@ -256,6 +260,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T20:24:59.503Z
-Stopped at: Completed 04-06-PLAN.md
+Last session: 2026-09-12T20:56:39.289Z
+Stopped at: Completed 04-07-PLAN.md
 Resume file: None
