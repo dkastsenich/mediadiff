@@ -144,6 +144,13 @@ add_executable(mediadiff_unit_tests
   # skip, and detail::render_profile_value/render_level_value's own rules
   # (VIDEO-01-E2, the level table) driven directly (04-06-PLAN.md).
   test_video_stream_params.cpp
+  # 04-07-PLAN.md Task 1 (D-05/D-06/D-07): derive_cadence's nine
+  # hand-verified behaviors -- mode-interval selection, PTS-then-DTS axis
+  # fallback, the no_timing_data/insufficient_data split, shuffled-order
+  # invariance, a non-unit-numerator timebase, and overflow-refuses-a-
+  # wrapped-value, driven directly against hand-built PacketRecord arrays
+  # with hand-computed expected values (no fixture on disk).
+  test_cadence.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the

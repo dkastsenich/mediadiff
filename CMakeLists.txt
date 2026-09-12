@@ -162,6 +162,7 @@ add_library(libmediadiff STATIC
   src/probe/demux_session.cpp
   src/probe/packet_scan.cpp
   src/probe/parser_scan.cpp
+  src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
   src/probe/ts_scan.cpp
@@ -226,6 +227,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/demux_session.h
   src/probe/packet_scan.h
   src/probe/parser_scan.h
+  src/probe/cadence.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
   src/probe/ts_scan.h
