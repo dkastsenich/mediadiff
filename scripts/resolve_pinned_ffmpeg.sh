@@ -208,7 +208,7 @@ PYEOF
     # same runner in the same job, so this is written as tolerance rather
     # than as a confirmed single root cause -- see this task's
     # design_decisions.
-    line="${line%$'\r'}"
+    line=${line%$'\r'}
     line_num=$((line_num + 1))
     if [ "$line_num" -eq 1 ]; then
       case "$line" in
