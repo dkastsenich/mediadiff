@@ -269,7 +269,7 @@ Plans:
   4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source recorded as Phase 4's stream-level `coded_side_data` arm — the first-frame side-data arm arrives with the decode pass in Phase 7 (Human Decision 1, 2026-09-13) — and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
   5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the fused parser pass ships a harness that measures its overhead against a plain packet scan on the 10-minute reference file and records the result as evidence; the under-10% overhead target itself is gated in Phase 5 under PERF-03 and PERF-05 (Human Decision 2, 2026-09-13).
 
-**Plans**: 19/21 plans executed in 11 waves; 9 gap-closure plans added in 6 further waves (21 total)
+**Plans**: 20/21 plans executed in 11 waves; 9 gap-closure plans added in 6 further waves (21 total)
 
 Plans:
 **Wave 1**
@@ -326,7 +326,7 @@ Plans:
 - [x] 04-17-PLAN.md — Wave 3: scope or remove the file-wide `-Wmaybe-uninitialized` suppressions in all six video analyzers, enforced by a lint (WR-03, BUILD-05)
 - [x] 04-18-PLAN.md — Wave 3: correct what a `state`-semantic pass means (WR-02) and the registry comment behind it, and decide the inspect test's scope outside its own output (VIDEO-01/02/10)
 - [x] 04-19-PLAN.md — Wave 4: PROBE-03 and VIDEO-09 set to `Deferred` with amended SC4/SC5 and placement rows, and VIDEO-03's text corrected to its tested behaviour (PROBE-03, VIDEO-03/09)
-- [ ] 04-20-PLAN.md — Wave 5: confirm, push, open a DRAFT PR, and capture the designated x64-linux leg's corpus digest listing (BUILD-05/08, checkpoints)
+- [x] 04-20-PLAN.md — Wave 5: confirm, push, open a DRAFT PR, and capture the designated x64-linux leg's corpus digest listing (BUILD-05/08, checkpoints)
 - [ ] 04-21-PLAN.md — Wave 6: transcribe that listing, push behind a confirmation, and confirm the designated leg green including its five leg-only goldens (BUILD-05/08, checkpoints)
 
 **Source doc**: `claude_docs/03-video-analysis.md` (design-doc phase 3)
@@ -393,7 +393,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 1. Foundation & Toolchain | 5/5 | Complete | 2026-08-15 |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
-| 4. Video Analysis | 19/21 | In Progress|  |
+| 4. Video Analysis | 20/21 | In Progress|  |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |
 | 7. Content & Quality | 0/TBD | Not started | - |

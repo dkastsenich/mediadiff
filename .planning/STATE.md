@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-19-PLAN.md
-last_updated: "2026-09-13T13:19:32.821Z"
+stopped_at: Completed 04-20-PLAN.md
+last_updated: "2026-09-13T19:03:19.657Z"
 last_activity: 2026-09-13
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 96a23a36861b431089519076dbaf6ebcbaab5aa8
+state_head: 196b52a68b05b0880c7c8b6335b345ea378f8219
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 67
-  completed_plans: 65
+  completed_plans: 66
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 8 of 21
+Plan: 9 of 21
 Status: Ready to execute
 Last activity: 2026-09-13 — Phase 04 execution started
 
@@ -115,6 +115,7 @@ Progress: [█████████░] 92%
 | Phase 04-17 P17 | 20min | 2 tasks | 8 files |
 | Phase 04-18 P18 | 55min | 3 tasks | 4 files |
 | Phase 04 P19 | ~10 min | 3 tasks | 2 files |
+| Phase 04 P20 | 5h 42m | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -257,6 +258,7 @@ Recent decisions affecting current work:
 - [Phase 04]: WR-02 fixed: pass under video.hdr.coherence's state semantic means neither side flagged, not both-agree; registry.h's false 'field appears in no serialized output' claim corrected and pinned by a new list-checks assertion — 04-VERIFICATION.md Human Decision 3 assigned WR-02/registry.h/inspect-test-predicate to gap closure
 - [Phase 04]: test_video_inspect_section.cpp's report-derived has_video_stream() predicate replaced with a corpus-recipe-derived exclusion list (kNoVideoStreamFixtures) — Old predicate read groups.video from the output under test, unable to detect that output going empty; mutation-proven to catch the exact regression it was blind to
 - [Phase 04]: PROBE-03 and VIDEO-09 set to Deferred (not Pending) so phase.complete cannot mark them Complete at Phase 4 close — phase.complete flips Pending/In Progress/Gaps Found rows to Complete but leaves Out/Deferred/Blocked untouched, per Human Decisions 1 and 2 in 04-VERIFICATION.md
+- [Phase 04]: 04-20: Human Decision 4 route A taken - branch pushed and draft PR #5 opened behind three separate human confirmations; x64-linux listing captured verbatim (run 34776142545), cross-check vs main clean — Only a designated-leg run can produce the 58 provisional hashes; every outward-facing action required its own explicit confirmation and none was auto-approved
 
 ### Pending Todos
 
@@ -290,6 +292,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-13T13:19:32.670Z
-Stopped at: Completed 04-19-PLAN.md
+Last session: 2026-09-13T19:03:19.498Z
+Stopped at: Completed 04-20-PLAN.md
 Resume file: None
