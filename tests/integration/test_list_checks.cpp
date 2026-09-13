@@ -4,8 +4,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "cli_harness.h"
@@ -15,6 +17,8 @@
 #include "support/golden.h"
 
 using mediadiff::builtin_registry;
+using mediadiff::CheckDef;
+using mediadiff::CheckRegistry;
 using mediadiff::kCheckIdStrings;
 using mediadiff::test::CliResult;
 using mediadiff::test::run_cli;
@@ -89,6 +93,49 @@ TEST_CASE("list_checks - ENG-12: --effective is byte-identical across two runs, 
   CHECK(first.out == second.out);
 
   mediadiff::test::check_golden("list_checks_effective", first.out);
+}
+
+// This assertion is what keeps src/core/registry.h's Semantic comment true:
+// the comment states the `semantic` field IS printed by plain
+// `mediadiff list-checks`, and nothing tested that column before this case
+// existed (the review missed the false claim precisely because of that gap,
+// see 04-VERIFICATION.md's WR-02/registry.h gap, 04-18-PLAN.md Task 2).
+TEST_CASE("list_checks - ENG-01: plain output carries a semantic= token for every row, matching each check's semantic",
+          "[integration]") {
+  CliResult result = run_cli({"list-checks"});
+  REQUIRE(result.exit_code == 0);
+
+  const std::vector<std::string> lines = split_lines(result.out);
+  const CheckRegistry& registry = builtin_registry();
+  REQUIRE(lines.size() == registry.size());
+
+  std::size_t semantic_token_count = 0;
+  bool found_state_check = false;
+  bool found_exact_check = false;
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    const std::string& line = lines[i];
+    const std::size_t pos = line.find("semantic=");
+    if (pos == std::string::npos) {
+      continue;
+    }
+    ++semantic_token_count;
+
+    const CheckDef& check = registry.at(static_cast<std::uint32_t>(i));
+    if (check.id == std::string_view("video.hdr.coherence")) {
+      CHECK(line.find("semantic=state") != std::string::npos);
+      found_state_check = true;
+    }
+    if (check.id == std::string_view("video.codec")) {
+      CHECK(line.find("semantic=exact") != std::string::npos);
+      found_exact_check = true;
+    }
+  }
+
+  // The count of rows carrying a semantic= token must equal the registry
+  // size, so a row silently vanishing from plain list-checks fails here.
+  CHECK(semantic_token_count == registry.size());
+  CHECK(found_state_check);
+  CHECK(found_exact_check);
 }
 
 TEST_CASE("list_checks - ENG-01: row order matches registry declaration order", "[integration]") {
