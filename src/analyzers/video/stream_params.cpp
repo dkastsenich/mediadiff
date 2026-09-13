@@ -506,8 +506,13 @@ std::string render_level_value(const std::string& codec_name, int level) {
   }
   // AV1: seq_level_idx -> "major.minor" via the spec's own formula,
   // major = 2 + (idx / 4), minor = idx % 4 (idx=8 -> "4.0", matching
-  // claude_docs/03-video-analysis.md section 2's own worked example).
-  if (codec_name == "av1" && level >= 0 && level < 32) {
+  // claude_docs/03-video-analysis.md section 2's own worked example). The
+  // AV1 spec defines levels for seq_level_idx 0-23 only (2.0 through 7.3);
+  // 24-31 are reserved with no defined spelling this project has ever
+  // verified, so they fall through to the raw-decimal fallback below
+  // rather than being widened back out to the full 5-bit field width for
+  // symmetry.
+  if (codec_name == "av1" && level >= 0 && level < 24) {
     return fmt::format("{}.{}", 2 + (level / 4), level % 4);
   }
   return fmt::format("{}", level);

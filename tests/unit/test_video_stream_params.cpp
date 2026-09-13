@@ -280,6 +280,31 @@ TEST_CASE("video_stream_params - render_level_value renders the codec-specific h
   REQUIRE(render_level_value("h264", -99) == "-99");
 }
 
+// --- 04-14-PLAN.md Task 2 (IN-01): render_level_value bounds its AV1
+// spelling to the seq_level_idx indices the spec actually defines
+// (0-23); 24-31 are reserved and must fall through to the raw decimal,
+// never a fabricated "major.minor" spelling ---------------------------
+
+TEST_CASE("video_stream_params - render_level_value bounds the AV1 spelling to spec-defined seq_level_idx "
+          "0-23, falling through to the raw decimal for reserved 24-31",
+          "[unit]") {
+  // Lowest defined index.
+  REQUIRE(render_level_value("av1", 0) == "2.0");
+  // Doc 03's own worked example.
+  REQUIRE(render_level_value("av1", 8) == "4.0");
+  // Highest DEFINED index.
+  REQUIRE(render_level_value("av1", 23) == "7.3");
+  // Reserved: falls through to the raw decimal, no fabricated "8.0".
+  REQUIRE(render_level_value("av1", 24) == "24");
+  // Reserved: falls through to the raw decimal, no fabricated "9.3".
+  REQUIRE(render_level_value("av1", 31) == "31");
+  // The existing non-negative guard still applies -- untouched by this task.
+  REQUIRE(render_level_value("av1", -1) == "-1");
+  // Non-AV1 branches are untouched by this task's edit.
+  REQUIRE(render_level_value("hevc", 120) == "4.0");
+  REQUIRE(render_level_value("h264", 31) == "3.1");
+}
+
 // --- Test 6: video_prof_a.mp4 vs video_prof_b.mp4 -- both video.profile
 // and video.level report a real, non-pass finding --------------------------
 
