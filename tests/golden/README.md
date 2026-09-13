@@ -168,6 +168,40 @@ churn those two hashes and the summary line even when nothing regressed.
 That churn is expected, is not evidence of a defect, and a reviewer's
 attention belongs on the other 78 lines.
 
+## Pre-existing digest lines are never rewritten locally (D-GAP-01, 04-13)
+
+Three rules, stated together in one place since they are one policy applied
+to two files:
+
+- A `CORPUS_DIGEST.txt` line that already existed is **designated-leg
+  evidence** -- it is never rewritten from a developer workstation's own
+  `scripts/corpus_digest.sh` output, ever, for any reason. Regenerating the
+  whole file and committing that over the existing one substitutes local
+  provenance for CI-runner provenance, which is exactly the regression
+  `21c7a0f` introduced and `04-13-PLAN.md` restored.
+- A brand-new fixture's `CORPUS_DIGEST.txt` line is **provisional** the
+  moment it is committed -- there is no other way to name a hash before a
+  designated-leg run has produced one. Its name is recorded in
+  `tests/golden/CORPUS_DIGEST_PROVISIONAL.txt` (names only, no hashes) so a
+  reader can tell which lines are still awaiting confirmation without
+  diffing against history. It stops being provisional only once the
+  designated leg's own transcribed hash replaces it and its name is removed
+  from that file.
+- **`scripts/assert_corpus_digest.sh` passing on a developer workstation is
+  not evidence about the committed digest.** Both sides of that comparison
+  -- the committed file and the freshly generated one -- come from the same
+  machine when run locally; agreement there proves internal consistency,
+  never designated-leg correctness.
+
+`scripts/lint_corpus_digest_provenance.sh` is the executable form of the
+first rule: it fails if any line committed at a pinned historical commit
+(`8caf1f1`) stops appearing verbatim in `CORPUS_DIGEST.txt`, and it fails
+if `CORPUS_DIGEST_PROVISIONAL.txt` is missing, malformed, or names a
+fixture that is not actually in the digest. `.github/workflows/ci.yml`
+runs it on every leg that runs the repo's shell lints -- no designated-leg
+conditional, since it never hashes a fixture and carries no
+platform-dependence.
+
 ## `ts_scan_ts_*.txt` are a different kind of golden (TRUST-09, D-04)
 
 These three (`ts_scan_ts_single.txt`, `ts_scan_ts_multiprogram.txt`,
