@@ -12,11 +12,17 @@ value is the one compared here, matching libav's own resolution order --
 their disagreement, when one exists, is reported separately by
 `video.sar.conflict`.
 
-A `0/1` sample aspect ratio in either position means the source declared
-nothing at all, which this check treats as `1:1` for comparison purposes.
-The stream's own declared value being unset rides in evidence as a boolean,
-so a file that explicitly declares `1:1` stays distinguishable from one that
-declares nothing at all -- both compare equal, but only one had an opinion.
+A sample aspect ratio with a zero numerator, in either position and
+regardless of the denominator, means the source declared nothing at all.
+A ratio whose denominator is zero or negative is structurally degenerate --
+a malformed `pasp` box or a corrupt VUI -- and is treated the same way:
+nothing was meaningfully declared. Both cases are treated as `1:1` for
+comparison purposes. The stream's own declared value being unset rides in
+evidence as a boolean, so a file that explicitly declares `1:1` stays
+distinguishable from one that declares nothing at all -- both compare
+equal, but only one had an opinion. The raw values are still visible
+through `video.sar.conflict`'s own evidence, so folding for comparison does
+not hide what the file said.
 
 ## Why it matters
 
