@@ -51,7 +51,7 @@ registers an id absent from this file (or registers before approval) is a defect
 | video.hdr.cll.avg | video | tol | percent | int64 | fail | "5%" | 04-11 | **Addition**, same presence/value split as mdcv, for MaxFALL. |
 | video.hdr.dovi | video | presence | none | string | fail | — | 04-12 | |
 | video.hdr.dovi.config | video | exact | none | string | fail | — | 04-12 | **Addition**, same presence/value split, for the Dolby Vision configuration record's fields. |
-| video.hdr.coherence | video | exact | none | string | info | — | 04-12 | D-10 (04-CONTEXT.md) — locked addition, own check id rather than riding as evidence on `video.hdr.mdcv`/`video.color.transfer`, since it fires when both files SHARE the incoherence (no delta to hang the note on). Listed here for spelling confirmation, not for re-litigation of D-10 itself. |
+| video.hdr.coherence | video | state | none | string | info | — | 04-12 | D-10 (04-CONTEXT.md) — locked addition, own check id rather than riding as evidence on `video.hdr.mdcv`/`video.color.transfer`, since it fires when both files SHARE the incoherence (no delta to hang the note on). **Semantic corrected from `exact` to `state` at the 04-12-PLAN.md Task 2 checkpoint (2026-09-13, human decision) — see "video.hdr.coherence value vocabulary (corrected, approved 2026-09-13)" below.** |
 
 ## Additions beyond doc 03's literal table-row count (7 ids)
 
@@ -90,6 +90,52 @@ a preference**:
 **Decision: `video.sar.conflict` is its own `info`-severity check id**, as drafted. The reviewer
 chose the check-id resolution over the evidence-only alternative, so VIDEO-04's third clause is a
 real, comparable, `--explain`-documented finding. Plan 04-07 implements it on that basis.
+
+## video.hdr.coherence value vocabulary (corrected, approved 2026-09-13)
+
+**Checkpoint:** 04-12-PLAN.md Task 2 (`checkpoint:decision`, `gate="blocking"`), presented to the
+human reviewer before dispatch of the executing plan. The plan's own proposed text (semantic
+`exact`, and a value vocabulary that folded HLG into `pq_without_mdcv`) was **REJECTED**. The
+human's decision below **OVERRIDES** 04-12-PLAN.md's own Task 2/Task 3 text wherever the two
+disagree.
+
+**Approved id:** `video.hdr.coherence`
+**Approved attributes:** group `video`, semantic **`state`** (an eighth comparison semantic, added
+additively in this same plan — see `src/core/registry.h`'s `Semantic` enum and
+`src/compare/state.cpp`), unit `none`, value_kind `string`, severity `info`, no tolerance, no
+profile overrides.
+**`flagged_values`:** `["hdr_meta_sdr_transfer", "pq_without_mdcv"]` — the two defect values. The
+`state` semantic fires a Finding whenever EITHER side's value is in this set, including when BOTH
+sides carry the SAME flagged value (Decision 1 below).
+
+**Decision 1 — shared incoherence REPORTS an `info` finding in `compare`.** When BOTH files share
+an incoherence (including byte-identical files), `compare` must emit a non-gating `info` finding
+for `video.hdr.coherence`. This is the literal reading of VIDEO-10 ("raises a non-gating `info`
+note even when both files share it"), the approved roster's own rationale above ("fires when both
+files SHARE the incoherence"), and D-10 ("It fires when both files share the incoherence"). The
+plan's `exact` proposal would make shared incoherence compare `pass` — invisible in `compare` —
+which is the very invisibility D-10 cited to reject the evidence-only alternatives.
+
+**Decision 2 — an HLG file with no mastering-display metadata is COHERENT.** HLG (`arib-std-b67`)
+is scene-referred and legitimately ships without MDCV under ITU-R BT.2100. `pq_without_mdcv` means
+**PQ only**, matching VIDEO-10's own wording ("PQ without MDCV"). The plan's definition folded HLG
+into it; that reading is rejected.
+
+**Closed four-value vocabulary (corrected definitions):**
+
+- `coherent` — PQ (`smpte2084`) WITH mastering-display metadata; OR HLG (`arib-std-b67`) with or
+  without any HDR metadata; OR a specified SDR transfer with NO HDR metadata.
+- `hdr_meta_sdr_transfer` — MDCV or CLL present while the transfer is a specified SDR transfer.
+- `pq_without_mdcv` — transfer is PQ (`smpte2084`) and no mastering-display metadata is present.
+  CLL alone does NOT substitute for MDCV. HLG never produces this value.
+- `indeterminate` — transfer is unspecified/unknown/reserved, so no claim can be made.
+
+HDR transfers = exactly {PQ `smpte2084`, HLG `arib-std-b67`}. Every other SPECIFIED transfer is
+SDR. Verified against the linked header
+`build/x64-linux/vcpkg_installed/x64-linux/include/libavutil/pixfmt.h` (line 687:
+`AVCOL_TRC_ARIB_STD_B67 = 18`), not the system `ffprobe`.
+
+**Date approved:** 2026-09-13.
 
 ## Scope decisions folded in and confirmed by this approval
 
