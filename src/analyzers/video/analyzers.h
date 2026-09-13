@@ -325,7 +325,12 @@ struct InterlaceClassification {
   // one raw field_order).
   int value = 0;
   // Meaningful only when kind == single: whether `value` (the observed
-  // one) differs from the declared field_order passed in. Never gates the
+  // one)'s field-order CLASS (top-coded-first / bottom-coded-first /
+  // progressive / unknown) differs from the declared field_order's own
+  // class -- not whether the two raw ordinals differ (04-15-PLAN.md,
+  // VIDEO-06 gap closure: the declared and observed domains agree on WHICH
+  // FIELD IS CODED FIRST but spell the DISPLAY half differently, so a raw
+  // ordinal comparison is not a cross-check at all). Never gates the
   // comparison -- evidence-only (this plan's own must_haves).
   bool disagreement = false;
   // One entry per DISTINCT known field_order raw value observed, in

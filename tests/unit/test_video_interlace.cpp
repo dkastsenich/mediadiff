@@ -239,6 +239,78 @@ TEST_CASE(
   REQUIRE_FALSE(result.disagreement);
 }
 
+// --- Task 1 (04-15-PLAN.md, VIDEO-06 gap closure): field-order CLASS
+// comparison, not raw ordinal equality -- observed TOP_CODED_FIRST(TT)
+// against a declared TOP_CODED_FIRST spelled the OTHER way (TB) is
+// agreement, matching the real video_ilace_tff.mp4 shape (Task 2 proves
+// this on the real fixture) -------------------------------------------------
+
+TEST_CASE(
+    "video_interlace - classify_interlace: observed TOP_FIELD_FIRST(2) against declared "
+    "TOP_CODED_BOTTOM_DISPLAYED(4) -- same class, no disagreement (the real video_ilace_tff.mp4 shape)",
+    "[unit]") {
+  const std::vector<AccessUnitRecord> aus = {au_with(2), au_with(2)};
+  const InterlaceClassification result = classify_interlace(aus, /*declared_field_order_raw=*/4);
+  REQUIRE(result.kind == InterlaceClassification::Kind::single);
+  REQUIRE(result.value == 2);
+  REQUIRE_FALSE(result.disagreement);
+}
+
+TEST_CASE(
+    "video_interlace - classify_interlace: observed BOTTOM_FIELD_FIRST(3) against declared "
+    "BOTTOM_CODED_TOP_DISPLAYED(5) -- same class, no disagreement (the real video_ilace_bff.mp4 shape)",
+    "[unit]") {
+  const std::vector<AccessUnitRecord> aus = {au_with(3), au_with(3)};
+  const InterlaceClassification result = classify_interlace(aus, /*declared_field_order_raw=*/5);
+  REQUIRE(result.kind == InterlaceClassification::Kind::single);
+  REQUIRE(result.value == 3);
+  REQUIRE_FALSE(result.disagreement);
+}
+
+TEST_CASE(
+    "video_interlace - classify_interlace: observed TOP_FIELD_FIRST(2) against declared "
+    "BOTTOM_FIELD_FIRST(3) -- a genuine top-vs-bottom conflict, disagreement recorded",
+    "[unit]") {
+  const std::vector<AccessUnitRecord> aus = {au_with(2), au_with(2)};
+  const InterlaceClassification result = classify_interlace(aus, /*declared_field_order_raw=*/3);
+  REQUIRE(result.kind == InterlaceClassification::Kind::single);
+  REQUIRE(result.value == 2);
+  REQUIRE(result.disagreement);
+}
+
+TEST_CASE(
+    "video_interlace - classify_interlace: observed BOTTOM_FIELD_FIRST(3) against declared "
+    "TOP_CODED_BOTTOM_DISPLAYED(4) -- the mirror top-vs-bottom conflict, disagreement recorded",
+    "[unit]") {
+  const std::vector<AccessUnitRecord> aus = {au_with(3), au_with(3)};
+  const InterlaceClassification result = classify_interlace(aus, /*declared_field_order_raw=*/4);
+  REQUIRE(result.kind == InterlaceClassification::Kind::single);
+  REQUIRE(result.value == 3);
+  REQUIRE(result.disagreement);
+}
+
+TEST_CASE(
+    "video_interlace - classify_interlace: observed PROGRESSIVE(1) against declared UNKNOWN(0) -- distinct "
+    "classes, disagreement recorded (progressive and unknown never fold into one another)",
+    "[unit]") {
+  const std::vector<AccessUnitRecord> aus = {au_with(1), au_with(1)};
+  const InterlaceClassification result = classify_interlace(aus, /*declared_field_order_raw=*/0);
+  REQUIRE(result.kind == InterlaceClassification::Kind::single);
+  REQUIRE(result.value == 1);
+  REQUIRE(result.disagreement);
+}
+
+TEST_CASE(
+    "video_interlace - classify_interlace: observed TOP_FIELD_FIRST(2) against declared UNKNOWN(0) -- an "
+    "interlaced observation against an absent declaration is information, not agreement",
+    "[unit]") {
+  const std::vector<AccessUnitRecord> aus = {au_with(2), au_with(2)};
+  const InterlaceClassification result = classify_interlace(aus, /*declared_field_order_raw=*/0);
+  REQUIRE(result.kind == InterlaceClassification::Kind::single);
+  REQUIRE(result.value == 2);
+  REQUIRE(result.disagreement);
+}
+
 // --- Test 5 (hand-built): every access unit reporting UNKNOWN(0) falls
 // back to the declared value with no cross-check possible ------------------
 

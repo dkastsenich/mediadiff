@@ -37,23 +37,49 @@
 // frames can disagree, and a TFF/BFF flip is exactly the judder a preview
 // player that deinterlaces on the fly hides.
 //
-// Empirical note (verified against the real linked FFmpeg 8.1, this plan's
-// own precondition on 04-02-SUMMARY.md): the per-AU field order every
-// registered parser this project's fixtures exercise ever sets
-// (mpegvideo_parser.c for MPEG-1/2, h264_parser.c for H.264) is drawn ONLY
-// from {AV_FIELD_UNKNOWN, AV_FIELD_PROGRESSIVE, AV_FIELD_TT, AV_FIELD_BB}
-// -- never AV_FIELD_TB/AV_FIELD_BT, which appear only at the container/
-// muxer declaration level (e.g. libavformat/mov.c's own `fiel` atom
-// read-back). This is why a genuinely interlaced, non-conflicting fixture
-// (video_ilace_tff.mp4/video_ilace_bff.mp4) can still show a nonzero
-// `disagreement` in evidence even when nothing is actually wrong: the
-// declared and observed values are drawn from two different subsets of the
-// same six-value enum. This is harmless BY DESIGN -- `disagreement` is an
-// evidence-only field the compare engine never reads, and the COMPARED
-// value is always the observed one when a cross-check was possible
-// (04-10-PLAN.md's own must_haves), so two files whose frames genuinely
-// differ (TT vs BB) still compare as different regardless of what their
-// two containers each declared.
+// `disagreement`'s two-domain read-back table (04-15-PLAN.md, Human
+// Decision 3, correcting 04-10's own "harmless BY DESIGN" comment that this
+// paragraph replaces): the declared value comes from the container --
+// libavformat's own `fiel` atom read-back (mov.c) -- and the observed value
+// from the per-access-unit parser (mpegvideo_parser.c, h264_parser.c). The
+// two domains AGREE on which field is coded first but spell the DISPLAY
+// half differently, so comparing the two raw ordinals is not a cross-check
+// at all -- it is a spelling mismatch reported as a semantic one. Measured
+// against the real linked FFmpeg 8.1 (re-confirmed via `mediadiff inspect`
+// against the committed corpus for this plan) on both real interlaced
+// fixtures this project ships:
+//
+//   fixture                  | declared (container `fiel`) | observed (per-AU parser)
+//   --------------------------|------------------------------|---------------------------
+//   video_ilace_tff.mp4      | TB (4)                        | TT (2)
+//   video_ilace_bff.mp4      | BT (5)                        | BB (3)
+//
+// Both rows are the SAME interlace order under either spelling -- TB and TT
+// both name "top field coded first," BT and BB both name "bottom field
+// coded first" -- yet a raw ordinal comparison (4 != 2, 5 != 3) reported
+// `disagreement: true` on every valid, non-conflicting interlaced file this
+// project has ever shipped, which is exactly the "cries wolf gets muted"
+// failure at the evidence layer: an evidence field that is unconditionally
+// true on correct input trains a `-v` reader to ignore it, silently
+// disabling the one case where a genuine conflict would matter.
+// `classify_interlace`'s `single` branch below instead compares each raw
+// value's field-order CLASS (top-coded-first / bottom-coded-first /
+// progressive / unknown), which folds {TT, TB} and {BB, BT} into the same
+// class while keeping UNKNOWN and PROGRESSIVE distinct from each other and
+// from either interlaced class.
+//
+// Mapping's limit: the OBSERVED domain has never been seen, across every
+// parser this corpus exercises, to produce TB or BT -- only the DECLARED
+// (container) domain does. If a future codec or muxer combination ever
+// produces an observed TB or BT, this table stops being exhaustive and the
+// mapping should be re-measured against real fixtures rather than assumed
+// correct by symmetry.
+//
+// `disagreement` remains an evidence-only field the compare engine never
+// reads, and the COMPARED value is always the observed one when a
+// cross-check was possible (04-10-PLAN.md's own must_haves), so two files
+// whose frames genuinely differ (TT vs BB) still compare as different
+// regardless of what their two containers each declared.
 namespace mediadiff {
 
 namespace {
@@ -137,6 +163,42 @@ constexpr int kAvFieldBb = 3;
 constexpr int kAvFieldTb = 4;
 constexpr int kAvFieldBt = 5;
 
+// `disagreement`'s field-order CLASS (04-15-PLAN.md, VIDEO-06 gap
+// closure): a raw `AVFieldOrder` collapses into one of four classes so the
+// declared and observed domains -- which agree on WHICH FIELD IS CODED
+// FIRST but spell the DISPLAY half differently -- can be compared
+// meaningfully. File-local: no test needs to drive this independently of
+// `classify_interlace`, so it is not declared in analyzers.h.
+enum class FieldOrderClass : std::uint8_t {
+  unknown,
+  progressive,
+  top_coded_first,
+  bottom_coded_first,
+};
+
+// Total over every raw AVFieldOrder value: the closed six-value enum maps
+// by name (kAvFieldTt/kAvFieldTb -> top_coded_first, kAvFieldBb/kAvFieldBt
+// -> bottom_coded_first, kAvFieldUnknown/kAvFieldProgressive -> their own
+// class), and anything outside that closed set falls back to `unknown` --
+// the same refusal-to-guess posture field_order_name's own default branch
+// already takes for an unrecognised value.
+FieldOrderClass field_order_class(int field_order_raw) {
+  switch (field_order_raw) {
+    case kAvFieldUnknown:
+      return FieldOrderClass::unknown;
+    case kAvFieldProgressive:
+      return FieldOrderClass::progressive;
+    case kAvFieldTt:
+    case kAvFieldTb:
+      return FieldOrderClass::top_coded_first;
+    case kAvFieldBb:
+    case kAvFieldBt:
+      return FieldOrderClass::bottom_coded_first;
+    default:
+      return FieldOrderClass::unknown;
+  }
+}
+
 std::string field_order_name(int field_order_raw) {
   switch (field_order_raw) {
     case kAvFieldUnknown:
@@ -203,7 +265,7 @@ InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> acc
     result.kind = InterlaceClassification::Kind::single;
     result.cross_check_possible = true;
     result.value = result.counts.front().first;
-    result.disagreement = result.value != declared_field_order_raw;
+    result.disagreement = field_order_class(result.value) != field_order_class(declared_field_order_raw);
   } else {
     result.kind = InterlaceClassification::Kind::mixed;
     result.cross_check_possible = true;
