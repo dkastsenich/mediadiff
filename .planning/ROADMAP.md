@@ -272,18 +272,49 @@ Plans:
 **Plans**: 12/12 plans executed in 11 waves; 9 gap-closure plans added in 6 further waves (21 total)
 
 Plans:
+**Wave 1**
 
 - [x] 04-01-PLAN.md — Tracer: ParserScan fused into the existing sweep, carrying `video.gop.length` end to end (+ check-id roster gate)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [x] 04-02-PLAN.md — Encoder-based video fixtures and the `mjpeg`/`ffv1` pinned-build preflight
 - [x] 04-03-PLAN.md — Parser-overhead measurement harness, recorded not gated (D-11/D-12)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [x] 04-04-PLAN.md — HDR MDCV/CLL and coherence fixtures via codec-independent metadata options (D-09)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [x] 04-05-PLAN.md — Hand-constructed H.264/HEVC Annex-B streams, the `dvcC` box and the SAR-conflict patch (D-01/D-02/D-03)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [x] 04-06-PLAN.md — Stream parameters: codec, profile, level, resolution, frame_count (VIDEO-01/02)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [x] 04-07-PLAN.md — Shared cadence derivation (D-05/D-06/D-07), SAR/DAR/conflict and frame rate (VIDEO-01/04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [x] 04-08-PLAN.md — pix_fmt range fold and colorimetry, with the exactly-one-finding signature test (VIDEO-03/07/08)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [x] 04-09-PLAN.md — GOP family: IDR cadence, open/closed from NAL types, refs, frame types, no-parser degradation (VIDEO-05/12)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
 - [x] 04-10-PLAN.md — `video.interlace`, declared field order cross-checked against per-frame flags (VIDEO-06)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
 - [x] 04-11-PLAN.md — HDR mastering-display and content-light with the D-08 precedence seam (VIDEO-09)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
 - [x] 04-12-PLAN.md — Dolby Vision configuration, the D-10 coherence guard, and the corpus-wide inspect section test (VIDEO-09/10)
 
 **Gap closure** *(planned 2026-09-13 from 04-VERIFICATION.md's six gaps and its Human Decisions table; executed with `/gsd-execute-phase 4 --gaps-only`)*

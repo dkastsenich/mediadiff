@@ -35,8 +35,7 @@ explicitly `-lgpl` build on Windows, which by construction excludes libx264/libx
   a fixture-construction method; re-pinning to GPL builds later is a four-SHA edit to
   `ffmpeg_pin.json` and does not touch shipped code.
 
-- **D-02: The generator writes those synthetic streams to disk as real fixture files, so DOC-03
-  needs no exemption.** `tests/integration/test_doc03_coverage.cpp` enumerates the *real*
+- **D-02: The generator writes those synthetic streams to disk as real fixture files, so DOC-03 needs no exemption.** `tests/integration/test_doc03_coverage.cpp` enumerates the *real*
   registry and asserts every check has both a triggering and a clean pair, with a
   count-equality `REQUIRE`. Registering `video.gop.idr_interval` with no pair would turn that
   gate red. Emitting the streams as ordinary fixtures keeps them inside `CORPUS_DIGEST.txt` and
@@ -73,24 +72,21 @@ rejected struct.
 Separately, the design doc sources this check from `claude_docs/04-timeline-analysis.md`, which
 is **Phase 5** — later than this phase. `VIDEO-01` nonetheless scopes `frame_rate.measured` here.
 
-- **D-05: Phase 4 builds the mode-interval and CFR/VFR derivation as a shared pure function in
-  the probe layer,** taking `const StreamPacketScan&`, with `video.frame_rate.measured` as its
+- **D-05: Phase 4 builds the mode-interval and CFR/VFR derivation as a shared pure function in the probe layer,** taking `const StreamPacketScan&`, with `video.frame_rate.measured` as its
   first consumer and Phase 5's timeline math as its second. Honours PROBE-10 (derivation on
   demand, nothing baked into the scan) and satisfies SC5's "rather than computing its own"
   without resurrecting `IntervalStats`. — **Reversibility:** costly — Phase 5's timeline work is
   planned against this being available and stable; moving or reshaping it later touches both
   phases' consumers.
 
-- **D-06: Cadence is measured on PTS, falling back to DTS when PTS is absent, with the axis used
-  recorded in evidence.** Presentation cadence is what "frame rate" means and what a rate change
+- **D-06: Cadence is measured on PTS, falling back to DTS when PTS is absent, with the axis used recorded in evidence.** Presentation cadence is what "frame rate" means and what a rate change
   alters, so PTS is the semantically correct axis; on B-frame content the two disagree.
   `packet_scan.h` guarantees `AV_NOPTS_VALUE` sentinels survive verbatim and are never
   normalized to 0, so "absent" is detectable rather than silently zero. Recording the axis
   mirrors `VIDEO-09`'s `source:` field and Phase 3's D-03 estimated marker. — **Reversibility:**
   costly — the axis and its evidence field reach committed snapshots and the `--json` contract.
 
-- **D-07: CFR/VFR is decided by exact rational equality against the mode interval within a fixed
-  epsilon expressed in timebase ticks** — integer comparison throughout, no floating point, no
+- **D-07: CFR/VFR is decided by exact rational equality against the mode interval within a fixed epsilon expressed in timebase ticks** — integer comparison throughout, no floating point, no
   percentage of a computed mean. The epsilon is a documented named constant, not a tunable.
   Follows SIZE-01's DTS-tick windowing precedent and the project's fixed-K/fixed-ε determinism
   rule; a percentage threshold would let two nearly-identical files classify differently near the
@@ -112,8 +108,7 @@ is Phase 7. Both `SkipReason::requires_decode` and `SkipReason::no_parser` alrea
   evidence shape reaches committed snapshots and the `--json` contract, so adding the field later
   is a contract change, which is exactly why it goes in now.
 
-- **D-09: MDCV/CLL are written as container-level boxes (mp4 `mdcv`/`clli`, or the Matroska
-  equivalents) around an ordinary encode — not as in-bitstream SEI.** libav's mov demuxer
+- **D-09: MDCV/CLL are written as container-level boxes (mp4 `mdcv`/`clli`, or the Matroska equivalents) around an ordinary encode — not as in-bitstream SEI.** libav's mov demuxer
   surfaces these as `codecpar->coded_side_data`, which is precisely the source `VIDEO-09` names
   first. SEI-carried metadata may only reach *frame* side data depending on demuxer and parser
   behaviour, which would land it in Phase 7's path and defeat the fixture's purpose. **This
@@ -141,15 +136,13 @@ plain packet scan on the 10-minute reference file."* However:
   tracking") is also **Phase 5** (`:384`).
 - **No 10-minute reference file exists.** The longest of the 82 fixture recipes is **4 seconds**.
 
-- **D-11: Phase 4 measures parser overhead and records the number as evidence; it does not add a
-  CI gate.** The blocking gate, the 10-minute reference fixture and regression tracking land in
+- **D-11: Phase 4 measures parser overhead and records the number as evidence; it does not add a CI gate.** The blocking gate, the 10-minute reference fixture and regression tracking land in
   Phase 5 where `PERF-03` and `PERF-05` already live. SC5 says the overhead *"measures at"* under
   10% — measuring and recording satisfies it literally. A wall-clock assertion on shared GitHub
   runners is a textbook false-positive source, and this project treats false positives as P0.
   — **Reversibility:** reversible — Phase 5 adds the gate over the same measurement.
 
-- **D-12: The measurement runs against a multi-minute file generated on demand by a separate
-  script, which never enters `tests/fixtures/`, `CORPUS_DIGEST.txt` or the CI corpus step.**
+- **D-12: The measurement runs against a multi-minute file generated on demand by a separate script, which never enters `tests/fixtures/`, `CORPUS_DIGEST.txt` or the CI corpus step.**
   Enough packets for a 10% delta to clear timing noise, no per-leg generation cost on the five
   build legs, and no new surface for the byte-identity gate to police. Phase 5 can promote the
   same generator into the real `PERF-05` reference file rather than inventing a second one.
