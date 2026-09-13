@@ -554,6 +554,18 @@ jobs:
       # No submodules needed — the lint reads only first-party sources.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 is REQUIRED here too (04-13-PLAN.md Task 3), for a
+          # different reason than the build job's own fetch-depth: 0 above:
+          # scripts/lint_corpus_digest_provenance.sh's no-rewrite guard reads
+          # `8caf1f1:tests/golden/CORPUS_DIGEST.txt` via `git show`, and
+          # actions/checkout's default shallow clone (fetch-depth: 1) does
+          # not contain that commit object at all. A shallow checkout would
+          # make the lint's own clause 4 exit non-zero on a SKIP (an
+          # unreachable historical object is deliberately never reported as
+          # a pass) rather than silently decorating the log with a notice
+          # nobody reads.
+          fetch-depth: 0
 
       - name: Run ENG-16 boundary lint
         run: bash scripts/lint_eng16.sh
@@ -578,3 +590,6 @@ jobs:
 
       - name: Run gen_corpus pinned-ffmpeg resolution gate test
         run: bash scripts/test_gen_corpus_pin_gate.sh
+
+      - name: Guard against rewriting a pre-existing corpus digest line (D-GAP-01)
+        run: bash scripts/lint_corpus_digest_provenance.sh
