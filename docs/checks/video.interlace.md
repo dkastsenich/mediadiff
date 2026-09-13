@@ -10,8 +10,19 @@ parser observed on every individual access unit.
 
 The observed value wins whenever a per-frame cross-check was possible: if
 every access unit that reported a known field order agreed on one value,
-that value is reported -- even when it differs from the declared one, in
-which case evidence records both plus the disagreement. If the access
+that value is reported. Evidence records both the declared and observed
+values, plus a `disagreement` flag -- but the cross-check compares WHICH
+FIELD IS CODED FIRST, not the raw declared/observed spelling: a container
+that declares a top-coded field order agrees with frames observed as
+top-coded even when the two name the display half differently (the
+container's `fiel`/`FieldOrder` element and the per-frame parser output
+draw from different, non-overlapping spellings of the same coded-first
+concept). `disagreement` is recorded only when the two sides genuinely
+name different first-coded fields, or when one side names an interlaced
+order and the other names progressive or no field order at all.
+`disagreement` is evidence only: it never changes this check's pass/fail
+status, and never affects the compared `value` itself, so a reader should
+not expect it to gate anything. If the access
 units disagree with each other (more than one distinct known field order
 observed across the stream), the value is `mixed`, with evidence carrying
 one exact `num`/`den` rational proportion per distinct observed field
