@@ -11,7 +11,7 @@
 // empty-span/has_parser==false shape) drive detail::classify_interlace
 // directly over hand-built AccessUnitRecord arrays -- the only way to
 // reach the mixed and disagreeing cases reliably (04-10-PLAN.md's own
-// flagged assumption A1). Tests 1/2/7/8/9/10 drive
+// flagged assumption A1). Tests 1/2/2b/7/8/9/10/Task2-tff/Task2-bff drive
 // video_interlace_analyzer()'s own run() end to end against real fixtures,
 // via a real run_packet_scan(..., parse_access_units=true) sweep -- never
 // a hand-built ProbeResults for these, since the whole point is proving
@@ -23,6 +23,40 @@
 // defs.h, this project's actually-LINKED FFmpeg 8.1, not any newer
 // generator or system ffprobe): UNKNOWN=0, PROGRESSIVE=1, TT=2, BB=3,
 // TB=4, BT=5.
+//
+// Per-test inventory (04-15-PLAN.md, VIDEO-06 gap closure -- kept current
+// with every TEST_CASE this file holds):
+//   1/2       real fixtures: tff/bff emit distinct spellings; comparing
+//             them reports video.interlace at fail.
+//   Task2-tff/bff
+//             real fixtures: tff/bff cross-check as AGREEMENT
+//             (disagreement==false) under the field-order CLASS rule,
+//             even though their declared/observed raw ordinals differ
+//             (TB vs TT, BT vs BB) -- the fix this plan makes.
+//   2b        real fixture: a genuinely progressive stream cross-checks
+//             with no disagreement.
+//   3         hand-built: a non-uniform observed sequence classifies
+//             mixed, with exact-rational proportions.
+//   4/agree   hand-built: the two pre-existing disagreement/agreement
+//             cases (byte-unchanged by this plan) -- observed TT vs
+//             declared BT disagrees; observed TT vs declared TT agrees.
+//   class-*   hand-built (new in this plan): the remaining six
+//             field-order-CLASS behaviour rows -- TT-vs-TB and BB-vs-BT
+//             agree (same class, different raw spelling); TT-vs-BB and
+//             BB-vs-TB genuinely conflict; PROGRESSIVE-vs-UNKNOWN and
+//             TT-vs-UNKNOWN are distinct classes, so both disagree.
+//   5/6       hand-built: all-UNKNOWN and empty-span both take the
+//             no_cross_check path.
+//   repeat_pict
+//             hand-built: UNKNOWN access units excluded from the tally,
+//             repeat_pict counted regardless of field_order.
+//   field_order_name
+//             all six AVFieldOrder enumerators have a defined spelling.
+//   7         real fixture: has_parser==false reports the declared value,
+//             cross_checked==false, never a skip.
+//   8         real fixture: a forced partial scan emits skipped:partial_scan.
+//   9         real fixture: the mixed fixture materializes `mixed`.
+//   10        real fixture: two runs produce byte-identical evidence.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -158,6 +192,37 @@ TEST_CASE(
   const Finding* finding = find_finding(*findings, "video.interlace");
   REQUIRE(finding != nullptr);
   REQUIRE(finding->status == Status::fail);
+}
+
+// --- Task 2 (04-15-PLAN.md, VIDEO-06 gap closure): the two real interlaced
+// fixtures cross-check as agreement, not the false disagreement the raw-
+// ordinal comparison used to report -- declared TB(4)/observed TT(2) for
+// tff, declared BT(5)/observed BB(3) for bff, same class either way --------
+
+TEST_CASE(
+    "video_interlace - video_ilace_tff.mp4: cross-checked, observed top_field_first, disagreement FALSE "
+    "(declared TB vs observed TT is the same coded-first class)",
+    "[unit]") {
+  const Fingerprint fp = interlace_fingerprint(fixture("video_ilace_tff.mp4"));
+  const Measurement* m = find(fp, CheckId::video_interlace);
+  REQUIRE(m != nullptr);
+  REQUIRE(std::get<std::string>(m->value) == "top_field_first");
+  REQUIRE(m->evidence.at("cross_checked").get<bool>());
+  REQUIRE(m->evidence.at("observed").get<std::string>() == "top_field_first");
+  REQUIRE_FALSE(m->evidence.at("disagreement").get<bool>());
+}
+
+TEST_CASE(
+    "video_interlace - video_ilace_bff.mp4: cross-checked, observed bottom_field_first, disagreement FALSE "
+    "(declared BT vs observed BB is the same coded-first class)",
+    "[unit]") {
+  const Fingerprint fp = interlace_fingerprint(fixture("video_ilace_bff.mp4"));
+  const Measurement* m = find(fp, CheckId::video_interlace);
+  REQUIRE(m != nullptr);
+  REQUIRE(std::get<std::string>(m->value) == "bottom_field_first");
+  REQUIRE(m->evidence.at("cross_checked").get<bool>());
+  REQUIRE(m->evidence.at("observed").get<std::string>() == "bottom_field_first");
+  REQUIRE_FALSE(m->evidence.at("disagreement").get<bool>());
 }
 
 // --- Test 2b (real fixture): a genuinely progressive-throughout stream
