@@ -250,12 +250,20 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       // (04-08-PLAN.md, VIDEO-03/VIDEO-07/VIDEO-08) ---
       //
       // video.pix_fmt's CLEAN pair is deliberately the two-spellings pair
-      // (video_yuvj420p.mp4/video_yuv420p_pc.mp4) rather than a
-      // byte-identical copy: a copy would prove only that equal files
-      // compare equal, while this pair proves the fold made two
-      // genuinely different declarations (yuvj420p vs yuv420p+pc, which
-      // read back as the SAME raw pix_fmt post-fold, see 04-02-SUMMARY.md's
-      // own read-back table) compare equal -- the property that matters.
+      // rather than a byte-identical copy: a copy would prove only that
+      // equal files compare equal, while this pair proves the fold made
+      // two genuinely different declarations (yuvj420p vs yuv420p+pc,
+      // which read back as the SAME raw pix_fmt post-fold, see
+      // 04-02-SUMMARY.md's own read-back table) compare equal -- the
+      // property that matters. The originally chosen candidate
+      // (video_yuv420p_pc.mp4) turned out BYTE-IDENTICAL to
+      // video_yuvj420p.mp4 under the pinned mjpeg encoder (it normalises
+      // a direct `-pix_fmt yuv420p -color_range pc` request back to a
+      // yuvj* name before muxing), so that pair proved nothing (see
+      // deferred-items.md's 04-08 entry and 04-16-PLAN.md). Replaced with
+      // video_yuv420p_pc_tagged.mp4 (04-16-PLAN.md Task 1): a stream-copy
+      // remux of video_yuv420p_tv.mp4 carrying a full-range colour box,
+      // whose bytes genuinely differ from video_yuvj420p.mp4's.
       // Its TRIGGER pair could not reuse the plan's own literal suggestion
       // (video_base.mp4/video_yuvj420p.mp4): both fold to the identical
       // "yuv420p" name (video_base.mp4 was never yuvj* to begin with), so
@@ -266,7 +274,7 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       // video_base.mp4's yuv420p, and was substituted instead.
       {"video.pix_fmt",
        {fixture("video_base.mp4"), fixture("video_noparser.mkv"), fixture("video_yuvj420p.mp4"),
-        fixture("video_yuv420p_pc.mp4")}},
+        fixture("video_yuv420p_pc_tagged.mp4")}},
       {"video.color.range",
        {fixture("video_range_pc.mp4"), fixture("video_color_bt709.mp4"), fixture("video_color_bt709.mp4"),
         fixture("video_color_bt709_copy.mp4")}},
