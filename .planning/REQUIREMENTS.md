@@ -85,7 +85,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 
 - [x] **PROBE-01**: `DemuxSession` opens any supported input with `AVFMT_FLAG_GENPTS` **off**, a hard wall-clock budget via interrupt callback, and captures libav warnings into fingerprint diagnostics
 - [x] **PROBE-02**: `PacketScan` performs one `av_read_frame` sweep with no decode, recording per-stream `{pts, dts, duration, size, flags, pos}` and byte totals, capping at 5M packets/stream with `partial:true` beyond
-- [ ] **PROBE-03**: `ParserScan` extends the same sweep to record per-access-unit `pict_type`, `key_frame`, `repeat_pict`, `field_order`, plus NAL-type sequences for H.264/HEVC, at under 10% overhead over plain PacketScan
+- [ ] **PROBE-03**: `ParserScan` extends the same sweep to record per-access-unit `pict_type`, `key_frame`, `repeat_pict`, `field_order`, plus NAL-type sequences for H.264/HEVC. Phase 4 ships the fused parser pass and its overhead-measurement harness; the under-10% overhead target itself is deferred to Phase 5's PERF-03/PERF-05 (Human Decision 2, 2026-09-13 â€” originally stated as a Phase 4 target)
 - [x] **PROBE-04**: `bmff_scan` reads MP4/MOV top-level box order and offsets, `ftyp` brands, `mvhd`/`mdhd` timescales, `elst` entries, and `moof`/`sidx` presence without loading payloads
 - [x] **PROBE-05**: `ebml_scan` reads Matroska/WebM element offsets (SeekHead, Info, Tracks, first Cluster, Cues), `TimestampScale`, `Duration` presence, and per-track `CodecDelay`/`SeekPreRoll`
 - [x] **PROBE-06**: `ts_scan` resyncs on 0x47 with 188/192/204 autodetect and extracts per-PID counts, continuity-counter state, PCR values, PAT/PMT parsing with version tracking, and null-packet counts
@@ -116,7 +116,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [x] **VIDEO-06**: `video.interlace` cross-checks declared field order against per-frame parser flags and reports `mixed` with proportions when content is mixed
 - [ ] **VIDEO-07**: Colorimetry checks work: `color.range` (fail in every profile, no exceptions), `color.primaries`, `color.transfer`, `color.matrix`, `color.chroma_loc`
 - [ ] **VIDEO-08**: A change **to** `unspecified` is reported as a regression (metadata loss), not treated as a wildcard match
-- [ ] **VIDEO-09**: HDR checks work: `hdr.mdcv`, `hdr.cll`, `hdr.dovi`, with extraction precedence from stream-level `coded_side_data` then first-frame side data, recording which source was used
+- [ ] **VIDEO-09**: HDR checks work: `hdr.mdcv`, `hdr.cll`, `hdr.dovi`, with extraction from the stream-level `coded_side_data` source recorded in Phase 4; the first-frame side-data source is deferred to Phase 7 with the decode pass (Human Decision 1, 2026-09-13), mirroring VIDEO-11's placement
 - [x] **VIDEO-10**: MDCV/CLL internal incoherence (HDR metadata with an SDR transfer, or PQ without MDCV) raises a non-gating `info` note even when both files share it
 - [ ] **VIDEO-11**: `video.closed_captions` detects A53/CEA-708 presence during the decode pass and reports `skipped:requires_decode` under `--no-content`
 - [ ] **VIDEO-12**: A codec with no available parser degrades to `skipped:no_parser` for GOP checks and falls back to keyframe-flag granularity for frame types
@@ -302,7 +302,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | DIR-06 | Phase 3 | Complete |
 | PROBE-01 | Phase 3 | Complete |
 | PROBE-02 | Phase 3 | Complete |
-| PROBE-03 | Phase 4 | Pending |
+| PROBE-03 | Phase 4 | Deferred |
 | PROBE-04 | Phase 3 | Complete |
 | PROBE-05 | Phase 3 | Complete |
 | PROBE-06 | Phase 3 | Complete |
@@ -327,7 +327,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | VIDEO-06 | Phase 4 | Complete |
 | VIDEO-07 | Phase 4 | Gaps Found |
 | VIDEO-08 | Phase 4 | Gaps Found |
-| VIDEO-09 | Phase 4 | Pending |
+| VIDEO-09 | Phase 4 | Deferred |
 | VIDEO-10 | Phase 4 | Complete |
 | VIDEO-11 | Phase 7 | Pending |
 | VIDEO-12 | Phase 4 | Gaps Found |
