@@ -54,10 +54,13 @@ never, by itself, block a merge.
 
 ### Accept
 
-This check comparing `pass` does NOT mean the file is coherent -- it means
-both files are in the SAME state, and the state itself is the value. Check
-the rendered value directly (via `inspect` or `-v`) to see whether that
-shared state is `coherent` or one of the two flagged values. If the
+This check comparing `pass` does NOT mean the file is coherent, and it does
+NOT mean both files report the identical value -- it means NEITHER side's
+value is one of the two flagged spellings (`hdr_meta_sdr_transfer` /
+`pq_without_mdcv`). A baseline of `coherent` compared against a candidate of
+`indeterminate` also reports `pass` under this rule, even though the two
+files are in different states. Check the rendered value directly (via
+`inspect` or `-v`) to see each side's actual classification. If the
 incoherence is intentional (or pre-existing and accepted), no action is
 needed -- this check never gates the exit code.
 

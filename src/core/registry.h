@@ -21,10 +21,11 @@ namespace mediadiff {
 // rejects. `state` instead fires whenever EITHER side's value is one of
 // the check's own declared `flagged_values` (CheckDef::flagged_values
 // below), so a shared incoherence still reports a Finding. Purely
-// additive: no existing comparator's behavior changes, no serialized
-// output shape changes (the `semantic` field itself appears in no
-// serialized output -- verified before this addition), and
-// `list_checks_effective.txt` only gains new rows.
+// additive: no existing comparator's behavior changes, no EXISTING row's
+// spelling changes. The `semantic` field IS printed by plain
+// `mediadiff list-checks` (src/cli/commands/list_checks.cpp's non-
+// `--effective` branch); this addition therefore adds new rows to that
+// output as well as to `list_checks_effective.txt`.
 enum class Semantic {
   exact,
   tol,
