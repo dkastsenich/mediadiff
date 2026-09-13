@@ -12,11 +12,39 @@
 // The fixture set is enumerated from tests/fixtures/ itself (mirroring
 // scripts/check_corpus.sh's own reasoning: a hand-maintained id list
 // drifts the first time a fixture is added, silently narrowing coverage
-// rather than failing loudly). `tracer_empty.mp4` is the one fixture with
-// literally zero streams of any kind (a deliberate Phase 2 canary,
-// confirmed via `inspect --json` returning an empty `groups.video`
-// array) and is excluded by the same "does this fixture actually have a
-// video stream" predicate every other fixture is judged by, not by name.
+// rather than failing loudly).
+//
+// Which of those fixtures are excluded from the nine-check assertion is
+// decided by `kNoVideoStreamFixtures` below, a committed, sorted, file-local
+// list of fixture NAMES -- never by re-reading `groups.video` from the
+// `inspect --json` output this test is exercising. An earlier version of
+// this file used exactly that report-derived predicate
+// (`has_video_stream(const nlohmann::json&)`, since removed): it asked
+// "does THIS report's own `groups.video` have any entries", which cannot
+// detect `groups.video` going empty for a fixture that used to render --
+// a regression that emptied the array would silently REMOVE that fixture
+// from the loop's assertions instead of failing it. Judging membership
+// against a source outside the output under test is what makes an emptied
+// group a failure instead of a shrinkage.
+//
+// `kNoVideoStreamFixtures`' authority is scripts/gen_corpus.sh: as of this
+// plan its only member is `tracer_empty.mp4`, generated at line ~103 via
+// `-frames:v 0`, which suppresses the source's only frame entirely so the
+// container carries no readable video content (confirmed independently via
+// `inspect --json` returning an empty `groups.video` array for this one
+// fixture, and non-empty for every other enumerated fixture, at the time
+// this list was authored).
+//
+// Known limitation, stated the way scripts/check_corpus.sh states its own:
+// this list is a human-maintained cross-reference against the generator's
+// recipes, not a mechanical extraction. Adding a fixture recipe that
+// produces no video stream (e.g. an audio-only mp4) WITHOUT adding its name
+// here makes this test FAIL on that fixture -- the intended direction, since
+// the failure names exactly which fixture needs classifying. This list must
+// never be extended to silence a failure whose cause has not been traced
+// back to a specific gen_corpus.sh recipe; a fixture that DOES render a
+// video group can never be added here; the staleness guard below in turn
+// keeps a name from lingering after its fixture is renamed or removed.
 //
 // "Present" means present in the rendered output AT ALL -- either with a
 // real value or as an explicit `skipped` entry (JSON) / `(skipped: ...)`
@@ -31,6 +59,7 @@
 #include <filesystem>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -80,10 +109,33 @@ std::vector<std::string> enumerate_media_fixtures() {
   return result;
 }
 
-// True when the fixture's `inspect --json` output reports at least one
-// entry in `groups.video` -- the same predicate that excludes
-// tracer_empty.mp4 (zero streams of any kind) without naming it.
-bool has_video_stream(const nlohmann::json& report) {
+// Sorted, committed, file-local: fixture NAMES known from
+// scripts/gen_corpus.sh's own recipes to carry no video stream. See the
+// file header for this list's authority, disclosure convention and the
+// report-derived predicate it replaces.
+constexpr std::array<const char*, 1> kNoVideoStreamFixtures = {
+    "tracer_empty.mp4",
+};
+
+bool is_sorted_no_video_list() {
+  return std::is_sorted(kNoVideoStreamFixtures.begin(), kNoVideoStreamFixtures.end(),
+                         [](const char* a, const char* b) { return std::string_view(a) < std::string_view(b); });
+}
+
+// Judged entirely by name against the committed list above -- never by
+// re-reading any part of the `inspect` output this test exercises.
+bool is_known_no_video_fixture(const fs::path& fixture_path) {
+  const std::string filename = fixture_path.filename().string();
+  for (const char* name : kNoVideoStreamFixtures) {
+    if (filename == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// The JSON video group for a listed fixture must be present and empty.
+bool video_group_is_empty_json(const nlohmann::json& report) {
   auto groups_it = report.find("groups");
   if (groups_it == report.end()) {
     return false;
@@ -92,15 +144,35 @@ bool has_video_stream(const nlohmann::json& report) {
   if (video_it == groups_it->end()) {
     return false;
   }
-  return !video_it->empty();
+  return video_it->empty();
 }
+
+// The text renderer's rendering of an empty group -- see inspect_render.h's
+// per-group "(no measurements)" line, confirmed against tracer_empty.mp4's
+// actual text output.
+bool video_group_is_empty_text(const std::string& text) { return text.find("video:\n  (no measurements)\n") != std::string::npos; }
 
 }  // namespace
 
 TEST_CASE("video inspect section - every fixture with a video stream renders all nine SC2 checks in --json",
           "[integration]") {
+  REQUIRE(!kNoVideoStreamFixtures.empty());
+  REQUIRE(is_sorted_no_video_list());
+
   const std::vector<std::string> fixtures = enumerate_media_fixtures();
   REQUIRE(!fixtures.empty());
+
+  // Staleness guard: every listed name must exist among the enumerated
+  // fixtures -- a stale name (renamed/removed fixture) is a failure here,
+  // not a silently inert entry.
+  std::set<std::string> enumerated_filenames;
+  for (const std::string& fixture : fixtures) {
+    enumerated_filenames.insert(fs::path(fixture).filename().string());
+  }
+  for (const char* name : kNoVideoStreamFixtures) {
+    INFO("exclusion list name: " << name);
+    CHECK(enumerated_filenames.count(name) == 1);
+  }
 
   std::size_t fixtures_with_video = 0;
 
@@ -112,9 +184,11 @@ TEST_CASE("video inspect section - every fixture with a video stream renders all
     nlohmann::json report = nlohmann::json::parse(result.out, /*cb=*/nullptr, /*allow_exceptions=*/false);
     REQUIRE_FALSE(report.is_discarded());
 
-    if (!has_video_stream(report)) {
-      // tracer_empty.mp4 (or any future zero-stream canary) -- judged by
-      // the predicate, never by name.
+    if (is_known_no_video_fixture(fixture)) {
+      // A listed fixture must render an EMPTY video group -- a listed
+      // fixture that DOES render is a failure, so the list cannot be used
+      // to excuse a fixture that has real video content.
+      CHECK(video_group_is_empty_json(report));
       continue;
     }
     ++fixtures_with_video;
@@ -130,38 +204,44 @@ TEST_CASE("video inspect section - every fixture with a video stream renders all
     }
   }
 
-  // Guards against the predicate itself silently excluding the whole
-  // corpus (e.g. a `groups`/`video` key rename) and passing vacuously.
+  // Guards against the whole corpus disappearing.
   REQUIRE(fixtures_with_video > 0);
 }
 
 TEST_CASE("video inspect section - every fixture with a video stream renders all nine SC2 checks in text output",
           "[integration]") {
+  REQUIRE(!kNoVideoStreamFixtures.empty());
+  REQUIRE(is_sorted_no_video_list());
+
   const std::vector<std::string> fixtures = enumerate_media_fixtures();
   REQUIRE(!fixtures.empty());
+
+  // Staleness guard: every listed name must exist among the enumerated
+  // fixtures.
+  std::set<std::string> enumerated_filenames;
+  for (const std::string& fixture : fixtures) {
+    enumerated_filenames.insert(fs::path(fixture).filename().string());
+  }
+  for (const char* name : kNoVideoStreamFixtures) {
+    INFO("exclusion list name: " << name);
+    CHECK(enumerated_filenames.count(name) == 1);
+  }
 
   std::size_t fixtures_with_video = 0;
 
   for (const std::string& fixture : fixtures) {
-    // Re-derive "has a video stream" from --json (the structured, easy to
-    // query source of truth) and then assert against the independent text
-    // renderer -- this is what makes the test cover BOTH code paths
-    // instead of only re-proving the JSON path twice.
-    CliResult json_result = run_cli({"inspect", fixture, "--json"});
-    INFO("fixture: " << fixture);
-    REQUIRE(json_result.exit_code == 0);
-    nlohmann::json report =
-        nlohmann::json::parse(json_result.out, /*cb=*/nullptr, /*allow_exceptions=*/false);
-    REQUIRE_FALSE(report.is_discarded());
-    if (!has_video_stream(report)) {
-      continue;
-    }
-    ++fixtures_with_video;
-
     CliResult text_result = run_cli({"inspect", fixture});
     INFO("fixture: " << fixture);
     REQUIRE(text_result.exit_code == 0);
     const std::string& text = text_result.out;
+
+    if (is_known_no_video_fixture(fixture)) {
+      // A listed fixture must render an EMPTY video group in text output
+      // too -- both TEST_CASEs branch on the same name-based list.
+      CHECK(video_group_is_empty_text(text));
+      continue;
+    }
+    ++fixtures_with_video;
 
     for (const char* check_id : kSc2Checks) {
       INFO("fixture: " << fixture << " check: " << check_id);
