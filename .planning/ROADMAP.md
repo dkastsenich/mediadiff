@@ -266,8 +266,8 @@ Plans:
   1. A silent color-range flip produces exactly **one** finding, on `video.color.range`, whether it was spelled as a `yuvj420p` pix_fmt or as a range flag; primaries, transfer, matrix and chroma location compare alongside it; and a change **to** `unspecified` is reported as metadata loss rather than treated as a wildcard match.
   2. `mediadiff inspect` renders a complete video section — codec, profile, level, resolution, SAR/DAR, pix_fmt, declared frame rate, and a frame count always counted from the packet/parser scan rather than trusted from `nb_frames` — with a container-vs-VUI SAR conflict recording both values and flagging the conflict itself as `info`.
   3. GOP structure compares meaningfully: length, IDR interval with open/closed classification from NAL types, refs, I/P/B distribution, and interlace field order cross-checked against per-frame parser flags with `mixed` reported by proportion — while a codec with no available parser degrades to `skipped:no_parser` instead of failing.
-  4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source (stream-level vs first-frame) recorded, and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
-  5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the parser pass measures at under 10% overhead over a plain packet scan on the 10-minute reference file.
+  4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source recorded as Phase 4's stream-level `coded_side_data` arm — the first-frame side-data arm arrives with the decode pass in Phase 7 (Human Decision 1, 2026-09-13) — and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
+  5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the fused parser pass ships a harness that measures its overhead against a plain packet scan on the 10-minute reference file and records the result as evidence; the under-10% overhead target itself is gated in Phase 5 under PERF-03 and PERF-05 (Human Decision 2, 2026-09-13).
 
 **Plans**: 18/21 plans executed in 11 waves; 9 gap-closure plans added in 6 further waves (21 total)
 
@@ -381,6 +381,7 @@ Plans:
 
 **Plans**: TBD
 **Source doc**: `claude_docs/06-content-and-size-analysis.md` (design-doc phase 6), minus `size.*` (moved to Phase 3)
+**Cross-cutting note**: Phase 7 also completes VIDEO-09's first-frame HDR side-data extraction arm, deferred from Phase 4 with the decode pass (Human Decision 1, 2026-09-13) — see Cross-cutting requirement placements below.
 
 ## Progress
 
@@ -420,7 +421,8 @@ These requirements do not sit in the phase their ID prefix suggests. Each is pla
 |---|---|---|
 | SIZE-01 | 3 (not 7) | Depends only on PacketScan; doc 06's own intro concedes this. Research recommends the move; it also shrinks the heaviest phase. |
 | PROBE-10 | 3 | Shared interval-statistics primitive must exist in the phase that builds PacketScan, so phases 4 and 5 consume rather than duplicate it (hazard A). |
-| PROBE-03 | 4 (not 3) | `ParserScan` is built in doc 03 as an extension of the same sweep; it is the video phase's own infrastructure. |
+| PROBE-03 | 4 (not 3) | `ParserScan` is built in doc 03 as an extension of the same sweep; it is the video phase's own infrastructure. Its under-10% overhead target is gated in Phase 5 alongside PERF-03/PERF-05, not asserted as a Phase 4 success criterion (Human Decision 2, 2026-09-13). |
+| VIDEO-09 | 4 (first-frame arm in 7) | HDR checks (`hdr.mdcv`/`hdr.cll`/`hdr.dovi`) ship in Phase 4 via the stream-level `coded_side_data` extraction source; the first-frame side-data source needs a decoded frame, which the decode pass does not deliver until phase 7 — mirroring VIDEO-11's split (Human Decision 1, 2026-09-13). |
 | DIR-06 | 3 (not 2) | Per-file peak memory can only be asserted for real once PacketScan's packet arrays exist; phase 2 still delivers the `--threads` pool bound (DIR-05). |
 | VIDEO-11 | 7 (not 4) | `video.closed_captions` detects during the decode pass, which does not exist until phase 7. Phase 4 registers the check and ships the `skipped:requires_decode` path; phase 7 makes detection real. **Flagged as a judgment call beyond the four mandated corrections.** |
 | TRUST-03 | 2 | The path-signature composition (must include libav* toolchain versions) is verifiable as engine work before any decoder exists — and must be right before phases 6/7 write signatures. |
