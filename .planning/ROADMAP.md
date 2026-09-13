@@ -269,7 +269,7 @@ Plans:
   4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source (stream-level vs first-frame) recorded, and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
   5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the parser pass measures at under 10% overhead over a plain packet scan on the 10-minute reference file.
 
-**Plans**: 12/12 plans executed in 11 waves
+**Plans**: 12/12 plans executed in 11 waves; 9 gap-closure plans added in 6 further waves (21 total)
 
 Plans:
 
@@ -285,6 +285,18 @@ Plans:
 - [x] 04-10-PLAN.md — `video.interlace`, declared field order cross-checked against per-frame flags (VIDEO-06)
 - [x] 04-11-PLAN.md — HDR mastering-display and content-light with the D-08 precedence seam (VIDEO-09)
 - [x] 04-12-PLAN.md — Dolby Vision configuration, the D-10 coherence guard, and the corpus-wide inspect section test (VIDEO-09/10)
+
+**Gap closure** *(planned 2026-09-13 from 04-VERIFICATION.md's six gaps and its Human Decisions table; executed with `/gsd-execute-phase 4 --gaps-only`)*
+
+- [ ] 04-13-PLAN.md — Wave 1: restore main's designated-leg corpus digest lines, name the provisional ones, and make the no-rewrite rule an executable lint (BUILD-08)
+- [ ] 04-14-PLAN.md — Wave 2: the `resolve_sar` non-positive-denominator guard (WR-01), the AV1 level bound (IN-01) and `video.sar.md`'s unset rule (IN-02) (VIDEO-01/04)
+- [ ] 04-15-PLAN.md — Wave 2: `video.interlace`'s disagreement evidence compares field-order class, not raw ordinal, with both directions proven on real fixtures (VIDEO-06)
+- [ ] 04-16-PLAN.md — Wave 2: a fixture pair whose two colorimetric spellings survive distinctly, replacing the vacuous yuvj mirror test and the byte-identical DOC-03 clean pair (VIDEO-03)
+- [ ] 04-17-PLAN.md — Wave 3: scope or remove the file-wide `-Wmaybe-uninitialized` suppressions in all six video analyzers, enforced by a lint (WR-03, BUILD-05)
+- [ ] 04-18-PLAN.md — Wave 3: correct what a `state`-semantic pass means (WR-02) and the registry comment behind it, and decide the inspect test's scope outside its own output (VIDEO-01/02/10)
+- [ ] 04-19-PLAN.md — Wave 4: PROBE-03 and VIDEO-09 set to `Deferred` with amended SC4/SC5 and placement rows, and VIDEO-03's text corrected to its tested behaviour (PROBE-03, VIDEO-03/09)
+- [ ] 04-20-PLAN.md — Wave 5: confirm, push, open a DRAFT PR, and capture the designated x64-linux leg's corpus digest listing (BUILD-05/08, checkpoints)
+- [ ] 04-21-PLAN.md — Wave 6: transcribe that listing, push behind a confirmation, and confirm the designated leg green including its five leg-only goldens (BUILD-05/08, checkpoints)
 
 **Source doc**: `claude_docs/03-video-analysis.md` (design-doc phase 3)
 
