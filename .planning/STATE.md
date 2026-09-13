@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-12-PLAN.md (phase 04-video-analysis complete)
-last_updated: "2026-09-13T10:37:29.865Z"
-last_activity: 2026-09-12
+stopped_at: Completed 04-13-PLAN.md
+last_updated: "2026-09-13T11:06:20.653Z"
+last_activity: 2026-09-13
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 170bcf654c5bffe958765c8b25d6811a1ab84bc8
+state_head: 28ea8040ab352562cefedec2352b91dd5d8f0218
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 67
-  completed_plans: 58
+  completed_plans: 59
 milestone_name: milestone
 ---
 
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 
 ## Current Position
 
-Phase: 04 (Video Analysis) — READY TO EXECUTE
-Plan: 12 of 12
+Phase: 04 (Video Analysis) — EXECUTING
+Plan: 2 of 21
 Status: Ready to execute
-Last activity: 2026-09-12 — Phase 04 execution started
+Last activity: 2026-09-13 — Phase 04 execution started
 
 Progress: [█████████░] 92%
 
@@ -108,6 +108,7 @@ Progress: [█████████░] 92%
 | Phase 04 P10 | 55min | 2 tasks | 12 files |
 | Phase 04 P11 | 40min | 3 tasks | 17 files |
 | Phase 04 P12 | 35min | 3 tasks | 34 files |
+| Phase 04 P13 | 35min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -242,6 +243,7 @@ Recent decisions affecting current work:
 - [Phase 04]: StreamInfo extended for coded_side_data (demux_session.h/.cpp) outside the plan's own files_modified list, per repo-state overlay instructions requiring libav types stay out of src/analyzers/.
 - [Phase 04]: Decision 1 (dispatch): shared HDR incoherence must report non-gating info, not invisible pass -- required a new additive 'state' comparison semantic
 - [Phase 04]: Decision 2 (dispatch): HLG without MDCV is coherent (HLG is scene-referred, no MDCV required under BT.2100), not pq_without_mdcv
+- [Phase 04]: 04-13: restored main's (8caf1f1) 80 designated-leg CORPUS_DIGEST.txt fixture hashes verbatim; committed the 57 Phase-4-added lines as provisional in CORPUS_DIGEST_PROVISIONAL.txt; wired scripts/lint_corpus_digest_provenance.sh into CI to guard against future silent rewrites
 
 ### Pending Todos
 
@@ -275,6 +277,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-13T07:46:43.062Z
-Stopped at: Completed 04-12-PLAN.md (phase 04-video-analysis complete)
+Last session: 2026-09-13T11:06:20.516Z
+Stopped at: Completed 04-13-PLAN.md
 Resume file: None
