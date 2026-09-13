@@ -22,7 +22,7 @@ gaps:
       - path: "src/analyzers/video/hdr.cpp"
         issue: "resolve_hdr_source's requires_decode branch is a stub for the first-frame arm; only the stream-level arm produces a real extraction"
     missing:
-      - "Either (a) a human decision to formally defer VIDEO-09's first-frame arm to Phase 7 the same way VIDEO-11 was, with ROADMAP.md/REQUIREMENTS.md updated to say so explicitly, or (b) an accepted override recording that Phase 4's own scope only ever intended the stream-level arm."
+      - "DECIDED 2026-09-13 (user): defer the first-frame side-data source to Phase 7. Amend ROADMAP.md and REQUIREMENTS.md so Phase 4's VIDEO-09 scope is the stream-level coded_side_data source and the first-frame source is explicitly Phase 7 scope (with the decode pass, mirroring VIDEO-11's placement note), and set VIDEO-09's traceability Status to Deferred so phase.complete cannot flip it to Complete."
   - truth: "resolve_sar must never let a non-positive denominator reach video.sar/video.sar.conflict evidence (SC2's SAR-conflict clause, correctness hardening)"
     status: failed
     reason: >
@@ -37,7 +37,7 @@ gaps:
       - path: "src/analyzers/video/stream_params.cpp"
         issue: "resolve_sar (lines 516-519) missing `raw_den <= 0` guard present in every sibling extraction in the same file (compute_dar, quantize_chromaticity, hdr.cpp's luminance checks)"
     missing:
-      - "Add the raw_den <= 0 guard (04-REVIEW.md's own suggested fix) or an accepted override recording this as accepted residual risk"
+      - "DECIDED 2026-09-13 (user): fix in gap closure. Add the raw_den <= 0 guard (04-REVIEW.md WR-01's suggested fix) with a unit test that fails without it."
   - truth: "The committed tests/golden/CORPUS_DIGEST.txt matches what the designated CI leg (x64-linux) will independently compute"
     status: failed
     reason: >
@@ -54,7 +54,7 @@ gaps:
       - path: "tests/golden/CORPUS_DIGEST.txt"
         issue: "committed hashes are workstation-derived, not designated-CI-leg-derived, for the 75 fixtures 04-01 rewrote plus every fixture Phase 4 added"
     missing:
-      - "A designated-leg (x64-linux CI) run of scripts/corpus_digest.sh to transcribe the correct hashes — cannot be produced locally; requires an actual CI run, not a code or human-judgment fix"
+      - "DECIDED 2026-09-13 (user), in this order: (1) the first gap-closure step restores every pre-existing fixture line from main (8caf1f1), which are CI-runner hashes for unchanged recipes; (2) finish all other gap closure, which may add fixtures, and no plan may rewrite an existing CORPUS_DIGEST.txt line (new fixture lines stay provisional); (3) push gsd/phase-04-video-analysis and open a DRAFT PR to main so CI runs, with the orchestrator confirming with the user immediately before the push and again before opening the PR; (4) transcribe the designated leg's scripts/corpus_digest.sh listing from that run, cross-checking its pre-existing lines against main's; (5) push the corrected digest and confirm the designated leg is green, including the five designated-leg goldens."
   - truth: "video.interlace's disagreement evidence signal is meaningful (SC3's cross-check clause)"
     status: partial
     reason: >
@@ -73,7 +73,7 @@ gaps:
       - path: "src/analyzers/video/interlace.cpp"
         issue: "line 206 disagreement computation compares raw ordinals from two different AVFieldOrder subsets"
     missing:
-      - "Fix (per deferred-items.md, decision owed to a human): compare temporal field order only (TT≡TB, BB≡BT) instead of raw ordinal equality, and correct the misleading comment at lines 49-52"
+      - "DECIDED 2026-09-13 (user): fix in gap closure. Compare temporal field order only (TT≡TB, BB≡BT) instead of raw ordinal equality, correct the misleading comment at lines 49-52, and add tests proving a consistent interlaced file reports disagreement=false while a genuinely conflicting one reports true."
   - truth: "VIDEO-03's own signature test for the 'range flag' spelling half of SC1 is non-vacuous"
     status: partial
     reason: >
@@ -94,7 +94,30 @@ gaps:
       - path: "tests/integration/test_video_yuvj.cpp"
         issue: "Test 2 (line 110) is vacuous; its fixture pair is byte-identical"
     missing:
-      - "Human decision (deferred-items.md, 04-08-PLAN.md section): replace Test 2's fixture pair with one where the two spellings survive distinctly, or delete Test 2 and amend VIDEO-03's text to match the tested (and correct) behavior"
+      - "DECIDED 2026-09-13 (user): fix in gap closure. Replace Test 2 with a test that can fail (a fixture pair whose two spellings survive distinctly, proven non-vacuous by a mutation check), and correct VIDEO-03's wording to match the fold: the same intent spelled two ways produces zero findings, while a real range flip produces exactly one finding on video.color.range."
+  - truth: "Phase 4's shipped docs, comments and tests are accurate and can fail (04-REVIEW.md findings plus orchestrator findings)"
+    status: partial
+    reason: >
+      04-REVIEW.md WR-02, WR-03, IN-01 and IN-02, plus two items the review missed: the false
+      "semantic appears in no serialized output" comment in src/core/registry.h:25-26, and
+      tests/integration/test_video_inspect_section.cpp deciding "has a video stream" from the same
+      inspect output it checks, so a regression that emptied groups.video for some fixtures would
+      skip them rather than fail. None of these changes a compared value or a check contract.
+    artifacts:
+      - path: "docs/checks/video.hdr.coherence.md"
+        issue: "line 58 says pass means both files are in the SAME state; compare_state passes whenever neither side is flagged (WR-02)"
+      - path: "src/analyzers/video"
+        issue: "-Wmaybe-uninitialized is suppressed for the whole translation unit, without push/pop, in all six new analyzer files (WR-03)"
+      - path: "src/analyzers/video/stream_params.cpp"
+        issue: "render_level_value accepts AV1 seq_level_idx 24-31, which have no defined level (IN-01)"
+      - path: "docs/checks/video.sar.md"
+        issue: "describes the unset rule as 0/1 only; the code treats any zero numerator as unset (IN-02)"
+      - path: "src/core/registry.h"
+        issue: "lines 25-26 claim the semantic name appears in no serialized output; plain list-checks prints semantic=<name>"
+      - path: "tests/integration/test_video_inspect_section.cpp"
+        issue: "has_video_stream() is derived from the output under test"
+    missing:
+      - "DECIDED 2026-09-13 (user): fix all of the above in gap closure. The inspect test must decide which fixtures carry a video stream independently of inspect's own video group."
 deferred:
   - truth: "SC5 — the parser pass measures at under 10% overhead over a plain packet scan on the 10-minute reference file"
     addressed_in: "Phase 5"
@@ -110,16 +133,8 @@ deferred:
       (tools/bench/parser_overhead.cpp via scripts/measure_parser_overhead.sh), well above 10%,
       but the absolute delta is ~1.5ms — recorded per D-11, not gated, and PROBE-03 is correctly
       left Pending in REQUIREMENTS.md rather than falsely marked Complete.
-human_verification:
-  - test: "Decide VIDEO-09's Phase 4/Phase 7 scope split for the first-frame HDR extraction arm"
-    expected: "Either ROADMAP.md/REQUIREMENTS.md are amended to explicitly defer VIDEO-09's second precedence arm to Phase 7 (mirroring VIDEO-11's explicit placement note), or an override is recorded accepting Phase 4's stream-level-only scope as complete."
-    why_human: "This is a scope/requirements-mapping decision, not a code defect — the code faithfully implements D-08's documented seam."
-  - test: "Decide test_video_yuvj.cpp Test 2's fixture pair and VIDEO-03's requirement text"
-    expected: "Either a new fixture pair that keeps the two range-flip spellings distinct, or VIDEO-03's text corrected to say the fold produces ZERO findings for the full-range case (matching the load-bearing behavior Test 1/689/690/686 actually prove)."
-    why_human: "deferred-items.md already records this as 'decisions owed to a human'; it is a test-fixture-construction and requirement-wording call, not an implementation bug."
-  - test: "Decide whether to fix video.interlace's disagreement evidence field now or track it as a follow-up"
-    expected: "Either the fix (compare temporal field order, TT≡TB/BB≡BT) lands before shipping this phase, or it is explicitly tracked as a follow-up given it does not affect the compared value or produce a false positive/negative in `compare` today."
-    why_human: "deferred-items.md already records this as 'decision owed'; the compared value is correct, only the -v evidence field is miscalibrated."
+    decision: "CONFIRMED 2026-09-13 (user): the under-10% target is owned by PERF-03/PERF-05 in Phase 5. Gap closure amends ROADMAP.md SC5 and REQUIREMENTS.md so PROBE-03's Phase 4 scope is the fused parser pass plus its measurement harness, and sets PROBE-03's traceability Status to Deferred so phase.complete cannot flip it to Complete."
+human_verification: []
 ---
 
 # Phase 04: Video Analysis Verification Report
@@ -186,6 +201,21 @@ The full test suite was run once, by the orchestrator, at this exact HEAD (995fc
 ### Gaps Summary
 
 Ten of twelve Phase-4-mapped requirements are genuinely complete and well-tested. The two Pending requirements are handled honestly in REQUIREMENTS.md (neither was falsely marked Complete), but one of them — VIDEO-09's first-frame HDR extraction arm — has no explicit later-phase success criterion claiming it the way VIDEO-11 was explicitly reassigned, so it is reported here as a gap requiring a human scope decision rather than silently deferred. PROBE-03's overhead clause is cleanly deferred to Phase 5 per explicit PERF-03/PERF-05 requirement mapping and the phase's own "recorded not gated" plan title. Three further defects were confirmed by direct code reading (SAR guard, interlace evidence field, vacuous yuvj test) that the phase's own deferred-items.md already flags as "decisions owed to a human" — none of these produce an active false positive/negative in `compare` against the current fixture corpus, but all three are real and unresolved. Separately, and more urgently for shippability, the corpus digest committed during this phase is confirmed wrong for the designated CI leg and will fail CI on push — this needs an actual CI run to fix, not a code change or a human decision.
+
+## Human Decisions (2026-09-13)
+
+Taken by the user after this report, before gap planning. They supersede every "decision owed to a human" above and in `deferred-items.md`. Gap planning must implement them as written.
+
+| # | Question | Decision | What gap closure must do |
+|---|---|---|---|
+| 1 | VIDEO-09's first-frame HDR side-data source needs a decode pass | **Defer to Phase 7** | Amend ROADMAP.md and REQUIREMENTS.md: Phase 4's VIDEO-09 scope is the stream-level `coded_side_data` source; the first-frame source is explicitly Phase 7 scope, mirroring VIDEO-11's placement note. Set VIDEO-09's traceability Status to **Deferred**. |
+| 2 | PROBE-03's under-10% overhead target (measured 43–53% on a 180 s input) | **Defer the target to Phase 5** (PERF-03/PERF-05) | Amend ROADMAP.md SC5 and REQUIREMENTS.md: PROBE-03's Phase 4 scope is the fused parser pass plus its measurement harness. Set PROBE-03's traceability Status to **Deferred**. |
+| 3 | Which confirmed defects to fix now | **All four:** interlace evidence; the vacuous yuvj test plus VIDEO-03's wording; the review warnings and docs (WR-01, WR-02, WR-03, IN-01, IN-02, registry.h comment); the inspect-test predicate | See each gap's `missing` entry above. Every new or changed test must be shown able to fail (mutation check, or a non-byte-identical fixture pair). |
+| 4 | When to capture the designated leg's corpus digest | **Draft PR after the gap fixes** | Restore main's (`8caf1f1`) pre-existing fixture lines first. Rewrite no existing digest line. Finish gap closure. Then push the branch and open a draft PR to main. The orchestrator confirms with the user before the push and again before the PR. Transcribe the designated leg's listing and push the corrected digest. Re-verify with that CI run green. |
+
+**Why decisions 1 and 2 must set Deferred rather than leave Pending.** `phase.complete` flips every Phase 4 traceability row reading Pending, In Progress or Gaps Found to Complete. It leaves Out, Deferred and Blocked rows unchanged. A Pending VIDEO-09 or PROBE-03 row would therefore be falsely marked Complete when the phase closes.
+
+**Standing guard for every gap-closure plan that touches fixtures.** `git diff -- tests/golden/CORPUS_DIGEST.txt` must show no removed or changed hash line for a pre-existing fixture. The local `scripts/assert_corpus_digest.sh` passing is not evidence: it compares this workstation's corpus against a digest this workstation wrote.
 
 ---
 
