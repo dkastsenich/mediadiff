@@ -21,7 +21,13 @@
 #   3. CORPUS_DIGEST_PROVISIONAL.txt exists, and after dropping blank lines
 #      and comment lines (first non-space character `#`), its entries are
 #      LC_ALL=C sorted, unique, and each names a real fixture line in
-#      CORPUS_DIGEST.txt.
+#      CORPUS_DIGEST.txt. A ZERO-ENTRY ledger is accepted ONLY when the file
+#      also contains a well-formed `# TRANSCRIBED-FROM-DESIGNATED-LEG:`
+#      marker line (carrying a `run=<digits>` and a `commit=<40 hex>`
+#      field) -- proof the ledger was deliberately cleared because every
+#      hash gained designated-leg provenance (04-21-PLAN.md Task 1), not
+#      accidentally emptied. A zero-entry ledger WITHOUT that marker still
+#      fails clause 3 exactly as it always has.
 #   4. THE NO-REWRITE GUARD: every listing line committed at 8caf1f1 (main,
 #      pre-Phase-4) must still appear verbatim in CORPUS_DIGEST.txt today.
 #
@@ -137,40 +143,62 @@ fi
 
 grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$PROVISIONAL_FILE" > "$LEDGER_ENTRIES_TMP" || true
 
+LEDGER_ZERO_ENTRIES_JUSTIFIED=false
 if [ ! -s "$LEDGER_ENTRIES_TMP" ]; then
-  echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- '${PROVISIONAL_FILE}' has zero non-comment, non-blank entries." >&2
-  exit 1
-fi
-
-LC_ALL=C sort "$LEDGER_ENTRIES_TMP" > "$SORTED_TMP"
-if ! diff -q "$LEDGER_ENTRIES_TMP" "$SORTED_TMP" >/dev/null 2>&1; then
-  echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- '${PROVISIONAL_FILE}' entries are not LC_ALL=C sorted." >&2
-  exit 1
-fi
-
-TOTAL_ENTRY_COUNT=$(awk 'END {print NR}' "$LEDGER_ENTRIES_TMP")
-UNIQUE_ENTRY_COUNT=$(LC_ALL=C sort -u "$LEDGER_ENTRIES_TMP" | awk 'END {print NR}')
-if [ "$UNIQUE_ENTRY_COUNT" -ne "$TOTAL_ENTRY_COUNT" ]; then
-  echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- '${PROVISIONAL_FILE}' contains duplicate entries (${TOTAL_ENTRY_COUNT} lines, ${UNIQUE_ENTRY_COUNT} unique)." >&2
-  exit 1
-fi
-
-awk '{print $2}' "$LISTING_TMP" > "$DIGEST_NAMES_TMP"
-
-UNKNOWN_ENTRY_COUNT=0
-while IFS= read -r entry; do
-  if ! grep -qxF "$entry" "$DIGEST_NAMES_TMP"; then
-    echo "lint_corpus_digest_provenance.sh error: clause 3 -- ledger entry '${entry}' does not name any fixture line in '${DIGEST_FILE}'." >&2
-    UNKNOWN_ENTRY_COUNT=$((UNKNOWN_ENTRY_COUNT + 1))
+  # A zero-entry ledger is normally the accidentally-emptied-ledger defect
+  # this clause exists to catch (04-13). It is accepted, and ONLY accepted,
+  # when the file also carries a well-formed TRANSCRIBED-FROM-DESIGNATED-LEG
+  # marker proving every hash gained designated-leg provenance on purpose
+  # (04-21-PLAN.md Task 1) -- a run id and a full commit sha, not just the
+  # marker's presence.
+  MARKER_LINE="$(grep -E '^# TRANSCRIBED-FROM-DESIGNATED-LEG:' "$PROVISIONAL_FILE" || true)"
+  if [ -z "$MARKER_LINE" ]; then
+    echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- '${PROVISIONAL_FILE}' has zero non-comment, non-blank entries and carries no '# TRANSCRIBED-FROM-DESIGNATED-LEG:' marker to justify it." >&2
+    exit 1
   fi
-done < "$LEDGER_ENTRIES_TMP"
-
-if [ "$UNKNOWN_ENTRY_COUNT" -ne 0 ]; then
-  echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- ${UNKNOWN_ENTRY_COUNT} ledger entries do not correspond to a real digest line." >&2
-  exit 1
+  if ! printf '%s\n' "$MARKER_LINE" | grep -qE 'run=[0-9]+'; then
+    echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- '${PROVISIONAL_FILE}' TRANSCRIBED-FROM-DESIGNATED-LEG marker is missing a run=<digits> field: '${MARKER_LINE}'" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$MARKER_LINE" | grep -qE 'commit=[0-9a-fA-F]{40}([[:space:]]|$)'; then
+    echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- '${PROVISIONAL_FILE}' TRANSCRIBED-FROM-DESIGNATED-LEG marker is missing a commit=<40 hex> field: '${MARKER_LINE}'" >&2
+    exit 1
+  fi
+  echo "lint_corpus_digest_provenance.sh: clause 3 OK -- '${PROVISIONAL_FILE}' has zero entries, justified by a well-formed TRANSCRIBED-FROM-DESIGNATED-LEG marker: ${MARKER_LINE#\# }"
+  LEDGER_ZERO_ENTRIES_JUSTIFIED=true
 fi
 
-echo "lint_corpus_digest_provenance.sh: clause 3 OK -- '${PROVISIONAL_FILE}' has ${TOTAL_ENTRY_COUNT} sorted, unique entries, each naming a real digest fixture."
+if [ "$LEDGER_ZERO_ENTRIES_JUSTIFIED" != "true" ]; then
+  LC_ALL=C sort "$LEDGER_ENTRIES_TMP" > "$SORTED_TMP"
+  if ! diff -q "$LEDGER_ENTRIES_TMP" "$SORTED_TMP" >/dev/null 2>&1; then
+    echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- '${PROVISIONAL_FILE}' entries are not LC_ALL=C sorted." >&2
+    exit 1
+  fi
+
+  TOTAL_ENTRY_COUNT=$(awk 'END {print NR}' "$LEDGER_ENTRIES_TMP")
+  UNIQUE_ENTRY_COUNT=$(LC_ALL=C sort -u "$LEDGER_ENTRIES_TMP" | awk 'END {print NR}')
+  if [ "$UNIQUE_ENTRY_COUNT" -ne "$TOTAL_ENTRY_COUNT" ]; then
+    echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- '${PROVISIONAL_FILE}' contains duplicate entries (${TOTAL_ENTRY_COUNT} lines, ${UNIQUE_ENTRY_COUNT} unique)." >&2
+    exit 1
+  fi
+
+  awk '{print $2}' "$LISTING_TMP" > "$DIGEST_NAMES_TMP"
+
+  UNKNOWN_ENTRY_COUNT=0
+  while IFS= read -r entry; do
+    if ! grep -qxF "$entry" "$DIGEST_NAMES_TMP"; then
+      echo "lint_corpus_digest_provenance.sh error: clause 3 -- ledger entry '${entry}' does not name any fixture line in '${DIGEST_FILE}'." >&2
+      UNKNOWN_ENTRY_COUNT=$((UNKNOWN_ENTRY_COUNT + 1))
+    fi
+  done < "$LEDGER_ENTRIES_TMP"
+
+  if [ "$UNKNOWN_ENTRY_COUNT" -ne 0 ]; then
+    echo "lint_corpus_digest_provenance.sh error: clause 3 FAILED -- ${UNKNOWN_ENTRY_COUNT} ledger entries do not correspond to a real digest line." >&2
+    exit 1
+  fi
+
+  echo "lint_corpus_digest_provenance.sh: clause 3 OK -- '${PROVISIONAL_FILE}' has ${TOTAL_ENTRY_COUNT} sorted, unique entries, each naming a real digest fixture."
+fi
 
 # --- Clause 4: THE NO-REWRITE GUARD. ---------------------------------------
 if git cat-file -e "${HISTORICAL_COMMIT}:${DIGEST_FILE}" 2>/dev/null; then

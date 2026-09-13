@@ -1,86 +1,40 @@
 # tests/golden/CORPUS_DIGEST_PROVISIONAL.txt -- names only, no hashes
 # (D-GAP-01 gap closure, 04-13-PLAN.md Task 2).
 #
-# Every fixture name listed below has a committed
-# tests/golden/CORPUS_DIGEST.txt hash that has NEVER been computed by the
-# designated x64-linux CI leg. Each one was added to the corpus during
-# Phase 4 and its committed hash is this workstation's own ffmpeg-encode
-# output -- the only kind of hash available at commit time, since a
-# fixture cannot be transcribed from a CI run that has not happened yet.
+# STATUS: EMPTY. Every fixture name that used to be listed below has been
+# replaced in tests/golden/CORPUS_DIGEST.txt by the designated x64-linux CI
+# leg's own computed hash (04-21-PLAN.md Task 1, transcribing 04-20's
+# captured listing). No hash in CORPUS_DIGEST.txt is workstation-derived
+# any longer -- this ledger has nothing left to track and is empty on
+# purpose, not by accident.
 #
-# These hashes are EXPECTED TO DIFFER on the designated leg. That is not a
-# regression; it is the same host-CPU-dependent ffmpeg-encode nondeterminism
-# documented at length above in this file's own "Two kinds of golden live
-# here" section, applied to a fixture that has simply never been run
-# through the designated leg at all yet, rather than one whose designated-
-# leg bytes are already known and have drifted.
+# Historical context for why this file exists at all: each fixture added
+# during Phase 4 was, at commit time, hashed only on the workstation that
+# added it -- a fixture cannot be transcribed from a CI run that has not
+# happened yet. Those hashes were EXPECTED TO DIFFER on the designated leg,
+# the same host-CPU-dependent ffmpeg-encode nondeterminism documented at
+# length in this file's own "Two kinds of golden live here" section
+# (tests/golden/README.md), and this ledger recorded which committed
+# hashes carried that caveat.
 #
-# 04-13-PLAN.md's own Human Decision #4 (04-VERIFICATION.md) replaces every
-# name below with the designated leg's real transcribed hash once a CI run
-# against this branch produces one -- tracked as the follow-up plan 04-20.
-# Until then, a name appearing here means "workstation-derived, not yet
-# confirmed against the designated leg", nothing more and nothing less.
+# 04-13-PLAN.md's own Human Decision #4 (04-VERIFICATION.md) said every
+# name listed here would be replaced with the designated leg's real
+# transcribed hash once a CI run against this branch produced one. 04-20
+# captured that run's listing verbatim; 04-21 transcribed it into
+# CORPUS_DIGEST.txt and cleared every entry below as a result.
 #
 # Format: one fixture NAME per line (matching field 2 of a
 # CORPUS_DIGEST.txt listing line), LC_ALL=C sorted, unique. No hashes are
 # recorded here on purpose -- a hash column in this file would create a
 # second, competing source of truth for exactly the numbers
 # CORPUS_DIGEST.txt already owns.
-.video_ilace_mixed_raw.m2v
-.video_ilace_seg_a.m2v
-.video_ilace_seg_b.m2v
-video_base.mp4
-video_base_copy.mp4
-video_bf3.mp4
-video_chroma_center.mkv
-video_chroma_left.mkv
-video_codec_mpeg2.mp4
-video_color_bt601.mp4
-video_color_bt709.mp4
-video_color_bt709_copy.mp4
-video_color_unspec.mp4
-video_dovi_a.mp4
-video_dovi_a_copy.mp4
-video_dovi_b.mp4
-video_fps_30.mp4
-video_frames_50.mp4
-video_gop_g48.mp4
-video_gop_g48_copy.mp4
-video_gop_g96.mp4
-video_h264_closed.h264
-video_h264_closed_copy.h264
-video_h264_idr48.h264
-video_h264_open.h264
-video_h264_refs1.h264
-video_h264_refs4.h264
-video_hdr_a.mp4
-video_hdr_a_copy.mp4
-video_hdr_cll_b.mp4
-video_hdr_coherent.mp4
-video_hdr_coherent_copy.mp4
-video_hdr_hlg_nomdcv.mp4
-video_hdr_lum_b.mp4
-video_hdr_none.mp4
-video_hdr_pq_nomdcv.mp4
-video_hdr_prim_b.mp4
-video_hdr_sdr_mdcv.mp4
-video_hdr_sdr_mdcv_copy.mp4
-video_hevc_cra.hevc
-video_hevc_idr.hevc
-video_ilace_bff.mp4
-video_ilace_mixed.mp4
-video_ilace_tff.mp4
-video_ilace_tff_copy.mp4
-video_noparser.mkv
-video_noparser_copy.mkv
-video_prof_a.mp4
-video_prof_b.mp4
-video_range_pc.mp4
-video_res_640.mp4
-video_sar_4_3.mp4
-video_sar_conflict.mp4
-video_vfr.mp4
-video_yuv420p_pc.mp4
-video_yuv420p_pc_tagged.mp4
-video_yuv420p_tv.mp4
-video_yuvj420p.mp4
+#
+# TRANSCRIBED-FROM-DESIGNATED-LEG: run=34776142545 job=103774491730 commit=196b52a68b05b0880c7c8b6335b345ea378f8219 date=2026-09-13
+#
+# The line above is a machine-readable marker, not decoration:
+# scripts/lint_corpus_digest_provenance.sh clause 3 accepts a zero-entry
+# ledger ONLY when this exact marker (with a run=<digits> and a
+# commit=<40 hex> field) is present and well-formed. An empty ledger
+# without this marker still fails clause 3 exactly as it always has --
+# that is the check 04-13 wrote to catch an accidentally emptied ledger,
+# and it still fires for that case.
