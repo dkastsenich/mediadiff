@@ -184,3 +184,7 @@ None - no external service configuration required.
 ---
 *Phase: 04-video-analysis*
 *Completed: 2026-09-13*
+
+## Self-Check: PASSED
+
+All key files (`src/analyzers/video/interlace.cpp`, `src/analyzers/video/analyzers.h`, `tests/unit/test_video_interlace.cpp`, `docs/checks/video.interlace.md`, this SUMMARY.md) confirmed present on disk. All four commits (`25ba9ae`, `3554aa3`, `380e4ed`, `7ae1253`) confirmed present in `git log`.
