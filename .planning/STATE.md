@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-14-PLAN.md
-last_updated: "2026-09-13T11:23:59.673Z"
+stopped_at: Completed 04-15-PLAN.md
+last_updated: "2026-09-13T11:40:28.123Z"
 last_activity: 2026-09-13
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 035935da51b801417f875d00da42be27659da5d4
+state_head: 40a9765ecc9c3869da4de9a806095c93615a9a75
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 67
-  completed_plans: 60
+  completed_plans: 61
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 3 of 21
+Plan: 4 of 21
 Status: Ready to execute
 Last activity: 2026-09-13 — Phase 04 execution started
 
@@ -110,6 +110,7 @@ Progress: [█████████░] 92%
 | Phase 04 P12 | 35min | 3 tasks | 34 files |
 | Phase 04 P13 | 35min | 3 tasks | 5 files |
 | Phase 04 P14 | 25min | 3 tasks | 3 files |
+| Phase 04 P15 | 15min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -246,6 +247,7 @@ Recent decisions affecting current work:
 - [Phase 04]: Decision 2 (dispatch): HLG without MDCV is coherent (HLG is scene-referred, no MDCV required under BT.2100), not pq_without_mdcv
 - [Phase 04]: 04-13: restored main's (8caf1f1) 80 designated-leg CORPUS_DIGEST.txt fixture hashes verbatim; committed the 57 Phase-4-added lines as provisional in CORPUS_DIGEST_PROVISIONAL.txt; wired scripts/lint_corpus_digest_provenance.sh into CI to guard against future silent rewrites
 - [Phase 04]: Folded resolve_sar's non-positive-denominator case into the existing unset=true 1:1 shape rather than a third state — Preserves EffectiveSar's documented invariant unconditionally, per WR-01's own suggested fix
+- [Phase 04]: video.interlace disagreement now compares field-order CLASS ({TT,TB}/{BB,BT}), not raw AVFieldOrder ordinal — raw ordinal comparison was unconditionally true on every valid interlaced file (04-VERIFICATION.md SC3 gap); class mapping matches Human Decision 3
 
 ### Pending Todos
 
@@ -279,6 +281,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-13T11:23:59.532Z
-Stopped at: Completed 04-14-PLAN.md
+Last session: 2026-09-13T11:40:27.965Z
+Stopped at: Completed 04-15-PLAN.md
 Resume file: None
