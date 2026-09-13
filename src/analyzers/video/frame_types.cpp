@@ -10,15 +10,16 @@
 #include "core/check_id.h"
 #include "core/model.h"
 
-// GCC 13's -O3 flow analysis produces a -Wmaybe-uninitialized false
-// positive on core/value.h's Value std::variant, the same class
-// src/analyzers/{container,size}/*.cpp's own top-of-file comments already
-// document and work around identically. This file's emit_* function
-// constructs and push_back's a real Measurement, so the construction
-// cannot be avoided; suppressed for this TU only.
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
+// 04-17 gap closure (WR-03): measured against GCC 13.3.0 (Ubuntu
+// 13.3.0-6ubuntu2~24.04.1) at -O3 (the Release config every CMake preset
+// in this project uses) with this file's file-scope suppression removed
+// and the translation unit force-recompiled: -Wmaybe-uninitialized did
+// NOT fire anywhere in this file. The false positive the removed comment
+// described (on core/value.h's Value std::variant construction) is not
+// reproducible on this compiler; the suppression suppressed nothing and
+// has been removed rather than kept as a liability. See
+// src/analyzers/video/gop.cpp and stream_params.cpp for the two files in
+// this cohort where it still measurably fires.
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
 #include "probe/parser_scan.h"

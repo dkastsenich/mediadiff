@@ -14,15 +14,6 @@
 #include "core/model.h"
 #include "core/rational.h"
 
-// GCC 13's -O3 flow analysis produces a -Wmaybe-uninitialized false
-// positive on core/value.h's Value std::variant, the same class
-// src/analyzers/{container,size}/*.cpp's own top-of-file comments already
-// document and work around identically. This file's emit_* functions each
-// construct and push_back at least one real Measurement, so the
-// construction cannot be avoided; suppressed for this TU only.
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 #include "probe/cadence.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
@@ -47,6 +38,18 @@ constexpr int kUnknownProfileOrLevel = -99;
 // video.frame_count skip path used an inline Measurement construction
 // instead (kept as-is below; this helper is for the checks 04-07-PLAN.md
 // adds).
+//
+// 04-17 gap closure (WR-03): measured against GCC 13.3.0 (Ubuntu
+// 13.3.0-6ubuntu2~24.04.1) at -O3 (the Release config every CMake preset
+// in this project uses) with the file-scope suppression removed and this
+// translation unit force-recompiled: -Wmaybe-uninitialized DOES still
+// fire here, on the `measurement.value = Absent{};` move-construction of
+// core/value.h's Value std::variant a few lines below, so the diagnostic
+// is bracketed to only this function body rather than the whole file.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 void push_skip(CheckId id, Scope scope, SkipReason reason, Fingerprint& fp) {
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(id);
@@ -55,6 +58,9 @@ void push_skip(CheckId id, Scope scope, SkipReason reason, Fingerprint& fp) {
   measurement.skip_reason = reason;
   fp.measurements.push_back(std::move(measurement));
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 // StreamMediaType -> the Scope::Kind a stream is scoped under, identical
 // mapping to src/analyzers/size/size.cpp's own scope_kind_for_stream (this
