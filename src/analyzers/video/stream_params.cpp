@@ -514,7 +514,17 @@ std::string render_level_value(const std::string& codec_name, int level) {
 }
 
 EffectiveSar resolve_sar(std::int64_t raw_num, std::int64_t raw_den) {
-  if (raw_num == 0) {
+  // A zero numerator means "declared nothing" (the pre-existing rule).
+  // A zero or negative denominator is structurally degenerate -- a
+  // malformed `pasp` box or a corrupt VUI -- and is folded into the SAME
+  // unset=true 1:1 shape rather than passed through, so `EffectiveSar`'s
+  // documented invariant (num/den always a valid, positive-denominator
+  // rational, analyzers.h:159-172) holds unconditionally at this single
+  // seam every emission site (emit_sar/emit_sar_conflict below) reads.
+  // A degenerate ratio was never a meaningfully declared one, so reporting
+  // it as "the source declared nothing" is the honest reading; the RAW
+  // values remain visible in video.sar.conflict's own evidence regardless.
+  if (raw_num == 0 || raw_den <= 0) {
     return EffectiveSar{1, 1, true};
   }
   return EffectiveSar{raw_num, raw_den, false};

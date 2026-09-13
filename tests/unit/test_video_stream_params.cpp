@@ -654,3 +654,49 @@ TEST_CASE("video_stream_params - detail::resolve_sar treats a zero numerator as 
   REQUIRE(explicit_one_to_one.den == 1);
   REQUIRE_FALSE(explicit_one_to_one.unset);
 }
+
+// --- 04-14-PLAN.md Task 1 (WR-01): detail::resolve_sar must never return
+// an EffectiveSar with a non-positive denominator -- a malformed pasp/VUI
+// pair with a non-zero numerator and a zero or negative denominator folds
+// into the same 1:1, unset=true shape a 0/den pair already resolves to,
+// rather than passing through verbatim with unset=false ------------------
+
+TEST_CASE("video_stream_params - detail::resolve_sar folds a zero denominator into unset 1:1, regardless of "
+          "numerator",
+          "[unit]") {
+  const auto zero_den = resolve_sar(4, 0);
+  REQUIRE(zero_den.num == 1);
+  REQUIRE(zero_den.den == 1);
+  REQUIRE(zero_den.unset);
+}
+
+TEST_CASE("video_stream_params - detail::resolve_sar folds a negative denominator into unset 1:1, regardless of "
+          "numerator",
+          "[unit]") {
+  const auto negative_den = resolve_sar(4, -3);
+  REQUIRE(negative_den.num == 1);
+  REQUIRE(negative_den.den == 1);
+  REQUIRE(negative_den.unset);
+}
+
+TEST_CASE("video_stream_params - detail::resolve_sar's returned denominator is strictly positive across zero, "
+          "negative, and large-magnitude inputs",
+          "[unit]") {
+  // {raw_num, raw_den} pairs spanning zero, negative, and large-magnitude
+  // inputs -- every one of these must return den > 0.
+  const std::pair<std::int64_t, std::int64_t> pairs[] = {
+      {0, 1},        // zero numerator, positive denominator (pre-existing unset rule)
+      {0, 0},        // zero numerator AND zero denominator
+      {0, -5},       // zero numerator, negative denominator
+      {4, 0},        // non-zero numerator, zero denominator (NEW guard)
+      {4, -3},       // non-zero numerator, negative denominator (NEW guard)
+      {-4, -3},      // negative numerator, negative denominator
+      {1, 1},        // explicit square ratio (unchanged, real value)
+      {4, 3},        // real declared ratio (unchanged, real value)
+      {9223372036854775807LL, -1},  // large-magnitude numerator, negative denominator
+  };
+  for (const auto& [raw_num, raw_den] : pairs) {
+    const auto result = resolve_sar(raw_num, raw_den);
+    REQUIRE(result.den > 0);
+  }
+}
