@@ -323,7 +323,7 @@ Plans:
 - [x] 04-14-PLAN.md — Wave 2: the `resolve_sar` non-positive-denominator guard (WR-01), the AV1 level bound (IN-01) and `video.sar.md`'s unset rule (IN-02) (VIDEO-01/04)
 - [x] 04-15-PLAN.md — Wave 2: `video.interlace`'s disagreement evidence compares field-order class, not raw ordinal, with both directions proven on real fixtures (VIDEO-06)
 - [x] 04-16-PLAN.md — Wave 2: a fixture pair whose two colorimetric spellings survive distinctly, replacing the vacuous yuvj mirror test and the byte-identical DOC-03 clean pair (VIDEO-03)
-- [ ] 04-17-PLAN.md — Wave 3: scope or remove the file-wide `-Wmaybe-uninitialized` suppressions in all six video analyzers, enforced by a lint (WR-03, BUILD-05)
+- [x] 04-17-PLAN.md — Wave 3: scope or remove the file-wide `-Wmaybe-uninitialized` suppressions in all six video analyzers, enforced by a lint (WR-03, BUILD-05)
 - [ ] 04-18-PLAN.md — Wave 3: correct what a `state`-semantic pass means (WR-02) and the registry comment behind it, and decide the inspect test's scope outside its own output (VIDEO-01/02/10)
 - [ ] 04-19-PLAN.md — Wave 4: PROBE-03 and VIDEO-09 set to `Deferred` with amended SC4/SC5 and placement rows, and VIDEO-03's text corrected to its tested behaviour (PROBE-03, VIDEO-03/09)
 - [ ] 04-20-PLAN.md — Wave 5: confirm, push, open a DRAFT PR, and capture the designated x64-linux leg's corpus digest listing (BUILD-05/08, checkpoints)
