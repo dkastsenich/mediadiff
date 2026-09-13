@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-11-PLAN.md
-last_updated: "2026-09-12T23:23:29.718Z"
+stopped_at: Completed 04-12-PLAN.md (phase 04-video-analysis complete)
+last_updated: "2026-09-13T07:46:43.210Z"
 last_activity: 2026-09-12
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: e5be55fffd1ba40a9290a1977348895f7c7bdd30
+state_head: 8f52409963cede125f799b4b4922e191e96f4c4f
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 58
-  completed_plans: 57
+  completed_plans: 58
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 11 of 12
+Plan: 12 of 12
 Status: Ready to execute
 Last activity: 2026-09-12 — Phase 04 execution started
 
@@ -107,6 +107,7 @@ Progress: [█████████░] 92%
 | Phase 04 P09 | 50min | 3 tasks | 20 files |
 | Phase 04 P10 | 55min | 2 tasks | 12 files |
 | Phase 04 P11 | 40min | 3 tasks | 17 files |
+| Phase 04 P12 | 35min | 3 tasks | 34 files |
 
 ## Accumulated Context
 
@@ -239,6 +240,8 @@ Recent decisions affecting current work:
 - [Phase 04]: AVFieldOrder's per-frame TT/BB vs container-declared TB/BT are two subsets of the same enum for the same real property -- disagreement fires harmlessly on every real interlace fixture, evidence-only
 - [Phase 04]: HDR value checks (mdcv.luminance/.primaries, cll.max/.avg) share one SkipReason::requires_decode for both could-carry-empty and could-not-carry-at-all cases rather than adding a new SkipReason enum value outside plan scope; evidence carries could_carry_frame_level to keep the distinction honest.
 - [Phase 04]: StreamInfo extended for coded_side_data (demux_session.h/.cpp) outside the plan's own files_modified list, per repo-state overlay instructions requiring libav types stay out of src/analyzers/.
+- [Phase 04]: Decision 1 (dispatch): shared HDR incoherence must report non-gating info, not invisible pass -- required a new additive 'state' comparison semantic
+- [Phase 04]: Decision 2 (dispatch): HLG without MDCV is coherent (HLG is scene-referred, no MDCV required under BT.2100), not pq_without_mdcv
 
 ### Pending Todos
 
@@ -272,6 +275,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-12T23:23:29.583Z
-Stopped at: Completed 04-11-PLAN.md
+Last session: 2026-09-13T07:46:43.062Z
+Stopped at: Completed 04-12-PLAN.md (phase 04-video-analysis complete)
 Resume file: None
