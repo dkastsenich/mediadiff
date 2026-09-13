@@ -107,6 +107,25 @@ mediadiff_ffmpeg_release_triple() {
 #                        install_pinned_ffmpeg.sh's own "no path by which
 #                        the corpus is generated with an unverified binary"
 #                        stance (fail closed, not "pass unverified").
+#
+# Output-consumption audit (260913-wuy): every python3 stdout line this
+# reader consumes is stripped of one trailing CR here, once, at the seam
+# where MD_PIN_VERSION/MD_PIN_CANDIDATES are populated -- the candidate
+# probe loop in mediadiff_resolve_ffmpeg below reads only lines already
+# stripped here, so it needs no strip of its own. FFMPEG_VERSION_LINE,
+# FFMPEG_CONFIG_LINE and FFMPEG_VERSION_TOKEN (mediadiff_resolve_ffmpeg,
+# below) are untouched by this audit: both release-triple comparisons in
+# mediadiff_ffmpeg_release_triple are anchored at the START of the token,
+# and the token itself is a non-final field in ffmpeg's own "-version"
+# banner, so a line-terminal CR cannot reach or move that comparison.
+# FFMPEG_VERSION_LINE's own further flow into gen_corpus.sh's
+# GENERATOR_MANIFEST.json "generator" field is out of scope for this task
+# (gen_corpus.sh is not touched here). install_pinned_ffmpeg.sh's sibling
+# reader is not CR-tolerant -- it packs every field onto one line split on
+# \x1f, so a trailing CR lands on the LAST field only -- yet it survived
+# the same Windows runner in the same CI job that failed here; see this
+# task's design_decisions for why that discrepancy does not undermine the
+# CR-tolerance fix below.
 mediadiff_read_ffmpeg_pin() {
   local pin_file="${MD_REPO_ROOT}/scripts/ffmpeg_pin.json"
   MD_PIN_VERSION=""
@@ -162,9 +181,34 @@ PYEOF
     return 0
   fi
 
+  # Guard for empty reader output BEFORE the loop, not after it. A
+  # here-string over an empty string (`<<< ""`) still iterates exactly
+  # once with an empty $line -- measured locally -- so a post-loop
+  # "line_num -eq 0" check can never be true and this case would otherwise
+  # be indistinguishable from a CR-terminated `OK` or any other single
+  # unexpected line landing on the `*)` arm below.
+  if [ -z "$pin_output" ]; then
+    MD_PIN_ERROR="python3 produced no output while reading ${pin_file}"
+    return 0
+  fi
+
   local line_num=0
   local line
+  local line_rendered
   while IFS= read -r line; do
+    # python3 running under Windows' Git-Bash pipe can write CRLF-terminated
+    # lines: line 1 then arrives as "OK" plus a trailing CR, misses the
+    # `OK)` arm below, falls to `*)`, and fails the release-identity gate
+    # closed even though the pinned binary itself is correct (draft PR #5,
+    # CI run 34776142545, job `build (x64-windows-static-md)`). Strip it
+    # once, here, before line_num is incremented or the line is matched
+    # against anything, so every consumer downstream (the first-line case,
+    # MD_PIN_VERSION, every MD_PIN_CANDIDATES entry) is CR-free from a
+    # single seam. Note: install_pinned_ffmpeg.sh's own reader survived the
+    # same runner in the same job, so this is written as tolerance rather
+    # than as a confirmed single root cause -- see this task's
+    # design_decisions.
+    line="${line%$'\r'}"
     line_num=$((line_num + 1))
     if [ "$line_num" -eq 1 ]; then
       case "$line" in
@@ -176,7 +220,14 @@ PYEOF
           return 0
           ;;
         *)
-          MD_PIN_ERROR="unexpected output from the pin reader while reading ${pin_file}"
+          # Name the offending line so a red Windows leg is diagnosable
+          # from the log alone: an empty first line, a CR-terminated one
+          # and any third shape used to print the identical sentence here.
+          # Rendered through a printable-only filter and truncated so a
+          # control byte or ANSI sequence in the reader's own output can
+          # never reach a CI terminal unescaped or flood the log.
+          line_rendered=$(printf '%s' "$line" | sed 's/[^[:print:]]/?/g' | cut -c1-120)
+          MD_PIN_ERROR="unexpected output from the pin reader while reading ${pin_file} -- first line was '${line_rendered}' (non-printable bytes rendered as '?', truncated at 120 characters)"
           return 0
           ;;
       esac
@@ -191,10 +242,6 @@ ${line}"
       fi
     fi
   done <<< "$pin_output"
-
-  if [ "$line_num" -eq 0 ]; then
-    MD_PIN_ERROR="python3 produced no output while reading ${pin_file}"
-  fi
 
   return 0
 }
