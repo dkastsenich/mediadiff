@@ -384,6 +384,30 @@ bool could_carry_frame_level_hdr(const std::string& codec_name);
 // to reach this case" precedent above.
 std::optional<std::int64_t> quantize_chromaticity(std::int64_t num, std::int64_t den);
 
+// video.hdr.dovi's own T-4-53 mitigation (04-12-PLAN.md): the Dolby Vision
+// configuration record's own minimum byte count -- 9 bytes
+// (dv_version_major, dv_version_minor, dv_profile, dv_level,
+// rpu_present_flag, el_present_flag, bl_present_flag,
+// dv_bl_signal_compatibility_id, dv_md_compression, each a uint8_t, no
+// padding), confirmed against the linked FFmpeg 8.1's own
+// libavutil/dovi_meta.h AVDOVIDecoderConfigurationRecord layout. Hand-
+// duplicated here rather than a shared `sizeof()` because src/analyzers/
+// never includes a libav header directly (this file's own top-of-file
+// convention) -- mirrors kPictureTypeI's identical "duplicated, cited
+// libav fact" precedent above. src/probe/demux_session.cpp's own guard
+// uses the real `sizeof(AVDOVIDecoderConfigurationRecord)` directly (it DOES
+// include the libav header); this constant and dovi_payload_too_short exist
+// so tests/unit/test_video_hdr.cpp's own Test 5 can drive the exact
+// boundary directly -- no crafted short-`dvcC` fixture exists in this
+// phase's corpus (04-05's own writer always emits the padded 24-byte box,
+// and mov.c's own reader always allocates the fixed-size struct regardless
+// of the box's own leniency), the same "not reachable through a real
+// fixture" situation mdcv_short_payload's sibling boundary is in
+// (04-11-SUMMARY.md's own identical precedent).
+inline constexpr std::int64_t kDoviConfigRecordSize = 9;
+
+bool dovi_payload_too_short(std::int64_t reported_size);
+
 }  // namespace detail
 
 }  // namespace mediadiff

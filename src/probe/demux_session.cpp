@@ -24,6 +24,10 @@ extern "C" {
 // libavcodec/codec_par.h's own #include "packet.h" above.
 #include <libavutil/mastering_display_metadata.h>
 #include <libavutil/pixdesc.h>
+// 04-12-PLAN.md (VIDEO-09's third HDR family): AVDOVIDecoderConfigurationRecord's
+// own struct layout -- AV_PKT_DATA_DOVI_CONF itself is declared in
+// libavcodec/packet.h, already transitively included above.
+#include <libavutil/dovi_meta.h>
 }
 
 #include <cerrno>
@@ -449,6 +453,29 @@ StreamInfo DemuxSession::stream_info(int index) const {
       info.cll_present = true;
       info.cll_max_cll = static_cast<std::int64_t>(cll->MaxCLL);
       info.cll_max_fall = static_cast<std::int64_t>(cll->MaxFALL);
+    }
+  }
+
+  // 04-12-PLAN.md (VIDEO-09's third HDR family): the Dolby Vision
+  // configuration record, same per-field boundary and short-payload
+  // discipline (T-4-53, mirroring T-4-48) as mdcv/cll above.
+  const AVPacketSideData* dovi_side_data =
+      av_packet_side_data_get(codecpar->coded_side_data, codecpar->nb_coded_side_data, AV_PKT_DATA_DOVI_CONF);
+  if (dovi_side_data != nullptr) {
+    if (dovi_side_data->size < sizeof(AVDOVIDecoderConfigurationRecord)) {
+      info.dovi_short_payload = true;
+    } else {
+      const auto* dovi = reinterpret_cast<const AVDOVIDecoderConfigurationRecord*>(dovi_side_data->data);
+      info.dovi_present = true;
+      info.dovi_version_major = static_cast<std::int64_t>(dovi->dv_version_major);
+      info.dovi_version_minor = static_cast<std::int64_t>(dovi->dv_version_minor);
+      info.dovi_profile = static_cast<std::int64_t>(dovi->dv_profile);
+      info.dovi_level = static_cast<std::int64_t>(dovi->dv_level);
+      info.dovi_rpu_present = dovi->rpu_present_flag != 0;
+      info.dovi_el_present = dovi->el_present_flag != 0;
+      info.dovi_bl_present = dovi->bl_present_flag != 0;
+      info.dovi_bl_signal_compatibility_id = static_cast<std::int64_t>(dovi->dv_bl_signal_compatibility_id);
+      info.dovi_md_compression = static_cast<std::int64_t>(dovi->dv_md_compression);
     }
   }
 

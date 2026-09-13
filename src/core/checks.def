@@ -28,6 +28,13 @@
 #                 tests/support/test_checks.def.
 #   aliases       optional array of deprecated-alias id strings that now
 #                 resolve to this check (doc 01 section 2)
+#   flagged_values  array of strings; REQUIRED and non-empty when
+#                 semantic = "state" (04-12-PLAN.md, D-10) -- the closed set
+#                 of compared-value spellings that make the `state`
+#                 comparator report a Finding (baseline OR candidate value
+#                 in this set) rather than pass. REJECTED (a validation
+#                 error) on any other semantic -- `video.hdr.coherence` is
+#                 the first and, as of this phase, only check to declare it.
 #
 # Per-profile exceptions are declared as sub-tables on the check's own
 # `[[check]]` array element — standard TOML array-of-tables-with-subtable
@@ -983,3 +990,32 @@ unit = "percent"
 value_kind = "int64"
 severity = "fail"
 tolerance = "5%"
+
+# 04-12-PLAN.md (VIDEO-09's third HDR family), src/analyzers/video/hdr.cpp --
+# the Dolby Vision configuration record, read from codecpar->coded_side_data
+# (AV_PKT_DATA_DOVI_CONF), reusing the SAME resolve_hdr_source seam
+# mdcv/cll share -- no second, independently-written codec-capability
+# table. `presence`: whether a dvcC/dvvC-derived configuration record is
+# present at all.
+[[check]]
+id = "video.hdr.dovi"
+group = "video"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# Split from video.hdr.dovi (the presence check above), same rationale as
+# video.hdr.mdcv.luminance/.primaries -- a value comparison is a separate
+# check on the same extraction. `exact` over a canonical
+# profile/level/rpu/el/bl string (docs/checks/video.hdr.dovi.config.md's
+# own Tune section documents the field order). v1 compares the
+# configuration record only; per-frame RPU diffing is explicitly out of
+# scope (04-CONTEXT.md's own Deferred Ideas).
+[[check]]
+id = "video.hdr.dovi.config"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"

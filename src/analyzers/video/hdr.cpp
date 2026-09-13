@@ -49,6 +49,14 @@
 // declared branch rather than reshaping a check whose `source` evidence
 // field has already reached committed snapshots and the --json contract
 // (D-08's own reversibility rating: costly).
+//
+// video.hdr.dovi/video.hdr.dovi.config (04-12-PLAN.md, VIDEO-09's third
+// family): the Dolby Vision configuration record, read from the SAME
+// coded_side_data extraction seam (StreamInfo::dovi_* fields), reusing
+// resolve_hdr_source verbatim -- never a third, independently-written
+// codec-capability decision. v1 compares the configuration record only;
+// per-frame RPU diffing is out of scope (04-CONTEXT.md's own Deferred
+// Ideas), stated here in code rather than only in a planning document.
 namespace mediadiff {
 
 namespace {
@@ -168,6 +176,16 @@ std::optional<std::int64_t> quantize_chromaticity(std::int64_t num, std::int64_t
   const std::int64_t magnitude_result = rounding_numerator / den_twice;
   return negative ? -magnitude_result : magnitude_result;
 }
+
+// video.hdr.dovi's own T-4-53 mitigation (see analyzers.h's own doc comment
+// on kDoviConfigRecordSize for why this duplicates, rather than shares,
+// src/probe/demux_session.cpp's real `sizeof(AVDOVIDecoderConfigurationRecord)`
+// check). Not called anywhere in this file's own production path --
+// src/probe/demux_session.cpp already resolved dovi_short_payload before
+// this file ever sees a StreamInfo -- exposed purely so
+// tests/unit/test_video_hdr.cpp's own Test 5 can drive the exact boundary
+// directly.
+bool dovi_payload_too_short(std::int64_t reported_size) { return reported_size < kDoviConfigRecordSize; }
 
 }  // namespace detail
 
@@ -450,6 +468,112 @@ void emit_cll_avg(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
+// 04-12-PLAN.md (VIDEO-09's third HDR family): video.hdr.dovi's own
+// extraction source -- REUSES resolve_hdr_source verbatim (the SAME shared
+// seam mdcv/cll already share), never a third, independently-written
+// codec-capability decision. "Could this codec, if decoded, ever carry a
+// real Dolby Vision RPU some other way" is the same hevc/av1-only question
+// could_carry_frame_level_hdr already answers -- the configuration record
+// itself is a box-level fact read identically for every codec, but its
+// ABSENCE reuses the identical could/could-not-carry classification the
+// other two HDR families use (this plan's own Test 6 instruction: "not a
+// third copy of it").
+HdrSourceKind resolve_dovi_source(const StreamInfo& info) { return resolve_hdr_source(info.dovi_present, info.codec_name); }
+
+// video.hdr.dovi: the `presence` semantic (doc 01 section 3), IDENTICAL
+// shape to emit_mdcv/emit_cll above -- reusing resolve_dovi_source (the
+// SAME shared resolve_hdr_source seam). Evidence carries every field the
+// configuration record holds (version, profile, level, the three presence
+// flags, the signal-compatibility id and the metadata-compression value)
+// plus the `source` tag, so a user can see the whole record without
+// decoding anything. v1 compares the configuration record only -- no
+// per-frame RPU handling exists anywhere in this file (doc 03 section 4,
+// 04-CONTEXT.md's own Deferred Ideas: "Per-frame Dolby Vision RPU diffing
+// -- v1 is the configuration record only").
+void emit_dovi(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_dovi);
+  measurement.scope = scope;
+
+  const HdrSourceKind source = resolve_dovi_source(info);
+  if (source == HdrSourceKind::stream) {
+    measurement.value = std::string("present");
+    measurement.evidence = nlohmann::ordered_json{
+        {"source", "stream"},
+        {"version_major", info.dovi_version_major},
+        {"version_minor", info.dovi_version_minor},
+        {"profile", info.dovi_profile},
+        {"level", info.dovi_level},
+        {"rpu_present", info.dovi_rpu_present},
+        {"el_present", info.dovi_el_present},
+        {"bl_present", info.dovi_bl_present},
+        {"bl_signal_compatibility_id", info.dovi_bl_signal_compatibility_id},
+        {"md_compression", info.dovi_md_compression},
+        {"short_payload", info.dovi_short_payload},
+    };
+  } else {
+    measurement.value = Absent{};
+    measurement.evidence = nlohmann::ordered_json{
+        {"codec", info.codec_name},
+        {"could_carry_frame_level", source == HdrSourceKind::requires_decode},
+        {"short_payload", info.dovi_short_payload},
+    };
+    if (source == HdrSourceKind::requires_decode) {
+      measurement.skip_reason = SkipReason::requires_decode;
+    }
+  }
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// The canonical profile/level/flags string video.hdr.dovi.config compares
+// `exact` -- a FIXED field order (documented again in
+// docs/checks/video.hdr.dovi.config.md's own Tune section) so the string
+// is readable rather than opaque, mirroring canonical_primaries_string's
+// own precedent for a multi-field canonical value.
+std::string canonical_dovi_config_string(const StreamInfo& info) {
+  return fmt::format("profile={} level={} rpu={} el={} bl={}", info.dovi_profile, info.dovi_level,
+                      info.dovi_rpu_present ? 1 : 0, info.dovi_el_present ? 1 : 0, info.dovi_bl_present ? 1 : 0);
+}
+
+// video.hdr.dovi.config: split from video.hdr.dovi (the presence check
+// above), same rationale as video.hdr.mdcv.luminance/.primaries -- a value
+// comparison is a separate check on the same extraction
+// (src/compare/presence.cpp's own documented rule). `exact` over the
+// canonical profile/level/flags string. "Nothing to measure" (source !=
+// stream, either sub-case) emits the shared requires_decode skip, never
+// Absent{} -- even though this check's OWN semantic is `exact`, not `tol`,
+// the engine's skip_reason short-circuit (src/compare/engine.cpp) applies
+// identically regardless of semantic, so this stays consistent with
+// .luminance/.primaries's own established pattern rather than inventing a
+// second convention for `exact`-semantic value checks.
+void emit_dovi_config(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_dovi_config);
+  measurement.scope = scope;
+
+  const HdrSourceKind source = resolve_dovi_source(info);
+  if (source == HdrSourceKind::stream) {
+    measurement.value = canonical_dovi_config_string(info);
+    measurement.evidence = nlohmann::ordered_json{
+        {"source", "stream"},
+        {"profile", info.dovi_profile},
+        {"level", info.dovi_level},
+        {"rpu_present", info.dovi_rpu_present},
+        {"el_present", info.dovi_el_present},
+        {"bl_present", info.dovi_bl_present},
+    };
+  } else {
+    measurement.value = Absent{};
+    measurement.skip_reason = SkipReason::requires_decode;
+    measurement.evidence = nlohmann::ordered_json{
+        {"codec", info.codec_name},
+        {"could_carry_frame_level", source == HdrSourceKind::requires_decode},
+        {"dovi_present", source == HdrSourceKind::stream},
+    };
+  }
+  fp.measurements.push_back(std::move(measurement));
+}
+
 // video_hdr_analyzer's run(): every video-scoped stream gets all six HDR
 // checks unconditionally -- codecpar alone, no scan dependency of any kind
 // (matches video_color_analyzer()'s own Pass::demux_header-only shape).
@@ -481,6 +605,8 @@ void run_video_hdr(const ProbeResults& results, Fingerprint& fp) {
     emit_cll(info, scope, fp);
     emit_cll_max(info, scope, fp);
     emit_cll_avg(info, scope, fp);
+    emit_dovi(info, scope, fp);
+    emit_dovi_config(info, scope, fp);
   }
 }
 

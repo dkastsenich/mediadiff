@@ -53,6 +53,8 @@ using mediadiff::Scope;
 using mediadiff::SkipReason;
 using mediadiff::Status;
 using mediadiff::detail::could_carry_frame_level_hdr;
+using mediadiff::detail::dovi_payload_too_short;
+using mediadiff::detail::kDoviConfigRecordSize;
 using mediadiff::detail::quantize_chromaticity;
 
 namespace {
@@ -306,4 +308,132 @@ TEST_CASE("video_hdr - comparing video_hdr_a.mp4 against video_hdr_none.mp4 repo
 
   REQUIRE(find_finding(*findings, "video.hdr.mdcv")->status != Status::pass);
   REQUIRE(find_finding(*findings, "video.hdr.cll")->status != Status::pass);
+}
+
+// ===========================================================================
+// 04-12-PLAN.md Task 1 (VIDEO-09's third HDR family): video.hdr.dovi /
+// video.hdr.dovi.config -- exercised against real fixtures hand-constructed
+// by 04-05-PLAN.md's tools/gen_video_fixtures.py. Every expected value
+// below is asserted against 04-05-SUMMARY.md's own read-back-verified
+// table (profile 8/level 6/rpu=1/el=0/bl=1/compat_id=4 for video_dovi_a.mp4,
+// profile 5/level 4 for video_dovi_b.mp4), never against the analyzer's own
+// output.
+// ===========================================================================
+
+// --- Task 1 Test 1: video_dovi_a.mp4 carries the full configuration record.
+
+TEST_CASE("video_hdr - video_dovi_a.mp4 emits video.hdr.dovi present with the read-back-verified fields",
+          "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_dovi_a.mp4"));
+
+  const Measurement* dovi = find(fp, CheckId::video_hdr_dovi);
+  REQUIRE(dovi != nullptr);
+  REQUIRE(dovi->skip_reason == SkipReason::none);
+  REQUIRE(std::get<std::string>(dovi->value) == "present");
+  REQUIRE(dovi->evidence.at("source").get<std::string>() == "stream");
+  REQUIRE(dovi->evidence.at("profile").get<std::int64_t>() == 8);
+  REQUIRE(dovi->evidence.at("level").get<std::int64_t>() == 6);
+  REQUIRE(dovi->evidence.at("rpu_present").get<bool>());
+  REQUIRE_FALSE(dovi->evidence.at("el_present").get<bool>());
+  REQUIRE(dovi->evidence.at("bl_present").get<bool>());
+  REQUIRE(dovi->evidence.at("bl_signal_compatibility_id").get<std::int64_t>() == 4);
+  REQUIRE(dovi->evidence.at("md_compression").get<std::int64_t>() == 0);
+  REQUIRE(dovi->evidence.at("version_major").get<std::int64_t>() == 1);
+  REQUIRE(dovi->evidence.at("version_minor").get<std::int64_t>() == 0);
+}
+
+// --- Task 1 Test 2: comparing against a carrier with no dvcC box at all
+// reports a real, non-pass video.hdr.dovi.
+
+TEST_CASE("video_hdr - comparing video_dovi_a.mp4 against video_base.mp4 (no dvcC) reports non-pass video.hdr.dovi",
+          "[unit]") {
+  const Policy policy{ProfileId::sw_encoder};
+  auto findings = compare_fingerprints(hdr_fingerprint(fixture("video_dovi_a.mp4")),
+                                        hdr_fingerprint(fixture("video_base.mp4")), policy, builtin_registry());
+  REQUIRE(findings.has_value());
+  REQUIRE(find_finding(*findings, "video.hdr.dovi")->status != Status::pass);
+}
+
+// --- Task 1 Test 3: video.hdr.dovi.config's canonical string, and its own
+// trigger/clean comparisons.
+
+TEST_CASE("video_hdr - video_dovi_a.mp4's video.hdr.dovi.config canonical string matches the fixed field order",
+          "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_dovi_a.mp4"));
+  const Measurement* config = find(fp, CheckId::video_hdr_dovi_config);
+  REQUIRE(config != nullptr);
+  REQUIRE(config->skip_reason == SkipReason::none);
+  REQUIRE(std::get<std::string>(config->value) == "profile=8 level=6 rpu=1 el=0 bl=1");
+}
+
+TEST_CASE("video_hdr - video_dovi_a.mp4 vs video_dovi_b.mp4 reports non-pass video.hdr.dovi.config; vs "
+          "video_dovi_a_copy.mp4 reports pass",
+          "[unit]") {
+  const Policy policy{ProfileId::sw_encoder};
+
+  auto trigger = compare_fingerprints(hdr_fingerprint(fixture("video_dovi_a.mp4")),
+                                       hdr_fingerprint(fixture("video_dovi_b.mp4")), policy, builtin_registry());
+  REQUIRE(trigger.has_value());
+  REQUIRE(find_finding(*trigger, "video.hdr.dovi.config")->status != Status::pass);
+
+  auto clean = compare_fingerprints(hdr_fingerprint(fixture("video_dovi_a.mp4")),
+                                     hdr_fingerprint(fixture("video_dovi_a_copy.mp4")), policy, builtin_registry());
+  REQUIRE(clean.has_value());
+  REQUIRE(find_finding(*clean, "video.hdr.dovi.config")->status == Status::pass);
+}
+
+// --- Task 1 Test 4: video_dovi_b.mp4's own values, asserted against
+// 04-05-SUMMARY.md's read-back table (profile 5, level 4), independent of
+// video_dovi_a.mp4's values.
+
+TEST_CASE("video_hdr - video_dovi_b.mp4 carries profile=5 level=4, matching 04-05-SUMMARY.md's read-back table",
+          "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_dovi_b.mp4"));
+  const Measurement* dovi = find(fp, CheckId::video_hdr_dovi);
+  REQUIRE(dovi != nullptr);
+  REQUIRE(dovi->evidence.at("profile").get<std::int64_t>() == 5);
+  REQUIRE(dovi->evidence.at("level").get<std::int64_t>() == 4);
+
+  const Measurement* config = find(fp, CheckId::video_hdr_dovi_config);
+  REQUIRE(config != nullptr);
+  REQUIRE(std::get<std::string>(config->value) == "profile=5 level=4 rpu=1 el=0 bl=1");
+}
+
+// --- Task 1 Test 5 (hand-built): the T-4-53 short-payload boundary. No
+// crafted short-dvcC fixture exists in this phase's corpus (04-05's own
+// writer always emits the padded 24-byte box; mov.c's own reader always
+// allocates the fixed-size struct regardless of the box's own leniency) --
+// driven directly against the exposed predicate instead, mirroring
+// quantize_chromaticity's own hand-built-table precedent.
+
+TEST_CASE("video_hdr - dovi_payload_too_short rejects a payload shorter than the configuration record", "[unit]") {
+  REQUIRE(kDoviConfigRecordSize == 9);
+  REQUIRE(dovi_payload_too_short(0));
+  REQUIRE(dovi_payload_too_short(8));
+  REQUIRE_FALSE(dovi_payload_too_short(9));
+  REQUIRE_FALSE(dovi_payload_too_short(24));
+}
+
+// --- Task 1 Test 6: nothing-to-measure reuses the SAME could-carry
+// decision the other two HDR families use -- video_base.mp4 is a plain
+// mpeg4 encode (could_carry_frame_level_hdr("mpeg4") == false, per Test 2
+// above), so its absence is an ORDINARY, permanent Absent, never a skip --
+// not a third, independently-computed classification.
+
+TEST_CASE("video_hdr - video_base.mp4 (mpeg4, no dvcC) is an ordinary absence on video.hdr.dovi, reusing the "
+          "shared could-carry decision",
+          "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_base.mp4"));
+
+  const Measurement* dovi = find(fp, CheckId::video_hdr_dovi);
+  REQUIRE(dovi != nullptr);
+  REQUIRE(dovi->skip_reason == SkipReason::none);
+  REQUIRE(std::holds_alternative<mediadiff::Absent>(dovi->value));
+  REQUIRE_FALSE(dovi->evidence.at("could_carry_frame_level").get<bool>());
+  REQUIRE(dovi->evidence.at("codec").get<std::string>() == "mpeg4");
+
+  const Measurement* config = find(fp, CheckId::video_hdr_dovi_config);
+  REQUIRE(config != nullptr);
+  REQUIRE(config->skip_reason == SkipReason::requires_decode);
+  REQUIRE(std::holds_alternative<mediadiff::Absent>(config->value));
 }

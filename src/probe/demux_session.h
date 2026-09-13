@@ -345,6 +345,37 @@ struct StreamInfo {
   bool cll_short_payload = false;
   std::int64_t cll_max_cll = 0;
   std::int64_t cll_max_fall = 0;
+
+  // 04-12-PLAN.md (VIDEO-09's third HDR family): the Dolby Vision
+  // configuration record, read from codecpar->coded_side_data
+  // (AV_PKT_DATA_DOVI_CONF) -- populated at DEMUX time (libavformat/mov.c's
+  // own generic dvcC/dvvC/dvwC box dispatch, confirmed against
+  // 04-RESEARCH.md Priority Finding 2: `ff_isom_parse_dvcc_dvvc` populates
+  // an `AVDOVIDecoderConfigurationRecord` and attaches it via
+  // `av_packet_side_data_add`, the exact stream-level source VIDEO-09
+  // names), never by a decode pass -- no per-frame RPU data is read
+  // anywhere in this project (v1 = configuration record only,
+  // 04-CONTEXT.md's Deferred Ideas). Resolved HERE, same per-field
+  // boundary as every other codecpar/coded_side_data value above --
+  // src/analyzers/video/hdr.cpp never sees an AVPacketSideData/
+  // AVDOVIDecoderConfigurationRecord pointer, only these plain fields.
+  //
+  // `dovi_present` is false both when the side data entry is absent AND
+  // when it was present but its reported size was smaller than
+  // sizeof(AVDOVIDecoderConfigurationRecord) (T-4-53, mirroring T-4-48's
+  // identical mdcv/cll guard) -- `dovi_short_payload` distinguishes the
+  // second case in evidence.
+  bool dovi_present = false;
+  bool dovi_short_payload = false;
+  std::int64_t dovi_version_major = 0;
+  std::int64_t dovi_version_minor = 0;
+  std::int64_t dovi_profile = 0;
+  std::int64_t dovi_level = 0;
+  bool dovi_rpu_present = false;
+  bool dovi_el_present = false;
+  bool dovi_bl_present = false;
+  std::int64_t dovi_bl_signal_compatibility_id = 0;
+  std::int64_t dovi_md_compression = 0;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE
