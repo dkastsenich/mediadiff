@@ -1164,6 +1164,45 @@ cp "$OUT_DIR/video_noparser.mkv" "$OUT_DIR/video_noparser_copy.mkv"
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_yuv420p_tv.mp4"
 
+# 04-16-PLAN.md Task 1 (gap closure, human decision 3): VIDEO-03's
+# signature pair needs a genuinely distinct second spelling. The obvious
+# candidate -- `-pix_fmt yuv420p -color_range pc` encoded directly with
+# `mjpeg` -- is exactly `video_yuv420p_pc.mp4` above, and the pinned mjpeg
+# encoder (and every other encoder in this build that accepts a `yuvj*`
+# format: `ljpeg`, `amv`) NORMALISES that request back to a `yuvj*` name
+# before muxing. `video_yuvj420p.mp4` and `video_yuv420p_pc.mp4` read back
+# byte-identical (sha256 `f9d92aff10ff030a...`, confirmed in
+# deferred-items.md's 04-08 entry) -- the "two spellings" distinction never
+# reaches the file, which made `integration.video_yuvj` Test 2 vacuous.
+#
+# A stream-COPY remux of the already-generated `video_yuv420p_tv.mp4` is
+# the only way to change the range TAG without letting the encoder
+# re-pick `yuvj420p`: `-c copy` never re-invokes the mjpeg encoder, so the
+# plain `yuv420p` bitstream survives untouched while `-color_range pc`
+# plus `-movflags +write_colr` writes the full-range `nclx` colour box
+# into the container. `-movie_timescale 1000` and
+# `-video_track_timescale 12800` pin both timescales to the values a
+# fresh encode already produces (see `video_yuv420p_tv.mp4` above and
+# `mp4_ts_a.mp4`'s own `-video_track_timescale 12800` precedent) --
+# empirically confirmed: an UNPINNED remux rewrites the mvhd timescale
+# from 1000 to 12800 and the video trak's own mdhd timescale from 12800
+# to (ffmpeg's post-remux default), each of which independently fires a
+# `warn` on `container.mp4.timescale`/`container.mp4.edit_list` against
+# the baseline -- two unrelated findings that would destroy this pair's
+# zero-count assertion. Pinning both eliminates them.
+#
+# Read back (pinned binary): `mjpeg (Baseline) (mp4v / 0x7634706D),
+# yuv420p(pc, bt470bg/unknown/unknown, progressive), 320x240 [SAR 1:1 DAR
+# 4:3]` -- codec, resolution, SAR and DAR identical to
+# `video_yuvj420p.mp4`; pixel format spelled `yuv420p`, not `yuvj420p`;
+# range `pc`. sha256 differs from `video_yuvj420p.mp4`'s, and two
+# back-to-back runs of this exact recipe produce the identical sha256.
+"$FFMPEG_BIN" -i "$OUT_DIR/video_yuv420p_tv.mp4" \
+  -c copy -color_range pc -movflags +write_colr \
+  -movie_timescale 1000 -video_track_timescale 12800 \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_yuv420p_pc_tagged.mp4"
+
 # Colorimetry (VIDEO-07, VIDEO-08) -- the verified `setparams` + top-level
 # `-color_range` + `-movflags +write_colr` form (Priority Finding 4B),
 # never the top-level `-color_primaries`/`-color_trc` options, which do

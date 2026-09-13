@@ -81,5 +81,6 @@ video_sar_4_3.mp4
 video_sar_conflict.mp4
 video_vfr.mp4
 video_yuv420p_pc.mp4
+video_yuv420p_pc_tagged.mp4
 video_yuv420p_tv.mp4
 video_yuvj420p.mp4
