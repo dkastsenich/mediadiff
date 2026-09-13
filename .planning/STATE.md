@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-17-PLAN.md
-last_updated: "2026-09-13T12:40:08.755Z"
+stopped_at: Completed 04-18-PLAN.md
+last_updated: "2026-09-13T13:04:21.014Z"
 last_activity: 2026-09-13
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 8e56304b3cddbbd498e0ffd927d6ec5dabc5012b
+state_head: 6c1e52f66725d250c57c32135724cd7a91653832
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 67
-  completed_plans: 63
+  completed_plans: 64
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 6 of 21
+Plan: 7 of 21
 Status: Ready to execute
 Last activity: 2026-09-13 — Phase 04 execution started
 
@@ -113,6 +113,7 @@ Progress: [█████████░] 92%
 | Phase 04 P15 | 15min | 3 tasks | 4 files |
 | Phase 04 P16 | 35min | 3 tasks | 6 files |
 | Phase 04-17 P17 | 20min | 2 tasks | 8 files |
+| Phase 04-18 P18 | 55min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -252,6 +253,8 @@ Recent decisions affecting current work:
 - [Phase 04]: video.interlace disagreement now compares field-order CLASS ({TT,TB}/{BB,BT}), not raw AVFieldOrder ordinal — raw ordinal comparison was unconditionally true on every valid interlaced file (04-VERIFICATION.md SC3 gap); class mapping matches Human Decision 3
 - [Phase 04]: Produced VIDEO-03's second yuvj signature spelling via a stream-copy remux (never a fresh encode) because every LGPL-safe encoder that accepts yuvj* formats renormalises a full-range yuv420p request back to yuvj*.
 - [Phase 04]: WR-03 (04-17): measured per file against GCC 13.3.0 -O3 whether -Wmaybe-uninitialized still fires; removed the suppression from four files where it did not, and bracketed it to the exact flagged function (push_skip / emit_gop_refs) in the two files (gop.cpp, stream_params.cpp) where it did. — Avoids assuming a suppression copied across six files is still needed everywhere; scripts/lint_pragma_scope.sh now enforces the balance rule in CI so the unbalanced form cannot be copied forward.
+- [Phase 04]: WR-02 fixed: pass under video.hdr.coherence's state semantic means neither side flagged, not both-agree; registry.h's false 'field appears in no serialized output' claim corrected and pinned by a new list-checks assertion — 04-VERIFICATION.md Human Decision 3 assigned WR-02/registry.h/inspect-test-predicate to gap closure
+- [Phase 04]: test_video_inspect_section.cpp's report-derived has_video_stream() predicate replaced with a corpus-recipe-derived exclusion list (kNoVideoStreamFixtures) — Old predicate read groups.video from the output under test, unable to detect that output going empty; mutation-proven to catch the exact regression it was blind to
 
 ### Pending Todos
 
@@ -285,6 +288,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-13T12:40:08.615Z
-Stopped at: Completed 04-17-PLAN.md
+Last session: 2026-09-13T13:04:20.855Z
+Stopped at: Completed 04-18-PLAN.md
 Resume file: None
