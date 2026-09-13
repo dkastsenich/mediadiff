@@ -56,3 +56,6 @@ video.hdr.mdcv.primaries  severity=fail  tolerance=<none>
 video.hdr.cll  severity=fail  tolerance=<none>
 video.hdr.cll.max  severity=fail  tolerance=5/1 %
 video.hdr.cll.avg  severity=fail  tolerance=5/1 %
+video.hdr.dovi  severity=fail  tolerance=<none>
+video.hdr.dovi.config  severity=fail  tolerance=<none>
+video.hdr.coherence  severity=info  tolerance=<none>

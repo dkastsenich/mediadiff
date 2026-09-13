@@ -25,7 +25,9 @@
 // total to fifty-one. 04-10-PLAN.md registers video.interlace, bringing
 // the total to fifty-two. 04-11-PLAN.md registers video.hdr.mdcv/.
 // luminance/.primaries and video.hdr.cll/.max/.avg, bringing the total to
-// fifty-eight. This file is where a gap becomes visible.
+// fifty-eight. 04-12-PLAN.md registers video.hdr.dovi, video.hdr.dovi.config
+// and video.hdr.coherence, bringing the total to sixty-one. This file is
+// where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -349,6 +351,27 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"video.hdr.cll.avg",
        {fixture("video_hdr_a.mp4"), fixture("video_hdr_cll_b.mp4"), fixture("video_hdr_a.mp4"),
         fixture("video_hdr_a_copy.mp4")}},
+
+      // --- video.hdr.dovi/video.hdr.dovi.config/video.hdr.coherence
+      // (04-12-PLAN.md, VIDEO-09's third family / VIDEO-10, D-10) ---
+      {"video.hdr.dovi",
+       {fixture("video_dovi_a.mp4"), fixture("video_base.mp4"), fixture("video_dovi_a.mp4"),
+        fixture("video_dovi_a_copy.mp4")}},
+      {"video.hdr.dovi.config",
+       {fixture("video_dovi_a.mp4"), fixture("video_dovi_b.mp4"), fixture("video_dovi_a.mp4"),
+        fixture("video_dovi_a_copy.mp4")}},
+      // video.hdr.coherence's trigger is a DIFFERENCE in coherence state
+      // between two files (video_hdr_coherent.mp4's "coherent" vs
+      // video_hdr_pq_nomdcv.mp4's "pq_without_mdcv") -- which is what
+      // `compare` compares. The both-sides-share-it behaviour VIDEO-10
+      // also requires (Decision 1: a SHARED incoherence still fires) is
+      // covered by Test 5 in tests/unit/test_video_hdr.cpp rather than by
+      // this gate -- the two requirements are different and neither
+      // substitutes for the other. This check is `info` severity and
+      // never gates the exit code in any profile.
+      {"video.hdr.coherence",
+       {fixture("video_hdr_coherent.mp4"), fixture("video_hdr_pq_nomdcv.mp4"), fixture("video_hdr_coherent.mp4"),
+        fixture("video_hdr_coherent_copy.mp4")}},
   };
   return pairs;
 }

@@ -155,6 +155,7 @@ add_library(libmediadiff STATIC
   src/compare/hash.cpp
   src/compare/dist.cpp
   src/compare/span.cpp
+  src/compare/state.cpp
   src/report/model.cpp
   src/report/json.cpp
   src/report/markdown.cpp

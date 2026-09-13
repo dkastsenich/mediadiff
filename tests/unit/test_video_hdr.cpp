@@ -437,3 +437,136 @@ TEST_CASE("video_hdr - video_base.mp4 (mpeg4, no dvcC) is an ordinary absence on
   REQUIRE(config->skip_reason == SkipReason::requires_decode);
   REQUIRE(std::holds_alternative<mediadiff::Absent>(config->value));
 }
+
+// ===========================================================================
+// 04-12-PLAN.md Task 3 (VIDEO-10, D-10): video.hdr.coherence -- the closed,
+// human-approved four-value vocabulary (04-CHECK-ROSTER.md's resolved
+// checkpoint), registered under the `state` semantic. Values asserted
+// against real fixtures whose transfer/MDCV/CLL shape was read-back-
+// verified in 04-04-SUMMARY.md and (for the HLG fixture) this plan's own
+// dispatch and read-back above.
+// ===========================================================================
+
+// --- Task 3 Test 1: a coherent PQ+MDCV fixture.
+
+TEST_CASE("video_hdr - video_hdr_coherent.mp4 reports video.hdr.coherence as coherent", "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_hdr_coherent.mp4"));
+  const Measurement* coherence = find(fp, CheckId::video_hdr_coherence);
+  REQUIRE(coherence != nullptr);
+  REQUIRE(coherence->skip_reason == SkipReason::none);
+  REQUIRE(std::get<std::string>(coherence->value) == "coherent");
+}
+
+// --- Task 3 Test 2: SDR transfer with MDCV/CLL present.
+
+TEST_CASE("video_hdr - video_hdr_sdr_mdcv.mp4 reports video.hdr.coherence as hdr_meta_sdr_transfer", "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_hdr_sdr_mdcv.mp4"));
+  const Measurement* coherence = find(fp, CheckId::video_hdr_coherence);
+  REQUIRE(coherence != nullptr);
+  REQUIRE(std::get<std::string>(coherence->value) == "hdr_meta_sdr_transfer");
+}
+
+// --- Task 3 Test 3: PQ transfer with no MDCV.
+
+TEST_CASE("video_hdr - video_hdr_pq_nomdcv.mp4 reports video.hdr.coherence as pq_without_mdcv", "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_hdr_pq_nomdcv.mp4"));
+  const Measurement* coherence = find(fp, CheckId::video_hdr_coherence);
+  REQUIRE(coherence != nullptr);
+  REQUIRE(std::get<std::string>(coherence->value) == "pq_without_mdcv");
+}
+
+// --- Task 3 Test 4: an unspecified transfer reports indeterminate, never
+// coherent by default (video_color_unspec.mp4, 04-08-PLAN.md's own
+// colorimetry fixture -- mpeg4 with codecpar->color_trc left unspecified,
+// no MDCV/CLL boxes at all).
+
+TEST_CASE("video_hdr - video_color_unspec.mp4 (unspecified transfer) reports video.hdr.coherence as indeterminate",
+          "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_color_unspec.mp4"));
+  const Measurement* coherence = find(fp, CheckId::video_hdr_coherence);
+  REQUIRE(coherence != nullptr);
+  REQUIRE(std::get<std::string>(coherence->value) == "indeterminate");
+}
+
+// --- Task 3 Test (Decision 2): HLG with no mastering-display metadata is
+// coherent, never pq_without_mdcv -- the human-approved correction to the
+// plan's own original (rejected) vocabulary.
+
+TEST_CASE("video_hdr - video_hdr_hlg_nomdcv.mp4 (HLG, no MDCV) reports video.hdr.coherence as coherent (Decision 2)",
+          "[unit]") {
+  const Fingerprint fp = hdr_fingerprint(fixture("video_hdr_hlg_nomdcv.mp4"));
+  const Measurement* coherence = find(fp, CheckId::video_hdr_coherence);
+  REQUIRE(coherence != nullptr);
+  REQUIRE(std::get<std::string>(coherence->value) == "coherent");
+  REQUIRE(coherence->evidence.at("transfer").get<std::string>() == "arib-std-b67");
+  REQUIRE_FALSE(coherence->evidence.at("mdcv_present").get<bool>());
+}
+
+// --- Task 3 Test 5 (VIDEO-10-E1, Decision 1's own load-bearing property):
+// comparing the SDR+MDCV incoherence fixture against its own byte-identical
+// copy reports video.hdr.coherence at `pass` status is WRONG per Decision
+// 1 -- it must instead fire at `info`, with the incoherent value visible on
+// BOTH sides, and the exit code must stay clean.
+
+TEST_CASE("video_hdr - video_hdr_sdr_mdcv.mp4 vs its byte-identical copy: video.hdr.coherence fires at info with "
+          "both sides showing the shared incoherence (VIDEO-10-E1, Decision 1)",
+          "[unit]") {
+  const Policy policy{ProfileId::sw_encoder};
+  auto findings = compare_fingerprints(hdr_fingerprint(fixture("video_hdr_sdr_mdcv.mp4")),
+                                        hdr_fingerprint(fixture("video_hdr_sdr_mdcv_copy.mp4")), policy,
+                                        builtin_registry());
+  REQUIRE(findings.has_value());
+
+  const Finding* coherence = find_finding(*findings, "video.hdr.coherence");
+  REQUIRE(coherence != nullptr);
+  REQUIRE(coherence->status == Status::info);
+  REQUIRE(std::get<std::string>(coherence->baseline) == "hdr_meta_sdr_transfer");
+  REQUIRE(std::get<std::string>(coherence->candidate) == "hdr_meta_sdr_transfer");
+}
+
+// --- Task 3 Test 6: comparing two DIFFERENT coherence states reports a
+// non-pass Finding at `info` severity, and never gates the exit code
+// (asserted at the severity/status level here; the CLI-level exit-code
+// assertion lives in the plan's own acceptance criteria / doc03 pairing).
+
+TEST_CASE("video_hdr - video_hdr_coherent.mp4 vs video_hdr_pq_nomdcv.mp4 reports non-pass video.hdr.coherence at "
+          "info severity",
+          "[unit]") {
+  const Policy policy{ProfileId::sw_encoder};
+  auto findings = compare_fingerprints(hdr_fingerprint(fixture("video_hdr_coherent.mp4")),
+                                        hdr_fingerprint(fixture("video_hdr_pq_nomdcv.mp4")), policy,
+                                        builtin_registry());
+  REQUIRE(findings.has_value());
+
+  const Finding* coherence = find_finding(*findings, "video.hdr.coherence");
+  REQUIRE(coherence != nullptr);
+  REQUIRE(coherence->status != Status::pass);
+  REQUIRE(coherence->severity == mediadiff::Severity::info);
+}
+
+// --- Task 3 Test 7 (T-4-54): the coherence guard reads the SAME transfer
+// extraction video.color.transfer reports -- proven by running BOTH the
+// HDR and colour analyzers over the SAME DemuxSession and comparing the
+// two rendered values in one report, rather than by inspecting the code.
+
+TEST_CASE("video_hdr - video.hdr.coherence's transfer evidence agrees with video.color.transfer's own compared "
+          "value, for every coherence fixture",
+          "[unit]") {
+  for (const char* name : {"video_hdr_coherent.mp4", "video_hdr_sdr_mdcv.mp4", "video_hdr_pq_nomdcv.mp4",
+                            "video_hdr_hlg_nomdcv.mp4"}) {
+    DemuxSession session = open_or_fail(fixture(name));
+    ProbeResults results;
+    results.demux = &session;
+
+    Fingerprint fp;
+    mediadiff::video_hdr_analyzer().run(results, fp);
+    mediadiff::video_color_analyzer().run(results, fp);
+
+    const Measurement* coherence = find(fp, CheckId::video_hdr_coherence);
+    const Measurement* transfer = find(fp, CheckId::video_color_transfer);
+    REQUIRE(coherence != nullptr);
+    REQUIRE(transfer != nullptr);
+    INFO("fixture: " << name);
+    REQUIRE(coherence->evidence.at("transfer").get<std::string>() == std::get<std::string>(transfer->value));
+  }
+}

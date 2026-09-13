@@ -1019,3 +1019,24 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 04-12-PLAN.md (VIDEO-10, D-10), src/analyzers/video/hdr.cpp -- the
+# incoherence guard: whether the transfer characteristic and the presence
+# of mastering-display/content-light metadata agree. `state` semantic
+# (04-CHECK-ROSTER.md's resolved checkpoint, src/compare/state.cpp): fires
+# whenever EITHER side's value is one of the two flagged (incoherent)
+# values, so two files that SHARE an incoherence still report it rather
+# than comparing away to `pass` under `exact`'s baseline-equality rule
+# (VIDEO-10's own "even when both files share it"). `info` severity, and
+# DELIBERATELY no [check.profile_severity]/[check.profile_tolerance] of any
+# kind, in ANY profile -- this check never gates the exit code, by design,
+# not by omission (mirrors video.color.range's own "the absence of a
+# declared override IS the mechanism" precedent).
+[[check]]
+id = "video.hdr.coherence"
+group = "video"
+semantic = "state"
+unit = "none"
+value_kind = "string"
+severity = "info"
+flagged_values = ["hdr_meta_sdr_transfer", "pq_without_mdcv"]

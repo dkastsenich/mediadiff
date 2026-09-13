@@ -57,6 +57,16 @@
 // codec-capability decision. v1 compares the configuration record only;
 // per-frame RPU diffing is out of scope (04-CONTEXT.md's own Deferred
 // Ideas), stated here in code rather than only in a planning document.
+//
+// video.hdr.coherence (04-12-PLAN.md, VIDEO-10, D-10): reads the transfer
+// characteristic from the SAME codecpar field video.color.transfer reports
+// (StreamInfo::color_transfer_name/_raw) and whether MDCV/CLL metadata is
+// present, classifying into a closed, human-approved four-value vocabulary
+// (04-CHECK-ROSTER.md's resolved checkpoint). Registered as the `state`
+// semantic (src/compare/state.cpp) so a SHARED incoherence between two
+// files still reports its own value rather than comparing away to `pass`
+// under `exact`'s baseline-equality rule -- `info` severity, no profile
+// overrides, in every profile: this check never gates the exit code.
 namespace mediadiff {
 
 namespace {
@@ -574,6 +584,130 @@ void emit_dovi_config(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
+// 04-12-PLAN.md (VIDEO-10, D-10): video.hdr.coherence's own closed,
+// four-value vocabulary -- the human-approved semantics recorded in
+// 04-CHECK-ROSTER.md's "video.hdr.coherence value vocabulary (corrected,
+// approved 2026-09-13)" subsection. Total by construction over exactly
+// these four spellings (T-4-55): every branch below returns one of them,
+// with no default arm that could fall through to an unlisted string.
+enum class TransferBucket : std::uint8_t {
+  // codecpar->color_trc resolved to "smpte2084" -- PQ.
+  pq,
+  // codecpar->color_trc resolved to "arib-std-b67" -- HLG.
+  hlg,
+  // codecpar->color_trc is unresolved, "unknown" (AVCOL_TRC_UNSPECIFIED),
+  // or "reserved" (AVCOL_TRC_RESERVED0/AVCOL_TRC_RESERVED) -- no coherence
+  // claim can be made either way (Decision recorded in the roster: HDR
+  // transfers are EXACTLY {PQ, HLG}; every other resolved name is SDR).
+  indeterminate,
+  // Every other resolved transfer name -- a real, specified SDR transfer.
+  sdr,
+};
+
+TransferBucket bucket_transfer(const std::optional<std::string>& transfer_name) {
+  if (!transfer_name.has_value()) {
+    // Not practically reachable for a real codecpar (color.cpp's own
+    // comment: every UNSPECIFIED sentinel resolves a real libav name) --
+    // treated as indeterminate rather than guessed at, so the
+    // classification stays total even for a hypothetical unresolved raw
+    // value.
+    return TransferBucket::indeterminate;
+  }
+  if (*transfer_name == "smpte2084") {
+    return TransferBucket::pq;
+  }
+  if (*transfer_name == "arib-std-b67") {
+    return TransferBucket::hlg;
+  }
+  if (*transfer_name == "unknown" || *transfer_name == "reserved") {
+    return TransferBucket::indeterminate;
+  }
+  return TransferBucket::sdr;
+}
+
+// The four approved value spellings, as string literals -- named here so
+// emit_coherence and its evidence-reason builder never risk a spelling
+// drift between the compared VALUE and the human-readable reason.
+constexpr std::string_view kCoherenceCoherent = "coherent";
+constexpr std::string_view kCoherenceHdrMetaSdrTransfer = "hdr_meta_sdr_transfer";
+constexpr std::string_view kCoherencePqWithoutMdcv = "pq_without_mdcv";
+constexpr std::string_view kCoherenceIndeterminate = "indeterminate";
+
+// Classifies (transfer, mdcv_present, cll_present) into exactly one of the
+// four approved values -- Decision 1 (shared incoherence still reports its
+// own value, `exact`'s own baseline-equality semantics under the state
+// semantic is what makes a SHARED incoherence still visible rather than
+// silently passing) and Decision 2 (HLG with no mastering-display metadata
+// is coherent -- HLG is scene-referred and legitimately ships without MDCV
+// under ITU-R BT.2100) are both encoded here, not left to be rediscovered
+// at a call site.
+std::string_view classify_coherence(const std::optional<std::string>& transfer_name, bool mdcv_present, bool cll_present) {
+  switch (bucket_transfer(transfer_name)) {
+    case TransferBucket::indeterminate:
+      return kCoherenceIndeterminate;
+    case TransferBucket::pq:
+      // CLL alone does NOT substitute for MDCV (the corrected vocabulary's
+      // own wording) -- only mdcv_present gates this branch.
+      return mdcv_present ? kCoherenceCoherent : kCoherencePqWithoutMdcv;
+    case TransferBucket::hlg:
+      // Decision 2: HLG is coherent with or without any HDR metadata.
+      return kCoherenceCoherent;
+    case TransferBucket::sdr:
+      return (mdcv_present || cll_present) ? kCoherenceHdrMetaSdrTransfer : kCoherenceCoherent;
+  }
+  // Unreachable for any valid TransferBucket -- see core/registry.h's own
+  // no-default:-arm-plus-trailing-return pattern for why this shape.
+  return kCoherenceIndeterminate;
+}
+
+// A one-sentence, human-readable rendering of why `value` came out as it
+// did -- a user seeing `pq_without_mdcv` should not have to reason about
+// which two fields produced it (this plan's own action text).
+std::string coherence_reason(std::string_view value, const std::optional<std::string>& transfer_name, bool mdcv_present,
+                              bool cll_present) {
+  const std::string transfer = transfer_name.value_or("unknown");
+  if (value == kCoherenceCoherent) {
+    return fmt::format("transfer '{}' and HDR metadata presence (mdcv={}, cll={}) agree", transfer, mdcv_present,
+                        cll_present);
+  }
+  if (value == kCoherenceHdrMetaSdrTransfer) {
+    return fmt::format("mastering-display or content-light metadata is present while the transfer '{}' is SDR",
+                        transfer);
+  }
+  if (value == kCoherencePqWithoutMdcv) {
+    return fmt::format("transfer '{}' is PQ but no mastering-display metadata is present", transfer);
+  }
+  return fmt::format("transfer '{}' is unspecified or reserved -- no coherence claim can be made", transfer);
+}
+
+// video.hdr.coherence (D-10, VIDEO-10): the `state` semantic (04-CHECK-ROSTER
+// .md's resolved checkpoint) -- reads the transfer characteristic from the
+// SAME codecpar field video.color.transfer reports (T-4-54: never a second,
+// possibly-divergent read) and whether mastering-display/content-light
+// metadata is present (this file's own mdcv_present/cll_present fields, the
+// D-08 extraction seam). Classification is TOTAL by construction
+// (classify_coherence's own no-default-arm shape) and unconditional --
+// EVERY video-scoped stream gets a real value, never Absent{} and never a
+// skip: there is no "nothing to measure" case for a check whose whole job
+// is to classify the state a stream is already in. `info` severity, no
+// profile overrides (checks.def's own comment states this explicitly) --
+// this check never gates the exit code, in any profile.
+void emit_coherence(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_coherence);
+  measurement.scope = scope;
+
+  const std::string_view value = classify_coherence(info.color_transfer_name, info.mdcv_present, info.cll_present);
+  measurement.value = std::string(value);
+  measurement.evidence = nlohmann::ordered_json{
+      {"transfer", info.color_transfer_name.value_or(fmt::format("{}", info.color_transfer_raw))},
+      {"mdcv_present", info.mdcv_present},
+      {"cll_present", info.cll_present},
+      {"reason", coherence_reason(value, info.color_transfer_name, info.mdcv_present, info.cll_present)},
+  };
+  fp.measurements.push_back(std::move(measurement));
+}
+
 // video_hdr_analyzer's run(): every video-scoped stream gets all six HDR
 // checks unconditionally -- codecpar alone, no scan dependency of any kind
 // (matches video_color_analyzer()'s own Pass::demux_header-only shape).
@@ -607,6 +741,7 @@ void run_video_hdr(const ProbeResults& results, Fingerprint& fp) {
     emit_cll_avg(info, scope, fp);
     emit_dovi(info, scope, fp);
     emit_dovi_config(info, scope, fp);
+    emit_coherence(info, scope, fp);
   }
 }
 

@@ -19,10 +19,11 @@ using Comparator = mediadiff::expected<Finding, Error> (*)(const CheckDef& check
                                                             const Measurement& candidate, const Policy& policy);
 
 // Looks up the comparator for `semantic`. All seven Semantic enumerators
-// dispatch to a real comparator as of plan 02-04 — one function per .cpp
-// file under src/compare/, matching this declaration's signature exactly
-// so comparator_for (compare/exact.cpp) can return each one as a plain
-// function pointer with no adapter.
+// dispatch to a real comparator as of plan 02-04, joined by an EIGHTH
+// (`state`) added additively by 04-12-PLAN.md (D-10) -- one function per
+// .cpp file under src/compare/, matching this declaration's signature
+// exactly so comparator_for (compare/exact.cpp) can return each one as a
+// plain function pointer with no adapter.
 Comparator comparator_for(Semantic semantic);
 
 // One comparator per doc 01 section 3 semantic. Declared here (rather than
@@ -46,5 +47,14 @@ mediadiff::expected<Finding, Error> compare_dist(const CheckDef& check, const Me
                                                    const Measurement& candidate, const Policy& policy);
 mediadiff::expected<Finding, Error> compare_span(const CheckDef& check, const Measurement& baseline,
                                                    const Measurement& candidate, const Policy& policy);
+
+// The eighth semantic (04-12-PLAN.md, D-10): pass iff NEITHER baseline nor
+// candidate's value is one of `check.flagged_values` -- a Finding at the
+// check's own resolved severity otherwise, so two files that SHARE a
+// flagged value still report it (never invisible the way `exact`'s
+// baseline-equality rule would make it). See compare/state.cpp's own doc
+// comment for the full rationale and the NEVER-reads-evidence invariant.
+mediadiff::expected<Finding, Error> compare_state(const CheckDef& check, const Measurement& baseline,
+                                                    const Measurement& candidate, const Policy& policy);
 
 }  // namespace mediadiff
