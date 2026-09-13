@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# scripts/test_gen_corpus_pin_gate.sh -- seven-case proof that
-# scripts/resolve_pinned_ffmpeg.sh's pinned-first resolution and
-# release-identity gate actually gate, wired into the CI lint job.
+# scripts/test_gen_corpus_pin_gate.sh -- eleven-case proof that
+# scripts/resolve_pinned_ffmpeg.sh's pinned-first resolution, release-
+# identity gate, and pin-reader output handling actually gate, wired into
+# the CI lint job.
 #
 # What would be true if this file did not exist: the pre-existing >= 6.1
 # floor deliberately accepts git-describe snapshot builds (see
@@ -17,7 +18,12 @@
 # resolve_pinned_ffmpeg.sh, Case 4 below exits 0 instead of non-zero, and
 # Case 7's real-gen_corpus.sh run creates
 # tests/fixtures/GENERATOR_MANIFEST.json in its sandbox instead of aborting
-# first. Neither may happen while the gate call is present.
+# first. Neither may happen while the gate call is present. Likewise, with
+# the pin-reader's CR strip (`line=${line%$'\r'}`) removed, Case 8 fails
+# while Case 9 still passes -- the by-hand re-check for a future reader of
+# the CR-tolerance fix specifically (see this task's mandated revert-and-
+# observe-failure demonstration, run against a temp copy of scripts/, never
+# against the tracked file).
 #
 # Two deliberate limits, stated honestly:
 #   - The stubs below are shell scripts, not real ffmpeg binaries, so on
@@ -26,6 +32,9 @@
 #     PE binary and skip it). This test proves the SELECTION logic, not
 #     cross-arch exec behavior.
 #   - This test runs on the ubuntu lint leg only.
+#   - Cases 8-11's stub python3 (make_pin_reader_stub) proves how the
+#     READER handles the line shapes it is handed (CRLF, LF, empty,
+#     garbage), not how python3 itself behaves on any given platform.
 #
 # bash 3.2 only (macOS CI's bash) -- see resolve_pinned_ffmpeg.sh's own
 # header for the reasoning; scripts/lint_bash4_builtins.sh scans this file
@@ -83,6 +92,90 @@ for key, entry in (d.get("builds") or {}).items():
     ffmpeg_path = entry.get("ffmpeg_path", "")
     print(".ffmpeg-pinned/{}/{}".format(key, ffmpeg_path))
 PYEOF
+}
+
+# pin_version <pin-json>
+#
+# One real-python3 invocation echoing <pin-json>'s top-level "version".
+# Like pin_candidates, deliberately re-reads the manifest instead of
+# asking the resolver where it looked -- the test's independence from the
+# code under test is the point.
+pin_version() {
+  local pin_json="$1"
+  python3 - "$pin_json" <<'PYEOF'
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+print(d.get("version", ""))
+PYEOF
+}
+
+# make_pin_reader_stub <case-root> <mode>
+#
+# Writes a 0755 bash script at <case-root>/pybin/python3 that ignores its
+# arguments and its stdin (the real reader invokes it as
+# `python3 - <pin-file>` with the program supplied on a heredoc; this stub
+# never reads that heredoc) and emits, per <mode>:
+#   crlf    -> the reader's expected lines, each CR+LF terminated
+#   lf      -> the same lines, each LF-only terminated
+#   empty   -> nothing at all, exit 0
+#   garbage -> a single line `WAT`
+# For crlf/lf the emitted lines are, in order: `OK`, the value from
+# pin_version, then one line per pin_candidates entry -- both computed
+# here against the REAL python3, before this stub is ever placed on PATH,
+# so the stub only ever echoes precomputed text and never re-reads the
+# manifest itself. Emission goes through a small `emit` helper inside the
+# stub that puts the line terminator in printf's FORMAT string and the
+# payload through %s, so a literal `%` in a candidate path can never be
+# misread as a format directive.
+make_pin_reader_stub() {
+  local case_root="$1"
+  local mode="$2"
+  local stub_path="${case_root}/pybin/python3"
+  mkdir -p "$(dirname "$stub_path")"
+
+  case "$mode" in
+    crlf|lf)
+      local version candidates term_seq
+      version="$(pin_version "$PIN_JSON")"
+      candidates="$(pin_candidates "$PIN_JSON")"
+      if [ "$mode" = "crlf" ]; then
+        term_seq='\r\n'
+      else
+        term_seq='\n'
+      fi
+      {
+        echo '#!/usr/bin/env bash'
+        printf 'TERM_SEQ=%q\n' "$term_seq"
+        echo 'emit() { printf "%s${TERM_SEQ}" "$1"; }'
+        printf 'emit %q\n' "OK"
+        printf 'emit %q\n' "$version"
+        while IFS= read -r c; do
+          [ -z "$c" ] && continue
+          printf 'emit %q\n' "$c"
+        done <<< "$candidates"
+        echo 'exit 0'
+      } > "$stub_path"
+      ;;
+    empty)
+      {
+        echo '#!/usr/bin/env bash'
+        echo 'exit 0'
+      } > "$stub_path"
+      ;;
+    garbage)
+      {
+        echo '#!/usr/bin/env bash'
+        echo 'printf "WAT\n"'
+        echo 'exit 0'
+      } > "$stub_path"
+      ;;
+    *)
+      echo "make_pin_reader_stub: unknown mode '${mode}'" >&2
+      return 1
+      ;;
+  esac
+  chmod 0755 "$stub_path"
 }
 
 # expect <label> <expected: zero|nonzero> <status> <out-file> <err-file>
@@ -290,8 +383,105 @@ else
   echo "PASS: Case 7 (end to end): no tests/fixtures/GENERATOR_MANIFEST.json was created anywhere under the sandbox."
 fi
 
+# --- Case 8: CRLF-terminated pin-reader output is tolerated -----------------
+CASE8="${TEST_ROOT}/case8"
+mkdir -p "$CASE8"
+cp -r "$SCRIPT_DIR" "$CASE8/scripts"
+
+while IFS= read -r candidate; do
+  [ -z "$candidate" ] && continue
+  make_stub "${CASE8}/${candidate}" "$PINNED_TOKEN"
+done < <(pin_candidates "$PIN_JSON")
+
+mkdir -p "${CASE8}/bin"
+make_stub "${CASE8}/bin/ffmpeg" "$NIGHTLY_TOKEN"
+
+make_pin_reader_stub "$CASE8" crlf
+
+env -u MEDIADIFF_FFMPEG -u MEDIADIFF_ALLOW_UNPINNED_FFMPEG \
+  PATH="${CASE8}/pybin:${CASE8}/bin:${PATH}" \
+  bash "${CASE8}/scripts/resolve_pinned_ffmpeg.sh" \
+  > "${CASE8}/out.txt" 2> "${CASE8}/err.txt"
+CASE8_STATUS=$?
+
+expect "Case 8 (CRLF tolerated): exit code" zero "$CASE8_STATUS" "${CASE8}/out.txt" "${CASE8}/err.txt"
+expect_contains "Case 8 (CRLF tolerated): route is pinned" "${CASE8}/out.txt" "FFMPEG_ROUTE=pinned"
+expect_contains "Case 8 (CRLF tolerated): resolved path is under .ffmpeg-pinned/" "${CASE8}/out.txt" ".ffmpeg-pinned/"
+expect_not_contains "Case 8 (CRLF tolerated): stderr does not report pin unreadable" "${CASE8}/err.txt" "pin unreadable"
+expect_not_contains "Case 8 (CRLF tolerated): stderr does not report a release-identity mismatch" "${CASE8}/err.txt" "release-identity mismatch"
+
+# --- Case 9: LF control, same harness as Case 8 ------------------------------
+# This is what distinguishes "Case 8 passes because the reader tolerates CR"
+# from "Case 8 passes because the stub broke something": identical setup,
+# an `lf` reader stub instead of `crlf`, same five assertions. If Case 9
+# ever fails, Case 8 passing proves nothing about CR handling.
+CASE9="${TEST_ROOT}/case9"
+mkdir -p "$CASE9"
+cp -r "$SCRIPT_DIR" "$CASE9/scripts"
+
+while IFS= read -r candidate; do
+  [ -z "$candidate" ] && continue
+  make_stub "${CASE9}/${candidate}" "$PINNED_TOKEN"
+done < <(pin_candidates "$PIN_JSON")
+
+mkdir -p "${CASE9}/bin"
+make_stub "${CASE9}/bin/ffmpeg" "$NIGHTLY_TOKEN"
+
+make_pin_reader_stub "$CASE9" lf
+
+env -u MEDIADIFF_FFMPEG -u MEDIADIFF_ALLOW_UNPINNED_FFMPEG \
+  PATH="${CASE9}/pybin:${CASE9}/bin:${PATH}" \
+  bash "${CASE9}/scripts/resolve_pinned_ffmpeg.sh" \
+  > "${CASE9}/out.txt" 2> "${CASE9}/err.txt"
+CASE9_STATUS=$?
+
+expect "Case 9 (LF control): exit code" zero "$CASE9_STATUS" "${CASE9}/out.txt" "${CASE9}/err.txt"
+expect_contains "Case 9 (LF control): route is pinned" "${CASE9}/out.txt" "FFMPEG_ROUTE=pinned"
+expect_contains "Case 9 (LF control): resolved path is under .ffmpeg-pinned/" "${CASE9}/out.txt" ".ffmpeg-pinned/"
+expect_not_contains "Case 9 (LF control): stderr does not report pin unreadable" "${CASE9}/err.txt" "pin unreadable"
+expect_not_contains "Case 9 (LF control): stderr does not report a release-identity mismatch" "${CASE9}/err.txt" "release-identity mismatch"
+
+# --- Case 10: empty reader output is reported distinctly ---------------------
+CASE10="${TEST_ROOT}/case10"
+mkdir -p "$CASE10"
+cp -r "$SCRIPT_DIR" "$CASE10/scripts"
+
+mkdir -p "${CASE10}/bin"
+make_stub "${CASE10}/bin/ffmpeg" "$PINNED_TOKEN"
+
+make_pin_reader_stub "$CASE10" empty
+
+env -u MEDIADIFF_FFMPEG -u MEDIADIFF_ALLOW_UNPINNED_FFMPEG \
+  PATH="${CASE10}/pybin:${CASE10}/bin:${PATH}" \
+  bash "${CASE10}/scripts/resolve_pinned_ffmpeg.sh" \
+  > "${CASE10}/out.txt" 2> "${CASE10}/err.txt"
+CASE10_STATUS=$?
+
+expect "Case 10 (empty reader output): exit code" nonzero "$CASE10_STATUS" "${CASE10}/out.txt" "${CASE10}/err.txt"
+expect_contains "Case 10 (empty reader output): names produced no output" "${CASE10}/err.txt" "produced no output"
+expect_contains "Case 10 (empty reader output): names pin unreadable" "${CASE10}/err.txt" "pin unreadable"
+
+# --- Case 11: an unexpected first line is named -------------------------------
+CASE11="${TEST_ROOT}/case11"
+mkdir -p "$CASE11"
+cp -r "$SCRIPT_DIR" "$CASE11/scripts"
+
+mkdir -p "${CASE11}/bin"
+make_stub "${CASE11}/bin/ffmpeg" "$PINNED_TOKEN"
+
+make_pin_reader_stub "$CASE11" garbage
+
+env -u MEDIADIFF_FFMPEG -u MEDIADIFF_ALLOW_UNPINNED_FFMPEG \
+  PATH="${CASE11}/pybin:${CASE11}/bin:${PATH}" \
+  bash "${CASE11}/scripts/resolve_pinned_ffmpeg.sh" \
+  > "${CASE11}/out.txt" 2> "${CASE11}/err.txt"
+CASE11_STATUS=$?
+
+expect "Case 11 (unexpected first line named): exit code" nonzero "$CASE11_STATUS" "${CASE11}/out.txt" "${CASE11}/err.txt"
+expect_contains "Case 11 (unexpected first line named): names the offending line" "${CASE11}/err.txt" "first line was 'WAT'"
+
 # --- Summary ------------------------------------------------------------------
-echo "test_gen_corpus_pin_gate.sh: ran ${CASE_COUNT} assertion(s) across 7 cases; ${FAIL_COUNT} failure(s)."
+echo "test_gen_corpus_pin_gate.sh: ran ${CASE_COUNT} assertion(s) across 11 cases; ${FAIL_COUNT} failure(s)."
 
 if [ "$FAIL_COUNT" -ne 0 ]; then
   exit 1
