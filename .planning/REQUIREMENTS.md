@@ -110,16 +110,16 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 - [x] **VIDEO-01**: Stream-parameter checks work: `codec`, `profile`, `level`, `resolution`, `sar`/`dar`, `pix_fmt`, `frame_rate.declared`, `frame_rate.measured`, `frame_count`
 - [x] **VIDEO-02**: `video.frame_count` is always counted from the packet/parser scan, never taken from `nb_frames`, so counts are comparable across container types
-- [ ] **VIDEO-03**: The same colorimetric intent spelled two ways — a `yuvj*` pixel format on one side, the plain pixel format plus an explicit full-range flag on the other — produces **zero** findings, because pix_fmt range-folding runs before comparison and both sides resolve to the same state; a genuine colour-range flip produces exactly **one** finding, on `video.color.range`, and does not also fire `video.pix_fmt`. (Corrected 2026-09-13 at Phase 4 verification — the original wording asserted one finding for the zero-finding case; evidence is `tests/integration/test_video_yuvj.cpp`'s "yuvj420p vs yuv420p-limited-range produces EXACTLY ONE non-pass finding" and "yuvj420p vs yuv420p_pc_tagged (the SAME intent, two spellings) produces ZERO non-pass findings" tests.)
+- [x] **VIDEO-03**: The same colorimetric intent spelled two ways — a `yuvj*` pixel format on one side, the plain pixel format plus an explicit full-range flag on the other — produces **zero** findings, because pix_fmt range-folding runs before comparison and both sides resolve to the same state; a genuine colour-range flip produces exactly **one** finding, on `video.color.range`, and does not also fire `video.pix_fmt`. (Corrected 2026-09-13 at Phase 4 verification — the original wording asserted one finding for the zero-finding case; evidence is `tests/integration/test_video_yuvj.cpp`'s "yuvj420p vs yuv420p-limited-range produces EXACTLY ONE non-pass finding" and "yuvj420p vs yuv420p_pc_tagged (the SAME intent, two spellings) produces ZERO non-pass findings" tests.)
 - [x] **VIDEO-04**: Container SAR and bitstream VUI SAR conflicts record both values, compare the effective one, and flag the conflict itself as `info`
-- [ ] **VIDEO-05**: GOP checks work: `gop.length`, `gop.idr_interval` with open/closed classification via NAL types, `gop.refs`, `frame_types` distribution
+- [x] **VIDEO-05**: GOP checks work: `gop.length`, `gop.idr_interval` with open/closed classification via NAL types, `gop.refs`, `frame_types` distribution
 - [x] **VIDEO-06**: `video.interlace` cross-checks declared field order against per-frame parser flags and reports `mixed` with proportions when content is mixed
-- [ ] **VIDEO-07**: Colorimetry checks work: `color.range` (fail in every profile, no exceptions), `color.primaries`, `color.transfer`, `color.matrix`, `color.chroma_loc`
-- [ ] **VIDEO-08**: A change **to** `unspecified` is reported as a regression (metadata loss), not treated as a wildcard match
+- [x] **VIDEO-07**: Colorimetry checks work: `color.range` (fail in every profile, no exceptions), `color.primaries`, `color.transfer`, `color.matrix`, `color.chroma_loc`
+- [x] **VIDEO-08**: A change **to** `unspecified` is reported as a regression (metadata loss), not treated as a wildcard match
 - [ ] **VIDEO-09**: HDR checks work: `hdr.mdcv`, `hdr.cll`, `hdr.dovi`, with extraction from the stream-level `coded_side_data` source recorded in Phase 4; the first-frame side-data source is deferred to Phase 7 with the decode pass (Human Decision 1, 2026-09-13), mirroring VIDEO-11's placement
 - [x] **VIDEO-10**: MDCV/CLL internal incoherence (HDR metadata with an SDR transfer, or PQ without MDCV) raises a non-gating `info` note even when both files share it
 - [ ] **VIDEO-11**: `video.closed_captions` detects A53/CEA-708 presence during the decode pass and reports `skipped:requires_decode` under `--no-content`
-- [ ] **VIDEO-12**: A codec with no available parser degrades to `skipped:no_parser` for GOP checks and falls back to keyframe-flag granularity for frame types
+- [x] **VIDEO-12**: A codec with no available parser degrades to `skipped:no_parser` for GOP checks and falls back to keyframe-flag granularity for frame types
 
 ### Timeline Checks
 
@@ -321,16 +321,16 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONT-09 | Phase 3 | Complete |
 | VIDEO-01 | Phase 4 | Complete |
 | VIDEO-02 | Phase 4 | Complete |
-| VIDEO-03 | Phase 4 | Gaps Found |
+| VIDEO-03 | Phase 4 | Complete |
 | VIDEO-04 | Phase 4 | Complete |
-| VIDEO-05 | Phase 4 | Gaps Found |
+| VIDEO-05 | Phase 4 | Complete |
 | VIDEO-06 | Phase 4 | Complete |
-| VIDEO-07 | Phase 4 | Gaps Found |
-| VIDEO-08 | Phase 4 | Gaps Found |
+| VIDEO-07 | Phase 4 | Complete |
+| VIDEO-08 | Phase 4 | Complete |
 | VIDEO-09 | Phase 4 | Deferred |
 | VIDEO-10 | Phase 4 | Complete |
 | VIDEO-11 | Phase 7 | Pending |
-| VIDEO-12 | Phase 4 | Gaps Found |
+| VIDEO-12 | Phase 4 | Complete |
 | TIME-01 | Phase 5 | Pending |
 | TIME-02 | Phase 5 | Pending |
 | TIME-03 | Phase 5 | Pending |

@@ -1,223 +1,109 @@
 ---
 phase: 04-video-analysis
-verified: 2026-09-13T08:14:39Z
-status: gaps_found
-score: 3/5 roadmap success criteria fully verified (1 deferred to Phase 5, 1 failed/partial)
+verified: 2026-09-14T00:00:00Z
+status: passed
+score: 5/5 roadmap success criteria verified; 14/14 requirement IDs accounted for (12 Complete, 2 correctly Deferred)
 behavior_unverified: 0
 overrides_applied: 0
-gaps:
-  - truth: "SC4 — HDR10/Dolby Vision extraction source (stream-level vs first-frame) is recorded"
-    status: partial
-    reason: >
-      Only the stream-level `coded_side_data` extraction arm is implemented. The first-frame
-      side-data arm (VIDEO-09's second precedence source) is a named seam only
-      (`HdrSourceKind::requires_decode`, src/analyzers/video/hdr.cpp) that always degrades to
-      `skipped:requires_decode` rather than actually extracting from the first frame and
-      recording that source. This is architecturally impossible without Phase 7's decode pass
-      (design decision D-08, 04-CONTEXT.md), the same underlying reason VIDEO-11 was fully
-      reassigned to Phase 7 in ROADMAP.md — but VIDEO-09 itself is still mapped to Phase 4 in
-      REQUIREMENTS.md and marked Pending there, and no Phase 7 success criterion explicitly names
-      HDR first-frame extraction the way ROADMAP.md:382 explicitly names VIDEO-11.
-    artifacts:
-      - path: "src/analyzers/video/hdr.cpp"
-        issue: "resolve_hdr_source's requires_decode branch is a stub for the first-frame arm; only the stream-level arm produces a real extraction"
-    missing:
-      - "DECIDED 2026-09-13 (user): defer the first-frame side-data source to Phase 7. Amend ROADMAP.md and REQUIREMENTS.md so Phase 4's VIDEO-09 scope is the stream-level coded_side_data source and the first-frame source is explicitly Phase 7 scope (with the decode pass, mirroring VIDEO-11's placement note), and set VIDEO-09's traceability Status to Deferred so phase.complete cannot flip it to Complete."
-  - truth: "resolve_sar must never let a non-positive denominator reach video.sar/video.sar.conflict evidence (SC2's SAR-conflict clause, correctness hardening)"
-    status: failed
-    reason: >
-      Code-review finding WR-01, confirmed by direct reading: `detail::resolve_sar`
-      (src/analyzers/video/stream_params.cpp:516-519) only special-cases raw_num == 0; a
-      raw_num != 0 with raw_den <= 0 (a malformed pasp box or corrupt VUI) passes straight
-      through with unset=false, violating the EffectiveSar contract documented in
-      analyzers.h:159-172 ("num/den are always a valid, positive-denominator rational"). Not
-      currently reachable by any fixture in the committed corpus, so no active false
-      positive/negative exists today, but it is a real, unguarded correctness gap in shipped code.
-    artifacts:
-      - path: "src/analyzers/video/stream_params.cpp"
-        issue: "resolve_sar (lines 516-519) missing `raw_den <= 0` guard present in every sibling extraction in the same file (compute_dar, quantize_chromaticity, hdr.cpp's luminance checks)"
-    missing:
-      - "DECIDED 2026-09-13 (user): fix in gap closure. Add the raw_den <= 0 guard (04-REVIEW.md WR-01's suggested fix) with a unit test that fails without it."
-  - truth: "The committed tests/golden/CORPUS_DIGEST.txt matches what the designated CI leg (x64-linux) will independently compute"
-    status: failed
-    reason: >
-      Confirmed by the orchestrator this session and independently corroborated here: commit
-      21c7a0f (04-01) replaced all 75 non-trivial fixture hashes in CORPUS_DIGEST.txt with this
-      workstation's own ffmpeg-encode output, and later Phase 4 plans appended more
-      workstation-derived hashes for new fixtures. HEAD's digest matches only this workstation's
-      output. `.github/workflows/ci.yml`'s "Assert the corpus digest matches the committed pin
-      (D-GAP-01)" step runs BEFORE vcpkg bootstrap/build, so pushing this branch is expected to
-      fail CI on the very first gating step, before any test executes. This is a real, unfixed,
-      confirmed regression this phase introduced into shared corpus infrastructure (not scoped to
-      Phase 4's own new fixtures only).
-    artifacts:
-      - path: "tests/golden/CORPUS_DIGEST.txt"
-        issue: "committed hashes are workstation-derived, not designated-CI-leg-derived, for the 75 fixtures 04-01 rewrote plus every fixture Phase 4 added"
-    missing:
-      - "DECIDED 2026-09-13 (user), in this order: (1) the first gap-closure step restores every pre-existing fixture line from main (8caf1f1), which are CI-runner hashes for unchanged recipes; (2) finish all other gap closure, which may add fixtures, and no plan may rewrite an existing CORPUS_DIGEST.txt line (new fixture lines stay provisional); (3) push gsd/phase-04-video-analysis and open a DRAFT PR to main so CI runs, with the orchestrator confirming with the user immediately before the push and again before opening the PR; (4) transcribe the designated leg's scripts/corpus_digest.sh listing from that run, cross-checking its pre-existing lines against main's; (5) push the corrected digest and confirm the designated leg is green, including the five designated-leg goldens."
-  - truth: "video.interlace's disagreement evidence signal is meaningful (SC3's cross-check clause)"
-    status: partial
-    reason: >
-      Confirmed by direct reading: src/analyzers/video/interlace.cpp:206 compares
-      `AVFieldOrder` ordinals across two disjoint domains — the container's `fiel` atom
-      (AV_FIELD_TB/BT) versus every registered parser's own per-frame output
-      (AV_FIELD_TT/BB/PROGRESSIVE/UNKNOWN). A correctly-encoded, non-conflicting interlaced file
-      therefore reports `disagreement: true` unconditionally on the classification::single path,
-      making the field noise rather than signal (the source's own comment calling this "harmless
-      by design" records the defect as intent, but TT vs TB differ in field CODING not field
-      ORDER). This is evidence-only — the compare engine never reads `disagreement`, and the
-      actual COMPARED value (tff/bff/mixed/unknown) is independently confirmed correct — so it
-      does not produce a false positive/negative in `compare`, but it does undercut SC3's
-      "cross-checked" framing at the evidence layer users see under `-v`.
-    artifacts:
-      - path: "src/analyzers/video/interlace.cpp"
-        issue: "line 206 disagreement computation compares raw ordinals from two different AVFieldOrder subsets"
-    missing:
-      - "DECIDED 2026-09-13 (user): fix in gap closure. Compare temporal field order only (TT≡TB, BB≡BT) instead of raw ordinal equality, correct the misleading comment at lines 49-52, and add tests proving a consistent interlaced file reports disagreement=false while a genuinely conflicting one reports true."
-  - truth: "VIDEO-03's own signature test for the 'range flag' spelling half of SC1 is non-vacuous"
-    status: partial
-    reason: >
-      Confirmed by direct reading of tests/integration/test_video_yuvj.cpp: Test 2 ('yuvj420p vs
-      yuv420p-full-range ... produces ZERO non-pass findings') compares two BYTE-IDENTICAL
-      fixtures (video_yuvj420p.mp4 == video_yuv420p_pc.mp4, sha256-confirmed in
-      deferred-items.md), so it passes trivially regardless of whether the fold logic is correct.
-      Test 1 (yuvj420p vs yuv420p-tv) IS load-bearing and does cover a cross-spelling flip (one
-      side pix_fmt-implied, one side an explicit range flag), which is the strongest available
-      evidence for SC1's "whether it was spelled as a yuvj420p pix_fmt or as a range flag"
-      clause — but no fixture pair in the corpus isolates a PURE range-flag flip with neither
-      side using the yuvj alias, because the pinned mjpeg encoder always normalizes
-      `-color_range pc` to a yuvj* name. VIDEO-03's own literal text ("A yuvj420p -> yuv420p +
-      full-range change produces exactly one finding") also contradicts the correct,
-      tested behavior (it should produce ZERO findings, since both sides fold to the same
-      state) — deferred-items.md already records this as a decision owed to a human.
-    artifacts:
-      - path: "tests/integration/test_video_yuvj.cpp"
-        issue: "Test 2 (line 110) is vacuous; its fixture pair is byte-identical"
-    missing:
-      - "DECIDED 2026-09-13 (user): fix in gap closure. Replace Test 2 with a test that can fail (a fixture pair whose two spellings survive distinctly, proven non-vacuous by a mutation check), and correct VIDEO-03's wording to match the fold: the same intent spelled two ways produces zero findings, while a real range flip produces exactly one finding on video.color.range."
-  - truth: "Phase 4's shipped docs, comments and tests are accurate and can fail (04-REVIEW.md findings plus orchestrator findings)"
-    status: partial
-    reason: >
-      04-REVIEW.md WR-02, WR-03, IN-01 and IN-02, plus two items the review missed: the false
-      "semantic appears in no serialized output" comment in src/core/registry.h:25-26, and
-      tests/integration/test_video_inspect_section.cpp deciding "has a video stream" from the same
-      inspect output it checks, so a regression that emptied groups.video for some fixtures would
-      skip them rather than fail. None of these changes a compared value or a check contract.
-    artifacts:
-      - path: "docs/checks/video.hdr.coherence.md"
-        issue: "line 58 says pass means both files are in the SAME state; compare_state passes whenever neither side is flagged (WR-02)"
-      - path: "src/analyzers/video"
-        issue: "-Wmaybe-uninitialized is suppressed for the whole translation unit, without push/pop, in all six new analyzer files (WR-03)"
-      - path: "src/analyzers/video/stream_params.cpp"
-        issue: "render_level_value accepts AV1 seq_level_idx 24-31, which have no defined level (IN-01)"
-      - path: "docs/checks/video.sar.md"
-        issue: "describes the unset rule as 0/1 only; the code treats any zero numerator as unset (IN-02)"
-      - path: "src/core/registry.h"
-        issue: "lines 25-26 claim the semantic name appears in no serialized output; plain list-checks prints semantic=<name>"
-      - path: "tests/integration/test_video_inspect_section.cpp"
-        issue: "has_video_stream() is derived from the output under test"
-    missing:
-      - "DECIDED 2026-09-13 (user): fix all of the above in gap closure. The inspect test must decide which fixtures carry a video stream independently of inspect's own video group."
-deferred:
-  - truth: "SC5 — the parser pass measures at under 10% overhead over a plain packet scan on the 10-minute reference file"
-    addressed_in: "Phase 5"
-    evidence: >
-      REQUIREMENTS.md maps PERF-03 ("The parser pass adds < 10% over plain PacketScan, and full
-      timeline analysis adds < 15%") and PERF-05 ("Performance targets are measured in CI on the
-      reference file with regression tracking over time") to Phase 5, and ROADMAP.md's own
-      cross-cutting placement table states explicitly: "PERF-01, PERF-03, PERF-05 | 5 | The first
-      perf targets land with timeline; the CI perf-tracking harness ships with them rather than
-      at the end." Phase 4's own plan list (ROADMAP.md:278) titles 04-03 "Parser-overhead
-      measurement harness, recorded not gated (D-11/D-12)" — the deferral was planned, not an
-      oversight. Measured result on this workstation: 43-53% overhead on a 180s mpeg4 input
-      (tools/bench/parser_overhead.cpp via scripts/measure_parser_overhead.sh), well above 10%,
-      but the absolute delta is ~1.5ms — recorded per D-11, not gated, and PROBE-03 is correctly
-      left Pending in REQUIREMENTS.md rather than falsely marked Complete.
-    decision: "CONFIRMED 2026-09-13 (user): the under-10% target is owned by PERF-03/PERF-05 in Phase 5. Gap closure amends ROADMAP.md SC5 and REQUIREMENTS.md so PROBE-03's Phase 4 scope is the fused parser pass plus its measurement harness, and sets PROBE-03's traceability Status to Deferred so phase.complete cannot flip it to Complete."
+re_verification:
+  previous_status: gaps_found
+  previous_score: "3/5 success criteria fully verified (2 partial, 1 failed); 5 gaps"
+  gaps_closed:
+    - "VIDEO-09 first-frame HDR extraction source (SC4 partial) — deferred to Phase 7 with dated Human Decision, ROADMAP.md SC4 and REQUIREMENTS.md amended, traceability set to Deferred (not Pending)"
+    - "resolve_sar non-positive-denominator guard (WR-01, failed truth) — guard added at stream_params.cpp:531-540 with 3 new unit tests (zero, negative, property-sweep denominators)"
+    - "CORPUS_DIGEST.txt workstation-derived hashes (failed truth, CI-blocking) — main's 80 designated-leg lines restored verbatim, 57 Phase-4-added lines transcribed from the actual designated x64-linux CI leg (run 34776142545), zero-entry provisional ledger with TRANSCRIBED-FROM-DESIGNATED-LEG marker, executable no-rewrite lint wired into CI, draft PR #5 green on all 3 blocking legs"
+    - "video.interlace disagreement evidence field always-true on valid input (partial truth) — now compares FieldOrderClass (top/bottom-coded-first) instead of raw AVFieldOrder ordinal, both directions (agreement=false, genuine conflict=true) proven on real fixtures"
+    - "VIDEO-03 vacuous signature test + wrong requirement text (partial truth) — Test 2 now compares a stream-copy remux with a genuinely distinct sha256 (not byte-identical), verified red-without-fold via mutation check; REQUIREMENTS.md VIDEO-03 text corrected to the tested zero/one-finding behavior"
+  gaps_remaining: []
+  regressions: []
 human_verification: []
 ---
 
 # Phase 04: Video Analysis Verification Report
 
 **Phase Goal:** Every `video.*` fact — stream parameters, GOP structure, colorimetry and HDR metadata — is measured from a parser pass that costs a fraction of full decode.
-**Verified:** 2026-09-13T08:14:39Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-14
+**Status:** passed
+**Re-verification:** Yes — after gap closure (plans 04-13 through 04-21, superseding the 2026-09-13 gaps_found report)
 
 ## Goal Achievement
 
-### Observable Truths (ROADMAP.md Success Criteria)
+### Observable Truths (ROADMAP.md Success Criteria, as amended by Human Decisions 2026-09-13)
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | A silent color-range flip produces exactly one finding on `video.color.range` (either spelling); primaries/transfer/matrix/chroma_loc compare alongside; a change to `unspecified` is a regression, not a wildcard | ✓ VERIFIED (with a recorded test-quality caveat) | `src/analyzers/video/color.cpp` `fold_pix_fmt_range`/`emit_color_range` route both spellings through the same fold+exact-compare path; `tests/integration/test_video_yuvj.cpp` Test 1 (load-bearing, cross-spelling) confirms exactly one finding; `emit_primaries/transfer/matrix/chroma_loc` use ordinary `exact` string comparison with no wildcard case for `unknown`/`unspecified`, confirmed in `tests/unit/test_video_color.cpp` (bt709 vs unspecified tests). **Caveat:** Test 2 in the same file is vacuous (byte-identical fixtures) — see gaps. |
-| 2 | `mediadiff inspect` renders a complete video section (codec/profile/level/resolution/SAR/DAR/pix_fmt/declared frame rate/frame count from packet scan, never `nb_frames`), with SAR conflict recording both values at `info` | ✓ VERIFIED | `src/analyzers/video/stream_params.cpp:254-270` (`emit_frame_count`) counts from `packet_scan`/`parser_scan`, never `AVStream::nb_frames`; `emit_sar_conflict` (lines 220-241) is its own `info`-severity check recording both container and bitstream values (`04-CHECK-ROSTER.md`'s "SAR-conflict resolution: own check id" decision, implemented verbatim); `04-REVIEW.md` reviewed all six stream-param checks and found no correctness bug. **Caveat:** `tests/integration/test_video_inspect_section.cpp`'s corpus-wide assertion (`fixtures_with_video > 0`) only guards total exclusion, not per-fixture regressions — a coverage-quality note, not a functional gap, since individual field checks are separately unit-tested. |
-| 3 | GOP structure (length, IDR interval + open/closed via NAL types, refs, I/P/B distribution) compares meaningfully; interlace field order cross-checked against per-frame parser flags with `mixed` by proportion; no-parser codec degrades to `skipped:no_parser` | ✓ VERIFIED (with a recorded evidence-field defect) | `src/analyzers/video/gop.cpp:235-345` implements `no_parser` skip paths for GOP checks; `src/analyzers/video/frame_types.cpp:124-145` falls back to keyframe-flag granularity (VIDEO-12); `src/analyzers/video/interlace.cpp` correctly reports the observed (cross-checked) field order as the COMPARED value, with `mixed` reported via exact integer proportions. **Caveat:** the `disagreement` evidence field (interlace.cpp:206) compares `AVFieldOrder` ordinals across two disjoint domains and is unconditionally `true` on any valid interlaced file — evidence-only, never read by the compare engine, but undercuts the cross-check's visibility under `-v` (deferred-items.md, decision owed). |
-| 4 | HDR10/Dolby Vision survive round-trip or report loss; extraction source (stream-level vs first-frame) recorded; internally incoherent HDR raises non-gating `info` even when shared | ✗ PARTIAL / FAILED on the extraction-source clause | `src/analyzers/video/hdr.cpp`'s `classify_coherence`/`compare_state` (`src/compare/state.cpp`) exactly implement the corrected 04-CHECK-ROSTER.md vocabulary, including Decision 1 (shared incoherence still reports `info`) — confirmed directly in code and via `tests/unit/test_video_hdr.cpp` lines 511, 532. **Gap:** the first-frame extraction arm (VIDEO-09's second precedence source) is not implemented — `HdrSourceKind::requires_decode` is a named stub that always yields `skipped:requires_decode`; only the stream-level `coded_side_data` arm produces a real extraction. REQUIREMENTS.md correctly marks VIDEO-09 Pending (not falsely Complete), but no Phase 7 success criterion explicitly claims this the way ROADMAP.md:382 explicitly does for VIDEO-11. |
-| 5 | `video.frame_rate.measured` consumes phase 3's shared interval statistics rather than computing its own; parser pass measures under 10% overhead vs plain packet scan on the 10-minute reference file | ✓ VERIFIED (first clause) / DEFERRED (second clause, see Deferred Items) | `src/probe/cadence.h`/`cadence.cpp`'s `derive_cadence` is a pure function over `StreamPacketScan::packets` — the SAME shared array Phase 3's `PacketScan` builds (PROBE-10) — never a second sweep or a duplicated statistic; this satisfies "shared, not recomputed" even though the concrete form is a pure function over a shared array rather than a precomputed struct (PROBE-10's own explicitly rejected alternative). Overhead: measured 43-53% on a 180s mpeg4 input (`scripts/measure_parser_overhead.sh`), well above 10% and not on the "10-minute reference file" — explicitly recorded-not-gated per D-11/D-12, with the actual gate legitimately owned by Phase 5's PERF-03/PERF-05. |
+| 1 | A silent color-range flip produces exactly one finding on `video.color.range` (either spelling); primaries/transfer/matrix/chroma_loc compare alongside; a change to `unspecified` is a regression, not a wildcard | ✓ VERIFIED | `src/analyzers/video/color.cpp` fold+exact-compare path unchanged and correct (confirmed in prior verification). `tests/integration/test_video_yuvj.cpp` Test 1 (#768, CI-passing) is load-bearing and cross-spelling. **Gap closed:** Test 2 (#769) now uses `video_yuv420p_pc_tagged.mp4` — a stream-copy remux with a genuinely distinct sha256 from `video_yuvj420p.mp4` (confirmed via `scripts/gen_corpus.sh:1204` and `CORPUS_DIGEST.txt:136`), proven non-vacuous by a mutation check (disabling the fold turns it red, per 04-16-SUMMARY.md and the code comment at `test_video_yuvj.cpp:22-33`). REQUIREMENTS.md's VIDEO-03 text corrected to match: zero findings for same-intent, one for a genuine flip. |
+| 2 | `mediadiff inspect` renders a complete video section (codec/profile/level/resolution/SAR/DAR/pix_fmt/declared frame rate/frame count from packet scan, never `nb_frames`), with SAR conflict recording both values at `info` | ✓ VERIFIED | `emit_frame_count`/`emit_sar_conflict` unchanged and correct (confirmed in prior verification, re-confirmed by direct read this session). **Gap closed:** `tests/integration/test_video_inspect_section.cpp`'s coverage predicate no longer derives "has a video stream" from `inspect`'s own `groups.video` output — it now uses a committed, file-local `kNoVideoStreamFixtures` list cross-referenced against `scripts/gen_corpus.sh` recipes (lines 17-60), so a regression that emptied `groups.video` would fail the test instead of silently skipping the fixture. |
+| 3 | GOP structure (length, IDR interval + open/closed via NAL types, refs, I/P/B distribution) compares meaningfully; interlace field order cross-checked against per-frame parser flags with `mixed` by proportion; no-parser codec degrades to `skipped:no_parser` | ✓ VERIFIED | GOP/frame-types no-parser degradation unchanged and correct (confirmed in prior verification). **Gap closed:** `src/analyzers/video/interlace.cpp:269` now computes `disagreement` via `field_order_class(observed) != field_order_class(declared)` (top-coded-first / bottom-coded-first / progressive / unknown classes), not raw `AVFieldOrder` ordinal equality. `tests/unit/test_video_interlace.cpp` proves both directions on real fixtures: `video_ilace_tff.mp4`/`video_ilace_bff.mp4` now report `disagreement: false` (was unconditionally `true`), and hand-built genuine top-vs-bottom conflicts still report `disagreement: true` (lines 286-376). |
+| 4 | HDR10/Dolby Vision survive round-trip or report loss; extraction source recorded as Phase 4's stream-level `coded_side_data` arm — the first-frame arm is explicit Phase 7 scope (Human Decision 1); internally incoherent HDR raises non-gating `info` even when shared | ✓ VERIFIED (scope corrected) | `classify_coherence`/`compare_state` unchanged and correct (confirmed in prior verification; VIDEO-10 was never in question). **Resolved, not just deferred-and-ignored:** ROADMAP.md SC4 (line 380-381) and REQUIREMENTS.md's VIDEO-09 entry (line 119) were both amended to explicitly scope Phase 4 to the stream-level arm only and name Phase 7 as owner of the first-frame arm — mirroring VIDEO-11's existing placement pattern (confirmed: ROADMAP.md's Phase 7 goal text and Cross-cutting placement table both name this explicitly, line ~371 "Phase 7 also completes VIDEO-09's first-frame HDR side-data extraction arm"). REQUIREMENTS.md's VIDEO-09 row reads `Deferred`, not `Pending` — `phase.complete` cannot silently flip an unmet target to Complete. `HdrSourceKind::requires_decode` remains an honest, correctly-labeled stub (`skipped:requires_decode`), which is now the documented Phase 4 contract, not a hidden gap. |
+| 5 | `video.frame_rate.measured` consumes phase 3's shared interval statistics rather than computing its own; the fused parser pass ships a harness measuring overhead against a plain packet scan on the 10-minute reference file, with the under-10% target itself owned by Phase 5's PERF-03/PERF-05 (Human Decision 2) | ✓ VERIFIED (scope corrected) | `derive_cadence` (src/probe/cadence.cpp) remains a pure function over the shared `StreamPacketScan::packets` array (confirmed in prior verification — no second sweep). Overhead harness (`tools/bench/parser_overhead.cpp`, `scripts/measure_parser_overhead.sh`) ships and measures/records the ratio (43-53% on a 180s input, recorded not gated, per D-11/D-12). ROADMAP.md SC5 and REQUIREMENTS.md's PROBE-03 entry were both amended so the under-10% target is explicitly Phase 5's PERF-03/PERF-05, matching the Phase 5 requirements list and cross-cutting table. PROBE-03's REQUIREMENTS.md row reads `Deferred`, not `Pending`. |
 
-**Score:** 3/5 success criteria fully verified without qualification; 2 more (SC1, SC3) verified with a recorded non-blocking defect each; SC4 is genuinely partial (extraction-source clause); SC5's overhead clause is legitimately deferred to Phase 5.
+**Score:** 5/5 success criteria verified. All prior partial/failed items are closed with real code changes and non-vacuous tests; the two genuinely out-of-Phase-4-scope items (VIDEO-09 first-frame arm, PROBE-03's overhead target) are correctly `Deferred` — not silently dropped, not falsely marked Complete — with dated Human Decisions and matching ROADMAP/REQUIREMENTS amendments that a later phase (7 and 5 respectively) explicitly owns.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Status | Evidence |
 |---|---|---|---|
-| PROBE-03 | 04-01, 04-03, 04-05, 04-09 | Pending (deferred to Phase 5 gate) | `ParserScan` fused into `PacketScan` and functioning correctly (confirmed via `video.gop.length` end-to-end and 758/758 passing tests); the "<10% overhead" clause is measured (43-53%) but not gated here by design — see Deferred Items |
-| VIDEO-01 | 04-02, 04-06, 04-07, 04-08, 04-12 | ✓ Complete | Stream-parameter checks (codec/profile/level/resolution/sar/dar/pix_fmt/frame_rate/frame_count) all present, wired, unit-tested |
-| VIDEO-02 | 04-06 | ✓ Complete | `emit_frame_count` counts from packet/parser scan, never `nb_frames` |
-| VIDEO-03 | 04-02, 04-08 | ✓ Complete, with a recorded test defect | Fold logic correct and load-bearing-tested (Test 1/#689/#690/#686); Test 2/#688 is vacuous (see gaps) and VIDEO-03's own text conflicts with the tested/correct behavior — decision owed to a human per deferred-items.md |
-| VIDEO-04 | 04-05, 04-07 | ✓ Complete | `video.sar.conflict` is its own `info` check recording both values (see resolve_sar caveat above, WR-01) |
+| BUILD-05 | Phase 1 (Complete); touched again by 04-17, 04-20, 04-21 | ✓ Complete | Warnings-as-errors preserved; 04-17's diagnostic-suppression push/pop balance lint added to CI (confirmed running and passing in run 34891069554's lint job) |
+| BUILD-08 | Phase 1 (Complete); touched again by 04-13, 04-16, 04-20, 04-21 | ✓ Complete | `lint_corpus_digest_provenance.sh` wired into CI lint job, confirmed passing (clause 3: zero-entry provisional ledger with valid TRANSCRIBED-FROM-DESIGNATED-LEG marker; clause 4: no pre-existing digest line rewritten) |
+| PROBE-03 | 04-01, 04-03, 04-05, 04-09, 04-19 | Deferred (correct, not a gap) | Fused parser pass functioning (758+/758+ passing including `video.gop.length` end-to-end); overhead harness ships and records 43-53% (not gated); ROADMAP.md SC5 + REQUIREMENTS.md text both explicitly hand the <10% target to Phase 5 PERF-03/PERF-05 |
+| VIDEO-01 | 04-02, 04-06, 04-07, 04-08, 04-12, 04-14, 04-18 | ✓ Complete | All stream-parameter checks present, wired, unit-tested; WR-01 (SAR guard) and IN-01 (AV1 level bound) fixed with new tests |
+| VIDEO-02 | 04-06, 04-18 | ✓ Complete | `emit_frame_count` counts from packet/parser scan, never `nb_frames` |
+| VIDEO-03 | 04-02, 04-08, 04-16, 04-19 | ✓ Complete | Fold logic correct and now fully non-vacuously tested (Test 1 + corrected Test 2); requirement text corrected to match tested behavior |
+| VIDEO-04 | 04-05, 04-07, 04-14 | ✓ Complete | `video.sar.conflict` correct; `resolve_sar` now guards `raw_den <= 0` |
 | VIDEO-05 | 04-01, 04-05, 04-09 | ✓ Complete | GOP length/idr_interval/closed/refs/frame_types all registered and tested |
-| VIDEO-06 | 04-10 | ✓ Complete, with a recorded evidence defect | Compared value correct; `disagreement` evidence field always-true bug recorded (deferred-items.md, decision owed) |
-| VIDEO-07 | 04-08 | ✓ Complete | Colorimetry checks (range/primaries/transfer/matrix/chroma_loc) all present; `video.color.range` deliberately carries no profile override (fails in every profile) |
-| VIDEO-08 | 04-02, 04-08 | ✓ Complete | No wildcard special-case for `unknown`/`unspecified` in `exact` comparator; confirmed by `test_video_color.cpp`'s unspecified-direction tests |
-| VIDEO-09 | 04-04, 04-05, 04-11, 04-12 | Pending (genuine gap) | Stream-level extraction real; first-frame arm is a stub (`requires_decode`) per D-08 — see gaps |
-| VIDEO-10 | 04-04, 04-12 | ✓ Complete | `video.hdr.coherence`'s `state` semantic exactly implements the corrected vocabulary and Decision 1 (shared incoherence still reports `info`) |
-| VIDEO-11 | (Phase 7, not Phase 4) | Correctly out of scope | ROADMAP.md:382 and 04-CHECK-ROSTER.md both confirm this is a deliberate, recorded placement decision, not an oversight |
-| VIDEO-12 | 04-09 | ✓ Complete | GOP `no_parser` degradation and keyframe-flag frame-types fallback both confirmed in code |
+| VIDEO-06 | 04-10, 04-15 | ✓ Complete | Compared value correct; `disagreement` evidence field now compares field-order class, both directions proven |
+| VIDEO-07 | 04-08 | ✓ Complete | Colorimetry checks present; `video.color.range` carries no profile override |
+| VIDEO-08 | 04-02, 04-08 | ✓ Complete | No wildcard special-case for `unknown`/`unspecified` |
+| VIDEO-09 | 04-04, 04-05, 04-11, 04-12, 04-19 | Deferred (correct, not a gap) | Stream-level `coded_side_data` extraction real and tested; first-frame arm explicitly and formally reassigned to Phase 7 (ROADMAP + REQUIREMENTS both amended, mirroring VIDEO-11) |
+| VIDEO-10 | 04-04, 04-12, 04-18 | ✓ Complete | `video.hdr.coherence` state semantic correct (Decision 1: shared incoherence still reports `info`); WR-02 doc error and registry.h comment both corrected |
+| VIDEO-11 | Phase 7 (not Phase 4) | Correctly out of scope | Unchanged from prior verification |
+| VIDEO-12 | 04-09 | ✓ Complete | GOP `no_parser` degradation and keyframe-flag frame-types fallback confirmed |
 
-No orphaned requirements: every Phase-4-mapped ID in REQUIREMENTS.md appears in at least one plan's `requirements:` frontmatter field.
+All 14 requirement IDs named for this phase (BUILD-05, BUILD-08, PROBE-03, VIDEO-01 through VIDEO-10, VIDEO-12) are accounted for across the 21 plans' `requirements:` frontmatter — no orphans. PROBE-03 and VIDEO-09 are `Deferred` in REQUIREMENTS.md's status table (not `Pending`, not falsely `Complete`) with dated Human Decisions and ROADMAP.md amendments naming the owning later phase, exactly as VIDEO-11 was already handled.
+
+Note: REQUIREMENTS.md's checkbox list (lines 111-122) and per-item status table (lines 322-333) had not yet been flipped from "Gaps Found" to "Complete" for VIDEO-03/05/07/08/12 at the time of this verification — this reflects the standard workflow (the traceability flip happens via `phase.complete` after this report lands), not an unresolved gap; the code-level evidence for each of those five IDs was independently verified above.
 
 ### Anti-Patterns / Code Review Findings
 
-| File | Line | Pattern | Severity | Impact |
+| File | Line | Pattern | Severity | Status |
 |---|---|---|---|---|
-| `src/analyzers/video/stream_params.cpp` | 516-519 | Missing `raw_den <= 0` guard in `resolve_sar`, inconsistent with every sibling extraction in the same phase | Warning (WR-01, 04-REVIEW.md; confirmed by direct read) | Latent correctness gap — not reachable by any current fixture, but violates `EffectiveSar`'s own documented contract |
-| `docs/checks/video.hdr.coherence.md:57-58` | — | States `pass` means "both files are in the SAME state" — false; `compare_state` never compares baseline==candidate, only "is either side flagged" | Warning (WR-02, 04-REVIEW.md; confirmed against `src/compare/state.cpp:67-91`) | User-facing documentation error, not a code defect |
-| `src/core/registry.h:25-26` | — | Comment claims "the `semantic` field itself appears in no serialized output" — false; plain `mediadiff list-checks` prints `semantic=<name>` (`src/cli/commands/list_checks.cpp:104-106`) | Info (missed by 04-REVIEW.md, confirmed here) | Comment-only inaccuracy; the change itself is additive and not gated by any test on this column |
-| `src/analyzers/video/interlace.cpp:206` | 206 | `disagreement` compares `AVFieldOrder` ordinals across two disjoint domains, unconditionally true on valid interlaced input | Warning (deferred-items.md, decision owed; confirmed by direct read) | Evidence-only field, never read by compare engine; undercuts `-v` signal quality |
-| `tests/integration/test_video_yuvj.cpp:110-119` | — | Test 2 compares byte-identical fixtures, passes vacuously | Warning (deferred-items.md, decision owed; confirmed by direct read) | Test provides no evidence for the "same intent, two spellings" claim it names |
+| `src/analyzers/video/stream_params.cpp` | 516-540 | Missing `raw_den <= 0` guard in `resolve_sar` (WR-01) | Warning | ✓ FIXED — guard added, 3 new unit tests covering zero/negative/property-sweep denominators |
+| `docs/checks/video.hdr.coherence.md` | 57-58 | Misstated what a `state`-semantic `pass` means (WR-02) | Warning | ✓ FIXED — doc now correctly states pass means neither side is flagged, not that both sides match |
+| `src/core/registry.h` | 25-26 | False comment claiming `semantic` appears in no serialized output | Info | ✓ FIXED — comment now correctly states it IS printed by plain `list-checks` |
+| `src/analyzers/video/interlace.cpp` | 206 (now 269) | `disagreement` unconditionally true on valid interlaced input | Warning | ✓ FIXED — compares field-order class, both directions tested |
+| `tests/integration/test_video_yuvj.cpp` | 110-119 | Test 2 compared byte-identical fixtures, vacuous | Warning | ✓ FIXED — new fixture pair with distinct sha256, mutation-verified non-vacuous |
+| `src/analyzers/video/*.cpp` (6 files) | file-scope | `-Wmaybe-uninitialized` suppressed for whole translation unit (WR-03) | Warning | ✓ FIXED — 4 of 6 files had the suppression removed entirely (didn't reproduce on GCC 13.3.0/-O3); the 2 that still need it (`gop.cpp`, `stream_params.cpp`) now use function-scoped `push`/`pop`, enforced by a new CI lint |
+| `src/analyzers/video/stream_params.cpp` | render_level_value | AV1 `seq_level_idx` 24-31 rendered as if spec-defined (IN-01) | Info | ✓ FIXED — bounded to 0-23, tested |
+| `docs/checks/video.sar.md` | unset rule | Described as "0/1 only" vs. code's "any zero numerator" (IN-02) | Info | ✓ FIXED — doc corrected |
+| `tests/integration/test_video_inspect_section.cpp` | has_video_stream | Coverage predicate derived from the output under test | Info | ✓ FIXED — now uses an independent, committed fixture-name list |
 
-No `TBD`/`FIXME`/`XXX` unreferenced debt markers found in the files this phase touched (04-REVIEW.md's 99-file review and this verifier's own spot checks agree).
+No `TBD`/`FIXME`/`XXX` debt markers found in any file touched between `8caf1f1` (pre-Phase-4) and `HEAD` (60 files checked).
 
-### Infrastructure / CI Regression (not a `video.*` logic defect, but blocks shippability)
+### Infrastructure / CI Regression — RESOLVED
 
-`tests/golden/CORPUS_DIGEST.txt` was rewritten during this phase (commit 21c7a0f, 04-01) with this workstation's own ffmpeg-encode hashes for all 75 non-trivial fixtures, plus workstation hashes for every fixture Phase 4 added. `.github/workflows/ci.yml`'s digest-assertion step runs before vcpkg bootstrap/build on the designated x64-linux leg, so pushing this branch is expected to fail CI at the first gate. This is confirmed (not speculative): this workstation's own `scripts/corpus_digest.sh` output matches HEAD's committed digest with 0 differing lines, while the pre-phase (8caf1f1) committed digest — CI-runner-derived — matches only 5 of its 81 lines against this workstation. Fixing this requires an actual designated-leg CI run to transcribe correct hashes; it cannot be resolved locally or by human judgment alone.
+The prior verification's most severe finding — `tests/golden/CORPUS_DIGEST.txt` committed with workstation-derived hashes that would fail CI at the first gate — is confirmed resolved:
+- Every one of main's (`8caf1f1`) 80 pre-existing digest lines is present verbatim at HEAD (`comm -23` diff against main returns zero lines removed/changed).
+- All 57 fixture lines Phase 4 added are now transcribed from an actual designated x64-linux CI run (run 34776142545), not workstation output — confirmed via `CORPUS_DIGEST_PROVISIONAL.txt`'s zero-entry state with a well-formed `TRANSCRIBED-FROM-DESIGNATED-LEG` marker.
+- A new executable lint (`scripts/lint_corpus_digest_provenance.sh`, wired into CI's lint job) guards against future silent rewrites of pre-existing lines.
+- Draft PR #5 (head `b52ca4b`) CI run 34891069554 is green on all 3 blocking legs (lint, x64-linux, x64-windows-static-md) plus the advisory arm64-osx leg; the "Assert the corpus digest matches the committed pin (D-GAP-01)" step passes on the designated x64-linux leg specifically.
+- x64-osx and arm64-linux (both advisory, non-blocking per BUILD-05's ruleset) fail at the identical pre-existing steps (`Build` and `Register vcpkg NuGet feed`, respectively) as main's own most recent CI run (34353206899) — confirmed by direct comparison of both runs' job lists, so this is pre-existing infrastructure flakiness, not a Phase 4 regression.
 
-### Behavioral Evidence (Step 7b/7c, performed this session)
+### Behavioral Evidence (Step 7b/7c)
 
-The full test suite was run once, by the orchestrator, at this exact HEAD (995fc01) this session: `ctest --preset x64-linux --output-on-failure` → 758/758 passed, 6 skipped by design (designated-leg-only goldens). A differential build (pre-phase 8caf1f1 vs HEAD 7a75f31) confirmed all five designated-leg goldens are byte-identical old-vs-new, i.e. Phase 4's code changes did not alter their outputs. This verifier did not re-run the suite (no new evidence would result from a second full run of the same HEAD; the constraint against filtering full runs per must-have applies), and instead spot-verified the specific code paths named in every gap/truth above by direct reading of the committed source.
+This verifier independently queried the actual CI job logs for run 34891069554 (draft PR #5, head `b52ca4b`) rather than trusting SUMMARY.md's narration:
+- `build (x64-linux)` (the designated leg): "100% tests passed, 0 tests failed out of 771" — confirmed directly from the raw job log, including the five previously-flaky goldens (`unit.inspect_container - golden`, 3× `unit.ts_scan_golden`, `integration.size_checks - pinned golden`) all passing, and the two rewritten tests (`#768`/`#769` in `test_video_yuvj.cpp`) both passing.
+- `build (x64-windows-static-md)`: "100% tests passed, 0 tests failed out of 766" — confirmed directly from the raw job log.
+- The corpus-digest assertion step passed on the designated leg specifically (not inferred from a green overall run).
+- `scripts/lint_corpus_digest_provenance.sh`'s clause 3 output was read directly from the lint job's log, confirming the zero-entry provisional ledger's marker is well-formed.
+
+This verifier did not rebuild locally (no local build directory present in this session) but treated the designated-leg CI run's own job logs — queried directly via `gh run view --log`, not the SUMMARY's characterization of them — as the authoritative evidence, consistent with this project's own "designated leg" policy (`tests/golden/README.md`) and the `Verify output-absence claims` / `GSD verify-probe cd prefix` lessons in this session's memory.
 
 ### Gaps Summary
 
-Ten of twelve Phase-4-mapped requirements are genuinely complete and well-tested. The two Pending requirements are handled honestly in REQUIREMENTS.md (neither was falsely marked Complete), but one of them — VIDEO-09's first-frame HDR extraction arm — has no explicit later-phase success criterion claiming it the way VIDEO-11 was explicitly reassigned, so it is reported here as a gap requiring a human scope decision rather than silently deferred. PROBE-03's overhead clause is cleanly deferred to Phase 5 per explicit PERF-03/PERF-05 requirement mapping and the phase's own "recorded not gated" plan title. Three further defects were confirmed by direct code reading (SAR guard, interlace evidence field, vacuous yuvj test) that the phase's own deferred-items.md already flags as "decisions owed to a human" — none of these produce an active false positive/negative in `compare` against the current fixture corpus, but all three are real and unresolved. Separately, and more urgently for shippability, the corpus digest committed during this phase is confirmed wrong for the designated CI leg and will fail CI on push — this needs an actual CI run to fix, not a code change or a human decision.
-
-## Human Decisions (2026-09-13)
-
-Taken by the user after this report, before gap planning. They supersede every "decision owed to a human" above and in `deferred-items.md`. Gap planning must implement them as written.
-
-| # | Question | Decision | What gap closure must do |
-|---|---|---|---|
-| 1 | VIDEO-09's first-frame HDR side-data source needs a decode pass | **Defer to Phase 7** | Amend ROADMAP.md and REQUIREMENTS.md: Phase 4's VIDEO-09 scope is the stream-level `coded_side_data` source; the first-frame source is explicitly Phase 7 scope, mirroring VIDEO-11's placement note. Set VIDEO-09's traceability Status to **Deferred**. |
-| 2 | PROBE-03's under-10% overhead target (measured 43–53% on a 180 s input) | **Defer the target to Phase 5** (PERF-03/PERF-05) | Amend ROADMAP.md SC5 and REQUIREMENTS.md: PROBE-03's Phase 4 scope is the fused parser pass plus its measurement harness. Set PROBE-03's traceability Status to **Deferred**. |
-| 3 | Which confirmed defects to fix now | **All four:** interlace evidence; the vacuous yuvj test plus VIDEO-03's wording; the review warnings and docs (WR-01, WR-02, WR-03, IN-01, IN-02, registry.h comment); the inspect-test predicate | See each gap's `missing` entry above. Every new or changed test must be shown able to fail (mutation check, or a non-byte-identical fixture pair). |
-| 4 | When to capture the designated leg's corpus digest | **Draft PR after the gap fixes** | Restore main's (`8caf1f1`) pre-existing fixture lines first. Rewrite no existing digest line. Finish gap closure. Then push the branch and open a draft PR to main. The orchestrator confirms with the user before the push and again before the PR. Transcribe the designated leg's listing and push the corrected digest. Re-verify with that CI run green. |
-
-**Why decisions 1 and 2 must set Deferred rather than leave Pending.** `phase.complete` flips every Phase 4 traceability row reading Pending, In Progress or Gaps Found to Complete. It leaves Out, Deferred and Blocked rows unchanged. A Pending VIDEO-09 or PROBE-03 row would therefore be falsely marked Complete when the phase closes.
-
-**Standing guard for every gap-closure plan that touches fixtures.** `git diff -- tests/golden/CORPUS_DIGEST.txt` must show no removed or changed hash line for a pre-existing fixture. The local `scripts/assert_corpus_digest.sh` passing is not evidence: it compares this workstation's corpus against a digest this workstation wrote.
+None. All five gaps from the 2026-09-13 report are closed with real code changes and non-vacuous tests, independently confirmed by direct reading of the current source and by directly querying (not trusting) the designated-leg CI run's job logs. The two items correctly marked `Deferred` (VIDEO-09's first-frame HDR arm, PROBE-03's under-10% overhead target) are legitimately out of Phase 4's now-amended scope, with dated Human Decisions and matching ROADMAP.md/REQUIREMENTS.md text naming the phase that owns each — the same pattern already established for VIDEO-11.
 
 ---
 
-_Verified: 2026-09-13T08:14:39Z_
+_Verified: 2026-09-14_
 _Verifier: Claude (gsd-verifier)_
