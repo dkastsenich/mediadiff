@@ -18,6 +18,7 @@
 
 #include "support/fixture_paths.h"
 #include "support/golden.h"
+#include "util/fs.h"
 
 namespace {
 
@@ -109,10 +110,10 @@ struct DesignatedLegGuard {
   std::string previous;
 
   explicit DesignatedLegGuard(const char* value) {
-    const char* existing = std::getenv("MEDIADIFF_DESIGNATED_LEG");
-    had_value = existing != nullptr;
+    const auto existing = mediadiff::getenv_utf8("MEDIADIFF_DESIGNATED_LEG");
+    had_value = existing.has_value();
     if (had_value) {
-      previous = existing;
+      previous = *existing;
     }
     set_designated_leg(value);
   }
