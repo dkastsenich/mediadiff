@@ -1278,8 +1278,23 @@ cp "$OUT_DIR/video_color_bt709.mp4" "$OUT_DIR/video_color_bt709_copy.mp4"
 # `PARSER_FLAG_COMPLETE_FRAMES` fusion): TFF -> `AV_FIELD_TT`, BFF ->
 # `AV_FIELD_BB`, both container-level `codecpar->field_order` values also
 # distinct (`TB`/`BT`) and neither progressive.
+#
+# Quick task 260914-ryu: the temporal-interlacing filter originally used
+# here is GPL-only upstream (`tinterlace_filter_deps="gpl"` in ffmpeg's
+# configure) and is therefore simply absent from the LGPL Windows pinned
+# build, which is how it broke the x64-windows-static-md corpus step on
+# draft PR #5 (job `build (x64-windows-static-md)`, `No option name near
+# 'interleave_top'`). The `interlace` filter used below is its LGPL twin,
+# sharing the same implementation source (`libavfilter/vf_tinterlace.c`).
+# `lowpass=off` is what keeps the emitted bytes identical to the previous
+# recipe -- proven byte-for-byte via the pinned Linux (GPL) generator,
+# which can render both filters -- so the committed digest lines for
+# `video_ilace_tff.mp4`, `video_ilace_tff_copy.mp4`, `video_ilace_bff.mp4`
+# and `video_ilace_mixed.mp4` are unchanged BY DESIGN. The filter's
+# default `lowpass=linear` would silently move all four; never omit the
+# explicit `lowpass=off`.
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
-  -vf "tinterlace=interleave_top,setparams=field_mode=tff" \
+  -vf "interlace=scan=tff:lowpass=off,setparams=field_mode=tff" \
   -c:v mpeg2video -flags +ilme+ildct \
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_ilace_tff.mp4"
@@ -1287,7 +1302,7 @@ cp "$OUT_DIR/video_color_bt709.mp4" "$OUT_DIR/video_color_bt709_copy.mp4"
 cp "$OUT_DIR/video_ilace_tff.mp4" "$OUT_DIR/video_ilace_tff_copy.mp4"
 
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
-  -vf "tinterlace=interleave_bottom,setparams=field_mode=bff" \
+  -vf "interlace=scan=bff:lowpass=off,setparams=field_mode=bff" \
   -c:v mpeg2video -flags +ilme+ildct \
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_ilace_bff.mp4"
@@ -1308,7 +1323,7 @@ ILACE_SEG_B="$OUT_DIR/.video_ilace_seg_b.m2v"
 ILACE_MIXED_RAW="$OUT_DIR/.video_ilace_mixed_raw.m2v"
 
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=1" \
-  -vf "tinterlace=interleave_top,setparams=field_mode=tff" \
+  -vf "interlace=scan=tff:lowpass=off,setparams=field_mode=tff" \
   -c:v mpeg2video -flags +ilme+ildct \
   -flags +bitexact -fflags +bitexact -y \
   "$ILACE_SEG_A"
