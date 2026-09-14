@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 04
 current_phase_name: Video Analysis
 status: executing
-stopped_at: Completed 04-20-PLAN.md
-last_updated: "2026-09-13T19:03:19.657Z"
-last_activity: 2026-09-13
+stopped_at: Completed 04-21-PLAN.md
+last_updated: "2026-09-14T20:15:57.367Z"
+last_activity: 2026-09-14
 last_activity_desc: Corpus golden-provenance debug resolved; gen_corpus.sh pin gate landed (260910-vvp); Phase 04 ready at wave 2
-state_head: 196b52a68b05b0880c7c8b6335b345ea378f8219
+state_head: b52ca4bbb02ac99e9fca299c0a4c1f552607dbb2
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 67
-  completed_plans: 66
+  completed_plans: 67
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 04 (Video Analysis) — EXECUTING
-Plan: 9 of 21
+Plan: 10 of 21
 Status: Ready to execute
 Last activity: 2026-09-14 - Completed quick task 260914-tzq: Fix the x64-windows-static-md build failure: read MEDIADIFF_DESIGNATED_LEG through the getenv_utf8 shim in test_golden.cpp and add the getenv shim lint to the CI lint job
 
@@ -116,6 +116,7 @@ Progress: [█████████░] 92%
 | Phase 04-18 P18 | 55min | 3 tasks | 4 files |
 | Phase 04 P19 | ~10 min | 3 tasks | 2 files |
 | Phase 04 P20 | 5h 42m | 3 tasks | 1 files |
+| Phase 04 P21 | multi-session | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -259,6 +260,8 @@ Recent decisions affecting current work:
 - [Phase 04]: test_video_inspect_section.cpp's report-derived has_video_stream() predicate replaced with a corpus-recipe-derived exclusion list (kNoVideoStreamFixtures) — Old predicate read groups.video from the output under test, unable to detect that output going empty; mutation-proven to catch the exact regression it was blind to
 - [Phase 04]: PROBE-03 and VIDEO-09 set to Deferred (not Pending) so phase.complete cannot mark them Complete at Phase 4 close — phase.complete flips Pending/In Progress/Gaps Found rows to Complete but leaves Out/Deferred/Blocked untouched, per Human Decisions 1 and 2 in 04-VERIFICATION.md
 - [Phase 04]: 04-20: Human Decision 4 route A taken - branch pushed and draft PR #5 opened behind three separate human confirmations; x64-linux listing captured verbatim (run 34776142545), cross-check vs main clean — Only a designated-leg run can produce the 58 provisional hashes; every outward-facing action required its own explicit confirmation and none was auto-approved
+- [Phase 04]: 04-21: Rule 3 deviation — lint clause 3 accepts a zero-entry provisional ledger only when a TRANSCRIBED-FROM-DESIGNATED-LEG marker names run and commit (positive and negative controls verified)
+- [Phase 04]: 04-21: the Windows blocking leg was fixed rather than waived — five root-caused failures (pin-reader CRLF, BtbN purge re-pin to the ffmpeg-pins mirror, GPL-gated tinterlace, GPL-gated interlace, MSVC C4996 getenv) closed by quick tasks; run 34891069554 green on all blocking legs
 
 ### Pending Todos
 
@@ -297,6 +300,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-13T19:03:19.498Z
-Stopped at: Completed 04-20-PLAN.md
+Last session: 2026-09-14T20:15:57.218Z
+Stopped at: Completed 04-21-PLAN.md
 Resume file: None
