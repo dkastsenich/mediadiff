@@ -11,8 +11,23 @@
 //
 // Twenty-seven checks were registered across plans 03-02, 03-04, 03-05,
 // 03-06, 03-08 and 03-09, joining Phase 2's original three
-// (meta.tool_version/missing_candidate/extra_candidate) -- thirty in
-// total as of this plan. This file is where a gap becomes visible.
+// (meta.tool_version/missing_candidate/extra_candidate) -- thirty as of
+// Phase 3. 04-01-PLAN.md registers Phase 4's tracer, `video.gop.length`,
+// bringing the total to thirty-one; 04-06-PLAN.md registers the five
+// per-video-stream identity checks (video.codec/profile/level/resolution/
+// frame_count), bringing the total to thirty-six. 04-07-PLAN.md registers
+// video.sar/video.dar/video.sar.conflict and the two video.frame_rate.*
+// checks, bringing the total to forty-one. 04-08-PLAN.md registers
+// video.pix_fmt and the five colour-identity checks
+// (video.color.range/primaries/transfer/matrix/chroma_loc), bringing the
+// total to forty-seven. 04-09-PLAN.md registers video.gop.idr_interval,
+// video.gop.closed, video.gop.refs and video.frame_types, bringing the
+// total to fifty-one. 04-10-PLAN.md registers video.interlace, bringing
+// the total to fifty-two. 04-11-PLAN.md registers video.hdr.mdcv/.
+// luminance/.primaries and video.hdr.cll/.max/.avg, bringing the total to
+// fifty-eight. 04-12-PLAN.md registers video.hdr.dovi, video.hdr.dovi.config
+// and video.hdr.coherence, bringing the total to sixty-one. This file is
+// where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -183,6 +198,188 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"size.overhead",
        {fixture("size_crf20.mp4"), fixture("size_crf23.mp4"), fixture("size_near_a.mp4"),
         fixture("size_near_b.mp4")}},
+
+      // --- video.gop.length (04-01-PLAN.md, Phase 4's tracer) ---
+      {"video.gop.length",
+       {fixture("video_gop_g48.mp4"), fixture("video_gop_g96.mp4"), fixture("video_gop_g48.mp4"),
+        fixture("video_gop_g48_copy.mp4")}},
+
+      // --- video.codec/profile/level/resolution/frame_count
+      // (04-06-PLAN.md, VIDEO-01/VIDEO-02) --- video.profile and
+      // video.level deliberately SHARE their triggering pair: a single
+      // mpeg2video profile change (Main/level 8 -> Simple/level 10, see
+      // 04-02-SUMMARY.md's own read-back table) moves both at once -- a
+      // real property of the codec, not a shortcut, so this is not
+      // "fixed" into two separate pairs.
+      {"video.codec",
+       {fixture("video_base.mp4"), fixture("video_codec_mpeg2.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.profile",
+       {fixture("video_prof_a.mp4"), fixture("video_prof_b.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.level",
+       {fixture("video_prof_a.mp4"), fixture("video_prof_b.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.resolution",
+       {fixture("video_base.mp4"), fixture("video_res_640.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.frame_count",
+       {fixture("video_base.mp4"), fixture("video_frames_50.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+
+      // --- video.sar/video.dar/video.sar.conflict/video.frame_rate.*
+      // (04-07-PLAN.md, VIDEO-01/VIDEO-04) ---
+      {"video.sar",
+       {fixture("video_base.mp4"), fixture("video_sar_4_3.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.dar",
+       {fixture("video_base.mp4"), fixture("video_sar_4_3.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.sar.conflict",
+       {fixture("video_sar_4_3.mp4"), fixture("video_sar_conflict.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.frame_rate.declared",
+       {fixture("video_base.mp4"), fixture("video_fps_30.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+      {"video.frame_rate.measured",
+       {fixture("video_base.mp4"), fixture("video_fps_30.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+
+      // --- video.pix_fmt/video.color.range/video.color.primaries/
+      // video.color.transfer/video.color.matrix/video.color.chroma_loc
+      // (04-08-PLAN.md, VIDEO-03/VIDEO-07/VIDEO-08) ---
+      //
+      // video.pix_fmt's CLEAN pair is deliberately the two-spellings pair
+      // rather than a byte-identical copy: a copy would prove only that
+      // equal files compare equal, while this pair proves the fold made
+      // two genuinely different declarations (yuvj420p vs yuv420p+pc,
+      // which read back as the SAME raw pix_fmt post-fold, see
+      // 04-02-SUMMARY.md's own read-back table) compare equal -- the
+      // property that matters. The originally chosen candidate
+      // (video_yuv420p_pc.mp4) turned out BYTE-IDENTICAL to
+      // video_yuvj420p.mp4 under the pinned mjpeg encoder (it normalises
+      // a direct `-pix_fmt yuv420p -color_range pc` request back to a
+      // yuvj* name before muxing), so that pair proved nothing (see
+      // deferred-items.md's 04-08 entry and 04-16-PLAN.md). Replaced with
+      // video_yuv420p_pc_tagged.mp4 (04-16-PLAN.md Task 1): a stream-copy
+      // remux of video_yuv420p_tv.mp4 carrying a full-range colour box,
+      // whose bytes genuinely differ from video_yuvj420p.mp4's.
+      // Its TRIGGER pair could not reuse the plan's own literal suggestion
+      // (video_base.mp4/video_yuvj420p.mp4): both fold to the identical
+      // "yuv420p" name (video_base.mp4 was never yuvj* to begin with), so
+      // that pair compares `pass`, not a trigger at all -- proven
+      // empirically against the real binary before being rejected.
+      // video_noparser.mkv (huffyuv, 04-02's own no-parser VIDEO-12
+      // fixture) is yuv422p, a genuinely different declared format from
+      // video_base.mp4's yuv420p, and was substituted instead.
+      {"video.pix_fmt",
+       {fixture("video_base.mp4"), fixture("video_noparser.mkv"), fixture("video_yuvj420p.mp4"),
+        fixture("video_yuv420p_pc_tagged.mp4")}},
+      {"video.color.range",
+       {fixture("video_range_pc.mp4"), fixture("video_color_bt709.mp4"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+      {"video.color.primaries",
+       {fixture("video_color_bt709.mp4"), fixture("video_color_bt601.mp4"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+      {"video.color.transfer",
+       {fixture("video_color_bt709.mp4"), fixture("video_color_bt601.mp4"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+      {"video.color.matrix",
+       {fixture("video_color_bt709.mp4"), fixture("video_color_bt601.mp4"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+      {"video.color.chroma_loc",
+       {fixture("video_chroma_left.mkv"), fixture("video_chroma_center.mkv"), fixture("video_color_bt709.mp4"),
+        fixture("video_color_bt709_copy.mp4")}},
+
+      // --- video.gop.idr_interval/video.gop.closed/video.gop.refs/
+      // video.frame_types (04-09-PLAN.md, PROBE-03/VIDEO-05/VIDEO-12) ---
+      // The GOP-family clean pair is a byte-identical copy of
+      // video_h264_closed.h264 (added to scripts/gen_corpus.sh by this
+      // task) rather than an unrelated codec/container's own clean pair --
+      // a clean pair drawn from a different codec family would prove
+      // something other than "this check passes when nothing changed"
+      // (this plan's own action text).
+      {"video.gop.idr_interval",
+       {fixture("video_h264_closed.h264"), fixture("video_h264_idr48.h264"), fixture("video_h264_closed.h264"),
+        fixture("video_h264_closed_copy.h264")}},
+      {"video.gop.closed",
+       {fixture("video_h264_closed.h264"), fixture("video_h264_open.h264"), fixture("video_h264_closed.h264"),
+        fixture("video_h264_closed_copy.h264")}},
+      {"video.gop.refs",
+       {fixture("video_h264_refs1.h264"), fixture("video_h264_refs4.h264"), fixture("video_h264_closed.h264"),
+        fixture("video_h264_closed_copy.h264")}},
+      {"video.frame_types",
+       {fixture("video_base.mp4"), fixture("video_bf3.mp4"), fixture("video_base.mp4"),
+        fixture("video_base_copy.mp4")}},
+
+      // --- video.interlace (04-10-PLAN.md, VIDEO-06) --- trigger: a real
+      // top-field-first vs bottom-field-first flip; clean: a byte-identical
+      // copy of the TFF fixture (proven distinct/identical by SHA-256 in
+      // this plan's own dispatched test_evidence_guard, and re-verified
+      // against the real binary before being written here).
+      {"video.interlace",
+       {fixture("video_ilace_tff.mp4"), fixture("video_ilace_bff.mp4"), fixture("video_ilace_tff.mp4"),
+        fixture("video_ilace_tff_copy.mp4")}},
+
+      // --- video.hdr.mdcv/.luminance/.primaries and video.hdr.cll/.max/
+      // .avg (04-11-PLAN.md, VIDEO-09) --- every trigger pair below was
+      // proven empirically against the real binary before being written
+      // here (this task's own commit message carries the transcript).
+      // Known coverage gap, recorded rather than papered over (this
+      // plan's own Task 3 instruction, following the precedent
+      // container.ts.psi_interval already set in this file): the CLEAN
+      // pair for the three VALUE checks (.luminance/.primaries/.max/.avg)
+      // is a byte-identical copy of video_hdr_a.mp4 rather than a
+      // differing-but-within-tolerance pair. A within-tolerance pair (a
+      // luminance/MaxCLL/MaxFALL value shifted by less than the five
+      // percent tolerance, or a chromaticity shifted by less than one
+      // 0.0002 grid step) would be the STRONGER clean case -- it would
+      // prove the tolerance/quantisation math itself accepts a genuine
+      // small difference, not merely that identical values compare
+      // identical -- but no such fixture exists in this phase's corpus
+      // (plan 04-04 built each `_b` variant to isolate exactly one
+      // dimension at a value CLEARLY outside tolerance, never a
+      // within-tolerance nudge). A future phase that extends the HDR
+      // fixture corpus could add one.
+      {"video.hdr.mdcv",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_none.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.mdcv.luminance",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_lum_b.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.mdcv.primaries",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_prim_b.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.cll",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_none.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.cll.max",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_cll_b.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+      {"video.hdr.cll.avg",
+       {fixture("video_hdr_a.mp4"), fixture("video_hdr_cll_b.mp4"), fixture("video_hdr_a.mp4"),
+        fixture("video_hdr_a_copy.mp4")}},
+
+      // --- video.hdr.dovi/video.hdr.dovi.config/video.hdr.coherence
+      // (04-12-PLAN.md, VIDEO-09's third family / VIDEO-10, D-10) ---
+      {"video.hdr.dovi",
+       {fixture("video_dovi_a.mp4"), fixture("video_base.mp4"), fixture("video_dovi_a.mp4"),
+        fixture("video_dovi_a_copy.mp4")}},
+      {"video.hdr.dovi.config",
+       {fixture("video_dovi_a.mp4"), fixture("video_dovi_b.mp4"), fixture("video_dovi_a.mp4"),
+        fixture("video_dovi_a_copy.mp4")}},
+      // video.hdr.coherence's trigger is a DIFFERENCE in coherence state
+      // between two files (video_hdr_coherent.mp4's "coherent" vs
+      // video_hdr_pq_nomdcv.mp4's "pq_without_mdcv") -- which is what
+      // `compare` compares. The both-sides-share-it behaviour VIDEO-10
+      // also requires (Decision 1: a SHARED incoherence still fires) is
+      // covered by Test 5 in tests/unit/test_video_hdr.cpp rather than by
+      // this gate -- the two requirements are different and neither
+      // substitutes for the other. This check is `info` severity and
+      // never gates the exit code in any profile.
+      {"video.hdr.coherence",
+       {fixture("video_hdr_coherent.mp4"), fixture("video_hdr_pq_nomdcv.mp4"), fixture("video_hdr_coherent.mp4"),
+        fixture("video_hdr_coherent_copy.mp4")}},
   };
   return pairs;
 }

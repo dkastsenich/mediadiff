@@ -18,6 +18,7 @@
 #include "probe/bmff_scan.h"
 #include "probe/ebml_scan.h"
 #include "probe/packet_scan.h"
+#include "probe/parser_scan.h"
 #include "probe/ts_scan.h"
 
 namespace mediadiff {
@@ -117,6 +118,15 @@ ContainerFamily container_family_from_format_name(std::string_view format_name);
 struct ProbeResults {
   const DemuxSession* demux = nullptr;
   std::optional<PacketScanResult> packet_scan;
+  // 04-01-PLAN.md Task 2 (PROBE-03): the per-access-unit walk, fused
+  // INSIDE run_packet_scan's own av_read_frame loop (probe/packet_scan.cpp)
+  // -- placed directly beside `packet_scan` since it comes from the SAME
+  // sweep, contiguity is the point. Populated ONLY when `Pass::parser_scan`
+  // was in the union for this file (src/probe/orchestrator.cpp's own
+  // implication: parser_scan always implies packet_scan, never the
+  // reverse), std::nullopt otherwise -- mirrors every other optional
+  // scanner result's own "populated only when its own pass ran" contract.
+  std::optional<ParserScanResult> parser_scan;
   // 03-05-PLAN.md Task 1 (PROBE-04): the bounded ISO-BMFF box walk, held
   // once and shared by every applicable analyzer -- populated ONLY when
   // `Pass::bmff_scan` was requested, which only ever happens for an

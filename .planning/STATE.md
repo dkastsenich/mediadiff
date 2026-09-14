@@ -1,18 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.1
-current_phase: 4
-current_phase_name: Video Analysis
-status: "Phase 3 merged to main (PR #3, merge commit 4b1c2e4)"
-stopped_at: "Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)"
-last_updated: "2026-09-09T12:14:21.331Z"
-last_activity: 2026-09-09
-state_head: 233c769d27798f517017aa6bd5044a193368bad2
+current_phase: 5
+current_phase_name: Timeline Analysis
+status: planning
+stopped_at: Phase 04 complete, ready to plan Phase 5
+last_updated: "2026-09-14T20:42:23.673Z"
+last_activity: 2026-09-14
+last_activity_desc: Phase 04 complete, transitioned to Phase 5
+state_head: b84dffdc2d99253f7f64fec5b1460978e121c22b
 progress:
   total_phases: 7
-  completed_phases: 3
-  total_plans: 46
-  completed_plans: 46
+  completed_phases: 4
+  total_plans: 67
+  completed_plans: 67
 milestone_name: milestone
 ---
 
@@ -27,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 
 ## Current Position
 
-Phase: 4 — Video Analysis
+Phase: 5 — Timeline Analysis
 Plan: Not started
-Status: Phase 3 merged to main (PR #3, merge commit 4b1c2e4)
-Last activity: 2026-09-09
+Status: Ready to plan
+Last activity: 2026-09-14 — Phase 04 complete, transitioned to Phase 5
 
 Progress: [█████████░] 92%
 
@@ -38,7 +39,7 @@ Progress: [█████████░] 92%
 
 **Velocity:**
 
-- Total plans completed: 22
+- Total plans completed: 43
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -47,6 +48,7 @@ Progress: [█████████░] 92%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 03 | 22 | - | - |
+| 04 | 21 | - | - |
 
 **Recent Trend:**
 
@@ -95,6 +97,27 @@ Progress: [█████████░] 92%
 | Phase 03 P20 | 35min | 2 tasks | 2 files |
 | Phase 03 P21 | 46min | 3 tasks | 7 files |
 | Phase 03 P22 | 41min | 2 tasks | 4 files |
+| Phase 04 P01 | 28min | 3 tasks | 20 files |
+| Phase 04 P02 | 45min | 3 tasks | 4 files |
+| Phase 04-video-analysis P03 | 32min | 2 tasks | 4 files |
+| Phase 04 P04 | 30min | 2 tasks | 3 files |
+| Phase 04 P05 | 55min | 3 tasks | 4 files |
+| Phase 04 P06 | 22min | 3 tasks | 16 files |
+| Phase 04 P07 | 28min | 3 tasks | 18 files |
+| Phase 04 P08 | 30min | 3 tasks | 23 files |
+| Phase 04 P09 | 50min | 3 tasks | 20 files |
+| Phase 04 P10 | 55min | 2 tasks | 12 files |
+| Phase 04 P11 | 40min | 3 tasks | 17 files |
+| Phase 04 P12 | 35min | 3 tasks | 34 files |
+| Phase 04 P13 | 35min | 3 tasks | 5 files |
+| Phase 04 P14 | 25min | 3 tasks | 3 files |
+| Phase 04 P15 | 15min | 3 tasks | 4 files |
+| Phase 04 P16 | 35min | 3 tasks | 6 files |
+| Phase 04-17 P17 | 20min | 2 tasks | 8 files |
+| Phase 04-18 P18 | 55min | 3 tasks | 4 files |
+| Phase 04 P19 | ~10 min | 3 tasks | 2 files |
+| Phase 04 P20 | 5h 42m | 3 tasks | 1 files |
+| Phase 04 P21 | multi-session | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -204,6 +227,42 @@ Recent decisions affecting current work:
 - [Phase 03]: ROADMAP SC5 closed on real CI run 34023871831 (head 64bc168): all three blocking legs + lint conclude success at the job level, four trust06_idempotence Passed lines observed, x64-windows-static-md Test step observed concluding for the first time in this phase's history.
 - [Phase 03]: Fixed two newly-discovered blocking-leg CI defects (WINDOWS.md #21 GITHUB_PATH format bug, #20 arm64-osx bitrate margin) within Task 1's 3-round-trip budget; recorded but deliberately left open a third (#22, x64-linux corpus-digest run-to-run non-reproducibility on mkv_opus_a/b.webm).
 - [Phase 1]: [Quick 260908-oax]: WINDOWS.md #22 waived (not fixed) -- scripts/assert_corpus_digest.sh excludes mkv_opus_a.webm, mkv_opus_b.webm and the derived CORPUS_DIGEST_SUMMARY line (exactly 3, count-guarded) from D-GAP-01's byte-exact comparison; libopus's cross-host CPU-feature dispatch is not fixable at this layer. Residual gap tracked openly at WINDOWS.md #24.
+- [Phase 04]: Phase-4 31-id video.* check roster approved as-proposed (04-CHECK-ROSTER.md)
+- [Phase 04]: PacketScanRequest/PacketScanOutputs live in packet_scan.h, not parser_scan.h, to avoid a circular include
+- [Phase 04]: AVCodecParserContext needs PARSER_FLAG_COMPLETE_FRAMES set explicitly (mirrors libavformat's AVSTREAM_PARSE_HEADERS) or mpeg4video_parser.c halves every measured GOP length
+- [Phase 04]: video_chroma_left/center mux to Matroska not MP4 (movenc.c has no chroma-location box); video_ilace_tff/bff/mixed use mpeg2video not mpeg4 (mpeg4video_parser.c never sets field_order); huffyuv replaces ffv1 for VIDEO-12's no-parser fixture (ffv1/prores both gained parsers upstream).
+- [Phase 04]: Duration/frame-size/frame-rate/output-byte-size in measure_parser_overhead.sh are env-var-overridable, each validated against a same-named MAX constant rather than fixed inline literals (T-4-11)
+- [Phase 04]: Raised mediadiff_parser_overhead's repeat count to 20 at the measure_parser_overhead.sh call site (not the tool's own default) after observing 3-repetition noise on a sub-5ms probe pass
+- [Phase 04]: 04-04: All HDR/coherence fixtures are plain mpeg4 encodes with codec-independent -mastering_display/-content_light input options and setparams+write_colr colorimetry -- no GPL/HDR encoder needed, no deviation from D-09/D-01.
+- [Phase 04]: 04-04: Open Question 2 answered YES -- Matroska HDR side data round-trips identically to MP4; no Matroska HDR fixture added, this phase's HDR family stays MP4-only by design.
+- [Phase 04]: H.264 SPS uses pic_order_cnt_type=2, eliminating all POC syntax so av_parser_parse2 returns right after frame_num/idr_pic_id (04-05)
+- [Phase 04]: HEVC VPS-less known-bad control asserted via diagnostics.probe_warnings, not pict_type staying unset -- empirical correction to plan wording (04-05)
+- [Phase 04]: SAR conflict fixtures must read AVStream::sample_aspect_ratio (container/pasp) vs AVCodecParameters::sample_aspect_ratio (bitstream, overwritten during avformat_find_stream_info's probe) -- two distinct libav fields (04-05)
+- [Phase 04]: video.resolution registered with transform_affected=true (first shipped check to carry it); HEVC tier deliberately not folded into video.level (no public libav surface exposes it without a decode pass); DemuxSession::StreamInfo extended with codecpar profile/level/width/height/nb_frames fields.
+- [Phase 04]: derive_cadence lives in src/probe/cadence.h, beside StreamPacketScan::packets, not under src/analyzers/ -- D-05's shared pure derivation with Phase 5's timeline.* as its designed second consumer
+- [Phase 04]: CFR/VFR classified by exact-tick equality (epsilon=0) against a fixed 99.5% matching-proportion threshold transcribed from claude_docs/04-timeline-analysis.md -- no floating point, no runtime-computed mean (D-07)
+- [Phase 04]: video.sar.conflict compares EFFECTIVE (unset-normalized) container/bitstream ratios so an unset-vs-explicit-1:1 pair is not a manufactured conflict (VIDEO-04-E1)
+- [Phase 04]: video.pix_fmt/video.color.range fold operates on resolved libav NAME strings, never raw enum ordinals, keeping src/analyzers/ free of any libav header.
+- [Phase 04]: Classification reads the leading VCL NAL type only, never key_frame -- HEVC sets key_frame=1 for any IRAP including CRA_NUT
+- [Phase 04]: H.264 SPS reader implements full correctness for all three pic_order_cnt_type branches and the high-profile block, not just the fixture's narrow shape, to avoid silently misreading real-world streams
+- [Phase 04]: PROBE-03 held from completion despite passing requirements.ready-ids: 04-03's measurement showed 46% overhead, contradicting the requirement's under-10% clause
+- [Phase 04]: video.interlace deliberately never skips no_parser -- declared value reported with cross_checked=false instead
+- [Phase 04]: AVFieldOrder's per-frame TT/BB vs container-declared TB/BT are two subsets of the same enum for the same real property -- disagreement fires harmlessly on every real interlace fixture, evidence-only
+- [Phase 04]: HDR value checks (mdcv.luminance/.primaries, cll.max/.avg) share one SkipReason::requires_decode for both could-carry-empty and could-not-carry-at-all cases rather than adding a new SkipReason enum value outside plan scope; evidence carries could_carry_frame_level to keep the distinction honest.
+- [Phase 04]: StreamInfo extended for coded_side_data (demux_session.h/.cpp) outside the plan's own files_modified list, per repo-state overlay instructions requiring libav types stay out of src/analyzers/.
+- [Phase 04]: Decision 1 (dispatch): shared HDR incoherence must report non-gating info, not invisible pass -- required a new additive 'state' comparison semantic
+- [Phase 04]: Decision 2 (dispatch): HLG without MDCV is coherent (HLG is scene-referred, no MDCV required under BT.2100), not pq_without_mdcv
+- [Phase 04]: 04-13: restored main's (8caf1f1) 80 designated-leg CORPUS_DIGEST.txt fixture hashes verbatim; committed the 57 Phase-4-added lines as provisional in CORPUS_DIGEST_PROVISIONAL.txt; wired scripts/lint_corpus_digest_provenance.sh into CI to guard against future silent rewrites
+- [Phase 04]: Folded resolve_sar's non-positive-denominator case into the existing unset=true 1:1 shape rather than a third state — Preserves EffectiveSar's documented invariant unconditionally, per WR-01's own suggested fix
+- [Phase 04]: video.interlace disagreement now compares field-order CLASS ({TT,TB}/{BB,BT}), not raw AVFieldOrder ordinal — raw ordinal comparison was unconditionally true on every valid interlaced file (04-VERIFICATION.md SC3 gap); class mapping matches Human Decision 3
+- [Phase 04]: Produced VIDEO-03's second yuvj signature spelling via a stream-copy remux (never a fresh encode) because every LGPL-safe encoder that accepts yuvj* formats renormalises a full-range yuv420p request back to yuvj*.
+- [Phase 04]: WR-03 (04-17): measured per file against GCC 13.3.0 -O3 whether -Wmaybe-uninitialized still fires; removed the suppression from four files where it did not, and bracketed it to the exact flagged function (push_skip / emit_gop_refs) in the two files (gop.cpp, stream_params.cpp) where it did. — Avoids assuming a suppression copied across six files is still needed everywhere; scripts/lint_pragma_scope.sh now enforces the balance rule in CI so the unbalanced form cannot be copied forward.
+- [Phase 04]: WR-02 fixed: pass under video.hdr.coherence's state semantic means neither side flagged, not both-agree; registry.h's false 'field appears in no serialized output' claim corrected and pinned by a new list-checks assertion — 04-VERIFICATION.md Human Decision 3 assigned WR-02/registry.h/inspect-test-predicate to gap closure
+- [Phase 04]: test_video_inspect_section.cpp's report-derived has_video_stream() predicate replaced with a corpus-recipe-derived exclusion list (kNoVideoStreamFixtures) — Old predicate read groups.video from the output under test, unable to detect that output going empty; mutation-proven to catch the exact regression it was blind to
+- [Phase 04]: PROBE-03 and VIDEO-09 set to Deferred (not Pending) so phase.complete cannot mark them Complete at Phase 4 close — phase.complete flips Pending/In Progress/Gaps Found rows to Complete but leaves Out/Deferred/Blocked untouched, per Human Decisions 1 and 2 in 04-VERIFICATION.md
+- [Phase 04]: 04-20: Human Decision 4 route A taken - branch pushed and draft PR #5 opened behind three separate human confirmations; x64-linux listing captured verbatim (run 34776142545), cross-check vs main clean — Only a designated-leg run can produce the 58 provisional hashes; every outward-facing action required its own explicit confirmation and none was auto-approved
+- [Phase 04]: 04-21: Rule 3 deviation — lint clause 3 accepts a zero-entry provisional ledger only when a TRANSCRIBED-FROM-DESIGNATED-LEG marker names run and commit (positive and negative controls verified)
+- [Phase 04]: 04-21: the Windows blocking leg was fixed rather than waived — five root-caused failures (pin-reader CRLF, BtbN purge re-pin to the ffmpeg-pins mirror, GPL-gated tinterlace, GPL-gated interlace, MSVC C4996 getenv) closed by quick tasks; run 34891069554 green on all blocking legs
 
 ### Pending Todos
 
@@ -225,6 +284,12 @@ None yet.
 | 260902-it6 | Migrate CLI option binding from shared_ptr to CLI::Option* (03-CONTEXT.md D-05) | 2026-09-02 | 8258c83 | [260902-it6-migrate-cli-option-binding-from-shared-p](./quick/260902-it6-migrate-cli-option-binding-from-shared-p/) |
 | 260908-oax | Narrow the corpus digest assertion to exclude the two libopus fixtures from byte-exact comparison (WINDOWS.md #22) | 2026-09-08 | ae0efaf | [260908-oax-narrow-the-corpus-digest-assertion-to-ex](./quick/260908-oax-narrow-the-corpus-digest-assertion-to-ex/) |
 | 260909-ji8 | Fix Phase 1 bookkeeping drift — ROADMAP 01-03 tick, 4/5→5/5, header + progress table, STATE.md repointed at Phase 4 | 2026-09-09 | 233c769 | [260909-ji8-fix-phase-1-bookkeeping-tick-01-03-in-ro](./quick/260909-ji8-fix-phase-1-bookkeeping-tick-01-03-in-ro/) |
+| 260910-vvp | Harden gen_corpus.sh's ffmpeg resolution — pinned-first + release-identity gate against scripts/ffmpeg_pin.json, PATH still permitted (Tasks 1-3; Task 4 gen_corpus.ps1 parity deferred for separate user approval, not judged unnecessary) | 2026-09-10 | 31d285a | [260910-vvp-harden-gen-corpus-sh-ffmpeg-pin-resoluti](./quick/260910-vvp-harden-gen-corpus-sh-ffmpeg-pin-resoluti/) |
+| 260913-wuy | Fix Windows CI pin-reader CRLF regression in resolve_pinned_ffmpeg.sh | 2026-09-13 | 5034c7c | [260913-wuy-fix-windows-ci-pin-reader-crlf-regressio](./quick/260913-wuy-fix-windows-ci-pin-reader-crlf-regressio/) |
+| 260914-qlk | Re-pin the Windows ffmpeg build to the mirrored ffmpeg-pins release asset | 2026-09-14 | 3a5ca95 | [260914-qlk-re-pin-the-windows-ffmpeg-build-to-the-m](./quick/260914-qlk-re-pin-the-windows-ffmpeg-build-to-the-m/) |
+| 260914-ryu | Replace GPL-only tinterlace with the LGPL interlace filter in the three interlace fixture recipes | 2026-09-14 | bf9a42f | [260914-ryu-replace-gpl-only-tinterlace-with-the-lgp](./quick/260914-ryu-replace-gpl-only-tinterlace-with-the-lgp/) |
+| 260914-t47 | Replace the GPL-gated interlace filter with an LGPL separatefields/select/weave chain in the three interlace fixture recipes | 2026-09-14 | d137242 | [260914-t47-replace-the-gpl-only-interlace-filter-in](./quick/260914-t47-replace-the-gpl-only-interlace-filter-in/) |
+| 260914-tzq | Fix the x64-windows-static-md build failure: read MEDIADIFF_DESIGNATED_LEG through the getenv_utf8 shim in test_golden.cpp and add the getenv shim lint to the CI lint job | 2026-09-14 | 47f02c4 | [260914-tzq-fix-the-x64-windows-static-md-build-fail](./quick/260914-tzq-fix-the-x64-windows-static-md-build-fail/) |
 
 ## Deferred Items
 
@@ -236,6 +301,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-08T15:48:02.140Z
-Stopped at: Completed quick task 260908-oax (narrow corpus digest assertion, WINDOWS.md #22)
+Last session: 2026-09-14T20:15:57.218Z
+Stopped at: Phase 04 complete, ready to plan Phase 5
 Resume file: None

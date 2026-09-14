@@ -41,12 +41,11 @@ namespace {
 constexpr std::array<char, 4> kMoovType{'m', 'o', 'o', 'v'};
 constexpr std::array<char, 4> kMdatType{'m', 'd', 'a', 't'};
 
-// AVPacket::flags' AV_PKT_FLAG_KEY bit (libavcodec/packet.h) -- confirmed
-// stable at 0x0001 since the flag's introduction; hardcoded here (rather
-// than pulled in via a libav header) matching src/analyzers/container/
-// topology.cpp's own MKTAG-confirmed-against-source precedent, since
-// src/analyzers/ never includes a libav header directly.
-constexpr int kPacketFlagKeyframe = 0x0001;
+// kPacketFlagKeyframe now lives in probe/packet_scan.h, next to
+// PacketRecord::flags itself (04-09-PLAN.md Task 2) -- src/analyzers/video/
+// frame_types.cpp's own VIDEO-12 degraded histogram needs the IDENTICAL
+// bit value this file's own keyframe-DTS walk below does, so a single
+// source of truth replaces what was previously a file-local constant here.
 
 const BoxRecord* find_top_level(const std::vector<BoxRecord>& boxes, std::array<char, 4> type) {
   for (const BoxRecord& box : boxes) {

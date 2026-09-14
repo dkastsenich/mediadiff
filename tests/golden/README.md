@@ -15,6 +15,11 @@ The refresh must appear as a reviewable diff in the pull request that
 changed the renderer -- a human confirms the new output is intentional
 before it becomes the new expected answer.
 
+This applies to renderer goldens only. The five fixture-derived goldens
+listed in the next section refuse `UPDATE_GOLDENS` outright, and the three
+`ts_scan_ts_*.txt` files refuse it for a second, independent reason
+(TRUST-09, below).
+
 ## CI never sets UPDATE_GOLDENS
 
 CI always runs read-only. A missing golden file, or one that no longer
@@ -22,6 +27,108 @@ matches, is a hard test failure there -- never an implicit create. Running
 the broken renderer once and having it mint its own wrong output as the
 "expected" answer is exactly the failure this harness exists to prevent
 (D-12).
+
+## Two kinds of golden live here
+
+Most files here are **renderer goldens**: they pin mediadiff's own output
+for a canned input, they are host-portable, and `UPDATE_GOLDENS=1` is the
+correct way to refresh them.
+
+Five are **fixture-derived goldens**. They pin numbers read out of the
+synthesized media in `tests/fixtures/`, so their expected bytes are a
+property of the machine that *encoded the corpus*, not of this
+repository's code:
+
+| golden | asserted by |
+|---|---|
+| `inspect_container.txt` | `unit.inspect_container - golden: ...` |
+| `size_checks_size_crf20.txt` | `integration.size_checks - the size.* findings are pinned ...` |
+| `ts_scan_ts_single.txt` | `unit.ts_scan_golden - ts_single.ts ...` |
+| `ts_scan_ts_multiprogram.txt` | `unit.ts_scan_golden - ts_multiprogram.ts ...` |
+| `ts_scan_ts_204.txt` | `unit.ts_scan_golden - ts_204.ts ...` |
+
+The pinned ffmpeg (`scripts/ffmpeg_pin.json`) is checksum-verified and
+byte-identical on every machine, but it dispatches its DSP on the host's
+CPU features at runtime and `-flags +bitexact -fflags +bitexact` does not
+reach that decision. Measured on one unchanged binary: `-cpuflags 0` alone
+moves `tracer_a.mp4` from 141218 to 141194 bytes. Across two real x86_64
+hosts, 76 of 81 fixtures differ (WINDOWS.md #12; arm64-osx: #20; run-to-run
+within one leg: #22).
+
+So these five are captured on, and asserted on, the **designated leg**
+(x64-linux CI) only — the same policy `CORPUS_DIGEST.txt` follows below.
+`tests/support/golden.h`'s `check_golden_designated_leg()` enforces it:
+
+- **On the designated leg** (`MEDIADIFF_DESIGNATED_LEG` set and non-empty,
+  which `.github/workflows/ci.yml` sets on x64-linux): byte-for-byte, exactly
+  as before. The assertion is never loosened.
+- **Anywhere else** — including every developer workstation — the test
+  **SKIPs with its reason**. A mismatch there would be expected host
+  divergence, and a test cannot honestly report a regression it is unable to
+  distinguish from one.
+- **`UPDATE_GOLDENS=1` is refused for these five on every leg.** There is no
+  local refresh path. Rewriting them from workstation bytes mints local
+  encoder output as the expected answer and breaks the designated leg — that
+  is not hypothetical, it is `13ea9db`, which `bc09705` had to overwrite from
+  the real runner 23 minutes later.
+
+**To refresh one:** take the values from the designated leg's own CI run
+output and transcribe them into the file, as a reviewable diff (D-GAP-01;
+this is what `bc09705` and `64bc168` did). To assert them on a machine you
+believe already matches the designated leg, confirm with
+`scripts/assert_corpus_digest.sh` first, then run with
+`MEDIADIFF_DESIGNATED_LEG=1`.
+
+Full diagnosis of the incident that produced this section:
+`.planning/debug/resolved/corpus-fixture-byte-drift.md`.
+
+## The corpus must come from the pinned generator
+
+This section sits next to the goldens themselves, not in `scripts/gen_corpus.sh`'s
+own comments, because it is a property of the five fixture-derived goldens above
+and of `CORPUS_DIGEST.txt` below, not a detail of the generator script: those
+files pin bytes produced by one specific encoder build, so which build produced
+them matters to anyone reading this directory, not just to whoever last edited
+the generator.
+
+`scripts/gen_corpus.sh` resolves which `ffmpeg` to invoke in this order:
+
+1. `MEDIADIFF_FFMPEG`, when set and non-empty.
+2. Otherwise, the repo-local pinned install under `.ffmpeg-pinned/`
+   (installed by `bash scripts/install_pinned_ffmpeg.sh`).
+3. Otherwise, `ffmpeg` on `PATH`.
+
+Whatever is selected is checked against `scripts/ffmpeg_pin.json`'s `version`
+field, and a mismatch aborts the run before a single fixture byte is written.
+If you see that abort, the fix is:
+
+```sh
+bash scripts/install_pinned_ffmpeg.sh
+```
+
+Every run of `scripts/gen_corpus.sh` (and of `scripts/resolve_pinned_ffmpeg.sh`
+directly, which answers "which ffmpeg would the corpus use?" without running
+the generator) prints which binary it resolved and by which route to stderr,
+so a corpus-generation log answers "which build made these bytes?" without
+inference.
+
+**The escape hatch:** setting `MEDIADIFF_ALLOW_UNPINNED_FFMPEG` (non-empty)
+downgrades a version mismatch from a hard failure to a loud warning, for
+deliberate experimentation only. A corpus generated under it must never be
+used to refresh a golden or `CORPUS_DIGEST.txt` -- see "To refresh one:"
+above for the only correct path for the five fixture-derived goldens, and
+the `CORPUS_DIGEST.txt` section below for that file's own refresh rule.
+
+**What this check does NOT prove:** it confirms the selected binary reports
+the same FFmpeg *release* the pin names, not that it is byte-for-byte the
+pinned artifact -- `scripts/ffmpeg_pin.json` records a SHA-256 of the
+downloaded archive, never of the extracted binary. This does not make the
+goldens portable: as the section above explains, the pinned binary itself
+already produces different fixture bytes on different host CPUs
+(`WINDOWS.md` #12), and this check has no bearing on that. It closes a
+different hole -- an entirely different FFmpeg build silently generating
+the corpus, undetected -- documented at
+`.planning/debug/resolved/corpus-fixture-byte-drift.md`.
 
 ## `CORPUS_DIGEST.txt` (D-GAP-01, WINDOWS.md #22)
 
@@ -60,6 +167,40 @@ Refresh rule: regenerating `CORPUS_DIGEST.txt` from `corpus_digest.sh` will
 churn those two hashes and the summary line even when nothing regressed.
 That churn is expected, is not evidence of a defect, and a reviewer's
 attention belongs on the other 78 lines.
+
+## Pre-existing digest lines are never rewritten locally (D-GAP-01, 04-13)
+
+Three rules, stated together in one place since they are one policy applied
+to two files:
+
+- A `CORPUS_DIGEST.txt` line that already existed is **designated-leg
+  evidence** -- it is never rewritten from a developer workstation's own
+  `scripts/corpus_digest.sh` output, ever, for any reason. Regenerating the
+  whole file and committing that over the existing one substitutes local
+  provenance for CI-runner provenance, which is exactly the regression
+  `21c7a0f` introduced and `04-13-PLAN.md` restored.
+- A brand-new fixture's `CORPUS_DIGEST.txt` line is **provisional** the
+  moment it is committed -- there is no other way to name a hash before a
+  designated-leg run has produced one. Its name is recorded in
+  `tests/golden/CORPUS_DIGEST_PROVISIONAL.txt` (names only, no hashes) so a
+  reader can tell which lines are still awaiting confirmation without
+  diffing against history. It stops being provisional only once the
+  designated leg's own transcribed hash replaces it and its name is removed
+  from that file.
+- **`scripts/assert_corpus_digest.sh` passing on a developer workstation is
+  not evidence about the committed digest.** Both sides of that comparison
+  -- the committed file and the freshly generated one -- come from the same
+  machine when run locally; agreement there proves internal consistency,
+  never designated-leg correctness.
+
+`scripts/lint_corpus_digest_provenance.sh` is the executable form of the
+first rule: it fails if any line committed at a pinned historical commit
+(`8caf1f1`) stops appearing verbatim in `CORPUS_DIGEST.txt`, and it fails
+if `CORPUS_DIGEST_PROVISIONAL.txt` is missing, malformed, or names a
+fixture that is not actually in the digest. `.github/workflows/ci.yml`
+runs it on every leg that runs the repo's shell lints -- no designated-leg
+conditional, since it never hashes a fixture and carries no
+platform-dependence.
 
 ## `ts_scan_ts_*.txt` are a different kind of golden (TRUST-09, D-04)
 

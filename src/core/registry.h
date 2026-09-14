@@ -13,12 +13,19 @@
 
 namespace mediadiff {
 
-// The seven comparison semantics doc 01 section 3 defines. This plan's
-// dispatch (compare/semantics.h) implements only `exact` (compare/exact.cpp)
-// — the other six are declared now so a check registered against one of
-// them compiles and links; the unimplemented dispatch path returns an
-// internal Error, which is a functionality gap plans 02-02 through 02-04
-// close, not an architectural one this plan leaves open.
+// The seven comparison semantics doc 01 section 3 defines, plus an EIGHTH
+// added additively by 04-12-PLAN.md (D-10): `state`. `exact`'s own
+// baseline-equality rule means two files that SHARE an incoherent state
+// compare `pass` -- invisible in `compare`, which is exactly the
+// invisibility VIDEO-10's own "even when both files share it" wording
+// rejects. `state` instead fires whenever EITHER side's value is one of
+// the check's own declared `flagged_values` (CheckDef::flagged_values
+// below), so a shared incoherence still reports a Finding. Purely
+// additive: no existing comparator's behavior changes, no EXISTING row's
+// spelling changes. The `semantic` field IS printed by plain
+// `mediadiff list-checks` (src/cli/commands/list_checks.cpp's non-
+// `--effective` branch); this addition therefore adds new rows to that
+// output as well as to `list_checks_effective.txt`.
 enum class Semantic {
   exact,
   tol,
@@ -27,6 +34,7 @@ enum class Semantic {
   hash,
   dist,
   span,
+  state,
 };
 
 // The tag half of Value's std::variant<9> (core/value.h) — kept in its own
@@ -224,6 +232,16 @@ struct CheckDef {
   std::size_t profile_severity_override_count;
   const ProfileToleranceOverride* profile_tolerance_overrides;
   std::size_t profile_tolerance_override_count;
+  // 04-12-PLAN.md (D-10): the closed set of compared-value spellings that
+  // make the `state` semantic's own comparator (src/compare/state.cpp)
+  // report a Finding rather than pass -- REQUIRED and non-empty when
+  // `semantic == Semantic::state`, nullptr/0 for every other semantic
+  // (tools/gen_registry.py's own validation enforces this at generation
+  // time). A span (pointer + count) into a per-check constexpr array the
+  // generator emits, mirroring profile_severity_overrides/
+  // profile_tolerance_overrides' own span shape immediately above.
+  const std::string_view* flagged_values = nullptr;
+  std::size_t flagged_values_count = 0;
   // The three labelled sub-parts of docs/checks/<id>.md's own
   // "## Accept / Tune / Silence" section (REPORT-03, 02-09-PLAN.md Task 2)
   // -- split at generation time from the `### Accept` / `### Tune` /

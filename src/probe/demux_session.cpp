@@ -18,6 +18,16 @@ extern "C" {
 #include <libavutil/dict.h>
 #include <libavutil/error.h>
 #include <libavutil/log.h>
+// 04-11-PLAN.md (VIDEO-09): AVMasteringDisplayMetadata/
+// AVContentLightMetadata's own struct layouts -- AVPacketSideData itself
+// and av_packet_side_data_get() already come in transitively via
+// libavcodec/codec_par.h's own #include "packet.h" above.
+#include <libavutil/mastering_display_metadata.h>
+#include <libavutil/pixdesc.h>
+// 04-12-PLAN.md (VIDEO-09's third HDR family): AVDOVIDecoderConfigurationRecord's
+// own struct layout -- AV_PKT_DATA_DOVI_CONF itself is declared in
+// libavcodec/packet.h, already transitively included above.
+#include <libavutil/dovi_meta.h>
 }
 
 #include <cerrno>
@@ -317,6 +327,158 @@ StreamInfo DemuxSession::stream_info(int index) const {
   // dispatch table, keyed on this exact codec_tag).
   info.is_timecode = codecpar->codec_tag == MKTAG('t', 'm', 'c', 'd');
   info.is_caption = codecpar->codec_id == AV_CODEC_ID_EIA_608;
+
+  // 04-06-PLAN.md (VIDEO-01/02): resolved here, never past this file's own
+  // opaque-AVFormatContext boundary -- see StreamInfo's own comment.
+  info.codec_id_raw = static_cast<std::int64_t>(codecpar->codec_id);
+  info.codec_tag_raw = static_cast<std::int64_t>(codecpar->codec_tag);
+  info.profile = codecpar->profile;
+  const char* profile_name = avcodec_profile_name(codecpar->codec_id, codecpar->profile);
+  if (profile_name != nullptr) {
+    info.profile_name = profile_name;
+  }
+  info.level = codecpar->level;
+  info.width = codecpar->width;
+  info.height = codecpar->height;
+  info.declared_frame_count = static_cast<std::int64_t>(stream->nb_frames);
+
+  // 04-07-PLAN.md (VIDEO-01): resolved here, same boundary as every other
+  // codecpar/AVStream field above -- never past this file's own
+  // opaque-AVFormatContext boundary.
+  info.avg_frame_rate_num = stream->avg_frame_rate.num;
+  info.avg_frame_rate_den = stream->avg_frame_rate.den;
+  info.r_frame_rate_num = stream->r_frame_rate.num;
+  info.r_frame_rate_den = stream->r_frame_rate.den;
+
+  // 04-07-PLAN.md (VIDEO-04): the SAME per-field boundary as above --
+  // container-level from AVStream, bitstream-level from codecpar, both
+  // verbatim (including a 0 numerator).
+  info.sar_container_num = stream->sample_aspect_ratio.num;
+  info.sar_container_den = stream->sample_aspect_ratio.den;
+  info.sar_bitstream_num = codecpar->sample_aspect_ratio.num;
+  info.sar_bitstream_den = codecpar->sample_aspect_ratio.den;
+
+  // 04-08-PLAN.md (VIDEO-03/VIDEO-07/VIDEO-08): resolved here, same
+  // per-field boundary as every other codecpar value above -- never past
+  // this file's own opaque-AVFormatContext boundary. `codecpar->format` is
+  // an AVPixelFormat for a video stream (the only stream kind this check
+  // family ever scopes to).
+  info.pix_fmt_raw = static_cast<std::int64_t>(codecpar->format);
+  const char* pix_fmt_name = av_get_pix_fmt_name(static_cast<AVPixelFormat>(codecpar->format));
+  if (pix_fmt_name != nullptr) {
+    info.pix_fmt_name = pix_fmt_name;
+  }
+  info.color_range_raw = static_cast<std::int64_t>(codecpar->color_range);
+  const char* color_range_name = av_color_range_name(codecpar->color_range);
+  if (color_range_name != nullptr) {
+    info.color_range_name = color_range_name;
+  }
+  info.color_primaries_raw = static_cast<std::int64_t>(codecpar->color_primaries);
+  const char* color_primaries_name = av_color_primaries_name(codecpar->color_primaries);
+  if (color_primaries_name != nullptr) {
+    info.color_primaries_name = color_primaries_name;
+  }
+  info.color_transfer_raw = static_cast<std::int64_t>(codecpar->color_trc);
+  const char* color_transfer_name = av_color_transfer_name(codecpar->color_trc);
+  if (color_transfer_name != nullptr) {
+    info.color_transfer_name = color_transfer_name;
+  }
+  info.color_matrix_raw = static_cast<std::int64_t>(codecpar->color_space);
+  const char* color_matrix_name = av_color_space_name(codecpar->color_space);
+  if (color_matrix_name != nullptr) {
+    info.color_matrix_name = color_matrix_name;
+  }
+  info.chroma_location_raw = static_cast<std::int64_t>(codecpar->chroma_location);
+  const char* chroma_location_name = av_chroma_location_name(codecpar->chroma_location);
+  if (chroma_location_name != nullptr) {
+    info.chroma_location_name = chroma_location_name;
+  }
+
+  // 04-10-PLAN.md (VIDEO-06): the raw AVFieldOrder ordinal, same
+  // per-field boundary as every other codecpar value above -- resolved to
+  // a name only at the src/analyzers/video/interlace.cpp edge (no
+  // av_field_order_name exists to call here).
+  info.field_order_raw = static_cast<std::int64_t>(codecpar->field_order);
+
+  // 04-11-PLAN.md (VIDEO-09): codecpar->coded_side_data, resolved here --
+  // the ONLY place this project reads an AVPacketSideData/
+  // AVMasteringDisplayMetadata/AVContentLightMetadata pointer;
+  // src/analyzers/video/hdr.cpp only ever sees the plain StreamInfo
+  // fields above. Populated at DEMUX time (D-08/D-09), never by a decode
+  // pass.
+  const AVPacketSideData* mdcv_side_data = av_packet_side_data_get(
+      codecpar->coded_side_data, codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA);
+  if (mdcv_side_data != nullptr) {
+    // T-4-48: a payload whose reported size is smaller than the struct it
+    // would be read as is never read past its end -- treated as though
+    // the entry were absent, with the short-payload observation recorded
+    // so it is visible rather than silent.
+    if (mdcv_side_data->size < sizeof(AVMasteringDisplayMetadata)) {
+      info.mdcv_short_payload = true;
+    } else {
+      const auto* mdcv = reinterpret_cast<const AVMasteringDisplayMetadata*>(mdcv_side_data->data);
+      info.mdcv_present = true;
+      info.mdcv_has_primaries = mdcv->has_primaries != 0;
+      info.mdcv_has_luminance = mdcv->has_luminance != 0;
+      info.mdcv_r_x_num = mdcv->display_primaries[0][0].num;
+      info.mdcv_r_x_den = mdcv->display_primaries[0][0].den;
+      info.mdcv_r_y_num = mdcv->display_primaries[0][1].num;
+      info.mdcv_r_y_den = mdcv->display_primaries[0][1].den;
+      info.mdcv_g_x_num = mdcv->display_primaries[1][0].num;
+      info.mdcv_g_x_den = mdcv->display_primaries[1][0].den;
+      info.mdcv_g_y_num = mdcv->display_primaries[1][1].num;
+      info.mdcv_g_y_den = mdcv->display_primaries[1][1].den;
+      info.mdcv_b_x_num = mdcv->display_primaries[2][0].num;
+      info.mdcv_b_x_den = mdcv->display_primaries[2][0].den;
+      info.mdcv_b_y_num = mdcv->display_primaries[2][1].num;
+      info.mdcv_b_y_den = mdcv->display_primaries[2][1].den;
+      info.mdcv_wp_x_num = mdcv->white_point[0].num;
+      info.mdcv_wp_x_den = mdcv->white_point[0].den;
+      info.mdcv_wp_y_num = mdcv->white_point[1].num;
+      info.mdcv_wp_y_den = mdcv->white_point[1].den;
+      info.mdcv_min_luminance_num = mdcv->min_luminance.num;
+      info.mdcv_min_luminance_den = mdcv->min_luminance.den;
+      info.mdcv_max_luminance_num = mdcv->max_luminance.num;
+      info.mdcv_max_luminance_den = mdcv->max_luminance.den;
+    }
+  }
+
+  const AVPacketSideData* cll_side_data = av_packet_side_data_get(
+      codecpar->coded_side_data, codecpar->nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL);
+  if (cll_side_data != nullptr) {
+    if (cll_side_data->size < sizeof(AVContentLightMetadata)) {
+      info.cll_short_payload = true;
+    } else {
+      const auto* cll = reinterpret_cast<const AVContentLightMetadata*>(cll_side_data->data);
+      info.cll_present = true;
+      info.cll_max_cll = static_cast<std::int64_t>(cll->MaxCLL);
+      info.cll_max_fall = static_cast<std::int64_t>(cll->MaxFALL);
+    }
+  }
+
+  // 04-12-PLAN.md (VIDEO-09's third HDR family): the Dolby Vision
+  // configuration record, same per-field boundary and short-payload
+  // discipline (T-4-53, mirroring T-4-48) as mdcv/cll above.
+  const AVPacketSideData* dovi_side_data =
+      av_packet_side_data_get(codecpar->coded_side_data, codecpar->nb_coded_side_data, AV_PKT_DATA_DOVI_CONF);
+  if (dovi_side_data != nullptr) {
+    if (dovi_side_data->size < sizeof(AVDOVIDecoderConfigurationRecord)) {
+      info.dovi_short_payload = true;
+    } else {
+      const auto* dovi = reinterpret_cast<const AVDOVIDecoderConfigurationRecord*>(dovi_side_data->data);
+      info.dovi_present = true;
+      info.dovi_version_major = static_cast<std::int64_t>(dovi->dv_version_major);
+      info.dovi_version_minor = static_cast<std::int64_t>(dovi->dv_version_minor);
+      info.dovi_profile = static_cast<std::int64_t>(dovi->dv_profile);
+      info.dovi_level = static_cast<std::int64_t>(dovi->dv_level);
+      info.dovi_rpu_present = dovi->rpu_present_flag != 0;
+      info.dovi_el_present = dovi->el_present_flag != 0;
+      info.dovi_bl_present = dovi->bl_present_flag != 0;
+      info.dovi_bl_signal_compatibility_id = static_cast<std::int64_t>(dovi->dv_bl_signal_compatibility_id);
+      info.dovi_md_compression = static_cast<std::int64_t>(dovi->dv_md_compression);
+    }
+  }
+
   return info;
 }
 

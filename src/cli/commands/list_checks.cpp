@@ -40,6 +40,8 @@ std::string_view semantic_to_string(Semantic semantic) {
       return "dist";
     case Semantic::span:
       return "span";
+    case Semantic::state:
+      return "state";
   }
   // Unreachable for any valid Semantic -- see src/cli/exit_code.h's own
   // no-default:-arm-plus-trailing-return pattern for why this shape.

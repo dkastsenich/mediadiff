@@ -20,6 +20,12 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERS
 endif()
 
 option(MEDIADIFF_WITH_VMAF "Enable libvmaf-backed quality metrics" OFF)
+# 04-03-PLAN.md Task 1 (PROBE-03, D-11): the opt-in parser-overhead
+# benchmark. OFF by default so none of the five CI legs builds or pays for
+# it -- D-11 forbids a CI/CTest gate on this measurement, and building the
+# target unconditionally would be exactly the kind of always-on cost that
+# invites someone to eventually wire one in.
+option(MEDIADIFF_BUILD_BENCH "Build the opt-in probe benchmarks" OFF)
 
 # --- Configure-time GPL fast-fail (belt-and-braces; the mandatory check is
 #     the runtime avutil_license()/avcodec_license()/avformat_license()
@@ -149,12 +155,15 @@ add_library(libmediadiff STATIC
   src/compare/hash.cpp
   src/compare/dist.cpp
   src/compare/span.cpp
+  src/compare/state.cpp
   src/report/model.cpp
   src/report/json.cpp
   src/report/markdown.cpp
   src/report/junit.cpp
   src/probe/demux_session.cpp
   src/probe/packet_scan.cpp
+  src/probe/parser_scan.cpp
+  src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
   src/probe/ts_scan.cpp
@@ -165,6 +174,12 @@ add_library(libmediadiff STATIC
   src/analyzers/container/mkv.cpp
   src/analyzers/container/ts.cpp
   src/analyzers/size/size.cpp
+  src/analyzers/video/stream_params.cpp
+  src/analyzers/video/gop.cpp
+  src/analyzers/video/frame_types.cpp
+  src/analyzers/video/color.cpp
+  src/analyzers/video/interlace.cpp
+  src/analyzers/video/hdr.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -216,12 +231,15 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/pass.h
   src/probe/demux_session.h
   src/probe/packet_scan.h
+  src/probe/parser_scan.h
+  src/probe/cadence.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
   src/probe/ts_scan.h
   src/probe/orchestrator.h
   src/analyzers/container/analyzers.h
   src/analyzers/size/analyzers.h
+  src/analyzers/video/analyzers.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 
@@ -307,6 +325,18 @@ if(WIN32)
   # CommandLineToArgvW (src/cli/main.cpp's Windows entry point) lives in
   # Shell32.
   target_link_libraries(mediadiff PRIVATE Shell32)
+endif()
+
+# --- Opt-in probe benchmarks (04-03-PLAN.md Task 1, PROBE-03, D-11) ---------
+# Registers NO CTest case -- this is a measurement tool, not a test; D-11
+# forbids a CI/CTest threshold gate on the number it prints. Linked against
+# libmediadiff exactly like `mediadiff` itself, so both legs it times run
+# through the SAME shipped run_packet_scan production uses.
+if(MEDIADIFF_BUILD_BENCH)
+  add_executable(mediadiff_parser_overhead tools/bench/parser_overhead.cpp)
+  target_link_libraries(mediadiff_parser_overhead PRIVATE libmediadiff fmt::fmt)
+  mediadiff_apply_warnings(mediadiff_parser_overhead)
+  mediadiff_apply_platform_definitions(mediadiff_parser_overhead)
 endif()
 
 enable_testing()

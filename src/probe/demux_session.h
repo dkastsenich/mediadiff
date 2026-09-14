@@ -176,6 +176,206 @@ struct StreamInfo {
   // confirmed present in this pinned FFmpeg's libavcodec/codec_id.h.
   // CONT-09's caption-track counterpart to is_timecode above.
   bool is_caption = false;
+
+  // 04-06-PLAN.md (VIDEO-01/02): the remaining codecpar fields
+  // video.codec/profile/level/resolution/frame_count extract directly --
+  // resolved HERE, never by handing a raw AVCodecParameters* to
+  // src/analyzers/ (this file's own top-of-file boundary: "no libav header
+  // crosses this file's public surface").
+  //
+  // Raw enum AVCodecID ordinal, evidence-only (VIDEO-01: `codec_name`
+  // above, not this, is the compared value -- an enum ordinal can renumber
+  // across an FFmpeg version bump, per doc 02's own codec_name rationale).
+  std::int64_t codec_id_raw = 0;
+  // codecpar->codec_tag, evidence-only, so a codec whose name is shared
+  // across container-level fourcc tags is still distinguishable under -v.
+  std::int64_t codec_tag_raw = 0;
+  // codecpar->profile verbatim, including AV_PROFILE_UNKNOWN (-99) when
+  // absent -- video.profile's own compared value is derived from this raw
+  // integer, never from profile_name alone (VIDEO-01-E2: two different
+  // unrecognised profiles must compare as different, not collapse to one
+  // shared "unknown" string).
+  int profile = 0;
+  // avcodec_profile_name(codec_id, profile) resolved once, here -- nullopt
+  // when it does not resolve for this codec_id/profile pair (an unknown or
+  // codec-inapplicable profile number).
+  std::optional<std::string> profile_name;
+  // codecpar->level verbatim, including AV_LEVEL_UNKNOWN (-99) when
+  // absent.
+  int level = 0;
+  // codecpar->width/height -- the container/bitstream-probed display
+  // dimensions. No decode pass exists in this phase (04-CONTEXT.md D-08/
+  // D-09), so the coded (pre-crop) dimensions AVCodecContext would carry
+  // post-avcodec_open2 are not available here; video.resolution's evidence
+  // is scoped to what codecpar alone can provide.
+  std::int64_t width = 0;
+  std::int64_t height = 0;
+  // AVStream::nb_frames -- the CONTAINER's own declared frame count.
+  // Evidence-only: VIDEO-02 forbids this from ever being video.frame_count's
+  // compared value (the count must always be counted from the packet/parser
+  // scan, never trusted from the container).
+  std::int64_t declared_frame_count = 0;
+
+  // 04-07-PLAN.md (VIDEO-01): AVStream::avg_frame_rate/r_frame_rate
+  // verbatim, 0/0 when libav has no opinion -- video.frame_rate.declared's
+  // own extraction (avg_frame_rate primary, r_frame_rate evidence-only,
+  // claude_docs/03-video-analysis.md section 2). Never rendered as a float
+  // for comparison (30000/1001 vs 29.97 must never meet as floats).
+  std::int64_t avg_frame_rate_num = 0;
+  std::int64_t avg_frame_rate_den = 0;
+  std::int64_t r_frame_rate_num = 0;
+  std::int64_t r_frame_rate_den = 0;
+
+  // 04-07-PLAN.md (VIDEO-04): the container-level sample aspect ratio
+  // (AVStream::sample_aspect_ratio, populated from e.g. mp4's own `pasp`
+  // box) and the bitstream-level one (codecpar->sample_aspect_ratio, the
+  // VUI/VOL-header value) -- 04-05-SUMMARY.md's own empirical finding is
+  // that these are two DISTINCT libav fields once avformat_find_stream_info's
+  // internal decode probe has run, not two views of the same one. Verbatim,
+  // including a 0 numerator (doc 03's own "0/1 treated as 1:1 with `unset`
+  // evidence" rule) -- resolved to an effective ratio only at the
+  // src/analyzers/video/ edge, never here.
+  std::int64_t sar_container_num = 0;
+  std::int64_t sar_container_den = 1;
+  std::int64_t sar_bitstream_num = 0;
+  std::int64_t sar_bitstream_den = 1;
+
+  // 04-08-PLAN.md (VIDEO-03/VIDEO-07/VIDEO-08): the six colorimetry fields,
+  // resolved HERE via av_get_pix_fmt_name/av_color_range_name/
+  // av_color_primaries_name/av_color_transfer_name/av_color_space_name/
+  // av_chroma_location_name -- the SAME per-field boundary as every other
+  // codecpar value above ("no libav header crosses this file's public
+  // surface"). src/analyzers/video/color.cpp performs VIDEO-03's yuvj*
+  // range-fold on these NAME STRINGS, never on the raw AVPixelFormat/
+  // AVColorRange ordinals below (which src/analyzers/ never sees) -- the
+  // fold needs no libav header at all this way. Each `_name` is nullopt
+  // only when libav's own name table has no entry for the raw value
+  // (never observed for a real codecpar; every UNSPECIFIED sentinel below
+  // DOES have a name, "unknown" or, for chroma location, "unspecified")
+  // -- video/color.cpp falls through to the raw integer's own decimal
+  // spelling in that case, mirroring render_profile_value's precedent.
+  // Raw ints are always carried too, evidence-only, exactly like
+  // codec_id_raw/codec_tag_raw above.
+  std::optional<std::string> pix_fmt_name;
+  std::int64_t pix_fmt_raw = -1;  // AV_PIX_FMT_NONE
+  std::optional<std::string> color_range_name;
+  std::int64_t color_range_raw = 0;  // AVCOL_RANGE_UNSPECIFIED
+  std::optional<std::string> color_primaries_name;
+  std::int64_t color_primaries_raw = 2;  // AVCOL_PRI_UNSPECIFIED
+  std::optional<std::string> color_transfer_name;
+  std::int64_t color_transfer_raw = 2;  // AVCOL_TRC_UNSPECIFIED
+  // codecpar->color_space -- video.color.matrix's own source (libav's own
+  // "colorspace"/AVColorSpace is what this project's checks.def/doc 03
+  // call the YCbCr conversion MATRIX; "color_space" is libav's naming, not
+  // this project's).
+  std::optional<std::string> color_matrix_name;
+  std::int64_t color_matrix_raw = 2;  // AVCOL_SPC_UNSPECIFIED
+  std::optional<std::string> chroma_location_name;
+  std::int64_t chroma_location_raw = 0;  // AVCHROMA_LOC_UNSPECIFIED
+
+  // 04-10-PLAN.md (VIDEO-06): codecpar->field_order verbatim -- the raw
+  // AVFieldOrder ordinal (avcodec/defs.h: UNKNOWN=0, PROGRESSIVE=1, TT=2,
+  // BB=3, TB=4, BT=5), the container/bitstream-header-level DECLARED field
+  // order. Unlike pix_fmt/color_range/etc. above, libav exposes no
+  // av_field_order_name accessor to resolve this to a string -- the same
+  // "no libav table exists" situation video.level's own render_level_value
+  // already handles for codecpar->level -- so video.interlace's own
+  // hand-written name table lives in src/analyzers/video/interlace.cpp
+  // (detail::field_order_name), never here.
+  std::int64_t field_order_raw = 0;  // AV_FIELD_UNKNOWN
+
+  // 04-11-PLAN.md (VIDEO-09): HDR10 mastering-display metadata, read from
+  // codecpar->coded_side_data (AV_PKT_DATA_MASTERING_DISPLAY_METADATA) --
+  // populated at DEMUX time (av_packet_side_data_add, confirmed against
+  // libavformat/mov.c:11080-11095's own attach-at-open-time path for the
+  // MP4 mdcv/clli boxes D-09 targets), never by a decode pass, which this
+  // phase does not have. Resolved HERE, same per-field boundary as every
+  // other codecpar value above -- src/analyzers/video/hdr.cpp never sees
+  // an AVPacketSideData/AVMasteringDisplayMetadata pointer, only these
+  // plain fields. Every rational is AVMasteringDisplayMetadata's own
+  // verbatim AVRational (already real CIE-xy chromaticity / cd-per-m^2
+  // luminance units, confirmed against this project's linked FFmpeg 8.1 --
+  // 04-RESEARCH.md's own re-verification found e.g. red_x=34000/50000 and
+  // max_luminance=10000000/10000 surviving intact) -- never rescaled,
+  // never converted to floating point anywhere in this path.
+  //
+  // `mdcv_present` is false both when the side data entry is simply absent
+  // AND when it was present but its reported size was smaller than
+  // sizeof(AVMasteringDisplayMetadata) (T-4-48: a short, possibly
+  // attacker-shortened payload is never read past its end) --
+  // `mdcv_short_payload` distinguishes the second case in evidence so it
+  // is visible rather than silently indistinguishable from "no entry at
+  // all". `mdcv_has_primaries`/`mdcv_has_luminance` mirror the struct's
+  // own has_primaries/has_luminance flags verbatim, so a partially
+  // populated payload (one flag set, the other not) is visible too.
+  bool mdcv_present = false;
+  bool mdcv_short_payload = false;
+  bool mdcv_has_primaries = false;
+  bool mdcv_has_luminance = false;
+  std::int64_t mdcv_r_x_num = 0;
+  std::int64_t mdcv_r_x_den = 1;
+  std::int64_t mdcv_r_y_num = 0;
+  std::int64_t mdcv_r_y_den = 1;
+  std::int64_t mdcv_g_x_num = 0;
+  std::int64_t mdcv_g_x_den = 1;
+  std::int64_t mdcv_g_y_num = 0;
+  std::int64_t mdcv_g_y_den = 1;
+  std::int64_t mdcv_b_x_num = 0;
+  std::int64_t mdcv_b_x_den = 1;
+  std::int64_t mdcv_b_y_num = 0;
+  std::int64_t mdcv_b_y_den = 1;
+  std::int64_t mdcv_wp_x_num = 0;
+  std::int64_t mdcv_wp_x_den = 1;
+  std::int64_t mdcv_wp_y_num = 0;
+  std::int64_t mdcv_wp_y_den = 1;
+  std::int64_t mdcv_min_luminance_num = 0;
+  std::int64_t mdcv_min_luminance_den = 1;
+  std::int64_t mdcv_max_luminance_num = 0;
+  std::int64_t mdcv_max_luminance_den = 1;
+
+  // 04-11-PLAN.md (VIDEO-09): HDR10 content-light metadata, read from
+  // codecpar->coded_side_data (AV_PKT_DATA_CONTENT_LIGHT_LEVEL) -- the
+  // SAME extraction boundary and short-payload discipline (T-4-48) as the
+  // mdcv_* fields above. Unlike AVMasteringDisplayMetadata's rationals,
+  // AVContentLightMetadata's MaxCLL/MaxFALL are already plain unsigned
+  // integers in cd/m^2 (04-RESEARCH.md's own "Anti-Patterns to Avoid" --
+  // the two families are NOT symmetric) -- carried verbatim as int64, no
+  // rational wrapping needed.
+  bool cll_present = false;
+  bool cll_short_payload = false;
+  std::int64_t cll_max_cll = 0;
+  std::int64_t cll_max_fall = 0;
+
+  // 04-12-PLAN.md (VIDEO-09's third HDR family): the Dolby Vision
+  // configuration record, read from codecpar->coded_side_data
+  // (AV_PKT_DATA_DOVI_CONF) -- populated at DEMUX time (libavformat/mov.c's
+  // own generic dvcC/dvvC/dvwC box dispatch, confirmed against
+  // 04-RESEARCH.md Priority Finding 2: `ff_isom_parse_dvcc_dvvc` populates
+  // an `AVDOVIDecoderConfigurationRecord` and attaches it via
+  // `av_packet_side_data_add`, the exact stream-level source VIDEO-09
+  // names), never by a decode pass -- no per-frame RPU data is read
+  // anywhere in this project (v1 = configuration record only,
+  // 04-CONTEXT.md's Deferred Ideas). Resolved HERE, same per-field
+  // boundary as every other codecpar/coded_side_data value above --
+  // src/analyzers/video/hdr.cpp never sees an AVPacketSideData/
+  // AVDOVIDecoderConfigurationRecord pointer, only these plain fields.
+  //
+  // `dovi_present` is false both when the side data entry is absent AND
+  // when it was present but its reported size was smaller than
+  // sizeof(AVDOVIDecoderConfigurationRecord) (T-4-53, mirroring T-4-48's
+  // identical mdcv/cll guard) -- `dovi_short_payload` distinguishes the
+  // second case in evidence.
+  bool dovi_present = false;
+  bool dovi_short_payload = false;
+  std::int64_t dovi_version_major = 0;
+  std::int64_t dovi_version_minor = 0;
+  std::int64_t dovi_profile = 0;
+  std::int64_t dovi_level = 0;
+  bool dovi_rpu_present = false;
+  bool dovi_el_present = false;
+  bool dovi_bl_present = false;
+  std::int64_t dovi_bl_signal_compatibility_id = 0;
+  std::int64_t dovi_md_compression = 0;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE
