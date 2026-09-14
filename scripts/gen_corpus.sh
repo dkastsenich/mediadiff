@@ -1279,22 +1279,38 @@ cp "$OUT_DIR/video_color_bt709.mp4" "$OUT_DIR/video_color_bt709_copy.mp4"
 # `AV_FIELD_BB`, both container-level `codecpar->field_order` values also
 # distinct (`TB`/`BT`) and neither progressive.
 #
-# Quick task 260914-ryu: the temporal-interlacing filter originally used
-# here is GPL-only upstream (`tinterlace_filter_deps="gpl"` in ffmpeg's
-# configure) and is therefore simply absent from the LGPL Windows pinned
-# build, which is how it broke the x64-windows-static-md corpus step on
-# draft PR #5 (job `build (x64-windows-static-md)`, `No option name near
-# 'interleave_top'`). The `interlace` filter used below is its LGPL twin,
-# sharing the same implementation source (`libavfilter/vf_tinterlace.c`).
-# `lowpass=off` is what keeps the emitted bytes identical to the previous
-# recipe -- proven byte-for-byte via the pinned Linux (GPL) generator,
-# which can render both filters -- so the committed digest lines for
-# `video_ilace_tff.mp4`, `video_ilace_tff_copy.mp4`, `video_ilace_bff.mp4`
-# and `video_ilace_mixed.mp4` are unchanged BY DESIGN. The filter's
-# default `lowpass=linear` would silently move all four; never omit the
-# explicit `lowpass=off`.
+# Quick task 260914-t47: the prior quick task's finding was incomplete.
+# FFmpeg n9.0.1's configure gates the `interlace` filter ALSO on GPL, just
+# like `tinterlace` (`tinterlace_filter_deps="gpl"` AND
+# `interlace_filter_deps="gpl"`), so the `interlace` filter used by that
+# prior task is likewise absent from the LGPL Windows pinned build, which
+# is how draft PR #5's CI run 34882668138, job `build
+# (x64-windows-static-md)`, step 9 died with `No such filter: 'interlace'`.
+# The three recipes below instead use an LGPL-only
+# `separatefields`/`select`/`weave` chain that reproduces the same bytes.
+# The old filter was the temporal interleave-top/bottom mode without
+# lowpass, i.e. the upper field of odd frames woven with the lower field
+# of even frames at half the frame rate. `setparams=field_mode=tff` makes
+# `separatefields` emit each frame's top field first (F1T,F1B,F2T,F2B,...);
+# `select='eq(mod(n\,4)\,0)+eq(mod(n\,4)\,3)'` keeps field frames with n
+# mod 4 in {0,3} (F1T,F2B,F3T,F4B,...); `weave=first_field=top` writes the
+# first frame of each pair into the even lines and the second into the odd
+# lines. For BFF, `setparams=field_mode=bff` makes `separatefields` emit
+# the bottom field first, the same `select` keeps (F1B,F2T,...), and
+# `weave=first_field=bottom` writes them into the odd and even lines
+# respectively. The output option `-r 25/2` hands the encoder the same
+# 12.5 fps time base the old filter advertised, so the MPEG-2 sequence
+# header and the mp4 timing tables come out identical -- an `fps=25/2`
+# FILTER must not be used instead (it drops the last frame, 24 instead of
+# 25, and moves the bytes) and the rate option must not be omitted either
+# (`weave`'s output link still advertises 25 fps with a frame on every
+# other tick, so the CLI would duplicate frames to fill it). The committed
+# digest lines for `video_ilace_tff.mp4`, `video_ilace_tff_copy.mp4`,
+# `video_ilace_bff.mp4`, `video_ilace_mixed.mp4` and the three
+# `.video_ilace_*.m2v` sidecars are unchanged BY DESIGN, proven old-vs-new
+# on a generator that has both filters before the swap landed.
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
-  -vf "interlace=scan=tff:lowpass=off,setparams=field_mode=tff" \
+  -vf "setparams=field_mode=tff,separatefields,select='eq(mod(n\,4)\,0)+eq(mod(n\,4)\,3)',weave=first_field=top,setparams=field_mode=tff" -r 25/2 \
   -c:v mpeg2video -flags +ilme+ildct \
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_ilace_tff.mp4"
@@ -1302,7 +1318,7 @@ cp "$OUT_DIR/video_color_bt709.mp4" "$OUT_DIR/video_color_bt709_copy.mp4"
 cp "$OUT_DIR/video_ilace_tff.mp4" "$OUT_DIR/video_ilace_tff_copy.mp4"
 
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
-  -vf "interlace=scan=bff:lowpass=off,setparams=field_mode=bff" \
+  -vf "setparams=field_mode=bff,separatefields,select='eq(mod(n\,4)\,0)+eq(mod(n\,4)\,3)',weave=first_field=bottom,setparams=field_mode=bff" -r 25/2 \
   -c:v mpeg2video -flags +ilme+ildct \
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_ilace_bff.mp4"
@@ -1323,7 +1339,7 @@ ILACE_SEG_B="$OUT_DIR/.video_ilace_seg_b.m2v"
 ILACE_MIXED_RAW="$OUT_DIR/.video_ilace_mixed_raw.m2v"
 
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=1" \
-  -vf "interlace=scan=tff:lowpass=off,setparams=field_mode=tff" \
+  -vf "setparams=field_mode=tff,separatefields,select='eq(mod(n\,4)\,0)+eq(mod(n\,4)\,3)',weave=first_field=top,setparams=field_mode=tff" -r 25/2 \
   -c:v mpeg2video -flags +ilme+ildct \
   -flags +bitexact -fflags +bitexact -y \
   "$ILACE_SEG_A"
