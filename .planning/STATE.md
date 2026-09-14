@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 Phase: 04 (Video Analysis) — EXECUTING
 Plan: 9 of 21
 Status: Ready to execute
-Last activity: 2026-09-14 - Completed quick task 260914-ryu: Replace GPL-only tinterlace with the LGPL interlace filter in the three interlace fixture recipes
+Last activity: 2026-09-14 - Completed quick task 260914-t47: Replace the GPL-gated interlace filter with an LGPL separatefields/select/weave chain in the three interlace fixture recipes
 
 Progress: [█████████░] 92%
 
@@ -284,6 +284,7 @@ None yet.
 | 260913-wuy | Fix Windows CI pin-reader CRLF regression in resolve_pinned_ffmpeg.sh | 2026-09-13 | 5034c7c | [260913-wuy-fix-windows-ci-pin-reader-crlf-regressio](./quick/260913-wuy-fix-windows-ci-pin-reader-crlf-regressio/) |
 | 260914-qlk | Re-pin the Windows ffmpeg build to the mirrored ffmpeg-pins release asset | 2026-09-14 | 3a5ca95 | [260914-qlk-re-pin-the-windows-ffmpeg-build-to-the-m](./quick/260914-qlk-re-pin-the-windows-ffmpeg-build-to-the-m/) |
 | 260914-ryu | Replace GPL-only tinterlace with the LGPL interlace filter in the three interlace fixture recipes | 2026-09-14 | bf9a42f | [260914-ryu-replace-gpl-only-tinterlace-with-the-lgp](./quick/260914-ryu-replace-gpl-only-tinterlace-with-the-lgp/) |
+| 260914-t47 | Replace the GPL-gated interlace filter with an LGPL separatefields/select/weave chain in the three interlace fixture recipes | 2026-09-14 | d137242 | [260914-t47-replace-the-gpl-only-interlace-filter-in](./quick/260914-t47-replace-the-gpl-only-interlace-filter-in/) |
 
 ## Deferred Items
 
