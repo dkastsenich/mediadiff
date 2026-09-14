@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 Phase: 04 (Video Analysis) — EXECUTING
 Plan: 9 of 21
 Status: Ready to execute
-Last activity: 2026-09-14 - Completed quick task 260914-qlk: Re-pin the Windows ffmpeg build to the mirrored ffmpeg-pins release asset
+Last activity: 2026-09-14 - Completed quick task 260914-ryu: Replace GPL-only tinterlace with the LGPL interlace filter in the three interlace fixture recipes
 
 Progress: [█████████░] 92%
 
@@ -283,6 +283,7 @@ None yet.
 | 260910-vvp | Harden gen_corpus.sh's ffmpeg resolution — pinned-first + release-identity gate against scripts/ffmpeg_pin.json, PATH still permitted (Tasks 1-3; Task 4 gen_corpus.ps1 parity deferred for separate user approval, not judged unnecessary) | 2026-09-10 | 31d285a | [260910-vvp-harden-gen-corpus-sh-ffmpeg-pin-resoluti](./quick/260910-vvp-harden-gen-corpus-sh-ffmpeg-pin-resoluti/) |
 | 260913-wuy | Fix Windows CI pin-reader CRLF regression in resolve_pinned_ffmpeg.sh | 2026-09-13 | 5034c7c | [260913-wuy-fix-windows-ci-pin-reader-crlf-regressio](./quick/260913-wuy-fix-windows-ci-pin-reader-crlf-regressio/) |
 | 260914-qlk | Re-pin the Windows ffmpeg build to the mirrored ffmpeg-pins release asset | 2026-09-14 | 3a5ca95 | [260914-qlk-re-pin-the-windows-ffmpeg-build-to-the-m](./quick/260914-qlk-re-pin-the-windows-ffmpeg-build-to-the-m/) |
+| 260914-ryu | Replace GPL-only tinterlace with the LGPL interlace filter in the three interlace fixture recipes | 2026-09-14 | bf9a42f | [260914-ryu-replace-gpl-only-tinterlace-with-the-lgp](./quick/260914-ryu-replace-gpl-only-tinterlace-with-the-lgp/) |
 
 ## Deferred Items
 
