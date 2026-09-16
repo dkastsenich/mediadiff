@@ -7,6 +7,7 @@
 
 #include "analyzers/container/analyzers.h"
 #include "analyzers/size/analyzers.h"
+#include "analyzers/timeline/analyzers.h"
 #include "analyzers/video/analyzers.h"
 #include "core/snapshot.h"
 #include "probe/bmff_scan.h"
@@ -135,6 +136,16 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // order (TRUST-05), rather than interleaved among the ParserScan-
       // consuming ones just above it.
       video_hdr_analyzer(),
+      // 05-01-PLAN.md Task 2 (TIME-01/TIME-03, D-03): timeline.start, this
+      // phase's tracer -- ContainerFamily::other (a timeline check applies
+      // to every container), Pass::packet_scan only (no parser_scan, no
+      // bmff/ebml/ts_scan of its own -- it opportunistically reads
+      // results.bmff/results.ebml for evidence ONLY when another
+      // applicable analyzer already populated them for this file). Listed
+      // last, after every video analyzer, so the stable, hand-written
+      // analyzer order (TRUST-05) keeps this phase's own family grouped
+      // and appended, never interleaved among Phase 4's.
+      timeline_start_duration_analyzer(),
   };
   return registry;
 }

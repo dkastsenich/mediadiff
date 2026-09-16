@@ -26,8 +26,9 @@
 // the total to fifty-two. 04-11-PLAN.md registers video.hdr.mdcv/.
 // luminance/.primaries and video.hdr.cll/.max/.avg, bringing the total to
 // fifty-eight. 04-12-PLAN.md registers video.hdr.dovi, video.hdr.dovi.config
-// and video.hdr.coherence, bringing the total to sixty-one. This file is
-// where a gap becomes visible.
+// and video.hdr.coherence, bringing the total to sixty-one. 05-01-PLAN.md
+// registers Phase 5's tracer, timeline.start, bringing the total to
+// sixty-two. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -380,6 +381,19 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"video.hdr.coherence",
        {fixture("video_hdr_coherent.mp4"), fixture("video_hdr_pq_nomdcv.mp4"), fixture("video_hdr_coherent.mp4"),
         fixture("video_hdr_coherent_copy.mp4")}},
+
+      // --- timeline.start (05-01-PLAN.md, TIME-01/TIME-03, D-03) --- the
+      // trigger pair is the whole-file MPEG-TS remux, which reports a
+      // non-pass timeline.start finding at GLOBAL scope (D-03: one cause,
+      // one finding) -- `any_non_clean` only needs ONE non-pass finding
+      // among this check's own statuses, which the global measurement
+      // alone satisfies even though every per-stream timeline.start
+      // finding on this same pair stays `pass`. The clean pair is a
+      // byte-identical copy, matching every other tracer's own clean-pair
+      // shape.
+      {"timeline.start",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_start_shift.ts"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
   };
   return pairs;
 }

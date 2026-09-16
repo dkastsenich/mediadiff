@@ -59,3 +59,4 @@ video.hdr.cll.avg  severity=fail  tolerance=5/1 %
 video.hdr.dovi  severity=fail  tolerance=<none>
 video.hdr.dovi.config  severity=fail  tolerance=<none>
 video.hdr.coherence  severity=info  tolerance=<none>
+timeline.start  severity=fail  tolerance=20/1 ms (warn 5/1)

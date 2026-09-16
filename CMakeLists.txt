@@ -180,6 +180,7 @@ add_library(libmediadiff STATIC
   src/analyzers/video/color.cpp
   src/analyzers/video/interlace.cpp
   src/analyzers/video/hdr.cpp
+  src/analyzers/timeline/start_duration.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -240,6 +241,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/analyzers/container/analyzers.h
   src/analyzers/size/analyzers.h
   src/analyzers/video/analyzers.h
+  src/analyzers/timeline/analyzers.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 

@@ -1,12 +1,16 @@
 # tests/golden/CORPUS_DIGEST_PROVISIONAL.txt -- names only, no hashes
 # (D-GAP-01 gap closure, 04-13-PLAN.md Task 2).
 #
-# STATUS: EMPTY. Every fixture name that used to be listed below has been
+# STATUS: three entries, added by 05-01-PLAN.md Task 2. Every OTHER
+# fixture name that used to be listed below (Phase 4's own additions) was
 # replaced in tests/golden/CORPUS_DIGEST.txt by the designated x64-linux CI
 # leg's own computed hash (04-21-PLAN.md Task 1, transcribing 04-20's
-# captured listing). No hash in CORPUS_DIGEST.txt is workstation-derived
-# any longer -- this ledger has nothing left to track and is empty on
-# purpose, not by accident.
+# captured listing) and cleared from this ledger as a result -- see the
+# TRANSCRIBED-FROM-DESIGNATED-LEG marker below, which still records that
+# historical clearing event. The three entries below are NEW,
+# workstation-computed hashes (this plan's own tracer fixtures) awaiting
+# the same designated-leg transcription; they are not covered by that
+# marker.
 #
 # Historical context for why this file exists at all: each fixture added
 # during Phase 4 was, at commit time, hashed only on the workstation that
@@ -37,4 +41,10 @@
 # commit=<40 hex> field) is present and well-formed. An empty ledger
 # without this marker still fails clause 3 exactly as it always has --
 # that is the check 04-13 wrote to catch an accidentally emptied ledger,
-# and it still fires for that case.
+# and it still fires for that case. With real entries present (below),
+# that zero-entry branch does not apply -- clause 3 instead checks the
+# entries themselves are LC_ALL=C sorted, unique, and each names a real
+# line in CORPUS_DIGEST.txt (which this same plan's commit adds).
+timeline_start_base.mp4
+timeline_start_base_copy.mp4
+timeline_start_shift.ts

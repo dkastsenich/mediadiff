@@ -1040,3 +1040,33 @@ unit = "none"
 value_kind = "string"
 severity = "info"
 flagged_values = ["hdr_meta_sdr_transfer", "pq_without_mdcv"]
+
+# 05-01-PLAN.md (TIME-01/TIME-03), src/analyzers/timeline/start_duration.cpp
+# -- this phase's tracer, approved at 05-CHECK-ROSTER.md. D-03: ONE
+# Scope{Kind::global} measurement holds the file's earliest presentation
+# time; ONE Scope{Kind::video/audio/subtitle/data} measurement per
+# timestamped stream holds that stream's own first presentation PTS MINUS
+# the global origin -- never a per-stream absolute PTS. This is what makes
+# a whole-file shift (an MP4 stream-copied to MPEG-TS, which the TS muxer
+# delays by its own 1.4s default) report ONE global finding instead of one
+# per stream, for one cause. Skip-reason vocabulary, in priority order:
+# `partial_scan` (Phase 3 D-02, ahead of everything -- a truncated
+# PacketScan makes even the GLOBAL scope's own claim of "earliest" provably
+# wrong), `no_timing_data` (a stream, or the whole file, with no real PTS
+# at all -- TIME-01's `AV_NOPTS_VALUE`-as-`Absent{}` requirement), then
+# `insufficient_data` (an overflow anywhere in the checked cross-timebase
+# arithmetic -- T-05-01). `strict_bitexact`/`remux`'s tighter 1ms tolerance
+# reflects that a byte-exact re-encode or a stream-copy remux should move
+# the origin by nothing at all.
+[[check]]
+id = "timeline.start"
+group = "timeline"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "5ms,20ms"
+
+[check.profile_tolerance]
+strict_bitexact = "1ms"
+remux = "1ms"
