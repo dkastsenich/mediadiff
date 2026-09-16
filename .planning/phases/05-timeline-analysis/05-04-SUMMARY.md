@@ -220,3 +220,29 @@ None - no external service configuration required.
 - FOUND: .planning/phases/05-timeline-analysis/05-04-SUMMARY.md
 - FOUND commit: e8cc98c
 - FOUND commit: 01bd51f
+
+---
+
+## Orchestrator correction (post-execution, 05-04 wave gate)
+
+**The "inspect never renders `Measurement::evidence`" claim in Deviation 2 above is too broad and is
+factually wrong as written.** Verified empirically against `tests/fixtures/timeline_duration_short.mp4`
+with the binary built at this commit:
+
+| surface | renders `evidence`? |
+|---|---|
+| `mediadiff inspect <file> -v` (text) | **yes** — 48 `evidence: {...}` lines; renderer is `src/cli/commands/inspect_render.h:146-148` |
+| `mediadiff inspect --json <file>` | no — `src/cli/commands/inspect.cpp` contains no `evidence` reference at all |
+
+So the real, narrower fact is: **`inspect`'s JSON renderer omits `evidence`; its text renderer emits it.**
+05-01-SUMMARY.md stated this correctly scoped to `inspect --json -v` and then generalized it to
+"project-wide `inspect` renderer behavior"; 05-04 escalated that to "inspect never renders
+`Measurement::evidence` at all". Later plans must not inherit the broad version.
+
+The substitution itself (`mediadiff compare --json` in place of `inspect --json -v` for evidence-field
+verification) **stands and was the right call** — `compare --json` is the comparison-report surface that
+carries baseline/candidate evidence, which is what those acceptance criteria are actually about. Only the
+stated justification is corrected here.
+
+Whether `inspect --json` *should* carry `evidence` is a genuine open question about the JSON contract,
+but it is out of scope for Phase 5 and is not a defect this phase introduced.
