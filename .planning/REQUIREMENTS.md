@@ -123,9 +123,9 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 
 ### Timeline Checks
 
-- [ ] **TIME-01**: All timeline math runs on `{int64, AVRational}` with `AV_NOPTS_VALUE` as a first-class `absent` state, never coerced
+- [x] **TIME-01**: All timeline math runs on `{int64, AVRational}` with `AV_NOPTS_VALUE` as a first-class `absent` state, never coerced
 - [ ] **TIME-02**: MPEG-TS 33-bit PTS wraparound is unwrapped correctly, preserving raw values in evidence and distinguishing a wrap from a genuine backward discontinuity
-- [ ] **TIME-03**: `timeline.start` and `timeline.duration` work, with the duration triple (container-declared, stream-declared, computed) cross-checked internally and disagreement raising an `info` note
+- [x] **TIME-03**: `timeline.start` and `timeline.duration` work, with the duration triple (container-declared, stream-declared, computed) cross-checked internally and disagreement raising an `info` note
 - [ ] **TIME-04**: Structural integrity checks work: `dts_monotonic`, `pts_unique`, `gaps`, `discontinuities`
 - [ ] **TIME-05**: `timeline.jitter` and `timeline.vfr_profile` work, with CFR classified as â‰¥ 99.5% of intervals equal to the mode interval, and jitter reporting `skipped:vfr` on VFR streams
 - [ ] **TIME-06**: `timeline.av_offset` reports the signed offset between first audible sample and first visible frame, priming-adjusted
@@ -180,7 +180,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [x] **DOC-01**: Every registered check has a `docs/checks/<id>.md` file, enforced by the build rather than by review discipline
 - [x] **DOC-02**: Every check's `--explain` text states what the check measures, why it matters, and how to accept, tune, or silence it
 - [x] **DOC-03**: Every check is demonstrated by at least one fixture pair that triggers it and one that comes back clean
-- [ ] **DOC-04**: Timeline fixtures assert the *no-others* clause â€” the intended finding fires and nothing else does
+- [x] **DOC-04**: Timeline fixtures assert the *no-others* clause â€” the intended finding fires and nothing else does
 
 ### Performance
 
@@ -331,9 +331,9 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | VIDEO-10 | Phase 4 | Complete |
 | VIDEO-11 | Phase 7 | Pending |
 | VIDEO-12 | Phase 4 | Complete |
-| TIME-01 | Phase 5 | Pending |
+| TIME-01 | Phase 5 | Complete |
 | TIME-02 | Phase 5 | Pending |
-| TIME-03 | Phase 5 | Pending |
+| TIME-03 | Phase 5 | Complete |
 | TIME-04 | Phase 5 | Pending |
 | TIME-05 | Phase 5 | Pending |
 | TIME-06 | Phase 5 | Pending |
@@ -376,7 +376,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | DOC-01 | Phase 2 | Complete |
 | DOC-02 | Phase 2 | Complete |
 | DOC-03 | Phase 3 | Complete |
-| DOC-04 | Phase 5 | Pending |
+| DOC-04 | Phase 5 | Complete |
 | PERF-01 | Phase 5 | Pending |
 | PERF-02 | Phase 7 | Pending |
 | PERF-03 | Phase 5 | Pending |

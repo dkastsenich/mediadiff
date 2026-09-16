@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-09-16T14:43:08.181Z"
-last_activity: 2026-09-14
-last_activity_desc: Phase 04 complete, transitioned to Phase 5
-state_head: 46b9612e2271bb4e80a3f236bd7e72aae64fa834
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-09-16T19:10:12.552Z"
+last_activity: 2026-09-16
+last_activity_desc: Phase 05 execution started
+state_head: 84168f4fe8151a46a05ee899f14f7c06f4aca996
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 67
+  completed_plans: 68
 milestone_name: milestone
 ---
 
@@ -24,14 +24,14 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 04 — Video Analysis
+**Current focus:** Phase 05 — Timeline Analysis
 
 ## Current Position
 
-Phase: 05 (Timeline Analysis) — READY TO EXECUTE
-Plan: Not started
+Phase: 05 (Timeline Analysis) — EXECUTING
+Plan: 2 of 13
 Status: Ready to execute
-Last activity: 2026-09-14 — Phase 04 complete, transitioned to Phase 5
+Last activity: 2026-09-16 — Phase 05 execution started
 
 Progress: [█████████░] 92%
 
@@ -118,6 +118,7 @@ Progress: [█████████░] 92%
 | Phase 04 P19 | ~10 min | 3 tasks | 2 files |
 | Phase 04 P20 | 5h 42m | 3 tasks | 1 files |
 | Phase 04 P21 | multi-session | 3 tasks | 3 files |
+| Phase 05 P01 | ~30min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -263,6 +264,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-20: Human Decision 4 route A taken - branch pushed and draft PR #5 opened behind three separate human confirmations; x64-linux listing captured verbatim (run 34776142545), cross-check vs main clean — Only a designated-leg run can produce the 58 provisional hashes; every outward-facing action required its own explicit confirmation and none was auto-approved
 - [Phase 04]: 04-21: Rule 3 deviation — lint clause 3 accepts a zero-entry provisional ledger only when a TRANSCRIBED-FROM-DESIGNATED-LEG marker names run and commit (positive and negative controls verified)
 - [Phase 04]: 04-21: the Windows blocking leg was fixed rather than waived — five root-caused failures (pin-reader CRLF, BtbN purge re-pin to the ffmpeg-pins mirror, GPL-gated tinterlace, GPL-gated interlace, MSVC C4996 getenv) closed by quick tasks; run 34891069554 green on all blocking legs
+- [Phase 05]: timeline.start ms conversion uses checked_mul/checked_div (truncating), matching container.ts.pcr_interval/psi_interval -- an unreduced exact fraction overflowed the compare engine on a real fixture
+- [Phase 05]: DOC-04 declared-set harness (timeline_findings.h) compares per-id OCCURRENCE COUNTS, not set membership, since one cause can legitimately fire the same check id at two scopes
 
 ### Pending Todos
 
@@ -301,6 +304,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16T13:28:51.824Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-timeline-analysis/05-CONTEXT.md
+Last session: 2026-09-16T19:10:12.373Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None

@@ -345,12 +345,12 @@ Plans:
   4. `timeline.av_offset` reports a signed, priming-adjusted offset, and on a fixture with **non-zero encoder priming** — the common case before the audio decode path exists — the finding visibly carries `priming: unknown` with an unadjusted value rather than a confidently wrong number.
   5. `timeline.timecode` reports presence and SMPTE start value including the drop-frame flag; metadata-plus-timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s and adds under 15% over a plain packet scan, measured in CI with regression tracking over time.
 
-**Plans**: 13 plans
+**Plans**: 1/13 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — Wave 1: the 16-id check roster checkpoint and the `timeline.start` tracer (global origin + per-stream relative, D-03), plus the shared DOC-04 no-others harness (TIME-01/03, DOC-04)
+- [x] 05-01-PLAN.md — Wave 1: the 16-id check roster checkpoint and the `timeline.start` tracer (global origin + per-stream relative, D-03), plus the shared DOC-04 no-others harness (TIME-01/03, DOC-04)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -445,7 +445,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
-| 5. Timeline Analysis | 0/TBD | Not started | - |
+| 5. Timeline Analysis | 1/13 | In Progress|  |
 | 6. Audio Analysis | 0/TBD | Not started | - |
 | 7. Content & Quality | 0/TBD | Not started | - |
 
