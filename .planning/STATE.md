@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-09-16T19:26:20.152Z"
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-09-16T19:49:04.677Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: 70e11f0796135578a133ae52eb1a35c1d01384ce
+state_head: 42bf0bf98177ef84f1983b76971e68edd07ed582
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 69
+  completed_plans: 70
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 3 of 13
+Plan: 4 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -120,6 +120,7 @@ Progress: [█████████░] 92%
 | Phase 04 P21 | multi-session | 3 tasks | 3 files |
 | Phase 05 P01 | ~30min | 3 tasks | 18 files |
 | Phase 05 P02 | 20 min | 2 tasks | 7 files |
+| Phase 05-timeline-analysis P03 | 21min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -269,6 +270,8 @@ Recent decisions affecting current work:
 - [Phase 05]: DOC-04 declared-set harness (timeline_findings.h) compares per-id OCCURRENCE COUNTS, not set membership, since one cause can legitimately fire the same check id at two scopes
 - [Phase 05]: 05-02: exposed detail::apply_wrap_step/WrapStepResult in unwrap.h beyond the plan's own Artifacts table so the running-offset overflow path (Test 8) is provable at the state-machine level, mirroring ts_scan.h's step_continuity precedent — reaching offset overflow via unwrap_ts_timestamps' top-level loop alone would need ~2^30 real wrap events, an input no unit test can build or iterate
 - [Phase 05]: 05-02: Int128Accum's try_narrow-only public API means a wide (>INT64_MAX) accumulated value is proven by subtracting a hand-computed int64_t-representable offset via add() before narrowing, never by reading internal state directly
+- [Phase 05-timeline-analysis]: 05-03: D-05 grid conformance replaces D-07's mode-interval CFR/VFR rule in derive_cadence, fixing video.frame_rate.measured's shipped false positive on coarse-timebase remuxes (29.97 fps MP4 to Matroska, 29.970 vs 30.303 -> both now measure ~29.97 within 0.1%) — amendment recorded against D-07 in cadence.h's own comment block, never silently replacing it; D-07's fields stay populated for same-timebase consumers
+- [Phase 05-timeline-analysis]: 05-03: conforms_to_grid's round-half-to-even test is computed entirely via cross-multiplication (checked_mul/checked_add/checked_sub), no division anywhere in the grid-conformance path — matches core/rational.h's compare_ticks discipline and the project's rational-everywhere/no-float rule
 
 ### Pending Todos
 
@@ -307,6 +310,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16T19:26:11.601Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-09-16T19:49:04.506Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None

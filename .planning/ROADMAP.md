@@ -355,7 +355,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 05-02-PLAN.md — Wave 2: the arithmetic primitives — a 128-bit-safe accumulator in `core/rational.h` and doc 04 §1.2's 33-bit TS unwrap as a pure function (TIME-01/02)
-- [ ] 05-03-PLAN.md — Wave 2: D-05's grid-conformance CFR/VFR rule and the span-derived measured rate, fixing a shipped `video.frame_rate.measured` false positive on an NTSC MP4→MKV remux (TIME-05)
+- [x] 05-03-PLAN.md — Wave 2: D-05's grid-conformance CFR/VFR rule and the span-derived measured rate, fixing a shipped `video.frame_rate.measured` false positive on an NTSC MP4→MKV remux (TIME-05)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
