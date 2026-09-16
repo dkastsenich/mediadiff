@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-05-PLAN.md
-last_updated: "2026-09-16T20:59:52.338Z"
+stopped_at: Completed 05-06-PLAN.md
+last_updated: "2026-09-16T21:52:47.796Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: 2e30fcf33d68f90d1289e3463843cb960bfc88da
+state_head: 146ae4f75cc36cddd729b598e4c6722b503ca0a5
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 72
+  completed_plans: 73
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 6 of 13
+Plan: 7 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -123,6 +123,7 @@ Progress: [█████████░] 92%
 | Phase 05-timeline-analysis P03 | 21min | 3 tasks | 10 files |
 | Phase 05 P04 | 22min | 3 tasks | 15 files |
 | Phase 05 P05 | 40min | 3 tasks | 15 files |
+| Phase 05 P06 | ~50min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -279,6 +280,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Substituted mediadiff compare --json for mediadiff inspect --json -v to prove evidence-field claims, since inspect never renders Measurement::evidence (pre-existing gap documented in 05-01-SUMMARY.md)
 - [Phase 05]: timeline_dts_backward.mp4 (literal plan name) is impossible via ffmpeg's own CLI/muxer for any container; replaced with a two-segment MPEG-TS splice (timeline_dts_backward.ts) plus a 0.5s -itsoffset correction to avoid spurious PTS collisions
 - [Phase 05]: Pinned toolchain ships ffmpeg but not ffprobe; used system ffprobe for read-only fixture verification only (never for committed fixture bytes) -- a real gap against the plan's own precondition text
+- [Phase 05]: correct_ts_overflow=0 in src/probe/demux_session.cpp: libav's generic wrap-correction heuristic silently pre-corrects every 33-bit MPEG-TS wrap before mediadiff's probe layer sees it, so it must be disabled for TIME-02's own doc-04 unwrap rule to ever fire on a real wrap.
+- [Phase 05]: timeline_gap.mp4 uses a PTS-only setts shift, not PTS+DTS together: MP4's own stts box derives declared duration from DTS deltas at mux time, so a combined shift self-heals around the injected gap.
+- [Phase 05]: timeline_ts_wrap.ts is a fresh direct encode with -output_ts_offset, not a -c copy remux of timeline_start_base.mp4, to avoid that pair's own pre-existing collateral dts[1]==dts[0] tie at the start of the file.
 
 ### Pending Todos
 
@@ -291,6 +295,7 @@ None yet.
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
 - **RESOLVED by 03-14 (real CI evidence, PR #3, run 33951407521; WINDOWS.md #8 marked fixed).** `scripts/gen_corpus.sh` is now invoked, unconditionally, before `Configure` on every matrix leg. **Correction to the original scope:** the gap covered all 5 legs, not 4 — the Windows leg's `gen_corpus.ps1` generated zero fixtures and ran after `Test`, so the `Test` step ran without media fixtures on every leg, not just Linux/macOS. The real run confirmed the corpus steps execute in the correct order on all five legs; the macOS legs' only failure was `check_corpus.sh`'s own bash-3.2 incompatibility (`mapfile`), fixed same-plan (`91d9d2f`). Full five-leg green is **not yet achieved**: x64-windows-static-md and x64-linux both fail for reasons unrelated to the corpus (WINDOWS.md #9: `ebml_scan.cpp:348` NOMINMAX/`std::max` macro clash on MSVC; WINDOWS.md #10: committed byte-level goldens generated against a different ffmpeg build than CI's installed 9.0.1). arm64-linux's non-blocking `Register vcpkg NuGet feed` credentials failure is WINDOWS.md #11. BUILD-01/BUILD-05/BUILD-06 (below) remain unproven pending a fully green run.
+- WINDOWS.md #26 (open): correct_ts_overflow=0 exposes raw-axis PTS/DTS reads in timeline.start/timeline.duration/timeline.duration.coherence (start_duration.cpp), video.frame_rate.measured (stream_params.cpp), and size.stream_bitrate (size.cpp) on any genuinely-wrapping TS file -- a follow-up plan must extend the shared doc-04-section-1.2 unwrap to these consumers.
 
 ### Quick Tasks Completed
 
@@ -317,6 +322,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16T20:59:52.178Z
-Stopped at: Completed 05-05-PLAN.md
+Last session: 2026-09-16T21:52:47.625Z
+Stopped at: Completed 05-06-PLAN.md
 Resume file: None

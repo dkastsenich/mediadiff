@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 12
 waived_count: 1
 fixed_count: 13
-total_count: 25
-last_updated: 2026-09-10T20:10:20.227Z
+total_count: 26
+last_updated: 2026-09-16T21:49:42.037Z
 ---
 
 # Broken Windows Ledger
@@ -40,6 +40,7 @@ last_updated: 2026-09-10T20:10:20.227Z
 | 23 | 03 | deviation | scripts/install_pinned_ffmpeg.sh | 206 | CR-01 (03-REVIEW.md gap-closure round 3): the tar.xz path-traversal guard added in round 3 rejected symlink/hardlink members with an absolute linkname but not a relative linkname that resolves outside dest_dir -- because the pre-extraction scan runs over getmembers() before any member exists on disk, os.path.realpath on the raw (member_dir, linkname) join at scan time only lexically normalizes and cannot detect an escape that only materializes once the symlink is actually created by extractall(). Reproduced end-to-end (a relinkdir->../../../../../../tmp symlink member + a nested file member routed through it wrote outside dest_dir and the guard reported no error) and fixed same round by resolving each link member's target against its own containing directory inside dest_dir and rejecting if that resolved target escapes dest_dir, in addition to the existing absolute-path check; the header comment's overstated 'refused outright' claim was also corrected to describe only what the code guarantees (member-path validation, not a general defense against every TOCTOU race tar extraction can exhibit). Reachability caveat unchanged from round 3: every scripts/ffmpeg_pin.json entry uses archive:zip today, so this arm is still dead code, and reaching it also requires controlling a pin entry's URL+SHA-256 pair. | fixed |  | 2026-09-06T11:37:37.532Z | 2026-09-06T11:37:43.657Z |
 | 24 | 03 | deviation | tests/golden/CORPUS_DIGEST.txt |  | mkv_opus_a.webm and mkv_opus_b.webm now have no byte-level drift detection on any leg -- a silent byte change to either (a gen_corpus.sh recipe edit, an ffmpeg pin bump that alters Opus output) would not fail CI. The tests which still consume them (test_container_mkv.cpp, test_ebml_scan.cpp, test_doc03_coverage.cpp) assert structure and findings rather than bytes, not bytes. Named alternative: hash the parsed EBML structure (element IDs, sizes, ordering, CodecDelay and SeekPreRoll values) instead of file bytes -- this would restore drift detection without depending on encoder byte-stability. | open |  | 2026-09-08T15:45:52.844Z |  |
 | 25 | 04 | deviation | tests/support/golden.h |  | Resolved by debug session corpus-fixture-byte-drift (.planning/debug/resolved/): the 76-of-81 'fixture byte drift' reported on 2026-09-10 was not drift. This workstation's fixture bytes are byte-identical to what it produced on 2026-09-05 (13ea9db's golden size.file=351486, reproduced exactly today). What moved was the goldens: bc09705 overwrote 13ea9db's workstation-baselined goldens with bytes captured on the x64-linux CI runner 23 minutes later, because the pinned ffmpeg's runtime CPU-feature (SIMD) dispatch makes fixture bytes host-dependent (WINDOWS.md #12, still open and still true -- proved again here: -cpuflags 0 alone moves tracer_a.mp4 from 141218 to 141194 bytes on one unchanged binary). The DEFECT was that this designated-leg policy lived only as a ctest -E regex in .github/workflows/ci.yml, so it could not reach a developer or agent running ctest directly: they saw 5 red tests whose own failure text recommended UPDATE_GOLDENS=1 -- the one remedy that must never be applied to this class, and exactly the mistake 13ea9db made. Cost: Phase 4 paused at 1/12 plans plus a full debug session, for a non-defect. Fixed: check_golden_designated_leg() (tests/support/golden.h) now carries the policy in the harness -- asserts byte-for-byte when MEDIADIFF_DESIGNATED_LEG is set (ci.yml sets it on x64-linux, with a post-run guard that fails the leg if any of the 5 degraded to a skip), SKIPs with the full explanation everywhere else, and refuses UPDATE_GOLDENS on every leg. Goldens, fixtures and gen_corpus.sh were not touched -- nothing was re-baselined. | fixed |  | 2026-09-10T20:10:09.760Z | 2026-09-10T20:10:20.227Z |
+| 26 | 05 | deviation | src/analyzers/timeline/start_duration.cpp,src/analyzers/video/stream_params.cpp,src/analyzers/size/size.cpp |  | 05-06-PLAN.md's correct_ts_overflow=0 fix (needed so unwrap_ts_timestamps ever sees a genuine 33-bit wrap) exposes that timeline.start/timeline.duration/timeline.duration.coherence (start_duration.cpp), video.frame_rate.measured (stream_params.cpp) and size.stream_bitrate (size.cpp) all read raw un-unwrapped PTS/DTS axis values directly on any genuinely-wrapping TS file, producing corrupted evidence (one instance: int64_t overflow in size.stream_bitrate's tolerance comparator, status=error). A follow-up plan must extend the shared doc-04-section-1.2 unwrap to these consumers. | open |  | 2026-09-16T21:49:42.037Z |  |
 
 ````json
 [
@@ -342,6 +343,18 @@ last_updated: 2026-09-10T20:10:20.227Z
     "reason": "",
     "recorded_at": "2026-09-10T20:10:09.760Z",
     "resolved_at": "2026-09-10T20:10:20.227Z"
+  },
+  {
+    "id": 26,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "src/analyzers/timeline/start_duration.cpp,src/analyzers/video/stream_params.cpp,src/analyzers/size/size.cpp",
+    "line": null,
+    "description": "05-06-PLAN.md's correct_ts_overflow=0 fix (needed so unwrap_ts_timestamps ever sees a genuine 33-bit wrap) exposes that timeline.start/timeline.duration/timeline.duration.coherence (start_duration.cpp), video.frame_rate.measured (stream_params.cpp) and size.stream_bitrate (size.cpp) all read raw un-unwrapped PTS/DTS axis values directly on any genuinely-wrapping TS file, producing corrupted evidence (one instance: int64_t overflow in size.stream_bitrate's tolerance comparator, status=error). A follow-up plan must extend the shared doc-04-section-1.2 unwrap to these consumers.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T21:49:42.037Z",
+    "resolved_at": null
   }
 ]
 ````
