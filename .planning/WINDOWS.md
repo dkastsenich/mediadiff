@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 12
+open_count: 14
 waived_count: 1
 fixed_count: 13
-total_count: 26
-last_updated: 2026-09-16T21:49:42.037Z
+total_count: 28
+last_updated: 2026-09-16T23:27:42.021Z
 ---
 
 # Broken Windows Ledger
@@ -41,6 +41,8 @@ last_updated: 2026-09-16T21:49:42.037Z
 | 24 | 03 | deviation | tests/golden/CORPUS_DIGEST.txt |  | mkv_opus_a.webm and mkv_opus_b.webm now have no byte-level drift detection on any leg -- a silent byte change to either (a gen_corpus.sh recipe edit, an ffmpeg pin bump that alters Opus output) would not fail CI. The tests which still consume them (test_container_mkv.cpp, test_ebml_scan.cpp, test_doc03_coverage.cpp) assert structure and findings rather than bytes, not bytes. Named alternative: hash the parsed EBML structure (element IDs, sizes, ordering, CodecDelay and SeekPreRoll values) instead of file bytes -- this would restore drift detection without depending on encoder byte-stability. | open |  | 2026-09-08T15:45:52.844Z |  |
 | 25 | 04 | deviation | tests/support/golden.h |  | Resolved by debug session corpus-fixture-byte-drift (.planning/debug/resolved/): the 76-of-81 'fixture byte drift' reported on 2026-09-10 was not drift. This workstation's fixture bytes are byte-identical to what it produced on 2026-09-05 (13ea9db's golden size.file=351486, reproduced exactly today). What moved was the goldens: bc09705 overwrote 13ea9db's workstation-baselined goldens with bytes captured on the x64-linux CI runner 23 minutes later, because the pinned ffmpeg's runtime CPU-feature (SIMD) dispatch makes fixture bytes host-dependent (WINDOWS.md #12, still open and still true -- proved again here: -cpuflags 0 alone moves tracer_a.mp4 from 141218 to 141194 bytes on one unchanged binary). The DEFECT was that this designated-leg policy lived only as a ctest -E regex in .github/workflows/ci.yml, so it could not reach a developer or agent running ctest directly: they saw 5 red tests whose own failure text recommended UPDATE_GOLDENS=1 -- the one remedy that must never be applied to this class, and exactly the mistake 13ea9db made. Cost: Phase 4 paused at 1/12 plans plus a full debug session, for a non-defect. Fixed: check_golden_designated_leg() (tests/support/golden.h) now carries the policy in the harness -- asserts byte-for-byte when MEDIADIFF_DESIGNATED_LEG is set (ci.yml sets it on x64-linux, with a post-run guard that fails the leg if any of the 5 degraded to a skip), SKIPs with the full explanation everywhere else, and refuses UPDATE_GOLDENS on every leg. Goldens, fixtures and gen_corpus.sh were not touched -- nothing was re-baselined. | fixed |  | 2026-09-10T20:10:09.760Z | 2026-09-10T20:10:20.227Z |
 | 26 | 05 | deviation | src/analyzers/timeline/start_duration.cpp,src/analyzers/video/stream_params.cpp,src/analyzers/size/size.cpp |  | 05-06-PLAN.md's correct_ts_overflow=0 fix (needed so unwrap_ts_timestamps ever sees a genuine 33-bit wrap) exposes that timeline.start/timeline.duration/timeline.duration.coherence (start_duration.cpp), video.frame_rate.measured (stream_params.cpp) and size.stream_bitrate (size.cpp) all read raw un-unwrapped PTS/DTS axis values directly on any genuinely-wrapping TS file, producing corrupted evidence (one instance: int64_t overflow in size.stream_bitrate's tolerance comparator, status=error). A follow-up plan must extend the shared doc-04-section-1.2 unwrap to these consumers. | open |  | 2026-09-16T21:49:42.037Z |  |
+| 27 | 05 | deviation | src/analyzers/timeline/jitter_vfr.cpp |  | Inherits WINDOWS.md #26's open TS-unwrap gap: timeline_jitter_vfr_analyzer() calls derive_cadence(stream_packets, stream_scan.tb) directly on the raw, un-unwrapped packet array on every container including MPEG-TS, the same pattern #26 already documents for start_duration.cpp/stream_params.cpp/size.cpp -- on a genuinely-wrapping TS file this produces corrupted timeline.jitter/timeline.vfr_profile evidence (unwrapped PTS deltas straddling the wrap boundary). Not fixed by 05-08-PLAN.md (out of declared scope, matching #26's own precedent); no fixture in this plan's own corpus exercises a genuinely-wrapping TS file through this analyzer, so it is undetected by the current test suite. A follow-up plan extending #26's fix (the shared doc-04-section-1.2 unwrap) to jitter_vfr.cpp closes this too. | open |  | 2026-09-16T23:27:33.089Z |  |
+| 28 | 05 | deviation | docs/checks/timeline.vfr_profile.md |  | 05-08-PLAN.md Task 2's own acceptance criterion ('mediadiff compare tests/fixtures/timeline_ntsc_base.mp4 tests/fixtures/timeline_ntsc_remux.mkv --profile remux --json shows timeline.vfr_profile at pass -- identical bins across two timebases') does not hold empirically: NTSC's 1001/30000s period (~33.3667ms) has no exact millisecond representation, so MP4's native 1/30000 timebase lands every interval on_grid (ideal_interval_num/den=119119/119, an exact integer) while Matroska's mandated 1ms timebase can only reach one_tick (ideal=3971/119, non-integer) -- a real difference in what each container can represent at its own tick resolution, not a defect in the check's D-06 grid-relative design (verified via mediadiff compare --json evidence before writing any test assertion, per this task's own PROVE-before-asserting discipline). The check itself is correct per D-06's literal design (deviation from the stream's own ideal_interval_num/den, the six-bucket vocabulary exactly as 05-CHECK-ROSTER.md approves); the plan's own illustrative claim was an untested assumption for this specific non-exactly-representable frame rate. Documented in docs/checks/timeline.vfr_profile.md's own Accept/Tune sections and asserted as the real, honest outcome in tests/integration/test_timeline_jitter.cpp's own NTSC test rather than asserting the false pass. | open |  | 2026-09-16T23:27:42.021Z |  |
 
 ````json
 [
@@ -354,6 +356,30 @@ last_updated: 2026-09-16T21:49:42.037Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T21:49:42.037Z",
+    "resolved_at": null
+  },
+  {
+    "id": 27,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "src/analyzers/timeline/jitter_vfr.cpp",
+    "line": null,
+    "description": "Inherits WINDOWS.md #26's open TS-unwrap gap: timeline_jitter_vfr_analyzer() calls derive_cadence(stream_packets, stream_scan.tb) directly on the raw, un-unwrapped packet array on every container including MPEG-TS, the same pattern #26 already documents for start_duration.cpp/stream_params.cpp/size.cpp -- on a genuinely-wrapping TS file this produces corrupted timeline.jitter/timeline.vfr_profile evidence (unwrapped PTS deltas straddling the wrap boundary). Not fixed by 05-08-PLAN.md (out of declared scope, matching #26's own precedent); no fixture in this plan's own corpus exercises a genuinely-wrapping TS file through this analyzer, so it is undetected by the current test suite. A follow-up plan extending #26's fix (the shared doc-04-section-1.2 unwrap) to jitter_vfr.cpp closes this too.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T23:27:33.089Z",
+    "resolved_at": null
+  },
+  {
+    "id": 28,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "docs/checks/timeline.vfr_profile.md",
+    "line": null,
+    "description": "05-08-PLAN.md Task 2's own acceptance criterion ('mediadiff compare tests/fixtures/timeline_ntsc_base.mp4 tests/fixtures/timeline_ntsc_remux.mkv --profile remux --json shows timeline.vfr_profile at pass -- identical bins across two timebases') does not hold empirically: NTSC's 1001/30000s period (~33.3667ms) has no exact millisecond representation, so MP4's native 1/30000 timebase lands every interval on_grid (ideal_interval_num/den=119119/119, an exact integer) while Matroska's mandated 1ms timebase can only reach one_tick (ideal=3971/119, non-integer) -- a real difference in what each container can represent at its own tick resolution, not a defect in the check's D-06 grid-relative design (verified via mediadiff compare --json evidence before writing any test assertion, per this task's own PROVE-before-asserting discipline). The check itself is correct per D-06's literal design (deviation from the stream's own ideal_interval_num/den, the six-bucket vocabulary exactly as 05-CHECK-ROSTER.md approves); the plan's own illustrative claim was an untested assumption for this specific non-exactly-representable frame rate. Documented in docs/checks/timeline.vfr_profile.md's own Accept/Tune sections and asserted as the real, honest outcome in tests/integration/test_timeline_jitter.cpp's own NTSC test rather than asserting the false pass.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T23:27:42.021Z",
     "resolved_at": null
   }
 ]
