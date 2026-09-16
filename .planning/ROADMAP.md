@@ -345,7 +345,23 @@ Plans:
   4. `timeline.av_offset` reports a signed, priming-adjusted offset, and on a fixture with **non-zero encoder priming** — the common case before the audio decode path exists — the finding visibly carries `priming: unknown` with an unadjusted value rather than a confidently wrong number.
   5. `timeline.timecode` reports presence and SMPTE start value including the drop-frame flag; metadata-plus-timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s and adds under 15% over a plain packet scan, measured in CI with regression tracking over time.
 
-**Plans**: TBD
+**Plans**: 13 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Wave 1: the 16-id check roster checkpoint and the `timeline.start` tracer (global origin + per-stream relative, D-03), plus the shared DOC-04 no-others harness (TIME-01/03, DOC-04)
+- [ ] 05-02-PLAN.md — Wave 2: the arithmetic primitives — a 128-bit-safe accumulator in `core/rational.h` and doc 04 §1.2's 33-bit TS unwrap as a pure function (TIME-01/02)
+- [ ] 05-03-PLAN.md — Wave 2: D-05's grid-conformance CFR/VFR rule and the span-derived measured rate, fixing a shipped `video.frame_rate.measured` false positive on an NTSC MP4→MKV remux (TIME-05)
+- [ ] 05-04-PLAN.md — Wave 3: the `timeline.duration` triple with per-member absent state, and `timeline.duration.coherence` firing even when both files share the incoherence (TIME-01/03, DOC-04)
+- [ ] 05-05-PLAN.md — Wave 4: `timeline.dts_monotonic` and `timeline.pts_unique`, sentinels excluded rather than counted (TIME-01/04, DOC-04)
+- [ ] 05-06-PLAN.md — Wave 5: `timeline.gaps` and `timeline.wrap_events`, with the mid-file 33-bit wrap fixture proving no false gap and no false discontinuity (TIME-02/04, DOC-04)
+- [ ] 05-07-PLAN.md — Wave 6: `timeline.discontinuities` split from `timeline.discontinuities.flagged` via a new bounded `discontinuity_indicator` offset seam on `ts_scan` (TIME-02/04, DOC-04)
+- [ ] 05-08-PLAN.md — Wave 7: `timeline.jitter` (integer-sqrt fixed-point sigma) and `timeline.vfr_profile` (D-06 grid-relative bins, comparable across timebases) (TIME-05, DOC-04)
+- [ ] 05-09-PLAN.md — Wave 8: in-sweep priming capture, the shared `resolve_priming` primitive, and `timeline.av_offset` with D-10's raw/adjusted dual storage and D-11's unsoftened severity (TIME-06/09/10, DOC-04)
+- [ ] 05-10-PLAN.md — Wave 9: the flagship `timeline.av_drift` / `timeline.av_drift.pattern` split, doc 04 §3's 32-checkpoint least-squares fit with 128-bit sums, and the stored trajectory (TIME-07/08, DOC-04)
+- [ ] 05-11-PLAN.md — Wave 10: `timeline.timecode` / `timeline.timecode.value` from the header pass alone, with the two unreachable sources reported honestly (TIME-11, DOC-04)
+- [ ] 05-12-PLAN.md — Wave 11: the instruction-count perf harness, the committed baseline ratchet, the designated-leg CI step, and the visible `PERF-03` / SC5 amendments (PERF-01/03/05)
+- [ ] 05-13-PLAN.md — Wave 12: capture the designated `x64-linux` leg's digest listing and first real perf baseline, transcribe both, and confirm every leg-only gate actually ran (DOC-04, PERF-05)
+
 **Source doc**: `claude_docs/04-timeline-analysis.md` (design-doc phase 4)
 
 ### Phase 6: Audio Analysis
