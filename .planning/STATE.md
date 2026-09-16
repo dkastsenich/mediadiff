@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-09-16T20:15:03.994Z"
+stopped_at: Completed 05-05-PLAN.md
+last_updated: "2026-09-16T20:59:52.338Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: 01bd51fb2c9646bcb41f059302e7403615b6341d
+state_head: 2e30fcf33d68f90d1289e3463843cb960bfc88da
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 70
+  completed_plans: 72
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 5 of 13
+Plan: 6 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -122,6 +122,7 @@ Progress: [█████████░] 92%
 | Phase 05 P02 | 20 min | 2 tasks | 7 files |
 | Phase 05-timeline-analysis P03 | 21min | 3 tasks | 10 files |
 | Phase 05 P04 | 22min | 3 tasks | 15 files |
+| Phase 05 P05 | 40min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -276,6 +277,8 @@ Recent decisions affecting current work:
 - [Phase 05]: Combined Task 1 (timeline.duration triple) and Task 2 (timeline.duration.coherence) into a single commit because both share the same emit_timeline_duration function and checks.def registration, and splitting them would leave an intermediate non-buildable state
 - [Phase 05]: Duration-triple computation is structurally independent of D-03's global origin computation; run_timeline_start_duration falls through to an unconditional per-stream duration loop even when origin_ms or candidates are absent
 - [Phase 05]: Substituted mediadiff compare --json for mediadiff inspect --json -v to prove evidence-field claims, since inspect never renders Measurement::evidence (pre-existing gap documented in 05-01-SUMMARY.md)
+- [Phase 05]: timeline_dts_backward.mp4 (literal plan name) is impossible via ffmpeg's own CLI/muxer for any container; replaced with a two-segment MPEG-TS splice (timeline_dts_backward.ts) plus a 0.5s -itsoffset correction to avoid spurious PTS collisions
+- [Phase 05]: Pinned toolchain ships ffmpeg but not ffprobe; used system ffprobe for read-only fixture verification only (never for committed fixture bytes) -- a real gap against the plan's own precondition text
 
 ### Pending Todos
 
@@ -314,6 +317,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16T20:15:03.818Z
-Stopped at: Completed 05-04-PLAN.md
+Last session: 2026-09-16T20:59:52.178Z
+Stopped at: Completed 05-05-PLAN.md
 Resume file: None
