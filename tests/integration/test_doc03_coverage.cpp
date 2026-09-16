@@ -29,8 +29,10 @@
 // and video.hdr.coherence, bringing the total to sixty-one. 05-01-PLAN.md
 // registers Phase 5's tracer, timeline.start, bringing the total to
 // sixty-two. 05-04-PLAN.md registers timeline.duration and
-// timeline.duration.coherence, bringing the total to sixty-four. This file
-// is where a gap becomes visible.
+// timeline.duration.coherence, bringing the total to sixty-four.
+// 05-05-PLAN.md registers timeline.dts_monotonic and timeline.pts_unique,
+// bringing the total to sixty-six. This file is where a gap becomes
+// visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -416,6 +418,24 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
         fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
       {"timeline.duration.coherence",
        {fixture("timeline_start_base.mp4"), fixture("timeline_start_shift.ts"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+
+      // --- timeline.dts_monotonic / timeline.pts_unique (05-05-PLAN.md,
+      // TIME-01/TIME-04) --- timeline.dts_monotonic's trigger is
+      // timeline_dts_backward.ts, a two-segment MPEG-TS splice producing a
+      // genuine dts[i] <= dts[i-1] violation on each stream (05-05-SUMMARY.md
+      // documents why a `setts`-crafted single encode cannot produce this:
+      // a genuinely backward DTS is structurally impossible to write via
+      // ffmpeg's own CLI/muxer, MP4's `stts` box included). timeline.
+      // pts_unique's trigger is timeline_pts_dupe.mp4, a `setts`-crafted
+      // single encode with exactly one duplicate PTS pair. Both clean pairs
+      // are the same byte-identical copy every other tracer in this phase
+      // uses.
+      {"timeline.dts_monotonic",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_dts_backward.ts"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.pts_unique",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_pts_dupe.mp4"), fixture("timeline_start_base.mp4"),
         fixture("timeline_start_base_copy.mp4")}},
   };
   return pairs;

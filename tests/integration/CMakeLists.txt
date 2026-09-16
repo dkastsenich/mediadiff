@@ -77,6 +77,13 @@ add_executable(mediadiff_integration_tests
   # set (with a causal reason per member beyond timeline.start itself)
   # and count_non_pass matches that declared set's size exactly.
   test_timeline_start_duration.cpp
+  # TIME-01/TIME-04, DOC-04 (05-05-PLAN.md Task 3): the DOC-04 no-others
+  # harness proven against this plan's own two crafted fixtures --
+  # timeline_dts_backward.ts (a two-segment TS splice, one
+  # dts_monotonic violation per stream) and timeline_pts_dupe.mp4 (a
+  # setts-crafted single duplicate PTS pair) -- plus the shared
+  # byte-identical clean pair.
+  test_timeline_structure.cpp
   # 04-08-PLAN.md Task 3 (VIDEO-03): the phase's own signature test made
   # into a counting assertion -- yuvj420p vs yuv420p-limited-range
   # produces EXACTLY ONE non-pass finding (video.color.range) across the
