@@ -49,8 +49,10 @@
 
 #include "cli_harness.h"
 #include "support/fixture_paths.h"
+#include "timeline_findings.h"
 
 using mediadiff::test::CliResult;
+using mediadiff::test::count_non_pass;
 using mediadiff::test::run_cli;
 
 namespace {
@@ -74,22 +76,6 @@ nlohmann::ordered_json compare_json(const std::string& baseline, const std::stri
   REQUIRE_FALSE(report.is_discarded());
   REQUIRE(report.contains("findings"));
   return report;
-}
-
-// Counts non-pass findings across the WHOLE report -- `status != "pass"`
-// and `status != "skipped"` (an applicable-but-unmet check, not a
-// difference). Deliberately never filtered by group or id: an unrelated
-// check firing anywhere in the report is exactly the noise this test
-// exists to catch, and a filtered count would hide it.
-std::size_t count_non_pass(const nlohmann::ordered_json& report) {
-  std::size_t count = 0;
-  for (const auto& finding : report.at("findings")) {
-    const std::string status = finding.at("status").get<std::string>();
-    if (status != "pass" && status != "skipped") {
-      ++count;
-    }
-  }
-  return count;
 }
 
 const nlohmann::ordered_json* find_finding(const nlohmann::ordered_json& report, const std::string& id) {

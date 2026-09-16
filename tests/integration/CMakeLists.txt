@@ -70,6 +70,13 @@ add_executable(mediadiff_integration_tests
   # verified count must equal the registry's own check count
   # (03-11-PLAN.md Task 4).
   test_doc03_coverage.cpp
+  # TIME-01/TIME-03, DOC-04 (05-01-PLAN.md Task 3): the shared DOC-04
+  # no-others harness (tests/integration/timeline_findings.h) proven
+  # against a synthetic report and against the timeline.start tracer
+  # pair -- the MP4-to-TS remux declares its complete non-pass finding
+  # set (with a causal reason per member beyond timeline.start itself)
+  # and count_non_pass matches that declared set's size exactly.
+  test_timeline_start_duration.cpp
   # 04-08-PLAN.md Task 3 (VIDEO-03): the phase's own signature test made
   # into a counting assertion -- yuvj420p vs yuv420p-limited-range
   # produces EXACTLY ONE non-pass finding (video.color.range) across the
