@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-06-PLAN.md
-last_updated: "2026-09-16T21:52:47.796Z"
+stopped_at: Completed 05-07-PLAN.md
+last_updated: "2026-09-16T22:26:38.475Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: 146ae4f75cc36cddd729b598e4c6722b503ca0a5
+state_head: 3f8eb48e41843a691ba157d23be6de9de527541a
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 73
+  completed_plans: 74
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 7 of 13
+Plan: 8 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -124,6 +124,7 @@ Progress: [█████████░] 92%
 | Phase 05 P04 | 22min | 3 tasks | 15 files |
 | Phase 05 P05 | 40min | 3 tasks | 15 files |
 | Phase 05 P06 | ~50min | 3 tasks | 12 files |
+| Phase 05 P07 | 45min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -283,6 +284,8 @@ Recent decisions affecting current work:
 - [Phase 05]: correct_ts_overflow=0 in src/probe/demux_session.cpp: libav's generic wrap-correction heuristic silently pre-corrects every 33-bit MPEG-TS wrap before mediadiff's probe layer sees it, so it must be disabled for TIME-02's own doc-04 unwrap rule to ever fire on a real wrap.
 - [Phase 05]: timeline_gap.mp4 uses a PTS-only setts shift, not PTS+DTS together: MP4's own stts box derives declared duration from DTS deltas at mux time, so a combined shift self-heals around the injected gap.
 - [Phase 05]: timeline_ts_wrap.ts is a fresh direct encode with -output_ts_offset, not a -c copy remux of timeline_start_base.mp4, to avoid that pair's own pre-existing collateral dts[1]==dts[0] tie at the start of the file.
+- [Phase 05]: StreamInfo::stream_id added (Rule 2): AVStream::id is set to the TS PID by libavformat's mpegts demuxer, closing the probe-layer seam the discontinuity_indicator attribution join needs.
+- [Phase 05]: kMaxDiscontinuityOffsetsPerPid=256 bounds a crafted every-packet-flagged TS stream; truncation is itself a skip condition ahead of every other TS-specific reason (T-05-28/T-05-29).
 
 ### Pending Todos
 
@@ -322,6 +325,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16T21:52:47.625Z
-Stopped at: Completed 05-06-PLAN.md
+Last session: 2026-09-16T22:26:38.314Z
+Stopped at: Completed 05-07-PLAN.md
 Resume file: None
