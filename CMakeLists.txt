@@ -195,6 +195,10 @@ add_library(libmediadiff STATIC
   # monotonic.cpp since this family needs Pass::ts_scan on one of its two
   # AnalyzerSpecs.
   src/analyzers/timeline/discontinuities.cpp
+  # TIME-05 (05-08-PLAN.md): timeline.jitter and timeline.vfr_profile,
+  # both consuming derive_cadence (probe/cadence.h) exactly once per
+  # stream.
+  src/analyzers/timeline/jitter_vfr.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

@@ -179,6 +179,21 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // introduces. The MP4 baseline's own video dts_monotonic count
                                    // stays `0`; only the candidate's video-scoped finding fires.
                                    "timeline.dts_monotonic",
+                                   // 05-08-PLAN.md (TIME-05): the SAME remux, one more legitimate
+                                   // effect -- the AAC audio stream's own native 1024-sample frame
+                                   // period (1024/44100s ~= 23.2199ms) has no exact representation
+                                   // on MPEG-TS's 90kHz PTS grid, so re-deriving the stream's own
+                                   // ideal interval from ITS OWN span/count on the TS side rounds
+                                   // enough intervals off that own grid to push the worst bin
+                                   // (on_grid) past the 2% dist tolerance (verified via `mediadiff
+                                   // compare --json`) -- a real, observed consequence of this exact
+                                   // container/timebase pairing (the same class of effect
+                                   // timeline_ntsc_remux.mkv's own D-05 fixture demonstrates for
+                                   // video), never a defect this analyzer introduces. The VIDEO
+                                   // stream's own native timebase survives the remux cleanly
+                                   // (mpeg4's own tbn divides evenly into MPEG-TS's 90kHz grid), so
+                                   // only the audio-scoped finding fires.
+                                   "timeline.vfr_profile",
                                });
 }
 

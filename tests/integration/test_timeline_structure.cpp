@@ -140,6 +140,20 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
           // exactly once here, not twice. One more legitimate effect of the
           // same root cause (D-02).
           "timeline.gaps",
+          // 05-08-PLAN.md's own timeline.vfr_profile check: the SAME splice
+          // discontinuity corrupts the candidate's interval-distribution
+          // histogram on BOTH streams relative to the clean baseline's own
+          // (near-)100% on_grid distribution -- verified via `mediadiff
+          // compare --json`: both streams report their worst bin (on_grid)
+          // exceeding the 2% dist tolerance. timeline.jitter itself
+          // SKIPS on both streams (skipped:vfr, not a finding, so nothing
+          // to declare here) -- derive_cadence's own D-05 grid-conformance
+          // test classifies the spliced, discontinuous whole-file timeline
+          // as VFR, the same genuine cadence corruption
+          // video.frame_rate.measured already declares above. One more
+          // legitimate effect of the same root cause (D-02).
+          "timeline.vfr_profile",
+          "timeline.vfr_profile",
           // A fresh two-segment mpeg4/aac re-encode is genuinely a
           // different byte size, stream bitrate, peak bitrate and overhead
           // ratio than the original single 4s MP4 encode -- expected for
@@ -182,8 +196,19 @@ TEST_CASE("timeline_structure - the pts_dupe trigger pair declares its complete 
   // evidence: first_duplicate_value 26112, duplicate_indices [50, 51]).
   // DTS is left untouched by this recipe and stays strictly monotonic, so
   // timeline.dts_monotonic does NOT appear here.
+  //
+  // 05-08-PLAN.md's own timeline.vfr_profile check: the single duplicated
+  // PTS collapses one interval to zero ticks, which is enough to push the
+  // VIDEO stream's own worst bin (on_grid) past the 2% dist tolerance
+  // (verified via `mediadiff compare --json`); the AUDIO stream, untouched
+  // by the rewrite, stays `pass`. timeline.jitter itself SKIPS on the video
+  // stream (skipped:vfr, not a finding) since the single collapsed
+  // interval is enough for derive_cadence's own D-05 grid-conformance test
+  // to reclassify the whole-file cadence as VFR -- one more legitimate
+  // effect of the same one-PTS-rewrite root cause (D-02).
   expect_declared_set(report, {
                                    "timeline.pts_unique",
+                                   "timeline.vfr_profile",
                                });
 }
 
@@ -239,6 +264,18 @@ TEST_CASE(
           // video presentation timeline at the shift point (verified via
           // evidence: candidate gap_count 1, span {1960ms,2120ms}).
           "timeline.gaps",
+          // 05-08-PLAN.md's own timeline.vfr_profile check: the same
+          // 3-frame shift pushes the VIDEO stream's own worst bin (longer)
+          // past the 2% dist tolerance (verified via `mediadiff compare
+          // --json`); the AUDIO stream, untouched by the shift, stays
+          // `pass`. timeline.jitter itself SKIPS on the video stream
+          // (skipped:vfr, not a finding) since derive_cadence's own D-05
+          // grid-conformance test reclassifies the shift-corrupted
+          // whole-file cadence as VFR, the same reclassification
+          // video.frame_rate.measured's own evidence already declares
+          // above. One more legitimate effect of the same root cause
+          // (D-02).
+          "timeline.vfr_profile",
       });
 }
 
@@ -451,6 +488,18 @@ TEST_CASE(
           // streams (verified via evidence: jump_count 0 -> 1 on each).
           "timeline.discontinuities",
           "timeline.discontinuities",
+          // 05-08-PLAN.md's own timeline.vfr_profile check: the ~1.02s
+          // splice jump pushes BOTH streams' own worst bin (longer) past
+          // the 2% dist tolerance (verified via `mediadiff compare
+          // --json`). timeline.jitter itself SKIPS on both streams
+          // (skipped:vfr, not a finding) since derive_cadence's own D-05
+          // grid-conformance test reclassifies the splice-corrupted
+          // whole-file cadence as VFR on both -- the same reclassification
+          // video.frame_rate.measured's own evidence already declares
+          // above for video. One more legitimate effect of the same root
+          // cause (D-02).
+          "timeline.vfr_profile",
+          "timeline.vfr_profile",
           // A fresh two-segment mpeg4/aac re-encode is genuinely a
           // different byte size, stream bitrate and overhead ratio than
           // the original single-segment TS encode -- expected for any

@@ -68,3 +68,5 @@ timeline.gaps  severity=fail  tolerance=<none>
 timeline.wrap_events  severity=info  tolerance=<none>
 timeline.discontinuities  severity=fail  tolerance=<none>
 timeline.discontinuities.flagged  severity=info  tolerance=<none>
+timeline.jitter  severity=fail  tolerance=20/10 ms (warn 5/10)
+timeline.vfr_profile  severity=warn  tolerance=2/1 %

@@ -163,6 +163,12 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // silently no-ops on a TS input, deferring to the ts-scoped sibling.
       timeline_discontinuities_analyzer(),
       timeline_discontinuities_ts_analyzer(),
+      // 05-08-PLAN.md (TIME-05): timeline.jitter and timeline.vfr_profile,
+      // both consuming the SAME derive_cadence call -- ContainerFamily::other,
+      // Pass::demux_header + Pass::packet_scan only, listed directly after
+      // this phase's own discontinuities pair so the family stays grouped
+      // in the stable, hand-written analyzer order (TRUST-05).
+      timeline_jitter_vfr_analyzer(),
   };
   return registry;
 }

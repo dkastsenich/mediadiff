@@ -1293,3 +1293,72 @@ semantic = "span"
 unit = "ms"
 value_kind = "span_list"
 severity = "info"
+
+# 05-08-PLAN.md (TIME-05), src/analyzers/timeline/jitter_vfr.cpp --
+# 05-CHECK-ROSTER.md's own Discretion resolution: ONE id, not two. Sigma
+# (the standard deviation of the interval distribution around the stream's
+# own mode interval, D-07's `Cadence::mode_interval_ticks`) is the compared
+# value, reported as an EXACT fixed-point `RationalValue` (denominator
+# `2^kJitterSigmaFixedShift`, `core/rational.h`) -- never a rounded real,
+# never computed via `std::sqrt` on a double anywhere in the compared-value
+# path (a portable integer bit-doubling square root,
+# `detail::Int128Accum::try_isqrt`, computes the root exactly). The maximum
+# absolute deviation rides in evidence on this SAME id, never a second
+# check -- doubling a single jittery stream into two findings is exactly
+# the D-01/D-02 noise concern the roster's own Discretion note names.
+# `skipped:vfr` (never a sigma) on a stream `derive_cadence` (PROBE-10, the
+# ONE shared cadence primitive, consumed once per stream by both this check
+# and `timeline.vfr_profile` below) classifies as VFR -- a jitter
+# statistic computed around a nominal interval that does not exist for a
+# genuinely variable-rate stream is not a measurement, it is noise. Runs
+# on every stream carrying timestamps EXCEPT `Scope::Kind::subtitle`
+# (mirrors `timeline_monotonic_analyzer()`'s own scope decision). Skip-
+# reason priority: `partial_scan` (Phase 3 D-02, ahead of everything),
+# then whatever `derive_cadence` itself reports (`no_timing_data`/
+# `insufficient_data`), then `vfr` (this check only), then
+# `insufficient_data` again for a sigma-specific overflow (T-05-34: a
+# crafted interval distribution whose accumulated sum of squared
+# deviations cannot narrow to int64_t -- degrades honestly, never a
+# wrapped sigma).
+[[check]]
+id = "timeline.jitter"
+group = "timeline"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.5ms,2ms"
+
+# 05-08-PLAN.md (TIME-05, D-06), src/analyzers/timeline/jitter_vfr.cpp --
+# a six-bin histogram (`on_grid`, `one_tick`, `one_percent`, `two_x`,
+# `three_x`, `longer`, 05-CHECK-ROSTER.md's own fixed, approved labels)
+# over every consecutive-interval deviation on the SAME axis
+# `derive_cadence` used, keyed on the deviation from the stream's OWN grid
+# (D-05's exact rational `Cadence::ideal_interval_num/den`), never raw
+# ticks -- the property that makes the identical content bin identically
+# whether it is stored as an MP4 (a coarse timebase) or remuxed to
+# Matroska (a 1ms timebase): a raw-tick histogram would bin the SAME
+# real-world jitter into different buckets purely because the two
+# containers store the interval as different tick counts, which is
+# exactly the false-positive class D-06 exists to prevent. Runs
+# REGARDLESS of `Cadence::klass` (unlike `timeline.jitter` above, which
+# skips entirely on VFR) -- the histogram itself is what tells a reader
+# the stream is not constant-rate, mirroring
+# `video.frame_rate.measured`'s own "a VFR classification does not skip
+# this check" precedent. Runs on every stream carrying timestamps EXCEPT
+# `Scope::Kind::subtitle` (same scope as `timeline.jitter` above). Skip-
+# reason priority: `partial_scan` (Phase 3 D-02, ahead of everything),
+# then whatever `derive_cadence` itself reports
+# (`no_timing_data`/`insufficient_data`) -- IDENTICAL to `timeline.jitter`
+# above for these two reasons (never letting one id compute a real value
+# while the other skips for a DIFFERENT reason on the SAME stream), then
+# `insufficient_data` again for a bin-classification overflow (a crafted
+# ideal/interval pair whose cross-multiplication cannot fit int64_t).
+[[check]]
+id = "timeline.vfr_profile"
+group = "timeline"
+semantic = "dist"
+unit = "percent"
+value_kind = "histogram"
+severity = "warn"
+tolerance = "2%"
