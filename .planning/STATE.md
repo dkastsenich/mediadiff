@@ -4,11 +4,11 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-09-16T19:49:04.677Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-09-16T20:15:03.994Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: 42bf0bf98177ef84f1983b76971e68edd07ed582
+state_head: 01bd51fb2c9646bcb41f059302e7403615b6341d
 progress:
   total_phases: 7
   completed_phases: 4
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 4 of 13
+Plan: 5 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -121,6 +121,7 @@ Progress: [█████████░] 92%
 | Phase 05 P01 | ~30min | 3 tasks | 18 files |
 | Phase 05 P02 | 20 min | 2 tasks | 7 files |
 | Phase 05-timeline-analysis P03 | 21min | 3 tasks | 10 files |
+| Phase 05 P04 | 22min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -272,6 +273,9 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-02: Int128Accum's try_narrow-only public API means a wide (>INT64_MAX) accumulated value is proven by subtracting a hand-computed int64_t-representable offset via add() before narrowing, never by reading internal state directly
 - [Phase 05-timeline-analysis]: 05-03: D-05 grid conformance replaces D-07's mode-interval CFR/VFR rule in derive_cadence, fixing video.frame_rate.measured's shipped false positive on coarse-timebase remuxes (29.97 fps MP4 to Matroska, 29.970 vs 30.303 -> both now measure ~29.97 within 0.1%) — amendment recorded against D-07 in cadence.h's own comment block, never silently replacing it; D-07's fields stay populated for same-timebase consumers
 - [Phase 05-timeline-analysis]: 05-03: conforms_to_grid's round-half-to-even test is computed entirely via cross-multiplication (checked_mul/checked_add/checked_sub), no division anywhere in the grid-conformance path — matches core/rational.h's compare_ticks discipline and the project's rational-everywhere/no-float rule
+- [Phase 05]: Combined Task 1 (timeline.duration triple) and Task 2 (timeline.duration.coherence) into a single commit because both share the same emit_timeline_duration function and checks.def registration, and splitting them would leave an intermediate non-buildable state
+- [Phase 05]: Duration-triple computation is structurally independent of D-03's global origin computation; run_timeline_start_duration falls through to an unconditional per-stream duration loop even when origin_ms or candidates are absent
+- [Phase 05]: Substituted mediadiff compare --json for mediadiff inspect --json -v to prove evidence-field claims, since inspect never renders Measurement::evidence (pre-existing gap documented in 05-01-SUMMARY.md)
 
 ### Pending Todos
 
@@ -310,6 +314,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16T19:49:04.506Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-09-16T20:15:03.818Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None
