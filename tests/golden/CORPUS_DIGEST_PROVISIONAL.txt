@@ -53,9 +53,16 @@
 # 05-04-PLAN.md Task 3 adds the timeline.duration DOC-03 trigger fixture
 # below, same workstation-computed-awaiting-designated-leg-transcription
 # status as every other entry in this file.
+#
+# 05-05-PLAN.md Task 1 adds the two timeline.dts_monotonic /
+# timeline.pts_unique crafted-anomaly fixtures below, same
+# workstation-computed-awaiting-designated-leg-transcription status as
+# every other entry in this file.
+timeline_dts_backward.ts
 timeline_duration_short.mp4
 timeline_ntsc_base.mp4
 timeline_ntsc_remux.mkv
+timeline_pts_dupe.mp4
 timeline_start_base.mp4
 timeline_start_base_copy.mp4
 timeline_start_shift.ts

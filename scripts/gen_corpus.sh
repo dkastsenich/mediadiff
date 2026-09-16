@@ -1615,4 +1615,83 @@ cp "$OUT_DIR/timeline_start_base.mp4" "$OUT_DIR/timeline_start_base_copy.mp4"
   -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/timeline_ntsc_remux.mkv"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv."
+# --- 05-05-PLAN.md Task 1 (TIME-01/TIME-04): timeline.dts_monotonic and
+# timeline.pts_unique crafted-anomaly fixtures -------------------------------
+#
+# `timeline_pts_dupe.mp4`: identical encode recipe to timeline_start_base.mp4
+# (same testsrc2/sine params, same `-c:v mpeg4 -c:a aac`, same duration=4/100
+# frames) with one addition: the `setts` bitstream filter
+# (libavcodec/bsf/setts.c, confirmed LGPL-2.1+, Paul B Mahol -- no `gpl`
+# dependency, safe under the win64-lgpl Windows pin) rewrites frame N=50's
+# own PTS to the NEXT packet's PTS value, producing exactly one duplicate
+# PTS pair (verified via `ffprobe -show_packets`, see 05-05-SUMMARY.md's
+# read-back transcript: packet 50 and 51 both carry pts=26112). DTS is left
+# untouched by this filter and stays strictly monotonic (verified: dts
+# still increments by exactly 512 every packet through the splice) -- this
+# fixture isolates pts_unique's own duplicate-count path without also
+# perturbing dts_monotonic.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -bsf:v "setts=pts='if(eq(N\,50)\,NEXT_PTS\,PTS)'" -y \
+  "$OUT_DIR/timeline_pts_dupe.mp4"
+
+# `timeline_dts_backward.ts` -- DEVIATION from 05-05-PLAN.md's literal
+# `timeline_dts_backward.mp4` name (Rule 1 auto-fix, documented in
+# 05-05-SUMMARY.md's Deviations section): a genuinely backward DTS jump
+# cannot be produced in ANY standard container via `setts`+`-c copy`+mux --
+# both fftools/ffmpeg_mux.c's CLI-level clamp and libavformat/mux.c's own
+# write_packet_common check reject a strictly-decreasing DTS for EVERY
+# muxer regardless of AVFMT_TS_NONSTRICT (confirmed by reading vendored
+# FFmpeg source, vcpkg/buildtrees/ffmpeg-bin2c/.../fftools/ffmpeg_mux.c and
+# .../libavformat/mux.c). MP4 specifically cannot represent it AT ALL even
+# in principle -- the ISO `stts` box is an UNSIGNED cumulative sample-delta
+# table, so backward DTS is structurally impossible in that container,
+# never merely a policy choice a bsf recipe could work around.
+#
+# Technique instead: two independently-muxed MPEG-TS segments (each its own
+# fresh ffmpeg process, so each starts from its own fresh mux DTS state
+# with no shared timestamp continuity) concatenated byte-for-byte via
+# `cat`. Each segment is testsrc2/sine duration=2 (50 video frames),
+# identical recipe to timeline_start_base.mp4's own but half the length --
+# ffmpeg's own default TS mux delay places both segments' PTS/DTS origins
+# at the same small offset, so segment B's first video DTS is LESS than
+# segment A's last video DTS, producing a genuine `dts[i] <= dts[i-1]`
+# violation on video at the splice (and on audio too), zero
+# bitstream-filter tampering.
+#
+# Segment B carries a `-itsoffset 0.5` on BOTH its inputs (video and audio
+# shifted together, so A/V sync within segment B is preserved) -- without
+# it, segment B's own PTS/DTS values land on the EXACT SAME tick grid as
+# segment A's (same fps, same tb, same ffmpeg-default mux-delay anchor,
+# same bitexact content), producing dozens of spurious `timeline.pts_unique`
+# duplicate pairs between the two segments' overlapping ranges rather than
+# the single intended `timeline.dts_monotonic` violation (discovered
+# empirically while proving this recipe: 05-05-SUMMARY.md's read-back
+# transcript). 0.5s is not an integer multiple of either the video frame
+# period (1/25 s) or the AAC frame period (1024/44100 s), so it de-aligns
+# segment B's whole timestamp grid from segment A's without affecting
+# whether segment B's first DTS still lands before segment A's last DTS
+# (the offset is small next to the ~2s gap between them) -- verified via
+# `ffprobe -show_packets` to produce EXACTLY one violation per stream and
+# ZERO `pts_unique` collisions.
+#
+# Segments are written to a scratch directory, never under $OUT_DIR, so
+# scripts/check_corpus.sh's textual `$OUT_DIR/<name>` extraction never
+# mistakes them for fixtures of their own.
+TIMELINE_SPLICE_TMP="$(mktemp -d)"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$TIMELINE_SPLICE_TMP/seg_a.ts"
+
+"$FFMPEG_BIN" -itsoffset 0.5 -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -itsoffset 0.5 -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$TIMELINE_SPLICE_TMP/seg_b.ts"
+
+cat "$TIMELINE_SPLICE_TMP/seg_a.ts" "$TIMELINE_SPLICE_TMP/seg_b.ts" > "$OUT_DIR/timeline_dts_backward.ts"
+rm -rf "$TIMELINE_SPLICE_TMP"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts."
