@@ -32,7 +32,9 @@
 // timeline.duration.coherence, bringing the total to sixty-four.
 // 05-05-PLAN.md registers timeline.dts_monotonic and timeline.pts_unique,
 // bringing the total to sixty-six. 05-06-PLAN.md registers timeline.gaps
-// and timeline.wrap_events, bringing the total to sixty-eight. This file
+// and timeline.wrap_events, bringing the total to sixty-eight.
+// 05-07-PLAN.md registers timeline.discontinuities and timeline.
+// discontinuities.flagged, bringing the total to seventy. This file
 // is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
@@ -459,6 +461,31 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
         fixture("timeline_start_base_copy.mp4")}},
       {"timeline.wrap_events",
        {fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_wrap.ts"), fixture("timeline_ts_nowrap.ts"),
+        fixture("timeline_ts_nowrap_copy.ts")}},
+
+      // --- timeline.discontinuities / timeline.discontinuities.flagged
+      // (05-07-PLAN.md, TIME-02/TIME-04) --- timeline.discontinuities'
+      // trigger pair is timeline_ts_nowrap.ts against timeline_ts_jump.ts
+      // (a genuine, UNFLAGGED ~1.02s forward presentation jump from two
+      // independently-muxed, spliced TS segments) -- verified empirically
+      // against the real binary: both video and audio report `fail`, each
+      // with jump_count 0 -> 1. Its clean pair reuses timeline_ts_nowrap.ts/
+      // timeline_ts_nowrap_copy.ts, the SAME byte-identical, both-
+      // unflagged pair timeline.wrap_events above already uses (all-`pass`
+      // confirmed empirically for both new check ids on this exact pair).
+      // timeline.discontinuities.flagged's trigger pair is
+      // timeline_ts_jump.ts against timeline_ts_jump_flagged.ts -- the
+      // SAME jump, now with tools/gen_ts_discontinuity.py's one-bit edit
+      // making it container-EXPLAINED on the video stream (verified via
+      // evidence: jump_count 0 -> 1, `info`, "+1 introduced span(s)");
+      // its clean pair reuses the same timeline_ts_nowrap.ts/_copy.ts pair
+      // (all-`pass` confirmed for `.flagged` there too, since neither side
+      // of that pair carries any discontinuity_indicator flag at all).
+      {"timeline.discontinuities",
+       {fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_jump.ts"), fixture("timeline_ts_nowrap.ts"),
+        fixture("timeline_ts_nowrap_copy.ts")}},
+      {"timeline.discontinuities.flagged",
+       {fixture("timeline_ts_jump.ts"), fixture("timeline_ts_jump_flagged.ts"), fixture("timeline_ts_nowrap.ts"),
         fixture("timeline_ts_nowrap_copy.ts")}},
   };
   return pairs;

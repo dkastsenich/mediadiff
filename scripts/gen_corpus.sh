@@ -1788,4 +1788,73 @@ rm -rf "$TIMELINE_SPLICE_TMP"
 # precedent, is what proves a genuine `pass`.
 cp "$OUT_DIR/timeline_ts_nowrap.ts" "$OUT_DIR/timeline_ts_nowrap_copy.ts"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts."
+# --- 05-07-PLAN.md Task 3 (TIME-02/TIME-04, DOC-04): timeline_ts_jump.ts /
+# timeline_ts_jump_flagged.ts -- proves the timeline.discontinuities /
+# timeline.discontinuities.flagged split on a single, real byte-identical-
+# except-for-one-bit fixture pair.
+#
+# `timeline_ts_jump.ts`: same two-independently-muxed-TS-segments technique
+# as timeline_dts_backward.ts above (each segment its own fresh ffmpeg
+# process, concatenated via `cat`), but with a genuine FORWARD gap instead
+# of a backward DTS violation: segment B carries a global
+# `-output_ts_offset 3.0` (the same output-level primitive
+# timeline_ts_wrap.ts above already uses to relocate an entire segment's
+# timestamps, applied here to both video and audio together so A/V sync
+# within segment B is preserved) rather than dts_backward.ts's own
+# `-itsoffset` (an INPUT-level, pre-encode primitive that only de-aligns two
+# segments' tick grids without relocating them past each other). Read back
+# via `ffprobe -show_packets`: the video presentation timeline jumps from
+# pts_time=3.383222 to pts_time=4.400000 at the splice -- a genuine ~1.02s
+# gap, comfortably past the 250ms threshold, forward only (no
+# dts_backward.ts-style backward-DTS side effect, since `-output_ts_offset`
+# shifts every packet's PTS AND DTS by the identical amount, so ordering
+# within each segment is unaffected and segment B's shifted DTS values land
+# safely after segment A's).
+#
+# `timeline_ts_jump_flagged.ts`: BYTE-IDENTICAL to timeline_ts_jump.ts
+# except for the one transport packet the splice actually lands on --
+# tools/gen_ts_discontinuity.py (Task 3's own byte-level writer, D-03: no
+# pinned ffmpeg CLI/filter can set discontinuity_indicator on a chosen
+# packet) sets that packet's discontinuity_indicator bit. `--pid 256`:
+# `ffprobe -show_streams` confirms both segments' video stream carries
+# `id=0x100` (the mpegts muxer's own default first-stream PID, unaffected
+# by -output_ts_offset, which only shifts timestamps, never PID
+# allocation). `--after-offset`: segment A's OWN byte length -- since the
+# two segments are concatenated byte-for-byte with no interleaving, this is
+# exactly the byte offset where segment B's own packets begin, and the
+# writer's own "first matching-PID packet at or after this offset" contract
+# lands precisely on the video PES packet whose PTS is the jump's own
+# far-side value (confirmed via `ffprobe -show_packets`: pos=150024, an
+# exact multiple of 188, matching the writer's own stride assumption).
+# Proven via `cmp -l`: the two files differ in EXACTLY ONE byte (this
+# packet already carried an adaptation field of its own -- PCR /
+# random-access, typical for a keyframe's first packet -- so the writer's
+# "already has AF, flip the flags byte's own bit in place" path fires, not
+# the "insert a fresh AF" path; a single bit, 0x50 -> 0xd0 at the flags
+# byte, everything else byte-identical). python3 >= 3.11 is already gated
+# above (04-05-PLAN.md's hand-constructed-video-fixtures block, this same
+# script) before this point is ever reached.
+TIMELINE_JUMP_TMP="$(mktemp -d)"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$TIMELINE_JUMP_TMP/seg_a.ts"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -output_ts_offset 3.0 -y -f mpegts "$TIMELINE_JUMP_TMP/seg_b.ts"
+
+cat "$TIMELINE_JUMP_TMP/seg_a.ts" "$TIMELINE_JUMP_TMP/seg_b.ts" > "$OUT_DIR/timeline_ts_jump.ts"
+
+TIMELINE_JUMP_SEG_A_SIZE=$(wc -c < "$TIMELINE_JUMP_TMP/seg_a.ts" | tr -d ' ')
+rm -rf "$TIMELINE_JUMP_TMP"
+
+python3 tools/gen_ts_discontinuity.py \
+  --input "$OUT_DIR/timeline_ts_jump.ts" \
+  --output "$OUT_DIR/timeline_ts_jump_flagged.ts" \
+  --pid 256 \
+  --after-offset "$TIMELINE_JUMP_SEG_A_SIZE"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts."

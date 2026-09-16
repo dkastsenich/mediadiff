@@ -11,6 +11,14 @@
 // tests/fixtures/timeline_ts_nowrap.ts/_copy.ts, plus a dedicated case
 // proving doc 04 section 5's own zero-false-positive acceptance criterion.
 //
+// 05-07-PLAN.md Task 3 (TIME-02/TIME-04, DOC-04) extends this file once
+// more with timeline.discontinuities and timeline.discontinuities.flagged,
+// over tests/fixtures/timeline_ts_jump.ts (an unflagged >250ms
+// presentation-time jump, proven against tests/fixtures/timeline_ts_nowrap.ts)
+// and tests/fixtures/timeline_ts_jump_flagged.ts (the SAME file with exactly
+// one transport packet's own discontinuity_indicator bit set, proving the
+// attribution split against timeline_ts_jump.ts itself).
+//
 // Every TEST_CASE below carries the literal prefix "timeline_structure - "
 // so `ctest -R "integration\.timeline_structure"` selects exactly this
 // file's cases (TEST_PREFIX "integration." makes the real ctest name
@@ -381,4 +389,139 @@ TEST_CASE("timeline_structure - the byte-identical clean pair declares the empty
       compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4"), "remux");
   expect_declared_set(report, {});
   REQUIRE(count_non_pass(report) == 0);
+}
+
+// --- Test 8: timeline_ts_nowrap.ts vs timeline_ts_jump.ts ------------------
+//
+// timeline_ts_jump.ts is built by the SAME two-independently-muxed-TS-
+// segments-concatenated-via-`cat` technique as Test 1's timeline_dts_
+// backward.ts (each segment its own fresh mpeg4/aac re-encode), except
+// segment B carries a global `-output_ts_offset 3.0` instead of dts_
+// backward.ts's own `-itsoffset` on its inputs -- a genuine FORWARD
+// presentation-time jump (verified via `ffprobe -show_packets`: video PTS
+// jumps from 3.383222s to 4.400000s at the splice, ~1.02s, comfortably past
+// the 250ms threshold) rather than a backward DTS violation. One root
+// cause (D-02, the same "independently re-encoded, spliced segments" cause
+// Test 1 already documents at length), several legitimately moved facts:
+TEST_CASE(
+    "timeline_structure - the unflagged jump trigger pair declares its complete expected finding set under "
+    "--profile remux, and count_non_pass equals that set's size exactly",
+    "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_jump.ts"), "remux");
+
+  expect_declared_set(
+      report,
+      {
+          // Each segment's own TS mux restarts its continuity_counter
+          // sequence at 0 independently -- a genuine, UNEXPLAINED CC break
+          // at the splice on every PID this two-segment technique
+          // produces (verified via evidence: per_pid_errors {17:1, 256:1,
+          // 257:1}, 3 total). Neither segment's own muxer ever sets
+          // discontinuity_indicator (this fixture is the deliberately
+          // UNFLAGGED half of the pair Test 9 below proves the split on),
+          // so every one of these three breaks is unexplained.
+          "container.ts.cc_errors",
+          // The splice-corrupted PTS cadence no longer conforms to a
+          // clean 25fps CFR sequence past the splice point -- the same
+          // class of effect Test 1's dts_backward pair already declares
+          // for its own splice.
+          "video.frame_rate.measured",
+          // The candidate's demuxer-declared duration reflects the
+          // SPLICED, discontinuous timestamp sequence on both streams --
+          // the same effect Test 1 documents at length for its own
+          // two-segment splice.
+          "timeline.duration",
+          "timeline.duration",
+          // The audio stream's own duration triple disagrees with itself
+          // under the same splice-corrupted sequence -- one more
+          // legitimate effect of the same root cause.
+          "timeline.duration.coherence",
+          // 05-06-PLAN.md's own timeline.gaps check: the splice opens a
+          // genuine hole in BOTH streams' own presentation timelines this
+          // time (unlike Test 1's dts_backward pair, where only audio
+          // crossed the gap threshold) -- the jump is large enough
+          // (~1.02s) to cross timeline.gaps' own declared-duration-based
+          // threshold on video too, not just timeline.discontinuities'
+          // fixed 250ms detection threshold below.
+          "timeline.gaps",
+          "timeline.gaps",
+          // The check this task registers -- the one >250ms unexplained
+          // presentation jump this fixture exists to prove, on both
+          // streams (verified via evidence: jump_count 0 -> 1 on each).
+          "timeline.discontinuities",
+          "timeline.discontinuities",
+          // A fresh two-segment mpeg4/aac re-encode is genuinely a
+          // different byte size, stream bitrate and overhead ratio than
+          // the original single-segment TS encode -- expected for any
+          // independent re-encode, the same effect Test 1 documents.
+          "size.file",
+          "size.stream_bitrate",
+          "size.stream_bitrate",
+          "size.overhead",
+      });
+}
+
+// --- Test 9: timeline_ts_jump.ts vs timeline_ts_jump_flagged.ts ------------
+//
+// timeline_ts_jump_flagged.ts is BYTE-IDENTICAL to timeline_ts_jump.ts
+// except for the one transport packet the splice lands on --
+// tools/gen_ts_discontinuity.py sets that packet's own discontinuity_
+// indicator bit (verified via `cmp -l`: exactly one byte differs, the
+// packet's own pre-existing adaptation-field flags byte, 0x50 -> 0xd0).
+// This is the pair that proves the attribution SPLIT itself: the SAME
+// underlying jump moves from `timeline.discontinuities` (unexplained,
+// gating) to `timeline.discontinuities.flagged` (explained by container
+// structure, info) on exactly the one stream (video) whose PID (0x100)
+// the flagged packet belongs to -- the audio stream's own jump (a
+// SEPARATE, unattributed jump on PID 0x101) is untouched by this edit and
+// stays out of both checks' non-pass sets here (still present in both
+// files identically, so it contributes nothing to this DIFF).
+TEST_CASE(
+    "timeline_structure - the flagged/unflagged split pair declares its complete expected finding set under "
+    "--profile remux, and count_non_pass equals that set's size exactly",
+    "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_ts_jump.ts"), fixture("timeline_ts_jump_flagged.ts"), "remux");
+
+  expect_declared_set(
+      report,
+      {
+          // Flagging the video PID's own packet EXPLAINS one of the three
+          // CC breaks Test 8 above declares (verified via evidence:
+          // per_pid_errors baseline {17:1, 256:1, 257:1} -> candidate
+          // {17:1, 257:1} -- PID 256's own entry disappears), leaving 2,
+          // still a genuine mismatch against the baseline's 3.
+          "container.ts.cc_errors",
+          // The one-byte edit is ALSO a genuine, newly-EXPLAINED CC
+          // discontinuity from container.ts.cc_discontinuities' own point
+          // of view (verified via evidence: candidate count 0 -> 1) -- the
+          // complementary half of the same single root cause as the line
+          // above (D-02: one edit, two check ids, opposite direction).
+          "container.ts.cc_discontinuities",
+          // A pre-existing, unrelated-to-this-edit TS audio-duration-
+          // bookkeeping artifact (verified via evidence: computed_ms 5020,
+          // container_declared_ms 5000, stream_declared_ms 4904,
+          // IDENTICAL on both baseline and candidate) -- the same class of
+          // per-encode artifact Test 5 above already declares for its own
+          // byte-identical clean pair, riding along here because both
+          // fixtures share the same underlying AAC audio encode.
+          "timeline.duration.coherence",
+          // THE split, half one: the jump this fixture's own baseline
+          // carries as unexplained now has a container-structure
+          // explanation in the candidate, so it VANISHES from
+          // timeline.discontinuities (verified via evidence: jump_count
+          // 1 -> 0, message "-1 removed span(s)") -- a removed span is
+          // always `info` under this check's own span semantic (never
+          // gating), even though the check's own severity is `fail`.
+          "timeline.discontinuities",
+          // THE split, half two: the SAME jump now appears in
+          // timeline.discontinuities.flagged instead (verified via
+          // evidence: jump_count 0 -> 1, message "+1 introduced span(s)",
+          // identical start/end ms to the removed span above) -- this
+          // check's own severity is `info` by design, so an introduced
+          // span here never gates the merge on its own either. This pair
+          // is the whole reason this check id exists.
+          "timeline.discontinuities.flagged",
+      });
 }

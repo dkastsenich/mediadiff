@@ -64,6 +64,13 @@
 # timeline_ts_nowrap_copy.ts, timeline_ts_wrap.ts), same
 # workstation-computed-awaiting-designated-leg-transcription status as
 # every other entry in this file.
+#
+# 05-07-PLAN.md Task 3 adds the timeline.discontinuities and
+# timeline.discontinuities.flagged fixtures below (timeline_ts_jump.ts,
+# timeline_ts_jump_flagged.ts -- byte-identical except for the one
+# transport packet's discontinuity_indicator bit), same
+# workstation-computed-awaiting-designated-leg-transcription status as
+# every other entry in this file.
 timeline_dts_backward.ts
 timeline_duration_short.mp4
 timeline_gap.mp4
@@ -73,6 +80,8 @@ timeline_pts_dupe.mp4
 timeline_start_base.mp4
 timeline_start_base_copy.mp4
 timeline_start_shift.ts
+timeline_ts_jump.ts
+timeline_ts_jump_flagged.ts
 timeline_ts_nowrap.ts
 timeline_ts_nowrap_copy.ts
 timeline_ts_wrap.ts
