@@ -17,6 +17,7 @@
 #include "core/model.h"
 #include "core/rational.h"
 #include "core/value.h"
+#include "probe/cadence.h"
 #include "probe/packet_scan.h"
 #include "probe/pass.h"
 
@@ -312,6 +313,102 @@ struct DuplicateResult {
 };
 
 DuplicateResult count_pts_duplicates(const AxisView& view);
+
+}  // namespace detail
+
+// timeline.jitter / timeline.vfr_profile (05-08-PLAN.md, TIME-05): both
+// consume `probe/cadence.h`'s shared `derive_cadence` ONCE per stream
+// (PROBE-10 -- never a second interval tally or a second CFR/VFR
+// classification; `Cadence::klass` alone decides). `timeline.jitter`
+// reports sigma (an exact fixed-point `RationalValue`, denominator
+// `2^kJitterSigmaFixedShift`, `core/rational.h`) and carries
+// `max_abs_deviation_ms` in evidence on the SAME id -- 05-CHECK-ROSTER.md's
+// Discretion resolution, never a second check id -- computed via a
+// PORTABLE INTEGER square root (`detail::Int128Accum::try_isqrt`), no
+// floating point anywhere in the compared value. `SkipReason::vfr` on a
+// VFR stream, `Absent{}`, never a sigma computed over a distribution with
+// no nominal. `timeline.vfr_profile` bins every interval by its D-06
+// deviation from the stream's OWN grid (`Cadence::ideal_interval_num/den`),
+// never raw ticks -- the property that makes the same content bin
+// identically across MP4 and Matroska despite storing the interval as
+// different tick counts. `required_passes = {Pass::demux_header,
+// Pass::packet_scan}`, `scope = ContainerFamily::other` (every
+// container). Runs on every stream carrying timestamps EXCEPT
+// `Scope::Kind::subtitle`, mirroring `timeline_monotonic_analyzer()`'s
+// own scope decision. Skip-reason priority: `partial_scan` (Phase 3 D-02,
+// ahead of everything -- both ids), then whatever `derive_cadence` itself
+// reports (`no_timing_data`/`insufficient_data`) for both ids identically
+// (never allowing one id to compute a real value while the other skips
+// for a DIFFERENT reason on the SAME stream).
+const AnalyzerSpec& timeline_jitter_vfr_analyzer();
+
+namespace detail {
+
+// jitter_vfr.cpp's own axis-sorted interval walk (05-08-PLAN.md Task 2):
+// the SAME axis `derive_cadence` itself used (`Cadence::axis`, never
+// re-derived), walked via a LOCAL SORTED COPY (mirrors
+// `probe/cadence.cpp`'s and this file's own `count_pts_duplicates`'
+// "sort a copy, never the caller's own read-order array" discipline) to
+// produce the raw tick-domain interval list BOTH `timeline.jitter` and
+// `timeline.vfr_profile` consume. This is NOT a second cadence/CFR-VFR
+// tally -- that verdict comes from `Cadence::klass` alone, never
+// recomputed here -- it is the per-interval VALUE list `Cadence` itself
+// never exposes (only aggregate counts), which both checks' own
+// statistics (variance, grid-relative bin membership) need, mirroring
+// `timeline.gaps`' own `detail::reconstruct_packet_durations`-then-walk
+// shape one file over. Returns std::nullopt only when a `checked_sub`
+// overflows walking the sorted axis (a crafted timestamp pair whose
+// difference does not fit `int64_t`) -- the caller degrades to
+// `insufficient_data`, never a wrapped or fabricated interval.
+std::optional<std::vector<std::int64_t>> compute_sorted_axis_intervals(std::span<const PacketRecord> packets,
+                                                                          CadenceAxis axis);
+
+// D-06's six fixed fractional buckets, in ascending-threshold CASCADE
+// order (05-CHECK-ROSTER.md's own approved labels: `on_grid`, `one_tick`,
+// `one_percent`, `two_x`, `three_x`, `longer`): `interval`'s deviation
+// from the stream's own ideal grid interval (`ideal_num`/`ideal_den`,
+// `Cadence::ideal_interval_num/den`) decides EXACTLY one of the six
+// labels, evaluated tightest-first so a value sitting EXACTLY on a
+// boundary lands in the LOWER (tighter) bucket and one tick past it
+// lands in the next (Test 8). An interval shorter than the ideal by more
+// than one percent falls through every named tier (`two_x`/`three_x` are
+// evaluated only when the interval is genuinely LONGER than the ideal)
+// and lands in the `longer` catch-all -- the fixed six-label vocabulary
+// 05-CHECK-ROSTER.md approves has no dedicated "shorter" bucket. Returns
+// std::nullopt on any checked-arithmetic overflow (a crafted ideal/
+// interval pair) -- the caller degrades to `insufficient_data`, never a
+// fabricated bucket.
+std::optional<std::string> classify_vfr_bin(std::int64_t interval, std::int64_t ideal_num, std::int64_t ideal_den);
+
+// timeline.jitter's own sigma computation (05-08-PLAN.md Task 2, A1):
+// given the stream's own mode interval (`Cadence::mode_interval_ticks`,
+// D-07's field, kept populated by D-05's amendment for exactly this kind
+// of same-timebase consumer) and the raw tick-domain interval list
+// `compute_sorted_axis_intervals` above produces, returns the exact
+// fixed-point sigma NUMERATOR (denominator is the fixed
+// `2^kJitterSigmaFixedShift` scale, `core/rational.h`) and the maximum
+// absolute deviation in ticks -- both computed with ONLY checked-integer
+// and `detail::Int128Accum`-wide arithmetic, no floating point, no
+// standard-library square root anywhere. Deviations are scaled BEFORE
+// being squared (never a separate wide-times-scalar step): accumulating
+// `(deviation * scale)^2` directly is algebraically `scale^2 * sum of
+// squared deviations`, exactly the scaled-variance numerator sigma's own
+// fixed-point root needs, without ever narrowing the raw (unscaled) sum
+// first. Returns std::nullopt when `intervals` is empty (no interval to
+// measure a sigma over), on any checked-arithmetic overflow forming the
+// scaled deviations, or when the WIDE accumulated sum of squares itself
+// cannot narrow to `int64_t` (T-05-34: a crafted interval distribution
+// inflating the sum past what any real file could produce) -- the caller
+// degrades to `insufficient_data`, never a wrapped or fabricated sigma.
+struct JitterSigmaResult {
+  // sigma_true_ticks * 2^kJitterSigmaFixedShift, FLOORED (truncated
+  // toward zero, never rounded -- A1's own fixed-point contract).
+  std::int64_t sigma_fixed_numerator = 0;
+  std::int64_t max_abs_deviation_ticks = 0;
+  std::int64_t considered_intervals = 0;
+};
+std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t mode_interval_ticks,
+                                                          const std::vector<std::int64_t>& intervals);
 
 }  // namespace detail
 

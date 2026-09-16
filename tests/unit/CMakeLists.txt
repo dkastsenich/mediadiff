@@ -162,6 +162,15 @@ add_executable(mediadiff_unit_tests
   # wrapped-value, driven directly against hand-built PacketRecord arrays
   # with hand-computed expected values (no fixture on disk).
   test_cadence.cpp
+  # TIME-05 (05-08-PLAN.md): timeline.jitter/timeline.vfr_profile's own
+  # pure-function core -- detail::classify_vfr_bin's D-06 six-bucket
+  # cascade (every named boundary, both directions) and
+  # detail::compute_jitter_sigma's fixed-point sigma (uniform-interval
+  # zero case, a hand-computed nonzero case, the narrowed-vs-wide
+  # call-path identity, T-05-34's overflow-refuses-a-wrapped-sigma case)
+  # -- driven directly against hand-computed expected values, never
+  # captured from the implementation.
+  test_jitter_vfr.cpp
   # VIDEO-05/VIDEO-12 (04-09-PLAN.md): the open/closed GOP classification's
   # own hand-verified NAL-type table, driven directly through
   # detail::classify_access_unit/detail::classify_gop -- every expected
