@@ -45,6 +45,12 @@
 # that zero-entry branch does not apply -- clause 3 instead checks the
 # entries themselves are LC_ALL=C sorted, unique, and each names a real
 # line in CORPUS_DIGEST.txt (which this same plan's commit adds).
+#
+# 05-03-PLAN.md Task 1 adds the NTSC-in-MKV D-05 false-positive repro pair
+# below, workstation-computed hashes awaiting the same designated-leg
+# transcription as the three 05-01 entries above.
+timeline_ntsc_base.mp4
+timeline_ntsc_remux.mkv
 timeline_start_base.mp4
 timeline_start_base_copy.mp4
 timeline_start_shift.ts
