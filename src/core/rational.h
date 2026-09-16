@@ -29,6 +29,32 @@ struct Ticks {
   Rational tb;
 };
 
+// kJitterSigmaFixedShift (05-08-PLAN.md Task 1, TIME-05, A1's own
+// Discretion resolution): `timeline.jitter`'s sigma is reported as an
+// EXACT fixed-point `RationalValue`, never a rounded real -- its
+// denominator is `2^kJitterSigmaFixedShift`, a power of two so scaling by
+// it is always an exact bit shift (a decimal-scaled denominator such as
+// 1000 would require an actual division to convert, reintroducing the
+// rounding this constant exists to avoid). 16 is the chosen sub-tick
+// scale: `2 * kJitterSigmaFixedShift == 32`, so `scale^2` (the factor
+// `detail::Int128Accum::try_isqrt`'s caller multiplies the tick-domain
+// variance by before taking the root, so the ROOT lands directly in
+// fixed-point sigma units) is the exact value `2^32`, comfortably an
+// ordinary `int64_t` constant with no `checked_mul` needed to form it,
+// while still carrying far more sub-tick precision than any real
+// timebase this project constructs could ever resolve. Because sigma is
+// a FLOOR (detail::Int128Accum::try_isqrt's own floor-exact contract), a
+// value stored at this scale is truncated TOWARD ZERO at
+// `1/2^kJitterSigmaFixedShift` of one tick, never rounded to the nearest
+// representable value -- stated here, in `timeline.jitter`'s own
+// `docs/checks/timeline.jitter.md`, and in `jitter_vfr.cpp`'s own
+// sigma-construction comment, so no reader assumes more precision exists
+// than this truncation actually preserves. Fixed, not tunable, for the
+// identical reason `probe/cadence.h`'s own detection constants are fixed
+// (D-08): a compared value's own precision must not vary per-invocation,
+// or two runs of the identical file could disagree at the CLI boundary.
+inline constexpr std::int64_t kJitterSigmaFixedShift = 16;
+
 namespace detail {
 
 // 64x64->64 multiply with overflow detection: returns false (leaving *out
@@ -120,6 +146,84 @@ class Int128Accum {
     return true;
   }
 
+  // try_isqrt (05-08-PLAN.md Task 1, TIME-05): floor(sqrt(this
+  // accumulator's own value)), computed directly over the wide (hi_, lo_)
+  // representation -- the sum of squared deviations this class exists to
+  // accumulate never has to narrow to int64_t before its own root is
+  // taken (T-05-34's own mitigation: the caller narrows only via
+  // try_narrow above, and reaches this function precisely when the value
+  // genuinely needs 128-bit precision). A portable bit-doubling
+  // (restoring) square root, composed from the SAME
+  // `_addcarry_u64`/`_subborrow_u64` 64-bit intrinsics add_product/add
+  // above already use (MSVC has no 128-bit integer type at all, the
+  // reason this whole class is split by `_MSC_VER` in the first place) --
+  // no standard-library square root, no floating point, no libm
+  // dependency anywhere in this function. Returns the FLOOR of the true
+  // root:
+  // `result*result <= value < (result+1)*(result+1)` -- the
+  // byte-identical-on-every-toolchain property PROJECT.md's determinism
+  // constraint requires, since a real square root is irrational for
+  // almost every input and any OTHER rounding convention has no
+  // canonical, portable answer. Returns false when the accumulated value
+  // is negative (never a legitimate input for a sum of squared
+  // deviations; a negative value here means the TRUE mathematical sum
+  // overflowed 127 bits and wrapped in two's complement -- T-05-34's own
+  // overflow signal) or when the floor root itself does not fit
+  // int64_t (e.g. INT64_MIN*INT64_MIN's own exact root, 2^63, is one
+  // more than INT64_MAX -- unreachable for any realistic
+  // packet-count-bounded input, guarded rather than assumed).
+  bool try_isqrt(std::int64_t* out) const {
+    if (hi_ < 0) {
+      return false;
+    }
+    std::uint64_t n_hi = static_cast<std::uint64_t>(hi_);
+    std::uint64_t n_lo = lo_;
+    std::uint64_t root_hi = 0;
+    std::uint64_t root_lo = 0;
+    // 2^126, the largest power of 4 that can appear in a 127-bit-or-fewer
+    // nonnegative magnitude (hi_ >= 0 above bounds the value strictly
+    // below 2^127) -- always a safe starting bit; the loop below spends
+    // its first few iterations harmlessly halving `root` (still zero)
+    // until `bit` shrinks to the value's own true magnitude, exactly the
+    // same fixed 64-iteration cost as the GCC/Clang `__int128` arm below.
+    std::uint64_t bit_hi = std::uint64_t{1} << 62;
+    std::uint64_t bit_lo = 0;
+    for (int i = 0; i < 64; ++i) {
+      std::uint64_t cand_hi = 0;
+      std::uint64_t cand_lo = 0;
+      {
+        const unsigned char carry = _addcarry_u64(0, root_lo, bit_lo, &cand_lo);
+        _addcarry_u64(carry, root_hi, bit_hi, &cand_hi);
+      }
+      const bool ge = (n_hi != cand_hi) ? (n_hi > cand_hi) : (n_lo >= cand_lo);
+      if (ge) {
+        std::uint64_t diff_hi = 0;
+        std::uint64_t diff_lo = 0;
+        const unsigned char borrow = _subborrow_u64(0, n_lo, cand_lo, &diff_lo);
+        _subborrow_u64(borrow, n_hi, cand_hi, &diff_hi);
+        n_hi = diff_hi;
+        n_lo = diff_lo;
+        // root = (root >> 1) + bit, the SAME two 64-bit-word shift-then-add
+        // shape used throughout this arm.
+        const std::uint64_t half_lo = (root_lo >> 1) | (root_hi << 63);
+        const std::uint64_t half_hi = root_hi >> 1;
+        const unsigned char carry2 = _addcarry_u64(0, half_lo, bit_lo, &root_lo);
+        _addcarry_u64(carry2, half_hi, bit_hi, &root_hi);
+      } else {
+        root_lo = (root_lo >> 1) | (root_hi << 63);
+        root_hi = root_hi >> 1;
+      }
+      // bit >>= 2
+      bit_lo = (bit_lo >> 2) | (bit_hi << 62);
+      bit_hi = bit_hi >> 2;
+    }
+    if (root_hi != 0 || root_lo > static_cast<std::uint64_t>(INT64_MAX)) {
+      return false;
+    }
+    *out = static_cast<std::int64_t>(root_lo);
+    return true;
+  }
+
  private:
   std::int64_t hi_ = 0;
   std::uint64_t lo_ = 0;
@@ -143,10 +247,57 @@ class Int128Accum {
     return true;
   }
 
+  // try_isqrt -- see the MSVC arm's own identical-contract comment above
+  // (both arms share ONE doc comment's worth of reasoning; not repeated
+  // verbatim here to avoid drift between two copies of the same prose).
+  // `unsigned __int128` makes this arm direct where the MSVC arm has to
+  // compose two 64-bit words by hand.
+  bool try_isqrt(std::int64_t* out) const {
+    if (value_ < 0) {
+      return false;
+    }
+    unsigned __int128 n = static_cast<unsigned __int128>(value_);
+    unsigned __int128 root = 0;
+    // 2^126 -- see the MSVC arm's own comment on why this fixed starting
+    // bit is always safe and costs a fixed 64 iterations regardless of
+    // `n`'s true magnitude.
+    unsigned __int128 bit = static_cast<unsigned __int128>(1) << 126;
+    while (bit != 0) {
+      const unsigned __int128 candidate = root + bit;
+      if (n >= candidate) {
+        n -= candidate;
+        root = (root >> 1) + bit;
+      } else {
+        root >>= 1;
+      }
+      bit >>= 2;
+    }
+    if (root > static_cast<unsigned __int128>(INT64_MAX)) {
+      return false;
+    }
+    *out = static_cast<std::int64_t>(root);
+    return true;
+  }
+
  private:
   __int128 value_ = 0;
 };
 #endif
+
+// isqrt_i64 (05-08-PLAN.md Task 1, TIME-05, Test 4's own narrowed-input
+// call path): delegates to Int128Accum::try_isqrt via a single add() --
+// structurally the SAME implementation as the wide path above, not a
+// second, independently written one, which is what makes it IMPOSSIBLE
+// for the two entry points to drift from each other (rather than merely
+// unlikely to). A negative `n` (never a real input for the caller this
+// exists for -- a sum of squared deviations) reaches Int128Accum's own
+// negative-value domain-error check and returns false, the identical
+// contract try_isqrt itself documents.
+inline bool isqrt_i64(std::int64_t n, std::int64_t* out) {
+  Int128Accum accum;
+  accum.add(n);
+  return accum.try_isqrt(out);
+}
 
 // CR-03: a - b with overflow detection, the subtraction-side counterpart
 // to checked_mul above -- compare/tol.cpp's delta_num and compare/dist.cpp's
