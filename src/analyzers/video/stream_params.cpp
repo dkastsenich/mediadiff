@@ -355,10 +355,10 @@ bool declared_measured_agree(std::int64_t declared_num, std::int64_t declared_de
 }
 
 // video.frame_rate.measured: src/probe/cadence.h's shared PURE derivation
-// (D-05) is this check's entire computation -- never a second sweep, never
-// a statistic this file re-derives on its own. D-02: a truncated packet
-// scan skips ahead of the derivation itself, since a rate from an
-// incomplete sweep is a confidently wrong number.
+// (D-05, amending D-07) is this check's entire computation -- never a
+// second sweep, never a statistic this file re-derives on its own. D-02: a
+// truncated packet scan skips ahead of the derivation itself, since a rate
+// from an incomplete sweep is a confidently wrong number.
 void emit_frame_rate_measured(const StreamInfo& info, const StreamPacketScan& stream, bool packet_scan_partial,
                                Scope scope, Fingerprint& fp) {
   if (packet_scan_partial) {
@@ -376,16 +376,33 @@ void emit_frame_rate_measured(const StreamInfo& info, const StreamPacketScan& st
     return;
   }
 
-  // rate = tb.den / (tb.num * mode_interval_ticks) -- cross-multiplied via
-  // the checked helpers, never a division, then GCD-reduced so the same
-  // true rate always renders as the identical canonical num/den pair
-  // (byte-identical --json across runs and across files sharing a rate).
-  std::int64_t den = 0;
-  if (!detail::checked_mul(cadence.tb.num, cadence.mode_interval_ticks, &den) || den <= 0) {
+  // D-05 (05-03-PLAN.md Task 3): rate = tb.den * interval_count /
+  // (tb.num * span_ticks) -- derived from the file's own SPAN, never the
+  // mode interval. This is the fix for the shipped false positive: on a
+  // coarse timebase (Matroska's 1 ms), a genuinely constant cadence's MODE
+  // interval reads a different rate than the true one, because the
+  // rounding sequence's most frequent value is not its average. The span
+  // basis makes the same content measure the same rate regardless of which
+  // timebase stored it. Cross-multiplied via the checked helpers, never a
+  // division, then GCD-reduced so the same true rate always renders as the
+  // identical canonical num/den pair (byte-identical --json across runs and
+  // across files sharing a rate). span_ticks == 0 (every usable timestamp
+  // identical) has no meaningful rate -- degrades to insufficient_data
+  // rather than a fabricated infinite/zero value.
+  if (cadence.span_ticks <= 0) {
     push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
     return;
   }
-  std::int64_t num = cadence.tb.den;
+  std::int64_t den = 0;
+  if (!detail::checked_mul(cadence.tb.num, cadence.span_ticks, &den) || den <= 0) {
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+  std::int64_t num = 0;
+  if (!detail::checked_mul(cadence.tb.den, cadence.interval_count, &num)) {
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
   const std::int64_t divisor = std::gcd(num, den);
   if (divisor > 1) {
     num /= divisor;
@@ -401,9 +418,18 @@ void emit_frame_rate_measured(const StreamInfo& info, const StreamPacketScan& st
   measurement.value = RationalValue{num, den, cadence.tb};
   measurement.evidence = nlohmann::ordered_json{
       {"axis", cadence.axis == CadenceAxis::pts ? "pts" : "dts"},
+      // D-07's own fields: kept, unchanged meaning (a same-timebase
+      // consumer reading them is unaffected by the D-05 amendment).
       {"mode_interval_ticks", cadence.mode_interval_ticks},
       {"matching_intervals", cadence.matching_intervals},
       {"total_intervals", cadence.total_intervals},
+      // D-05's own fields: the span basis the reported rate is now derived
+      // from, and the grid-conformance counts that decide `class` below.
+      {"span_ticks", cadence.span_ticks},
+      {"ideal_interval_num", cadence.ideal_interval_num},
+      {"ideal_interval_den", cadence.ideal_interval_den},
+      {"conforming_timestamps", cadence.conforming_timestamps},
+      {"considered_timestamps", cadence.considered_timestamps},
       {"class", cadence.klass == CadenceClass::cfr ? "cfr" : "vfr"},
       {"declared_agrees", declared_agrees},
   };

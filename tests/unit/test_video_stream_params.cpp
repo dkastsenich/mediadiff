@@ -16,6 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -412,6 +413,17 @@ TEST_CASE("video_stream_params - video.frame_rate.measured for video_base.mp4 re
   REQUIRE(measured->evidence.contains("mode_interval_ticks"));
   REQUIRE(measured->evidence.contains("matching_intervals"));
   REQUIRE(measured->evidence.contains("total_intervals"));
+  // D-05 (05-03-PLAN.md Task 3): the new grid-conformance evidence fields.
+  // video_base.mp4 is a uniform-cadence CFR encode, so its span-derived
+  // ideal interval matches its mode interval exactly, and every timestamp
+  // is on the grid.
+  REQUIRE(measured->evidence.contains("span_ticks"));
+  REQUIRE(measured->evidence.contains("ideal_interval_num"));
+  REQUIRE(measured->evidence.contains("ideal_interval_den"));
+  REQUIRE(measured->evidence.contains("conforming_timestamps"));
+  REQUIRE(measured->evidence.contains("considered_timestamps"));
+  REQUIRE(measured->evidence.at("conforming_timestamps").get<std::int64_t>() ==
+          measured->evidence.at("considered_timestamps").get<std::int64_t>());
   REQUIRE(measured->evidence.at("class").get<std::string>() == "cfr");
   // video_base.mp4's declared and measured rates agree exactly (both 25/1).
   REQUIRE(measured->evidence.at("declared_agrees").get<bool>());
@@ -439,6 +451,66 @@ TEST_CASE("video_stream_params - video_vfr.mp4 classifies VFR, still reports a m
   REQUIRE(std::holds_alternative<RationalValue>(measured->value));
   REQUIRE(measured->evidence.at("class").get<std::string>() == "vfr");
   REQUIRE_FALSE(measured->evidence.at("declared_agrees").get<bool>());
+  // D-05 (05-03-PLAN.md Task 3): a genuine VFR encode reports fewer
+  // conforming timestamps than considered ones -- that gap is what makes
+  // it VFR under the grid-conformance rule now deciding `class`.
+  REQUIRE(measured->evidence.contains("conforming_timestamps"));
+  REQUIRE(measured->evidence.contains("considered_timestamps"));
+  REQUIRE(measured->evidence.at("conforming_timestamps").get<std::int64_t>() <
+          measured->evidence.at("considered_timestamps").get<std::int64_t>());
+}
+
+// D-05 (05-03-PLAN.md Task 3, the fix itself): the NTSC-in-MKV fixture pair
+// this plan committed reproduces the shipped false positive against the
+// PRE-amendment code path (see this plan's SUMMARY for the transcript) and
+// must compare clean now. video.frame_rate.measured is now derived from
+// the SPAN, not the mode interval, so the exact same content -- one copy
+// on MP4's 30000-tick timebase, one stream-copy-remuxed onto Matroska's
+// 1ms timebase -- must measure the SAME true rate (within the shipped 0.1%
+// tolerance), even though the two files' MODE intervals (1001 ticks vs 33
+// ticks) read entirely differently.
+TEST_CASE("video_stream_params - D-05: timeline_ntsc_base.mp4 and its Matroska remux measure the SAME rate within "
+          "0.1%, despite their mode intervals reading differently",
+          "[unit]") {
+  ScanBundle base = scan_or_fail(fixture("timeline_ntsc_base.mp4"));
+  ProbeResults base_results;
+  base_results.demux = &base.session;
+  base_results.packet_scan = base.outputs.packets;
+  base_results.parser_scan = base.outputs.access_units;
+  const Fingerprint base_fp = run_analyzer(base_results);
+
+  ScanBundle remux = scan_or_fail(fixture("timeline_ntsc_remux.mkv"));
+  ProbeResults remux_results;
+  remux_results.demux = &remux.session;
+  remux_results.packet_scan = remux.outputs.packets;
+  remux_results.parser_scan = remux.outputs.access_units;
+  const Fingerprint remux_fp = run_analyzer(remux_results);
+
+  const Measurement* base_measured = find(base_fp, CheckId::video_frame_rate_measured);
+  const Measurement* remux_measured = find(remux_fp, CheckId::video_frame_rate_measured);
+  REQUIRE(base_measured != nullptr);
+  REQUIRE(remux_measured != nullptr);
+  REQUIRE(base_measured->skip_reason == SkipReason::none);
+  REQUIRE(remux_measured->skip_reason == SkipReason::none);
+
+  // Both must classify CFR under the amended rule -- the false positive
+  // this plan fixes was exactly the remux side misclassifying under D-07's
+  // own mode-interval rule.
+  REQUIRE(base_measured->evidence.at("class").get<std::string>() == "cfr");
+  REQUIRE(remux_measured->evidence.at("class").get<std::string>() == "cfr");
+
+  const auto base_rate = std::get<RationalValue>(base_measured->value);
+  const auto remux_rate = std::get<RationalValue>(remux_measured->value);
+  REQUIRE(base_rate.den > 0);
+  REQUIRE(remux_rate.den > 0);
+  const double base_fps = static_cast<double>(base_rate.num) / static_cast<double>(base_rate.den);
+  const double remux_fps = static_cast<double>(remux_rate.num) / static_cast<double>(remux_rate.den);
+  // The shipped false positive: 29.970 (base) vs 30.303 (remux, mode-
+  // interval-derived) -- an 11000/33033 %% (~1.1%) delta, well outside the
+  // 0.1% tolerance. The fix: both measure ~29.97, within 0.1% of each
+  // other.
+  const double relative_delta = std::abs(base_fps - remux_fps) / base_fps;
+  REQUIRE(relative_delta < 0.001);
 }
 
 // Test 7: the skip-reason vocabulary -- no_timing_data, insufficient_data,
