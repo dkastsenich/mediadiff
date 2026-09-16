@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-09-16T19:10:12.552Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-09-16T19:26:20.152Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: 84168f4fe8151a46a05ee899f14f7c06f4aca996
+state_head: 70e11f0796135578a133ae52eb1a35c1d01384ce
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 68
+  completed_plans: 69
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 2 of 13
+Plan: 3 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -119,6 +119,7 @@ Progress: [█████████░] 92%
 | Phase 04 P20 | 5h 42m | 3 tasks | 1 files |
 | Phase 04 P21 | multi-session | 3 tasks | 3 files |
 | Phase 05 P01 | ~30min | 3 tasks | 18 files |
+| Phase 05 P02 | 20 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -266,6 +267,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-21: the Windows blocking leg was fixed rather than waived — five root-caused failures (pin-reader CRLF, BtbN purge re-pin to the ffmpeg-pins mirror, GPL-gated tinterlace, GPL-gated interlace, MSVC C4996 getenv) closed by quick tasks; run 34891069554 green on all blocking legs
 - [Phase 05]: timeline.start ms conversion uses checked_mul/checked_div (truncating), matching container.ts.pcr_interval/psi_interval -- an unreduced exact fraction overflowed the compare engine on a real fixture
 - [Phase 05]: DOC-04 declared-set harness (timeline_findings.h) compares per-id OCCURRENCE COUNTS, not set membership, since one cause can legitimately fire the same check id at two scopes
+- [Phase 05]: 05-02: exposed detail::apply_wrap_step/WrapStepResult in unwrap.h beyond the plan's own Artifacts table so the running-offset overflow path (Test 8) is provable at the state-machine level, mirroring ts_scan.h's step_continuity precedent — reaching offset overflow via unwrap_ts_timestamps' top-level loop alone would need ~2^30 real wrap events, an input no unit test can build or iterate
+- [Phase 05]: 05-02: Int128Accum's try_narrow-only public API means a wide (>INT64_MAX) accumulated value is proven by subtracting a hand-computed int64_t-representable offset via add() before narrowing, never by reading internal state directly
 
 ### Pending Todos
 
@@ -304,6 +307,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16T19:10:12.373Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-09-16T19:26:11.601Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
