@@ -64,3 +64,5 @@ timeline.duration  severity=fail  tolerance=40/1 ms (warn 20/1)
 timeline.duration.coherence  severity=info  tolerance=<none>
 timeline.dts_monotonic  severity=fail  tolerance=0/1 bytes
 timeline.pts_unique  severity=fail  tolerance=0/1 bytes
+timeline.gaps  severity=fail  tolerance=<none>
+timeline.wrap_events  severity=info  tolerance=<none>

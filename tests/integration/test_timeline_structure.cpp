@@ -3,10 +3,17 @@
 // crafted fixtures this plan's Task 1 generates --
 // tests/fixtures/timeline_dts_backward.ts and
 // tests/fixtures/timeline_pts_dupe.mp4 -- plus the byte-identical clean
-// pair every other tracer in this phase reuses. Every TEST_CASE below
-// carries the literal prefix "timeline_structure - " so `ctest -R
-// "integration\.timeline_structure"` selects exactly this file's cases
-// (TEST_PREFIX "integration." makes the real ctest name
+// pair every other tracer in this phase reuses.
+//
+// 05-06-PLAN.md Task 3 (TIME-02/TIME-04, DOC-04) extends this file with the
+// same harness applied to timeline.gaps and timeline.wrap_events, over
+// tests/fixtures/timeline_gap.mp4, tests/fixtures/timeline_ts_wrap.ts and
+// tests/fixtures/timeline_ts_nowrap.ts/_copy.ts, plus a dedicated case
+// proving doc 04 section 5's own zero-false-positive acceptance criterion.
+//
+// Every TEST_CASE below carries the literal prefix "timeline_structure - "
+// so `ctest -R "integration\.timeline_structure"` selects exactly this
+// file's cases (TEST_PREFIX "integration." makes the real ctest name
 // "integration.<TEST_CASE name>"; an unmatched -R filter exits ZERO and
 // prints "No tests were found", which is why the prefix matters).
 
@@ -112,6 +119,19 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
           // candidate is MPEG-TS).
           "timeline.dts_monotonic",
           "timeline.dts_monotonic",
+          // 05-06-PLAN.md's own timeline.gaps check, registered after this
+          // fixture: the SAME splice discontinuity that corrupts
+          // timeline.duration/.coherence above also opens one genuine hole
+          // in the candidate's AUDIO presentation timeline at the splice
+          // point (verified via `mediadiff compare --json` evidence:
+          // candidate gap_count 1, span {1678ms,1701ms}, baseline gap_count
+          // 0 on both streams). The VIDEO stream's own gap_count stays 0 on
+          // both sides -- the splice-corrupted PTS cadence is close enough
+          // to the reconstructed per-packet declared duration on video not
+          // to cross this check's own threshold -- so this id appears
+          // exactly once here, not twice. One more legitimate effect of the
+          // same root cause (D-02).
+          "timeline.gaps",
           // A fresh two-segment mpeg4/aac re-encode is genuinely a
           // different byte size, stream bitrate, peak bitrate and overhead
           // ratio than the original single 4s MP4 encode -- expected for
@@ -159,7 +179,195 @@ TEST_CASE("timeline_structure - the pts_dupe trigger pair declares its complete 
                                });
 }
 
-// --- Test 3: the byte-identical clean pair's empty declared set ------------
+// --- Test 3: timeline_start_base.mp4 vs timeline_gap.mp4 -------------------
+//
+// timeline_gap.mp4 is a `setts`-crafted single encode: identical
+// testsrc2/sine source and mpeg4/aac encode, with every video packet's own
+// PTS from N=50 onward shifted forward by exactly 3 codec-timebase frames
+// (DTS left untouched -- see this plan's own scripts/gen_corpus.sh recipe
+// comment for why a combined PTS+DTS shift self-heals against MP4's own
+// stts-derived declared duration and never triggers a gap). One cause (the
+// PTS-only shift), several legitimately moved facts (D-02): the shift
+// pushes every subsequent packet's PTS 1536 ticks later, so the track's
+// own overall duration, its own MP4 edit-list segment_duration, and its
+// own measured-cadence conformance ratio all genuinely change alongside
+// the one presentation-order hole this fixture exists to prove. DTS is
+// never touched, so timeline.dts_monotonic and timeline.pts_unique stay
+// clean and do not appear here.
+TEST_CASE(
+    "timeline_structure - the gap trigger pair declares its complete expected finding set under --profile remux, "
+    "and count_non_pass equals that set's size exactly",
+    "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_gap.mp4"), "remux");
+
+  expect_declared_set(
+      report,
+      {
+          // The MP4 edit-list's own `trim` entry segment_duration is
+          // computed from the track's own (now shift-lengthened) media
+          // duration -- verified via evidence: baseline
+          // segment_duration=176400, candidate segment_duration=181692.
+          "container.mp4.edit_list",
+          // The shifted packets' own PTS cadence no longer conforms to a
+          // clean 25fps CFR sequence past the shift point (verified via
+          // evidence: candidate conforming_timestamps drops from 100 to 2,
+          // class flips from cfr to vfr) -- a direct, expected consequence
+          // of moving PTS values without moving the frame count.
+          "video.frame_rate.measured",
+          // The track's own overall duration grows by exactly the 120ms
+          // the 3-frame/1536-tick shift adds (verified via evidence:
+          // baseline computed_ms 4000, candidate computed_ms 4120,
+          // beyond the fixed 40ms fail threshold).
+          "timeline.duration",
+          // The candidate's demuxer-declared duration values (container/
+          // stream, both still 4000ms -- their own bookkeeping never saw
+          // the shift) now disagree with the shift-lengthened computed
+          // duration (4120ms) -- container_vs_computed and
+          // stream_vs_computed both flagged, at info severity per this
+          // check's own state semantic.
+          "timeline.duration.coherence",
+          // The check this task registers -- one genuine hole in the
+          // video presentation timeline at the shift point (verified via
+          // evidence: candidate gap_count 1, span {1960ms,2120ms}).
+          "timeline.gaps",
+      });
+}
+
+// --- Test 4: timeline_ts_nowrap.ts vs timeline_ts_wrap.ts ------------------
+//
+// timeline_ts_wrap.ts is a fresh direct testsrc2/sine/mpeg4/aac encode
+// straight to MPEG-TS with `-output_ts_offset 95440.34` (an output-side
+// option, applied at encode time, not a `-c copy` remux) producing a
+// genuine on-the-wire 33-bit PTS/DTS wrap partway through the file.
+// timeline_ts_nowrap.ts is the identical recipe with no offset -- the
+// `state` semantic's own asymmetry (one side flagged, one not) is what
+// makes this pair a trigger.
+//
+// Deliberately NOT an expect_declared_set/whole-report assertion here
+// (contrast Test 3's gap trigger pair above): this task's own Rule 1/2
+// deviation (demux_session.{h,cpp}'s correct_ts_overflow=0, needed so
+// unwrap_ts_timestamps ever sees a genuine wrap at all -- see this plan's
+// own commit message) has the side effect of exposing that
+// timeline.start, timeline.duration, timeline.duration.coherence,
+// video.frame_rate.measured and size.stream_bitrate all read RAW,
+// un-unwrapped PTS/DTS axis values directly (never through the shared
+// unwrap this plan's own two checks use), producing nonsensical evidence
+// on ANY genuinely-wrapping TS file (one observed instance:
+// size.stream_bitrate's own tolerance comparator overflows int64_t and
+// reports `status: error`). That is a REAL, pre-existing correctness gap
+// this plan's own fix newly makes reachable -- not something a real user
+// would want silently folded into an "expected" declared set (FALSE
+// POSITIVES ARE P0). It is out of THIS plan's declared scope (05-06-
+// PLAN.md's Task 2 is timeline_monotonic_analyzer() only; the affected
+// checks live in three different analyzer files/groups) and is recorded
+// as a follow-up gap in this plan's own SUMMARY.md rather than papered
+// over here. This test therefore asserts ONLY the one finding this
+// fixture pair exists to prove, the same scope discipline
+// doc03_coverage's own statuses_for() helper already applies.
+TEST_CASE("timeline_structure - the wrap trigger pair's timeline.wrap_events finding is the state-semantic "
+          "non-pass case on both streams under --profile remux",
+          "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_wrap.ts"), "remux");
+
+  int wrap_events_non_pass = 0;
+  for (const auto& finding : report.at("findings")) {
+    if (finding.at("id").get<std::string>() != "timeline.wrap_events") {
+      continue;
+    }
+    INFO("timeline.wrap_events finding: " << finding.dump(2));
+    REQUIRE(finding.at("baseline").get<std::string>() == "no_wrap");
+    REQUIRE(finding.at("candidate").get<std::string>() == "ts_33bit_wrap");
+    REQUIRE(finding.at("status").get<std::string>() != "pass");
+    REQUIRE(finding.at("status").get<std::string>() != "skipped");
+    ++wrap_events_non_pass;
+  }
+  // Fires once per stream (video, audio): the offset wraps BOTH streams'
+  // own 90kHz PES timestamps at roughly the same point in the file.
+  REQUIRE(wrap_events_non_pass == 2);
+}
+
+// --- Test 5: the wrap fixture's own byte-identical clean pair --------------
+//
+// timeline_ts_nowrap.ts vs its own byte-identical copy -- deliberately a
+// SEPARATE clean pair from timeline_start_base.mp4/_copy.mp4 (reused by
+// every other tracer in this phase) because timeline.wrap_events'
+// `not_applicable_container` skip on non-TS inputs would make an MP4 clean
+// pair prove nothing about this check specifically. Both sides here are
+// TS and both report the unflagged `no_wrap` value -- the state semantic's
+// own `pass` requirement (neither side flagged, never "both agree").
+//
+// One pre-existing, non-wrap-related fact rides along (D-02): a freshly
+// TS-muxed AAC audio stream's own container-declared duration (4023ms)
+// disagrees with its own stream-declared/computed durations (3877ms/
+// 4040ms) -- the SAME class of MPEG-TS audio-duration-bookkeeping
+// disagreement test_timeline_start_duration.cpp already declares for
+// timeline_start_shift.ts (05-04-PLAN.md's own precedent), here on BOTH
+// sides of a byte-identical pair since it is a property of the encode
+// itself, not of the wrap. Verified via evidence: both baseline and
+// candidate flag "container_vs_stream", `status: info`
+// (timeline.duration.coherence's own info severity), never gating.
+TEST_CASE(
+    "timeline_structure - the wrap fixture's own byte-identical clean pair declares only the pre-existing "
+    "TS-audio-duration artifact, and count_non_pass equals that set's size exactly",
+    "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_nowrap_copy.ts"), "remux");
+  expect_declared_set(report, {
+                                   "timeline.duration.coherence",
+                               });
+}
+
+// --- Test 6: doc 04 section 5's own acceptance criterion -------------------
+//
+// doc 04 section 5 requires that a genuine mid-file 33-bit wrap produces
+// ZERO false gaps and ZERO false timeline.dts_monotonic violations. Proven
+// here by comparing timeline_ts_wrap.ts against ITSELF: both
+// timeline.dts_monotonic and timeline.gaps must report `pass` with a
+// `gap_count` of exactly 0 on both streams, while timeline.wrap_events
+// still correctly reports the wrap as a non-pass, state-semantic "both
+// values are flagged" finding (proving the wrap was genuinely detected,
+// not silently absorbed) -- exactly the report this plan's own commit
+// message transcript records against the real binary.
+TEST_CASE(
+    "timeline_structure - a genuine mid-file 33-bit wrap compared against itself produces zero false gaps and "
+    "zero false dts_monotonic violations (doc 04 section 5)",
+    "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_ts_wrap.ts"), fixture("timeline_ts_wrap.ts"), "remux");
+
+  bool saw_dts_monotonic = false;
+  bool saw_gaps = false;
+  bool saw_wrap_events = false;
+  for (const auto& finding : report.at("findings")) {
+    const std::string id = finding.at("id").get<std::string>();
+    const std::string status = finding.at("status").get<std::string>();
+    if (id == "timeline.dts_monotonic") {
+      saw_dts_monotonic = true;
+      INFO("timeline.dts_monotonic finding: " << finding.dump(2));
+      REQUIRE(status == "pass");
+    } else if (id == "timeline.gaps") {
+      saw_gaps = true;
+      INFO("timeline.gaps finding: " << finding.dump(2));
+      REQUIRE(status == "pass");
+      REQUIRE(finding.at("evidence").at("baseline").at("gap_count").get<int>() == 0);
+      REQUIRE(finding.at("evidence").at("candidate").at("gap_count").get<int>() == 0);
+    } else if (id == "timeline.wrap_events") {
+      saw_wrap_events = true;
+      INFO("timeline.wrap_events finding: " << finding.dump(2));
+      REQUIRE(status != "pass");
+      REQUIRE(status != "skipped");
+      REQUIRE(finding.at("baseline").get<std::string>() == "ts_33bit_wrap");
+      REQUIRE(finding.at("candidate").get<std::string>() == "ts_33bit_wrap");
+    }
+  }
+  REQUIRE(saw_dts_monotonic);
+  REQUIRE(saw_gaps);
+  REQUIRE(saw_wrap_events);
+}
+
+// --- Test 7: the byte-identical clean pair's empty declared set ------------
 //
 // Reuses the same clean pair every tracer in this phase declares
 // (timeline_start_base.mp4 vs its own byte-identical copy) -- included

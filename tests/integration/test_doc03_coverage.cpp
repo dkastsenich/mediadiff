@@ -31,8 +31,9 @@
 // sixty-two. 05-04-PLAN.md registers timeline.duration and
 // timeline.duration.coherence, bringing the total to sixty-four.
 // 05-05-PLAN.md registers timeline.dts_monotonic and timeline.pts_unique,
-// bringing the total to sixty-six. This file is where a gap becomes
-// visible.
+// bringing the total to sixty-six. 05-06-PLAN.md registers timeline.gaps
+// and timeline.wrap_events, bringing the total to sixty-eight. This file
+// is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -437,6 +438,28 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"timeline.pts_unique",
        {fixture("timeline_start_base.mp4"), fixture("timeline_pts_dupe.mp4"), fixture("timeline_start_base.mp4"),
         fixture("timeline_start_base_copy.mp4")}},
+
+      // --- timeline.gaps / timeline.wrap_events (05-06-PLAN.md, TIME-02/
+      // TIME-04) --- timeline.gaps' trigger is timeline_gap.mp4, a
+      // `setts`-crafted PTS-only shift (DTS untouched) producing a real
+      // presentation-order hole verified empirically against the real
+      // binary: video reports `fail` with a single {1960ms,2120ms} span,
+      // audio stays `pass` (untouched by the shift). timeline.wrap_events'
+      // trigger pair is timeline_ts_nowrap.ts (unflagged `no_wrap`) against
+      // timeline_ts_wrap.ts (flagged `ts_33bit_wrap`, a genuine mid-file
+      // 33-bit PTS/DTS wrap from a direct -output_ts_offset encode) --
+      // the state-semantic asymmetry itself is the trigger. Both clean
+      // pairs are byte-identical copies: timeline.gaps reuses the phase's
+      // own timeline_start_base.mp4/_copy.mp4 pair; timeline.wrap_events
+      // uses timeline_ts_nowrap.ts/timeline_ts_nowrap_copy.ts so BOTH
+      // sides of the clean pair are unflagged (the state semantic's own
+      // `pass` requirement -- neither side flagged, never "both agree").
+      {"timeline.gaps",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_gap.mp4"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.wrap_events",
+       {fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_wrap.ts"), fixture("timeline_ts_nowrap.ts"),
+        fixture("timeline_ts_nowrap_copy.ts")}},
   };
   return pairs;
 }
