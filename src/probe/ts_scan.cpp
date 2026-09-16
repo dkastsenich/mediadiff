@@ -548,6 +548,16 @@ void process_packet(const std::string& buf, std::int64_t offset, TsScanResult& r
     ++result.malformed_packets;
   }
 
+  if (af.discontinuity_indicator) {
+    // 05-07-PLAN.md (TIME-04, T-05-28): recorded at the EXISTING site
+    // where `discontinuity_indicator` is already read (the value
+    // `parse_adaptation` above already extracted) -- never a second
+    // adaptation-field parse. Bounded; see
+    // `detail::record_discontinuity_offset`'s own comment for the
+    // truncation rule.
+    detail::record_discontinuity_offset(stats, offset);
+  }
+
   const bool has_payload = (hf.af_control == kAfPayloadOnly || hf.af_control == kAfBoth);
   const detail::ContinuityStepResult step =
       detail::step_continuity(cc_states[static_cast<std::size_t>(hf.pid)], hf.cc, has_payload,
@@ -710,6 +720,17 @@ ContinuityStepResult step_continuity(const PidContinuityState& prev, int continu
   next.expected_cc = (continuity_counter + 1) & 0x0F;
   next.duplicate_available = true;
   return ContinuityStepResult{next, ContinuityIncrement::error};
+}
+
+void record_discontinuity_offset(PidStats& stats, std::int64_t offset) {
+  if (stats.discontinuity_offsets_truncated) {
+    return;
+  }
+  if (static_cast<std::int64_t>(stats.discontinuity_indicator_offsets.size()) >= kMaxDiscontinuityOffsetsPerPid) {
+    stats.discontinuity_offsets_truncated = true;
+    return;
+  }
+  stats.discontinuity_indicator_offsets.push_back(offset);
 }
 
 }  // namespace detail

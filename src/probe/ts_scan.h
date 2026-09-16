@@ -58,6 +58,19 @@ inline constexpr int kPidCount = 8192;
 // total_packets) holds without double-counting.
 inline constexpr int kNullPid = 0x1FFF;
 
+// 05-07-PLAN.md (TIME-02/TIME-04, T-05-28): the maximum number of
+// discontinuity_indicator BYTE OFFSETS recorded per PID
+// (PidStats::discontinuity_indicator_offsets below). A crafted TS stream
+// can set the indicator on every single packet -- without this bound, the
+// per-PID offset list would grow without limit, a memory-exhaustion
+// vector, the exact same reasoning `kPidCount`/`kStrideConfirmCount`/
+// `kMaxAfLen` (ts_scan.cpp) already carry for every other attacker-facing
+// bound in this scanner. Chosen generously large relative to any
+// legitimate discontinuity_indicator usage (a real muxer sets it rarely --
+// at splice points, not in steady state) while keeping a fixed, small
+// worst-case footprint per PID (kPidCount x this bound x 8 bytes).
+inline constexpr std::int64_t kMaxDiscontinuityOffsetsPerPid = 256;
+
 // One PID's accumulated state across the whole scan. `first_cc_error_offset`
 // is std::optional specifically so "no error yet" is distinguishable from
 // "an error at byte offset 0" (mirrors EbmlTrack::codec_delay_ns's own
@@ -73,6 +86,22 @@ struct PidStats {
   std::int64_t duplicates = 0;
   std::uint8_t scrambling_seen_mask = 0;
   std::optional<std::int64_t> first_cc_error_offset;
+
+  // 05-07-PLAN.md (TIME-04), 05-RESEARCH.md Pattern 5: the BYTE OFFSETS of
+  // every transport packet on this PID whose adaptation field carried
+  // `discontinuity_indicator=1`, in ASCENDING order (matching scan order,
+  // which is byte-offset order) -- the seam that lets
+  // `timeline.discontinuities`/`timeline.discontinuities.flagged` attribute
+  // a presentation-time jump to flagged TS structure by joining against
+  // `PacketRecord::pos`, WITHOUT a second byte-level adaptation-field
+  // walker (this project's one audited TS parser, PROBE-06/07, stays the
+  // single source of truth for this grammar). Bounded by
+  // `kMaxDiscontinuityOffsetsPerPid` above; `discontinuity_offsets_truncated`
+  // records whether more occurrences existed than the bound could hold --
+  // the flag is always set once the bound is reached and never dropped
+  // silently.
+  std::vector<std::int64_t> discontinuity_indicator_offsets;
+  bool discontinuity_offsets_truncated = false;
 };
 
 // One PCR sample, recorded at the moment `adaptation_field()`'s PCR_flag
@@ -250,6 +279,18 @@ struct ContinuityStepResult {
 // it).
 ContinuityStepResult step_continuity(const PidContinuityState& prev, int continuity_counter, bool has_payload,
                                       bool discontinuity_indicator);
+
+// 05-07-PLAN.md (TIME-04, T-05-28): appends `offset` to
+// `stats.discontinuity_indicator_offsets`, bounded by
+// `kMaxDiscontinuityOffsetsPerPid`. On reaching the bound, sets
+// `stats.discontinuity_offsets_truncated` and appends nothing further --
+// once set, the flag is never cleared and no further offset is ever
+// recorded for this PID, even if the caller keeps invoking this function.
+// Exposed here as a single, separately-testable PURE function over
+// `PidStats` (mirrors `step_continuity`'s own exposure convention just
+// above) so `tests/unit/test_ts_continuity.cpp` can drive a table of
+// offsets directly, without constructing a whole TS file.
+void record_discontinuity_offset(PidStats& stats, std::int64_t offset);
 
 }  // namespace detail
 
