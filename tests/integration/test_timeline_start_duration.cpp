@@ -10,6 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <string>
@@ -155,6 +156,17 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // diff_declared_set's occurrence-count semantics (D-02).
                                    "meta.tags",
                                    "meta.tags",
+                                   // 05-04-PLAN.md (TIME-03): the SAME remux, one more legitimate
+                                   // effect -- the MPEG-TS demuxer's own AVStream::duration for
+                                   // the AUDIO stream (3877ms) genuinely disagrees with its own
+                                   // AVFormatContext::duration (4023ms) by more than the fixed
+                                   // 40ms coherence threshold, a real property of this exact
+                                   // container pairing (verified empirically against the real
+                                   // binary's own --json evidence, not assumed) -- never a defect
+                                   // this analyzer introduces. The VIDEO stream's own triple stays
+                                   // coherent on both sides, so only the audio-scoped finding
+                                   // fires.
+                                   "timeline.duration.coherence",
                                });
 }
 
@@ -197,4 +209,108 @@ TEST_CASE("timeline_start_duration - the tracer pair's timeline.start finding fi
   }
   REQUIRE(global_non_pass);
   REQUIRE(per_stream_non_pass_count == 0);
+}
+
+// --- 05-04-PLAN.md Task 1 (TIME-01/TIME-03): the duration triple's own
+// evidence -- proven via `compare --json`, NOT `inspect --json -v`
+// (`inspect` never renders Measurement::evidence at all -- a project-wide,
+// pre-existing gap this plan does not introduce, first observed and
+// recorded in 05-01-SUMMARY.md's own "Issues Encountered"; `compare --json`
+// is the equivalent, working proof this task's own acceptance criteria
+// intend). ---------------------------------------------------------------
+
+namespace {
+
+const nlohmann::ordered_json* find_finding(const nlohmann::ordered_json& report, const std::string& id,
+                                            const std::string& scope_kind) {
+  for (const auto& finding : report.at("findings")) {
+    if (finding.at("id").get<std::string>() == id && finding.at("scope").at("kind").get<std::string>() == scope_kind) {
+      return &finding;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+TEST_CASE("timeline_start_duration - timeline.duration's evidence carries container_declared_ms, "
+          "stream_declared_ms, computed_ms and duration_source when all three members are present (Test 1)",
+          "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4"), "remux");
+  const nlohmann::ordered_json* finding = find_finding(report, "timeline.duration", "video");
+  REQUIRE(finding != nullptr);
+  const nlohmann::ordered_json& baseline_evidence = finding->at("evidence").at("baseline");
+  REQUIRE(baseline_evidence.contains("container_declared_ms"));
+  REQUIRE(baseline_evidence.contains("stream_declared_ms"));
+  REQUIRE(baseline_evidence.contains("computed_ms"));
+  REQUIRE(baseline_evidence.at("duration_source").get<std::string>() == "declared");
+  REQUIRE(baseline_evidence.at("absent_members").empty());
+}
+
+TEST_CASE("timeline_start_duration - timeline.duration's evidence lists an unavailable member in absent_members "
+          "and does NOT carry it as a number, on a real container that omits AVStream::duration (Test 2)",
+          "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_ntsc_base.mp4"), fixture("timeline_ntsc_remux.mkv"), "remux");
+  const nlohmann::ordered_json* finding = find_finding(report, "timeline.duration", "video");
+  REQUIRE(finding != nullptr);
+  const nlohmann::ordered_json& candidate_evidence = finding->at("evidence").at("candidate");
+  const std::vector<std::string> absent = candidate_evidence.at("absent_members").get<std::vector<std::string>>();
+  REQUIRE(std::find(absent.begin(), absent.end(), "stream_declared") != absent.end());
+  REQUIRE_FALSE(candidate_evidence.contains("stream_declared_ms"));
+  // The other two members stay present as real numbers -- absence is
+  // per-member, never contagious to the whole triple.
+  REQUIRE(candidate_evidence.contains("container_declared_ms"));
+  REQUIRE(candidate_evidence.contains("computed_ms"));
+}
+
+TEST_CASE("timeline_start_duration - a 4-second fixture compared against a 2-second one produces a non-pass "
+          "timeline.duration finding; the byte-identical clean pair stays pass (Test 5)",
+          "[integration]") {
+  // The 4s-vs-2s pair itself is built in Task 3 (timeline_duration_short.mp4);
+  // this asserts the SAME property using Task 1's own already-committed
+  // fixtures: timeline.duration must NOT report non-pass for the
+  // byte-identical clean pair (the negative half of Test 5, proven here;
+  // the positive half is Task 3's own dedicated fixture pair).
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4"), "remux");
+  for (const auto& finding : report.at("findings")) {
+    if (finding.at("id").get<std::string>() == "timeline.duration") {
+      REQUIRE(finding.at("status").get<std::string>() == "pass");
+    }
+  }
+}
+
+// --- 05-04-PLAN.md Task 2 (TIME-03, D-08): timeline.duration.coherence ----
+
+TEST_CASE("timeline_start_duration - timeline.duration.coherence names the first disagreeing pair, in the fixed "
+          "container_vs_stream/container_vs_computed/stream_vs_computed order, and reports info (non-pass) status "
+          "when only one side disagrees (Test 2/Test 3)",
+          "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_start_shift.ts"), "remux");
+  const nlohmann::ordered_json* finding = find_finding(report, "timeline.duration.coherence", "audio");
+  REQUIRE(finding != nullptr);
+  REQUIRE(finding->at("baseline").get<std::string>() == "coherent");
+  REQUIRE(finding->at("candidate").get<std::string>() == "container_vs_stream");
+  REQUIRE(finding->at("status").get<std::string>() == "info");
+  REQUIRE(finding->at("severity").get<std::string>() == "info");
+  REQUIRE_FALSE(finding->at("gating").get<bool>());
+}
+
+TEST_CASE("timeline_start_duration - timeline.duration.coherence only tests a pair whose BOTH members are present, "
+          "and an untestable/all-agreeing case emits the unflagged value 'coherent' (Test 1/Test 4)",
+          "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_ntsc_base.mp4"), fixture("timeline_ntsc_remux.mkv"), "remux");
+  const nlohmann::ordered_json* finding = find_finding(report, "timeline.duration.coherence", "video");
+  REQUIRE(finding != nullptr);
+  REQUIRE(finding->at("status").get<std::string>() == "pass");
+  const nlohmann::ordered_json& candidate_evidence = finding->at("evidence").at("candidate");
+  // The candidate (MKV) has no stream_declared member at all -- only the
+  // ONE pair whose both members are present (container_vs_computed) was
+  // tested; the other two, each naming the absent member, were skipped.
+  const std::vector<std::string> tested = candidate_evidence.at("tested_pairs").get<std::vector<std::string>>();
+  REQUIRE(tested == std::vector<std::string>{"container_vs_computed"});
 }

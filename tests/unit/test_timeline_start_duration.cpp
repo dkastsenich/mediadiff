@@ -57,6 +57,16 @@ PacketRecord no_pts() {
   return record;
 }
 
+// A packet carrying both a PTS and a declared duration -- the shape
+// reconstruct_packet_durations reads (05-04-PLAN.md, TIME-03).
+PacketRecord pts_and_duration(std::int64_t pts, std::int64_t duration) {
+  PacketRecord record;
+  record.pts = pts;
+  record.dts = INT64_MIN;
+  record.duration = duration;
+  return record;
+}
+
 StreamOriginCandidate candidate(Scope::Kind kind, int index, std::int64_t pts_ticks, Rational tb) {
   StreamOriginCandidate c;
   c.scope = Scope{kind, index};
@@ -232,4 +242,87 @@ TEST_CASE("timeline_start_duration - the full global-origin-then-per-stream-rela
       REQUIRE(*relative == RationalValue{100, 1, Rational{1, 1}});
     }
   }
+}
+
+// --- reconstruct_packet_durations (05-04-PLAN.md Task 1, TIME-01/TIME-03,
+// doc 04 section 1.3) ---------------------------------------------------
+
+TEST_CASE("timeline_start_duration - reconstruct_packet_durations keeps every declared (>0) duration verbatim and "
+          "never marks any entry reconstructed (Test 3's 'declared' arm)") {
+  const std::vector<PacketRecord> packets = {pts_and_duration(0, 10), pts_and_duration(10, 10),
+                                              pts_and_duration(20, 10)};
+  const auto result = mediadiff::detail::reconstruct_packet_durations(packets, Rational{1, 1});
+  REQUIRE(result.has_value());
+  REQUIRE(result->size() == 3);
+  for (const auto& entry : *result) {
+    REQUIRE_FALSE(entry.reconstructed);
+    REQUIRE(entry.duration_ticks == 10);
+  }
+}
+
+TEST_CASE("timeline_start_duration - reconstruct_packet_durations substitutes a NON-last packet's missing duration "
+          "with the delta to the NEXT pts in presentation order (doc 04 section 1.3)") {
+  // Presentation order: 0(declared 10), 10(missing), 25(declared 5). The
+  // middle packet's own reconstructed duration is 25 - 10 == 15, never its
+  // own declared field (0) and never the mode interval (this is NOT the
+  // last packet).
+  const std::vector<PacketRecord> packets = {pts_and_duration(0, 10), pts_and_duration(10, 0),
+                                              pts_and_duration(25, 5)};
+  const auto result = mediadiff::detail::reconstruct_packet_durations(packets, Rational{1, 1});
+  REQUIRE(result.has_value());
+  REQUIRE(result->size() == 3);
+  REQUIRE_FALSE((*result)[0].reconstructed);
+  REQUIRE((*result)[0].duration_ticks == 10);
+  REQUIRE((*result)[1].reconstructed);
+  REQUIRE((*result)[1].duration_ticks == 15);
+  REQUIRE_FALSE((*result)[2].reconstructed);
+  REQUIRE((*result)[2].duration_ticks == 5);
+}
+
+TEST_CASE("timeline_start_duration - reconstruct_packet_durations substitutes the LAST packet's missing duration "
+          "with the shared derive_cadence's own mode interval -- NOT zero and NOT the previous frame's own delta "
+          "(Test 4)") {
+  // Presentation order: 0,10,20,30 (three 10-tick intervals, the mode) then
+  // 44 (a 14-tick interval, the PREVIOUS frame's own delta into the last
+  // packet) with the LAST packet's own declared duration missing. The mode
+  // interval (10) must win, never 14 (the previous delta) and never 0.
+  const std::vector<PacketRecord> packets = {pts_and_duration(0, 10), pts_and_duration(10, 10),
+                                              pts_and_duration(20, 10), pts_and_duration(30, 10),
+                                              pts_and_duration(44, 0)};
+  const auto result = mediadiff::detail::reconstruct_packet_durations(packets, Rational{1, 1});
+  REQUIRE(result.has_value());
+  REQUIRE(result->size() == 5);
+  const auto& last = result->back();
+  REQUIRE(last.pts_ticks == 44);
+  REQUIRE(last.reconstructed);
+  REQUIRE(last.duration_ticks == 10);
+  REQUIRE(last.duration_ticks != 0);
+  REQUIRE(last.duration_ticks != 14);
+}
+
+TEST_CASE("timeline_start_duration - reconstruct_packet_durations returns entries in PRESENTATION order (sorted by "
+          "pts), not the input span's own read order") {
+  const std::vector<PacketRecord> packets = {pts_and_duration(20, 10), pts_and_duration(0, 10),
+                                              pts_and_duration(10, 10)};
+  const auto result = mediadiff::detail::reconstruct_packet_durations(packets, Rational{1, 1});
+  REQUIRE(result.has_value());
+  REQUIRE(result->size() == 3);
+  REQUIRE((*result)[0].pts_ticks == 0);
+  REQUIRE((*result)[1].pts_ticks == 10);
+  REQUIRE((*result)[2].pts_ticks == 20);
+}
+
+TEST_CASE("timeline_start_duration - reconstruct_packet_durations returns std::nullopt when no packet carries a "
+          "valid pts at all (Test 6's own no_timing_data trigger)") {
+  const std::vector<PacketRecord> packets = {no_pts(), no_pts()};
+  REQUIRE_FALSE(mediadiff::detail::reconstruct_packet_durations(packets, Rational{1, 1}).has_value());
+}
+
+TEST_CASE("timeline_start_duration - reconstruct_packet_durations returns std::nullopt (never a wrapped value) "
+          "when a non-last packet's own delta-to-next-pts overflows int64_t") {
+  // INT64_MIN + 1, not INT64_MIN itself -- a valid (non-AV_NOPTS_VALUE)
+  // extreme PTS, so this genuinely exercises checked_sub's own overflow
+  // path rather than first_presented_pts' sentinel filter.
+  const std::vector<PacketRecord> packets = {pts_and_duration(INT64_MIN + 1, 0), pts_and_duration(INT64_MAX, 10)};
+  REQUIRE_FALSE(mediadiff::detail::reconstruct_packet_durations(packets, Rational{1, 1}).has_value());
 }

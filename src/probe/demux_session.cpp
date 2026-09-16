@@ -342,6 +342,13 @@ StreamInfo DemuxSession::stream_info(int index) const {
   info.height = codecpar->height;
   info.declared_frame_count = static_cast<std::int64_t>(stream->nb_frames);
 
+  // 05-04-PLAN.md (TIME-01/TIME-03): the stream-declared member of
+  // timeline.duration's triple -- AV_NOPTS_VALUE (never coerced to 0)
+  // stays std::nullopt.
+  if (stream->duration != AV_NOPTS_VALUE) {
+    info.declared_duration_ticks = stream->duration;
+  }
+
   // 04-07-PLAN.md (VIDEO-01): resolved here, same boundary as every other
   // codecpar/AVStream field above -- never past this file's own
   // opaque-AVFormatContext boundary.
@@ -532,6 +539,17 @@ std::optional<std::int64_t> DemuxSession::file_size_bytes() const {
     return std::nullopt;
   }
   return size;
+}
+
+// 05-04-PLAN.md (TIME-01/TIME-03): the container-declared member of
+// timeline.duration's triple -- AV_NOPTS_VALUE (never coerced to 0) stays
+// std::nullopt, mirroring StreamInfo::declared_duration_ticks' identical
+// convention above.
+std::optional<std::int64_t> DemuxSession::container_duration_ticks() const {
+  if (ctx_ == nullptr || ctx_->duration == AV_NOPTS_VALUE) {
+    return std::nullopt;
+  }
+  return ctx_->duration;
 }
 
 }  // namespace mediadiff

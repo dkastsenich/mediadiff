@@ -177,6 +177,18 @@ struct StreamInfo {
   // CONT-09's caption-track counterpart to is_timecode above.
   bool is_caption = false;
 
+  // 05-04-PLAN.md (TIME-01/TIME-03): AVStream->duration verbatim, in the
+  // stream's own time_base (the SAME timebase StreamPacketScan::tb already
+  // carries for this stream index -- packet_scan.cpp's own `st->time_base`
+  // extraction). The "stream-declared" member of timeline.duration's
+  // triple. std::nullopt (never coerced to 0) when the stream carries the
+  // AV_NOPTS_VALUE sentinel -- this file's own AVStream::duration comment
+  // notes libav MAY estimate this from bitrate and file size when the
+  // source itself specified neither; read verbatim either way, the same
+  // "trust libav's own resolved value" precedent declared_frame_count
+  // above already follows for AVStream::nb_frames.
+  std::optional<std::int64_t> declared_duration_ticks;
+
   // 04-06-PLAN.md (VIDEO-01/02): the remaining codecpar fields
   // video.codec/profile/level/resolution/frame_count extract directly --
   // resolved HERE, never by handing a raw AVCodecParameters* to
@@ -452,6 +464,16 @@ class DemuxSession {
   // generates produces one, but the accessor stays honest rather than
   // fabricating 0.
   std::optional<std::int64_t> file_size_bytes() const;
+
+  // 05-04-PLAN.md (TIME-01/TIME-03): AVFormatContext->duration verbatim, in
+  // AV_TIME_BASE (microsecond, i.e. `{1, 1000000}`) units -- the
+  // "container-declared" member of timeline.duration's triple. std::nullopt
+  // (never coerced to 0) when the container carries the AV_NOPTS_VALUE
+  // sentinel -- this file's own AVFormatContext::duration comment notes
+  // libav may DEDUCE this from the individual AVStream values when the
+  // source itself did not set it directly; read verbatim either way, the
+  // same convention StreamInfo::declared_duration_ticks above follows.
+  std::optional<std::int64_t> container_duration_ticks() const;
 
   // Internal borrow of the raw AVFormatContext* for other src/probe/
   // translation units that need to call libav directly against the SAME

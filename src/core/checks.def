@@ -1070,3 +1070,53 @@ tolerance = "5ms,20ms"
 [check.profile_tolerance]
 strict_bitexact = "1ms"
 remux = "1ms"
+
+# 05-04-PLAN.md (TIME-01/TIME-03), src/analyzers/timeline/start_duration.cpp
+# -- the duration TRIPLE: container-declared (AVFormatContext->duration),
+# stream-declared (AVStream->duration), computed (last presentation end -
+# first PTS, doc 04 section 1.3's own reconstructed-packet-duration rule).
+# Compared value is the COMPUTED member; the other two, plus
+# `duration_source` (declared/reconstructed) and `absent_members`, ride in
+# evidence -- an absent member is reported absent, NEVER substituted for
+# another (T-05-13/T-05-16). **Deviation from doc 04's literal "±1 frame"**
+# (05-CHECK-ROSTER.md): 40ms (one frame at 25fps) is a FIXED named
+# constant -- a frame-derived threshold is frame-rate-dependent, ruled out
+# by D-08's data-dependent-threshold prohibition. Skip-reason vocabulary,
+# same priority order as timeline.start: `partial_scan` first (Phase 3
+# D-02), then `no_timing_data` (a stream with no real PTS at all), then
+# `insufficient_data` (an overflow anywhere in the reconstruction/rescale
+# arithmetic, T-05-14).
+[[check]]
+id = "timeline.duration"
+group = "timeline"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "20ms,40ms"
+
+# 05-04-PLAN.md (TIME-03, D-08, Phase 4 D-10's precedent), src/analyzers/
+# timeline/start_duration.cpp -- the duration triple's OWN internal
+# cross-check: whether the three members (container-declared,
+# stream-declared, computed) agree with each other, within
+# kDurationIncoherenceThresholdMs (40ms, the SAME "one frame at 25fps"
+# constant timeline.duration's own tolerance uses). `state` semantic
+# (mirrors video.hdr.coherence exactly, src/compare/state.cpp): fires
+# whenever EITHER side's value is one of the three flagged pairs, so two
+# files that SHARE an incoherence still report it rather than comparing
+# away to `pass` under `exact`'s baseline-equality rule -- there is no
+# delta to hang it on, and a shared defect is still a defect. `info`
+# severity, and DELIBERATELY no [check.profile_severity]/
+# [check.profile_tolerance] override of any kind, in ANY profile -- this
+# check never gates the exit code, by design, not by omission (mirrors
+# video.hdr.coherence's own identical precedent). Only a pair whose BOTH
+# members are present is testable (T-05-13/T-05-16); an untestable or
+# all-agreeing case emits the unflagged value, "coherent".
+[[check]]
+id = "timeline.duration.coherence"
+group = "timeline"
+semantic = "state"
+unit = "none"
+value_kind = "string"
+severity = "info"
+flagged_values = ["container_vs_stream", "container_vs_computed", "stream_vs_computed"]

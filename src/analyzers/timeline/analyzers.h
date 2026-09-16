@@ -22,17 +22,24 @@
 
 namespace mediadiff {
 
-// timeline.start (05-01-PLAN.md, this phase's tracer -- TIME-01/TIME-03,
+// timeline.start / timeline.duration / timeline.duration.coherence
+// (05-01-PLAN.md's tracer, extended by 05-04-PLAN.md -- TIME-01/TIME-03,
 // D-03): ONE Scope{Kind::global} measurement holding the file's earliest
 // presentation time, plus ONE per-stream measurement (Scope::Kind::video/
 // audio/subtitle/data) holding that stream's own first presentation PTS
 // minus the global origin -- never a per-stream absolute PTS (D-03: a
 // whole-file shift is one finding at global scope, not one per stream).
-// required_passes = {Pass::demux_header, Pass::packet_scan} -- declared
-// explicitly here (never left to an implication rule), matching
-// video_gop_analyzer()'s own convention. Scope ContainerFamily::other -- a
-// timeline check applies to every container. This task declares only this
-// one analyzer; later plans (05-04 onward) append siblings to this header.
+// 05-04-PLAN.md adds, per timestamped stream, the duration TRIPLE
+// (container-declared / stream-declared / computed, doc 04 section 1.3)
+// as `timeline.duration`'s own compared value plus evidence, and the
+// triple's own internal cross-check as `timeline.duration.coherence`'s
+// `state`-semantic value (Phase 4 D-10's precedent, mirrors
+// video.hdr.coherence). required_passes = {Pass::demux_header,
+// Pass::packet_scan} -- declared explicitly here (never left to an
+// implication rule), matching video_gop_analyzer()'s own convention. Scope
+// ContainerFamily::other -- a timeline check applies to every container.
+// This is the one registration point later timeline plans (05-05 onward)
+// append sibling analyzers to.
 const AnalyzerSpec& timeline_start_duration_analyzer();
 
 namespace detail {
@@ -109,6 +116,33 @@ std::optional<RationalValue> ticks_to_ms(std::int64_t ticks, Rational tb);
 // this helper stays correct for any RationalValue, not only this
 // specific caller's own shape. Returns std::nullopt on any overflow.
 std::optional<RationalValue> subtract_ms(const RationalValue& a, const RationalValue& b);
+
+// 05-04-PLAN.md (TIME-01/TIME-03), doc 04 section 1.3: one packet's own
+// presentation-order position plus its RECONSTRUCTED duration -- `declared`
+// stays false when the packet's own PacketRecord::duration was usable as
+// declared (> 0); `declared` (bearing the name `reconstructed` on the
+// field, matching the check's own `duration_source` evidence spelling) is
+// true when the value was substituted, per doc 04's own rule: the delta to
+// the next PTS in presentation order, or -- for the LAST packet in
+// presentation order -- the shared cadence's own `mode_interval_ticks`
+// (never a second, independent cadence computation).
+struct ReconstructedDuration {
+  std::int64_t pts_ticks = 0;
+  std::int64_t duration_ticks = 0;
+  bool reconstructed = false;
+};
+
+// Reconstructs every valid-pts packet's own duration in `packets`, in
+// PRESENTATION order (sorted by pts ascending -- NOT the input span's own
+// `av_read_frame` read order; a LOCAL index view is sorted internally,
+// `packets` itself is never reordered, mirroring probe/cadence.cpp's own
+// "sort an index view, never trust read order" discipline). Returns
+// std::nullopt when `packets` carries no packet with a valid (non-
+// AV_NOPTS_VALUE) pts at all, or when any arithmetic step overflows
+// (T-05-14: the delta-to-next-pts computation, or deriving the shared
+// cadence for the last packet) -- never a wrapped or fabricated duration.
+std::optional<std::vector<ReconstructedDuration>> reconstruct_packet_durations(
+    std::span<const PacketRecord> packets, Rational tb);
 
 }  // namespace detail
 
