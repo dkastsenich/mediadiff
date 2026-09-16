@@ -185,6 +185,19 @@ add_executable(mediadiff_unit_tests
   # HDR fixture corpus (plan 04-04) for the mastering-display/content-
   # light presence, value and cross-family-independence behaviors.
   test_video_hdr.cpp
+  # TIME-01/TIME-03 (05-01-PLAN.md Task 2, D-03): timeline.start's own
+  # detail:: helpers driven directly against hand-built PacketRecord
+  # arrays and StreamOriginCandidate lists (first_presented_pts,
+  # global_origin_ticks, ticks_to_ms, subtract_ms) -- the AV_NOPTS_VALUE
+  # skip, the partial_scan-ahead-of-every-other-skip-reason ordering, the
+  # stable-tie-on-identical-PTS determinism, and the checked-arithmetic
+  # overflow-refuses-a-wrapped-value behaviors that a CLI-level fixture
+  # cannot reliably reach on its own. Added retroactively as a Rule 2
+  # deviation: this task's own tdd="true"/<behavior> block names these
+  # exact scenarios, and they were proven empirically against the real
+  # binary before this file existed, but not yet pinned as a permanent,
+  # fixture-free regression test.
+  test_timeline_start_duration.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the
