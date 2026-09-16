@@ -181,6 +181,10 @@ add_library(libmediadiff STATIC
   src/analyzers/video/interlace.cpp
   src/analyzers/video/hdr.cpp
   src/analyzers/timeline/start_duration.cpp
+  # TIME-02 (05-02-PLAN.md Task 2): unwrap_ts_timestamps, doc 04 section
+  # 1.2's 33-bit MPEG-TS PTS/DTS unwrap as a pure function -- consumed by
+  # later timeline plans before any other statistic runs on a TS stream.
+  src/analyzers/timeline/unwrap.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -242,6 +246,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/analyzers/size/analyzers.h
   src/analyzers/video/analyzers.h
   src/analyzers/timeline/analyzers.h
+  src/analyzers/timeline/unwrap.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 

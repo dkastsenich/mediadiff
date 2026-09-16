@@ -202,6 +202,12 @@ add_executable(mediadiff_unit_tests
   # binary before this file existed, but not yet pinned as a permanent,
   # fixture-free regression test.
   test_timeline_start_duration.cpp
+  # TIME-02 (05-02-PLAN.md Task 2): unwrap_ts_timestamps' doc 04 section
+  # 1.2 asymmetric 33-bit unwrap rule, driven both end-to-end and (for
+  # the offset-overflow behavior, T-05-05) directly at the
+  # detail::apply_wrap_step state-machine level, mirroring
+  # test_ts_continuity.cpp's own table-driven shape.
+  test_timeline_unwrap.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the
