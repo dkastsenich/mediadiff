@@ -26,6 +26,27 @@
 // default in FFmpeg 8.1 (options_table.h's fflags default is
 // AVFMT_FLAG_AUTO_BSF only), so "never touch AVFormatContext::flags at
 // all" is a stronger, simpler invariant than "clear GENPTS after open".
+//
+// AVFormatContext::correct_ts_overflow IS explicitly cleared (a plain int
+// field, not part of ::flags, so this does not conflict with the
+// paragraph above) -- 05-06-PLAN.md's own discovery, Rule 1/2 gap
+// closure (TIME-02): libavformat's generic demux.c::wrap_timestamp
+// applies a format-agnostic 33-bit wrap correction to EVERY packet whose
+// stream declares pts_wrap_bits < 64 (mpegts.c sets exactly 33 for every
+// PES stream, avpriv_set_pts_info(st, 33, 1, 90000)) the moment the
+// FIRST reference dts for that stream falls within roughly the last 60s
+// of the wrap cycle -- confirmed directly against this project's own
+// linked FFmpeg 8.1 source (libavformat/demux.c's update_wrap_reference/
+// wrap_timestamp) and empirically (a real -output_ts_offset-crafted TS
+// file's packets already read as a continuous, pre-corrected timeline via
+// plain av_read_frame). Left at its libav default (1), this project's own
+// TIME-02 unwrap_ts_timestamps (src/analyzers/timeline/unwrap.h) would
+// NEVER see a genuine 33-bit wrap on ANY real MPEG-TS file -- libav
+// would have already silently corrected it upstream, using its own
+// generic heuristic rather than doc 04 section 1.2's normative asymmetric
+// rule. Same "the probe layer must see the container's own reality"
+// principle as the GENPTS paragraph above, applied to the one other
+// libav timestamp-repair knob this project has to turn off by hand.
 
 #include <chrono>
 #include <cstdarg>

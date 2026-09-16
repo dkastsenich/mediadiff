@@ -146,7 +146,8 @@ std::optional<std::vector<ReconstructedDuration>> reconstruct_packet_durations(
 
 }  // namespace detail
 
-// timeline.dts_monotonic / timeline.pts_unique (05-05-PLAN.md, TIME-01/
+// timeline.dts_monotonic / timeline.pts_unique / timeline.gaps /
+// timeline.wrap_events (05-05-PLAN.md/05-06-PLAN.md, TIME-01/TIME-02/
 // TIME-04): per timestamped stream EXCEPT Scope::Kind::subtitle
 // (05-CHECK-ROSTER.md's own scope decision), the count of `dts[i] <=
 // dts[i-1]` violations in READ order (doc 04 section 2) and the count of
@@ -158,14 +159,34 @@ std::optional<std::vector<ReconstructedDuration>> reconstruct_packet_durations(
 // unwrap.h's `unwrap_ts_timestamps` FIRST (05-02-PLAN.md, TIME-02) and the
 // UNWRAPPED values are what either count analyses -- the `unwrapped`
 // evidence flag on each Measurement records which basis produced the
-// count. `required_passes = {Pass::demux_header, Pass::packet_scan}`,
-// `scope = ContainerFamily::other` (this check applies to every container;
-// the TS-only unwrap step is a runtime branch on
+// count.
+//
+// 05-06-PLAN.md extends this SAME analyzer (never a second AnalyzerSpec)
+// with two more ids over the same per-stream loop: `timeline.gaps`
+// (`span` semantic -- spans where the interval between two consecutive
+// PRESENTATION-order timestamps strictly exceeds `max(2 x nominal,
+// declared_duration + 1 tick)`, `nominal` from the ONE shared
+// `derive_cadence` mode interval, PROBE-10) and `timeline.wrap_events`
+// (`state` semantic -- `ts_33bit_wrap` when a ContainerFamily::ts stream's
+// raw PTS sequence exhibits at least one wrap event under
+// `unwrap_ts_timestamps`'s own asymmetric rule, `no_wrap` otherwise;
+// `skipped:not_applicable_container` on a non-TS input). Both, like the
+// two structural-integrity checks above, run over the UNWRAPPED
+// presentation timeline on a TS input -- a genuine mid-file 33-bit wrap
+// produces zero `timeline.gaps` spans and zero `timeline.dts_monotonic`
+// violations attributable to the wrap itself (doc 04 section 5's own
+// TS-wrap acceptance criterion).
+//
+// `required_passes = {Pass::demux_header, Pass::packet_scan}`,
+// `scope = ContainerFamily::other` (this check family applies to every
+// container; the TS-only unwrap step is a runtime branch on
 // `container_family_from_format_name`, not a narrower AnalyzerSpec scope).
 // Skip-reason priority: `partial_scan` (Phase 3 D-02, ahead of everything),
 // then `no_timing_data` (no real value on the axis at all), then
-// `insufficient_data` (an unwrap overflow, T-05-18/T-05-19's own
-// degrade-honestly rule).
+// `insufficient_data` (an unwrap overflow, or a cadence/reconstruction
+// overflow for `timeline.gaps`, T-05-18/T-05-19/T-05-24's own
+// degrade-honestly rule) -- `timeline.wrap_events` additionally reports
+// `not_applicable_container` on a non-TS input.
 const AnalyzerSpec& timeline_monotonic_analyzer();
 
 namespace detail {

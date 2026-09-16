@@ -1163,3 +1163,72 @@ unit = "count"
 value_kind = "int64"
 severity = "fail"
 tolerance = "0"
+
+# 05-06-PLAN.md (TIME-04, D-08), src/analyzers/timeline/monotonic.cpp --
+# spans where the interval between two consecutive PRESENTATION-order
+# timestamps strictly exceeds `max(kGapNominalMultiplier x nominal,
+# declared_duration + kGapDeclaredDurationSlackTicks)`. `nominal` comes
+# from the ONE shared `derive_cadence` mode interval (src/probe/cadence.h,
+# PROBE-10) -- never a second interval computation. `declared_duration` is
+# the preceding packet's own reconstructed duration
+# (`detail::reconstruct_packet_durations`, doc 04 section 1.3, already
+# landed by 05-04-PLAN.md -- called, never re-implemented). Both `2` and
+# `1 tick` are fixed named constants (D-08): a detection parameter changes
+# the MEASURED span list, unlike a tolerance, which only changes the
+# verdict -- making either configurable would require fingerprint
+# recording plus mismatch-skip machinery deliberately deferred past v1.
+# `span` semantic (`src/compare/span.cpp`): an introduced span gates on
+# this check's own severity; a removed span is always `info`, never
+# gating. On a ContainerFamily::ts input, both the interval walk and the
+# duration reconstruction run over the UNWRAPPED presentation timeline
+# (05-02-PLAN.md's `unwrap_ts_timestamps`, doc 04 section 1.2) -- a
+# genuine mid-file 33-bit wrap produces ZERO spans attributable to the
+# wrap itself (doc 04 section 5's own TS-wrap acceptance criterion). Runs
+# on every stream carrying timestamps EXCEPT `Scope::Kind::subtitle`
+# (05-CHECK-ROSTER.md's own scope decision, docs/checks/timeline.gaps.md
+# states the reason) -- a subtitle track's intentionally sparse timing
+# would false-positive under a rule tuned for audio/video. Skip-reason
+# vocabulary, in priority order: `partial_scan` (Phase 3 D-02, ahead of
+# everything -- a gap list from an incomplete sweep is silently MISSING
+# exactly the gaps at the truncation point), `no_timing_data` (no real PTS
+# at all on this stream), then `insufficient_data` (the shared cadence
+# derivation did not report `ok`, or any checked-arithmetic step
+# overflowed -- never a fallback nominal or a fabricated span).
+[[check]]
+id = "timeline.gaps"
+group = "timeline"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 05-06-PLAN.md (TIME-02, D-08, Phase 4 D-10's precedent), src/analyzers/
+# timeline/monotonic.cpp -- **Addition** (05-CHECK-ROSTER.md): doc 04
+# section 1.2's own "wrap events themselves are recorded (info)" sentence,
+# given its own check id since a shared-condition note with no delta to
+# hang it on needs the `state` semantic (mirrors `video.hdr.coherence`
+# and `timeline.duration.coherence` exactly). Fires the flagged value
+# `ts_33bit_wrap` when a `ContainerFamily::ts` stream's raw PTS/DTS
+# sequence exhibits at least one wrap event under
+# `unwrap_ts_timestamps`'s own asymmetric rule -- the unflagged value is
+# `no_wrap`. Because `state`'s own `pass` means NEITHER side was flagged
+# (src/compare/state.cpp, WR-02 precedent), a pair whose BOTH files wrap
+# still reports the flagged value as a non-`pass` finding -- there is no
+# delta to hang it on, and a shared wrap is still a real property worth
+# surfacing, per doc 04's own "a candidate that wraps where baseline
+# didn't usually means a start-offset change upstream" reasoning. Evidence
+# carries `wrap_count`, and -- when `wrap_count > 0` -- the first wrapping
+# packet's own index plus its RAW and UNWRAPPED values (TIME-02's "raw
+# values are preserved in evidence" requirement, satisfied concretely).
+# On a non-TS input this check reports `skipped:not_applicable_container`
+# -- the 33-bit wrap is an MPEG-TS-specific property of the 90kHz PES
+# timestamp field, meaningless for MP4/Matroska. `skipped:insufficient_data`
+# when the unwrap's own running-offset arithmetic overflows (T-05-05).
+[[check]]
+id = "timeline.wrap_events"
+group = "timeline"
+semantic = "state"
+unit = "none"
+value_kind = "string"
+severity = "info"
+flagged_values = ["ts_33bit_wrap"]

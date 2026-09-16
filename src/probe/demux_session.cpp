@@ -268,6 +268,15 @@ mediadiff::expected<DemuxSession, Error> DemuxSession::open(const std::string& u
   //
   // Never touch ctx->flags -- AVFMT_FLAG_GENPTS stays unset, always (see
   // this file's own header comment for the full reasoning).
+  //
+  // 05-06-PLAN.md (TIME-02, Rule 1/2 gap closure): correct_ts_overflow is
+  // a plain AVFormatContext int field (not part of ::flags), left at its
+  // libav default of 1 until now -- see demux_session.h's own header
+  // comment for why that silently defeated TIME-02's own
+  // unwrap_ts_timestamps on every real MPEG-TS wrap. Cleared here, before
+  // avformat_open_input, so this project's own asymmetric unwrap rule is
+  // what runs on a genuine 33-bit wrap, never libav's generic heuristic.
+  ctx->correct_ts_overflow = 0;
   int rc = avformat_open_input(&ctx, utf8_path.c_str(), nullptr, nullptr);
   if (rc < 0) {
     avformat_close_input(&ctx);
