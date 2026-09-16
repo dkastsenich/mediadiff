@@ -189,6 +189,12 @@ add_library(libmediadiff STATIC
   # timeline.pts_unique over the shared PacketScan array, sentinels
   # excluded and the TS unwrap applied first.
   src/analyzers/timeline/monotonic.cpp
+  # TIME-02/TIME-04 (05-07-PLAN.md): timeline.discontinuities and
+  # timeline.discontinuities.flagged, joined against ts_scan's own bounded
+  # per-PID discontinuity_indicator offsets -- a separate TU from
+  # monotonic.cpp since this family needs Pass::ts_scan on one of its two
+  # AnalyzerSpecs.
+  src/analyzers/timeline/discontinuities.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

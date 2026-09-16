@@ -331,6 +331,10 @@ StreamInfo DemuxSession::stream_info(int index) const {
   StreamInfo info;
   info.media_type = stream_media_type(codecpar->codec_type);
   info.codec_name = avcodec_get_name(codecpar->codec_id);
+  // 05-07-PLAN.md (TIME-02/TIME-04): AVStream::id verbatim -- see
+  // StreamInfo::stream_id's own comment for why this crosses the boundary
+  // (the ts_scan PID join).
+  info.stream_id = stream->id;
   // MKTAG('t','m','c','d') -- the MOV/MP4 timecode-track four-character
   // code (confirmed against libavformat/mov.c's own mov_read_tmcd
   // dispatch table, keyed on this exact codec_tag).

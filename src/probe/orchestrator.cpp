@@ -154,6 +154,15 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // this phase's own family stays grouped in the stable, hand-written
       // analyzer order (TRUST-05).
       timeline_monotonic_analyzer(),
+      // 05-07-PLAN.md (TIME-02/TIME-04): timeline.discontinuities and
+      // timeline.discontinuities.flagged -- same real-data-first,
+      // not-applicable-sibling-second ordering as the mp4/mkv/ts pairs
+      // above (container_ts_analyzer()/container_ts_not_applicable_analyzer());
+      // here the family-agnostic (ContainerFamily::other) spec is listed
+      // first since it owns every non-TS container AND is the one that
+      // silently no-ops on a TS input, deferring to the ts-scoped sibling.
+      timeline_discontinuities_analyzer(),
+      timeline_discontinuities_ts_analyzer(),
   };
   return registry;
 }

@@ -189,6 +189,44 @@ std::optional<std::vector<ReconstructedDuration>> reconstruct_packet_durations(
 // `not_applicable_container` on a non-TS input.
 const AnalyzerSpec& timeline_monotonic_analyzer();
 
+// timeline.discontinuities / timeline.discontinuities.flagged
+// (05-07-PLAN.md, TIME-02/TIME-04, D-08): presentation-time jumps
+// strictly exceeding the fixed `kDiscontinuityThresholdMs` (250ms, D-08 --
+// never doc 04's own "(config)" knob) that are NOT explained by container
+// structure. On a `ContainerFamily::ts` input, a jump is FLAGGED
+// (`timeline.discontinuities.flagged`, `info`) when a transport packet
+// carrying `discontinuity_indicator=1` (05-07-PLAN.md Task 1's recorded
+// offsets, `src/probe/ts_scan.h`) falls within the demuxed packet's own
+// `[pos, next_pos)` byte range; every other jump, and every jump on a
+// non-TS input, is UNFLAGGED (`timeline.discontinuities`, `fail`, gating).
+//
+// Two `AnalyzerSpec`s, mirroring `src/analyzers/container/ts.cpp`'s own
+// established two-spec convention so the TS scanner never runs on bytes
+// it cannot interpret:
+//   - `timeline_discontinuities_analyzer()` -- `scope =
+//     ContainerFamily::other`, `required_passes = {Pass::demux_header,
+//     Pass::packet_scan}`. Owns every NON-TS container (emits both ids,
+//     `.flagged` as `skipped:not_applicable_container`); on a TS input it
+//     emits NOTHING, deferring entirely to its sibling below.
+//   - `timeline_discontinuities_ts_analyzer()` -- `scope =
+//     ContainerFamily::ts`, `required_passes = {Pass::demux_header,
+//     Pass::packet_scan, Pass::ts_scan}`. Owns TS inputs and performs the
+//     flagged/unflagged split.
+//
+// Runs on every stream carrying timestamps EXCEPT `Scope::Kind::subtitle`
+// (same scope as `timeline.gaps`). Skip-reason priority: `partial_scan`
+// (Phase 3 D-02, ahead of everything -- TS-scoped: also when
+// `TsScanResult::complete` is false, the discontinuity_indicator offset
+// list itself is unreliable), `no_timing_data` (no real PTS at all),
+// `insufficient_data` (an overflow anywhere in the checked interval/
+// threshold arithmetic, the TS unwrap itself, or -- TS only -- when
+// `PidStats::discontinuity_offsets_truncated` is set: a classification
+// built on a partial flag list could silently demote real breakage to
+// `info`, T-05-29, so both ids skip rather than classify), and --
+// `.flagged` only, non-TS -- `not_applicable_container`.
+const AnalyzerSpec& timeline_discontinuities_analyzer();
+const AnalyzerSpec& timeline_discontinuities_ts_analyzer();
+
 namespace detail {
 
 // Which packet field the axis view below reads -- doc 04 section 2 defines

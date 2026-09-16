@@ -1232,3 +1232,64 @@ unit = "none"
 value_kind = "string"
 severity = "info"
 flagged_values = ["ts_33bit_wrap"]
+
+# 05-07-PLAN.md (TIME-02/TIME-04, D-08), src/analyzers/timeline/discontinuities.cpp
+# -- doc 04 section 2's own `timeline.discontinuities` row: presentation-time
+# jumps STRICTLY EXCEEDING the fixed `kDiscontinuityThresholdMs` (250ms) that
+# are NOT explained by container structure. **Deviation from doc 04's literal
+# "(config)"** (D-08): a fixed named constant in v1, never a tunable knob -- a
+# detection parameter changes the MEASURED span list, unlike a tolerance,
+# which only changes the verdict; a configurable threshold would require
+# fingerprint recording plus mismatch-skip machinery (the `--sample N`
+# shape) deliberately deferred past v1. On a `ContainerFamily::ts` input the
+# flag is `discontinuity_indicator=1` on the transport packet attributable
+# to the jump via `ts_scan`'s own recorded byte offsets (05-07-PLAN.md
+# Task 1) joined by `PacketRecord::pos` -- never a second byte-level TS
+# parser (T-05-30). UNflagged TS jumps and every non-TS jump land HERE,
+# gating; the flagged split lives at `timeline.discontinuities.flagged`,
+# `info` severity, below. `span` semantic (`src/compare/span.cpp`): an
+# introduced span gates on this check's own severity; a removed span is
+# always `info`, never gating. Runs on every stream carrying timestamps
+# EXCEPT `Scope::Kind::subtitle` (same scope as `timeline.gaps`).
+# Skip-reason priority: `partial_scan` (Phase 3 D-02, ahead of everything --
+# TS-scoped: also when `TsScanResult::complete` is false, since the
+# discontinuity_indicator offset list itself is then unreliable), then
+# `no_timing_data` (no real PTS at all on this stream), then
+# `insufficient_data` (an overflow anywhere in the checked interval/
+# threshold arithmetic, the TS unwrap itself overflowing, or --
+# TS-scoped -- `PidStats::discontinuity_offsets_truncated` being set:
+# T-05-29, a classification built on a partial flag list could silently
+# demote real breakage to `info`, so both ids skip rather than classify).
+[[check]]
+id = "timeline.discontinuities"
+group = "timeline"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 05-07-PLAN.md (TIME-02, D-08, Phase 3's container.ts.cc_errors/
+# .cc_discontinuities split precedent), src/analyzers/timeline/
+# discontinuities.cpp -- **Addition** (05-CHECK-ROSTER.md): split from doc
+# 04's `timeline.discontinuities` row -- TS packets under
+# `discontinuity_indicator=1` are FLAGGED structure (the muxer declared the
+# break on purpose, e.g. a splice point), `info` severity, never gating.
+# Attribution rule (A2, docs/checks/timeline.discontinuities.flagged.md):
+# `PacketRecord::pos` is a PES-packet byte offset; the flag lives on a
+# 188-byte transport packet inside that PES packet's own byte range, so a
+# jump is flagged when a recorded `discontinuity_indicator` offset falls
+# within the demuxed packet's own `[pos, next_pos)` range -- an
+# approximate-at-the-PES-boundary attribution, documented as such rather
+# than claimed as per-transport-packet precision. On a non-TS input this
+# check reports `skipped:not_applicable_container` -- never an empty span
+# list, because "no flagged structure exists here" and "this container
+# cannot express flagged structure" are different facts. Same skip-reason
+# priority as `timeline.discontinuities` above, substituting
+# `not_applicable_container` for the non-TS case.
+[[check]]
+id = "timeline.discontinuities.flagged"
+group = "timeline"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "info"

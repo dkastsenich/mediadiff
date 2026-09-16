@@ -409,6 +409,21 @@ struct StreamInfo {
   bool dovi_bl_present = false;
   std::int64_t dovi_bl_signal_compatibility_id = 0;
   std::int64_t dovi_md_compression = 0;
+
+  // 05-07-PLAN.md (TIME-02/TIME-04): AVStream::id verbatim, evidence/join-
+  // key only, never a compared value on its own. Rule 2 addition -- not in
+  // this plan's own declared files_modified, but structurally required:
+  // without it there is no way to join a PacketScan stream index to
+  // ts_scan's PID-keyed PidStats at all. For MPEG-TS specifically,
+  // libavformat's mpegts demuxer sets this field to the elementary
+  // stream's own PID (verified directly against the linked FFmpeg 8.1
+  // source, libavformat/mpegts.c: `st->id = pes->pid;` / `st->id = pid;`
+  // at every stream-registration site) -- the seam
+  // timeline.discontinuities/.flagged's TS-scoped analyzer uses to look up
+  // `TsScanResult::pid_stats(stream_id)` without a second demux or a
+  // hand-maintained stream-to-PID table. Meaningless (and never read) on
+  // any non-MPEG-TS container.
+  std::int64_t stream_id = -1;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE
