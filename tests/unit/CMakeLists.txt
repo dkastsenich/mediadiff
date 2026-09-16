@@ -26,6 +26,10 @@ add_executable(mediadiff_unit_tests
   # core/rational.h's detail::checked_div, added alongside its four
   # siblings for SIZE-01's window-boundary math (03-01-PLAN.md Task 3).
   test_rational.cpp
+  # core/rational.h's detail::Int128Accum -- a genuine 128-bit-safe
+  # ACCUMULATOR (not merely overflow detection) for plan 05-09's av_drift
+  # least-squares sums (05-02-PLAN.md Task 1, TIME-01/TIME-02).
+  test_rational_wide.cpp
   # Table-driven edge-value coverage for all seven semantics (02-04-PLAN.md
   # Task 3), distinct from test_fail_first_coverage.cpp's (semantic,
   # status) gate.

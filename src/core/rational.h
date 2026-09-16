@@ -55,6 +55,99 @@ inline bool checked_mul(std::int64_t a, std::int64_t b, std::int64_t* out) {
 }
 #endif
 
+// Int128Accum (05-02-PLAN.md Task 1, TIME-01/TIME-02): a small,
+// minimal-surface 128-bit-safe ACCUMULATOR for plan 05-09's av_drift
+// least-squares sums. Concrete magnitude bound, from 05-RESEARCH.md's own
+// worked analysis: a two-hour file at a 90 kHz timebase gives
+// x_max ~= 6.48e8 ticks, so the closed-form slope's K*Sum(x^2) term reaches
+// ~4.3e20 -- roughly 46x INT64_MAX (~9.22e18). This is genuine
+// ACCUMULATION, not overflow detection: checked_mul above correctly
+// detects overflow on a SINGLE 64-bit multiplication, but returning
+// "cannot compute" (insufficient_data) on an ordinary two-hour movie is
+// itself a defect, not a safety net -- Int128Accum accumulates the true
+// 128-bit sum across many terms and only narrows back to int64_t,
+// range-checked, once the caller is ready to use the result (always tiny,
+// ms/min-scale, by construction). Every caller maps a `try_narrow` false
+// return to SkipReason::insufficient_data -- the same precedent
+// src/probe/cadence.cpp's own comment states: "an overflow anywhere in
+// this arithmetic yields insufficient_data, never a wrapped value".
+//
+// The surface is deliberately minimal: add_product/add/try_narrow and
+// nothing else -- this is not a general bignum, and a wider surface
+// invites a second consumer to depend on semantics nobody tested. Same
+// conditional-compilation shape checked_mul above already establishes,
+// carried one step further (accumulate, not just detect): a genuine
+// 128-bit extension type on GCC/Clang/AppleClang (see the #else arm
+// below), composed `_mul128`+`_addcarry_u64` on MSVC (which has no
+// 128-bit integer type at all).
+#if defined(_MSC_VER)
+class Int128Accum {
+ public:
+  // Adds `a * b` to the running sum. The product itself never overflows
+  // 128 bits (the widest possible int64*int64 product, INT64_MIN*INT64_MIN,
+  // is ~8.5e37, well inside the signed 128-bit range of ~1.7e38) -- only
+  // the ACCUMULATED sum across many calls can eventually exceed int64_t,
+  // which is exactly what try_narrow below detects.
+  void add_product(std::int64_t a, std::int64_t b) {
+    std::int64_t high = 0;
+    const std::uint64_t low = static_cast<std::uint64_t>(_mul128(a, b, &high));
+    const unsigned char carry = _addcarry_u64(0, lo_, low, &lo_);
+    hi_ = static_cast<std::int64_t>(hi_ + high + carry);
+  }
+
+  // Adds a plain (sign-extended) value to the running sum -- the
+  // least-squares fit's Sigma-x/Sigma-y terms need this alongside
+  // add_product's Sigma-x^2/Sigma-xy.
+  void add(std::int64_t v) {
+    const std::uint64_t low = static_cast<std::uint64_t>(v);
+    const std::int64_t high = (v < 0) ? -1 : 0;
+    const unsigned char carry = _addcarry_u64(0, lo_, low, &lo_);
+    hi_ = static_cast<std::int64_t>(hi_ + high + carry);
+  }
+
+  // Range-checked narrowing: succeeds only when the 128-bit value is
+  // EXACTLY representable as int64_t (the high half is precisely the sign
+  // extension of the low half's sign bit -- the identical test
+  // checked_mul above uses for a single product). On failure, `*out` is
+  // left untouched -- never a truncated low word.
+  bool try_narrow(std::int64_t* out) const {
+    const std::int64_t low_signed = static_cast<std::int64_t>(lo_);
+    const std::int64_t sign_extend = (low_signed < 0) ? -1 : 0;
+    if (hi_ != sign_extend) {
+      return false;
+    }
+    *out = low_signed;
+    return true;
+  }
+
+ private:
+  std::int64_t hi_ = 0;
+  std::uint64_t lo_ = 0;
+};
+#else
+class Int128Accum {
+ public:
+  // See the MSVC arm's own comment above -- identical contract, __int128
+  // makes the GCC/Clang/AppleClang implementation direct.
+  void add_product(std::int64_t a, std::int64_t b) {
+    value_ += static_cast<__int128>(a) * static_cast<__int128>(b);
+  }
+
+  void add(std::int64_t v) { value_ += static_cast<__int128>(v); }
+
+  bool try_narrow(std::int64_t* out) const {
+    if (value_ > static_cast<__int128>(INT64_MAX) || value_ < static_cast<__int128>(INT64_MIN)) {
+      return false;
+    }
+    *out = static_cast<std::int64_t>(value_);
+    return true;
+  }
+
+ private:
+  __int128 value_ = 0;
+};
+#endif
+
 // CR-03: a - b with overflow detection, the subtraction-side counterpart
 // to checked_mul above -- compare/tol.cpp's delta_num and compare/dist.cpp's
 // diff_num both subtract two already-overflow-checked products, which can
