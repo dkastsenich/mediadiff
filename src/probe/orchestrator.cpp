@@ -146,6 +146,14 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // analyzer order (TRUST-05) keeps this phase's own family grouped
       // and appended, never interleaved among Phase 4's.
       timeline_start_duration_analyzer(),
+      // 05-05-PLAN.md (TIME-01/TIME-04): timeline.dts_monotonic and
+      // timeline.pts_unique -- ContainerFamily::other (applies to every
+      // container; the TS-only unwrap step is a runtime branch inside the
+      // analyzer, not a narrower AnalyzerSpec scope), Pass::packet_scan
+      // only. Listed directly after timeline_start_duration_analyzer() so
+      // this phase's own family stays grouped in the stable, hand-written
+      // analyzer order (TRUST-05).
+      timeline_monotonic_analyzer(),
   };
   return registry;
 }

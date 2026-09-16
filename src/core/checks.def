@@ -1120,3 +1120,46 @@ unit = "none"
 value_kind = "string"
 severity = "info"
 flagged_values = ["container_vs_stream", "container_vs_computed", "stream_vs_computed"]
+
+# 05-05-PLAN.md (TIME-01/TIME-04), src/analyzers/timeline/monotonic.cpp --
+# the count of `dts[i] <= dts[i-1]` violations per stream, in READ order,
+# AFTER the 33-bit TS unwrap (05-02-PLAN.md) on a ContainerFamily::ts
+# input. Packets carrying AV_NOPTS_VALUE on the DTS axis are EXCLUDED from
+# the count, never coerced to a value -- a stream of entirely-absent DTS
+# reports `skipped:no_timing_data`, never a fabricated `0` clean bill of
+# health (TIME-01). **Deviation from doc 04's literal "count exact 0"**
+# (05-CHECK-ROSTER.md): `tol`/`count` with tolerance `"0"`, not `exact` --
+# a zero-magnitude absolute tolerance behaves identically to exact equality
+# while leaving `--tol timeline.dts_monotonic=2` meaningful for a pipeline
+# with known, accepted noise (mirrors Phase 4's `video.frame_count`
+# "0frames" precedent). Runs on every stream carrying timestamps EXCEPT
+# `Scope::Kind::subtitle` (05-CHECK-ROSTER.md's own scope decision).
+# Skip-reason vocabulary, in priority order: `partial_scan` (Phase 3 D-02,
+# ahead of everything), then `no_timing_data` (no real DTS at all on this
+# stream), then `insufficient_data` (the TS unwrap overflowed, T-05-18).
+[[check]]
+id = "timeline.dts_monotonic"
+group = "timeline"
+semantic = "tol"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+tolerance = "0"
+
+# 05-05-PLAN.md (TIME-01/TIME-04), src/analyzers/timeline/monotonic.cpp --
+# the count of duplicate presentation PTS values per stream, found by
+# sorting a LOCAL index view by PTS (never read order) and counting
+# adjacent equal values. Same sentinel-exclusion, TS-unwrap-first and
+# subtitle-scope-exclusion rules as `timeline.dts_monotonic` above, and the
+# same **deviation from doc 04's literal "count exact 0"**: `tol`/`count`
+# with tolerance `"0"`, not `exact`, for the identical
+# zero-magnitude-tolerance reasoning. Same skip-reason priority order as
+# `timeline.dts_monotonic` above.
+[[check]]
+id = "timeline.pts_unique"
+group = "timeline"
+semantic = "tol"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+tolerance = "0"

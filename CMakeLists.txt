@@ -185,6 +185,10 @@ add_library(libmediadiff STATIC
   # 1.2's 33-bit MPEG-TS PTS/DTS unwrap as a pure function -- consumed by
   # later timeline plans before any other statistic runs on a TS stream.
   src/analyzers/timeline/unwrap.cpp
+  # TIME-01/TIME-04 (05-05-PLAN.md): timeline.dts_monotonic and
+  # timeline.pts_unique over the shared PacketScan array, sentinels
+  # excluded and the TS unwrap applied first.
+  src/analyzers/timeline/monotonic.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

@@ -146,4 +146,114 @@ std::optional<std::vector<ReconstructedDuration>> reconstruct_packet_durations(
 
 }  // namespace detail
 
+// timeline.dts_monotonic / timeline.pts_unique (05-05-PLAN.md, TIME-01/
+// TIME-04): per timestamped stream EXCEPT Scope::Kind::subtitle
+// (05-CHECK-ROSTER.md's own scope decision), the count of `dts[i] <=
+// dts[i-1]` violations in READ order (doc 04 section 2) and the count of
+// duplicate presentation PTS values, both over the SHARED PacketScan array
+// with the AV_NOPTS_VALUE sentinel excluded from the axis view rather than
+// counted (TIME-01) -- a stream whose axis is entirely absent reports
+// `skipped:no_timing_data`, never a fabricated `0`. On a
+// ContainerFamily::ts input the raw DTS/PTS sequences are unwrapped via
+// unwrap.h's `unwrap_ts_timestamps` FIRST (05-02-PLAN.md, TIME-02) and the
+// UNWRAPPED values are what either count analyses -- the `unwrapped`
+// evidence flag on each Measurement records which basis produced the
+// count. `required_passes = {Pass::demux_header, Pass::packet_scan}`,
+// `scope = ContainerFamily::other` (this check applies to every container;
+// the TS-only unwrap step is a runtime branch on
+// `container_family_from_format_name`, not a narrower AnalyzerSpec scope).
+// Skip-reason priority: `partial_scan` (Phase 3 D-02, ahead of everything),
+// then `no_timing_data` (no real value on the axis at all), then
+// `insufficient_data` (an unwrap overflow, T-05-18/T-05-19's own
+// degrade-honestly rule).
+const AnalyzerSpec& timeline_monotonic_analyzer();
+
+namespace detail {
+
+// Which packet field the axis view below reads -- doc 04 section 2 defines
+// `dts_monotonic` over DTS and `pts_unique` over PTS; both share the exact
+// same sentinel-exclusion/read-order-preserving construction, so ONE
+// parameterized view type serves both checks rather than two near-copies.
+enum class Axis { dts, pts };
+
+// One packet's own SURVIVING entry in an axis view: its ORIGINAL array
+// position (`packet_index`, for evidence -- T-05-19's "excluded count"
+// requirement needs the distinction between "this packet's own array
+// position" and "this packet's own rank among real values", so the two are
+// never conflated), its value on the axis under test (native ticks, or
+// TS-unwrapped ticks once unwrap_axis_view below has run), and
+// `PacketRecord::pos` (the byte offset evidence cites).
+struct AxisSample {
+  std::size_t packet_index = 0;
+  std::int64_t value = 0;
+  std::int64_t pos = 0;
+};
+
+// The axis view itself: READ-ORDER-preserving (array position order,
+// mirroring `packets`' own `av_read_frame` order -- monotonicity is
+// defined over READ order per doc 04 section 2, never a re-sort here),
+// with every AV_NOPTS_VALUE-sentinel packet on this axis EXCLUDED rather
+// than treated as a value (TIME-01) -- `excluded_count` is what evidence
+// cites so a reader can tell "no violations" apart from "no usable data".
+struct AxisView {
+  std::vector<AxisSample> samples;
+  std::int64_t excluded_count = 0;
+};
+
+// Builds `packets`' own axis view for `axis`: excludes every packet whose
+// value on that axis is `INT64_MIN` (the AV_NOPTS_VALUE sentinel,
+// preserved verbatim by PacketScan), preserving every surviving packet's
+// own array position in `packet_index`. A pure, read-only function over a
+// caller-owned span -- `packets` is never mutated or reordered.
+AxisView build_axis_view(std::span<const PacketRecord> packets, Axis axis);
+
+// Applies unwrap.h's `unwrap_ts_timestamps` to `view`'s own values (in
+// read order, exactly as they already sit in `view.samples`) and returns a
+// NEW AxisView whose samples carry the UNWRAPPED values with
+// `packet_index`/`pos` preserved verbatim -- `view` itself is never
+// mutated. Returns std::nullopt when `UnwrapResult::overflowed` is set
+// (T-05-18: a crafted stream cannot grow the running unwrap offset without
+// bound); the caller maps that to `SkipReason::insufficient_data`, never a
+// wrapped or fabricated value. Exposed here (not folded into the
+// analyzer's own run()) so a unit test can prove Test 6 (a wrapping TS
+// sequence reports zero monotonicity violations from the wrap itself)
+// directly against hand-built raw ticks, without a real fixture on disk.
+std::optional<AxisView> unwrap_axis_view(const AxisView& view);
+
+// timeline.dts_monotonic's own count: consecutive pairs in READ order
+// where `dts[i] <= dts[i-1]` (doc 04 section 2 -- a TIE counts as a
+// violation, not only a strict decrease; D-04's zero-magnitude tolerance
+// on the registered check treats this count identically to `exact`
+// equality against `0` while keeping `--tol timeline.dts_monotonic=2`
+// meaningful). `first_violation_index`/`first_violation_pos` name the
+// FIRST violating pair's SECOND member -- the packet whose own value broke
+// the sequence, not the one before it.
+struct MonotonicResult {
+  std::int64_t violation_count = 0;
+  std::optional<std::size_t> first_violation_index;
+  std::optional<std::int64_t> first_violation_pos;
+};
+
+MonotonicResult count_dts_violations(const AxisView& view);
+
+// timeline.pts_unique's own count: duplicate presentation PTS values,
+// found by sorting a LOCAL COPY of `view.samples` by (value, packet_index)
+// -- never `view` itself, never the caller's own read-order array -- and
+// counting adjacent equal values. `first_duplicate_value`/
+// `first_duplicate_index_a`/`first_duplicate_index_b` name the smallest
+// duplicated value encountered walking the sorted order (deterministic:
+// the `packet_index` tie-break makes the sort itself, and therefore which
+// pair is "first", reproducible across runs even when three or more
+// packets share one value).
+struct DuplicateResult {
+  std::int64_t duplicate_count = 0;
+  std::optional<std::int64_t> first_duplicate_value;
+  std::optional<std::size_t> first_duplicate_index_a;
+  std::optional<std::size_t> first_duplicate_index_b;
+};
+
+DuplicateResult count_pts_duplicates(const AxisView& view);
+
+}  // namespace detail
+
 }  // namespace mediadiff

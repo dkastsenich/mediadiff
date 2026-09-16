@@ -167,6 +167,18 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // coherent on both sides, so only the audio-scoped finding
                                    // fires.
                                    "timeline.duration.coherence",
+                                   // 05-05-PLAN.md (TIME-01/TIME-04): the SAME remux, one more
+                                   // legitimate effect -- ffmpeg's own mpegts muxer/demuxer
+                                   // round-trip for a B-frame-less (`-bf 0`, no reordering) video
+                                   // stream reports the SECOND packet's own DTS equal to the FIRST
+                                   // packet's PTS (a one-packet lag, verified empirically via
+                                   // `ffprobe -show_entries packet=pts,dts` on the real committed
+                                   // fixture), producing exactly ONE `dts[1] <= dts[0]` tie at the
+                                   // very start of the stream -- a genuine, structural property of
+                                   // this MP4-to-TS remux pairing, not a defect this analyzer
+                                   // introduces. The MP4 baseline's own video dts_monotonic count
+                                   // stays `0`; only the candidate's video-scoped finding fires.
+                                   "timeline.dts_monotonic",
                                });
 }
 
