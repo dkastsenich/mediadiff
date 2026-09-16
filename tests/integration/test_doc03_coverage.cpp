@@ -34,8 +34,9 @@
 // bringing the total to sixty-six. 05-06-PLAN.md registers timeline.gaps
 // and timeline.wrap_events, bringing the total to sixty-eight.
 // 05-07-PLAN.md registers timeline.discontinuities and timeline.
-// discontinuities.flagged, bringing the total to seventy. This file
-// is where a gap becomes visible.
+// discontinuities.flagged, bringing the total to seventy. 05-08-PLAN.md
+// registers timeline.jitter and timeline.vfr_profile, bringing the total
+// to seventy-two. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -487,6 +488,29 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"timeline.discontinuities.flagged",
        {fixture("timeline_ts_jump.ts"), fixture("timeline_ts_jump_flagged.ts"), fixture("timeline_ts_nowrap.ts"),
         fixture("timeline_ts_nowrap_copy.ts")}},
+
+      // --- timeline.jitter / timeline.vfr_profile (05-08-PLAN.md, TIME-05)
+      // --- timeline.jitter's trigger pair is timeline_start_base.mp4
+      // against timeline_jitter.mp4 (a single interior video frame shifted
+      // forward by exactly one whole frame, staying inside the original
+      // PTS range so the stream remains unambiguously CFR under D-05) --
+      // verified empirically: video reports `fail` with a real, non-zero
+      // sigma (~4.01ms), audio (untouched) stays `pass`. Its clean pair
+      // reuses timeline_start_base.mp4/_copy.mp4 (all-`pass` for both ids
+      // on this exact byte-identical pair, confirmed empirically).
+      // timeline.vfr_profile's trigger pair is timeline_start_base.mp4
+      // against timeline_vfr.mp4 (the SAME LGPL-clean `select`+`-fps_mode
+      // vfr` thinning chain video_vfr.mp4 already proves classifies VFR) --
+      // verified empirically: video reports `warn` (worst bin 'on_grid'
+      // exceeds tolerance) while `timeline.jitter` itself is
+      // `skipped:vfr` on that same stream (ROADMAP SC3); its clean pair
+      // reuses the same timeline_start_base.mp4/_copy.mp4 pair.
+      {"timeline.jitter",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_jitter.mp4"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.vfr_profile",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_vfr.mp4"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
   };
   return pairs;
 }

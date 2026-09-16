@@ -1857,4 +1857,91 @@ python3 tools/gen_ts_discontinuity.py \
   --pid 256 \
   --after-offset "$TIMELINE_JUMP_SEG_A_SIZE"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts."
+# --- 05-08-PLAN.md Task 3 (TIME-05, DOC-03/DOC-04): timeline_jitter.mp4 /
+# timeline_vfr.mp4 -- doc 04 §5's own jitter/VFR recipes, adapted to this
+# project's LGPL-clean constraints (05-RESEARCH.md Pitfall 3): `mpdecimate`
+# is GPL-gated (`mpdecimate_filter_deps="gpl"`, confirmed against the
+# vendored FFmpeg source) and would silently produce nothing on the
+# win64-lgpl Windows pin -- NEVER invoked anywhere in this script.
+# `select`+`-fps_mode vfr` (already proven LGPL-clean and already proven to
+# classify VFR, video_vfr.mp4's own recipe above) is the route actually
+# used below.
+#
+# `timeline_jitter.mp4`: the same testsrc2/sine source and mpeg4/aac encode
+# family as every other timeline_* fixture in this file, at 8s/200 frames
+# (not timeline_start_base.mp4's own 4s/100) -- a deliberate DEVIATION from
+# this plan's own literal "identical encode" instruction (Rule 1, documented
+# here and in 05-08-SUMMARY.md): D-05's own grid-conformance CFR/VFR test
+# requires `conforming_timestamps * 1000 >= considered_timestamps * 995`
+# (99.5%), which at exactly 100 considered timestamps admits ZERO
+# non-conforming outliers (99/100 = 99.0% < 99.5%) -- doubling the
+# considered-timestamp count to 200 admits exactly ONE (199/200 = 99.5%,
+# the inclusive boundary), which is what this recipe needs room for.
+#
+# `setts`'s own PTS/DTS expressions operate in the VIDEO CODEC's own
+# time_base, not the muxed container's -- confirmed empirically THIS task
+# (mirrors `timeline_gap.mp4`'s own identical discovery above): mpeg4 at
+# 25fps uses a 1/25 codec time_base, so a bare arithmetic offset like
+# `PTS+150` is 150 WHOLE FRAMES (76800 muxed-timebase ticks), not 150
+# ticks -- confirmed by an empirical probe of the resulting packet PTS
+# during this task (see this task's own commit message for the full
+# transcript) before this final recipe was written; a sub-frame offset is
+# not expressible through this bsf at all (a fractional literal such as
+# `150/512` truncates to whichever whole frame it floors to, empirically
+# zero). The recipe therefore shifts frame N=100's own PTS by exactly
+# ONE WHOLE FRAME forward (`PTS+1`, i.e. +512 muxed-timebase ticks) --
+# dead centre, far from both edges, so first_pts/last_pts (and therefore
+# the derived span-based ideal interval, `timeline.start`, `timeline.
+# duration`, `video.frame_rate.measured`) stay untouched: the perturbed
+# value (51712) sits INSIDE the original [0, 101888]-tick range, never
+# becoming a new extremum (an earlier attempt during this task shifted
+# frame 100 far OUTSIDE that range and discovered the ideal interval
+# itself gets computed from whatever the ACTUAL min/max turn out to be,
+# corrupting every other interval's own classification -- a lesson kept
+# here so it is not rediscovered the hard way twice). By hand: shifting
+# frame 100 forward by exactly one frame lands it on frame 101's own
+# ORIGINAL slot (51712), producing a genuine `timeline.pts_unique`
+# duplicate pair alongside the jitter this fixture exists to prove (one
+# perturbation, two legitimate D-02 effects, both declared in this task's
+# own DOC-04 test) -- verified via `ffprobe -show_packets`. Two
+# consecutive-interval deviations result (99->100(dup): +512 ticks;
+# 100(dup)->101: -512 ticks -- both intervals touching the shifted
+# timestamp), every other of the 199 intervals stays exactly on the
+# (unperturbed, since the perturbation never left the original extremes)
+# 512-tick ideal -- proven against the real binary (this task's own
+# <verify> step) to classify CFR (exactly 199/200 conforming, the
+# inclusive 99.5% boundary) with a real, non-zero, threshold-crossing
+# sigma. DTS is left untouched by this filter (mirrors
+# timeline_pts_dupe.mp4's own precedent), so timeline.dts_monotonic stays
+# clean; the one 1024-tick interval sits AT (not strictly past)
+# timeline.gaps' own `2 x nominal` detection threshold, so timeline.gaps
+# stays clean too.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=8" \
+  -f lavfi -i "sine=frequency=440:duration=8" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -bsf:v "setts=pts='if(eq(N\,100)\,PTS+1\,PTS)'" -y \
+  "$OUT_DIR/timeline_jitter.mp4"
+
+# `timeline_vfr.mp4`: the SAME `select='not(eq(mod(n\,7),3))'` +
+# `-fps_mode vfr` LGPL-clean thinning chain video_vfr.mp4 above already
+# proves classifies VFR (04-07-PLAN.md's own comment: "producing genuinely
+# unequal packet PTS deltas... This is the CFR/VFR distinction plan 04-07
+# classifies") -- D-05 (this same phase) REPLACES the classification TEST,
+# not the underlying genuinely-uneven interval pattern this recipe
+# produces, so the same drop pattern remains VFR under the amended rule
+# (proven against the real binary, this task's own <verify> step, before
+# any test asserts on it -- A2's own instruction). Unlike video_vfr.mp4
+# (video-only), this fixture carries an untouched sine AUDIO stream too, so
+# a single file exercises BOTH ROADMAP SC3 halves at once: the VIDEO stream
+# reports `timeline.jitter` skipped:vfr with a real, populated
+# `timeline.vfr_profile` histogram (two_x/three_x bins from the dropped-
+# frame doubled intervals), while the AUDIO stream, genuinely unperturbed,
+# stays CFR with a real (near-zero) sigma and an all-on_grid histogram --
+# one fixture proving the CFR/VFR split on two streams of the SAME file.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -vf "select='not(eq(mod(n\,7),3))'" -fps_mode vfr \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_vfr.mp4"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4."

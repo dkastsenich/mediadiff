@@ -71,9 +71,15 @@
 # transport packet's discontinuity_indicator bit), same
 # workstation-computed-awaiting-designated-leg-transcription status as
 # every other entry in this file.
+#
+# 05-08-PLAN.md Task 3 adds the timeline.jitter and timeline.vfr_profile
+# fixtures below (timeline_jitter.mp4, timeline_vfr.mp4), same
+# workstation-computed-awaiting-designated-leg-transcription status as
+# every other entry in this file.
 timeline_dts_backward.ts
 timeline_duration_short.mp4
 timeline_gap.mp4
+timeline_jitter.mp4
 timeline_ntsc_base.mp4
 timeline_ntsc_remux.mkv
 timeline_pts_dupe.mp4
@@ -85,3 +91,4 @@ timeline_ts_jump_flagged.ts
 timeline_ts_nowrap.ts
 timeline_ts_nowrap_copy.ts
 timeline_ts_wrap.ts
+timeline_vfr.mp4

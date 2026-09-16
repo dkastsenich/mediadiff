@@ -84,6 +84,15 @@ add_executable(mediadiff_integration_tests
   # setts-crafted single duplicate PTS pair) -- plus the shared
   # byte-identical clean pair.
   test_timeline_structure.cpp
+  # TIME-05, DOC-04 (05-08-PLAN.md Task 3): the DOC-04 no-others harness
+  # proven against this plan's own two crafted fixtures -- timeline_jitter.mp4
+  # (a single interior frame shifted forward by exactly one whole frame,
+  # staying inside the original PTS range so the stream remains
+  # unambiguously CFR) and timeline_vfr.mp4 (the LGPL-clean `select`+
+  # `-fps_mode vfr` thinning chain video_vfr.mp4 already proves classifies
+  # VFR) -- plus the NTSC remux pair's own timeline.vfr_profile comparison
+  # and a dedicated ROADMAP SC3 case.
+  test_timeline_jitter.cpp
   # 04-08-PLAN.md Task 3 (VIDEO-03): the phase's own signature test made
   # into a counting assertion -- yuvj420p vs yuv420p-limited-range
   # produces EXACTLY ONE non-pass finding (video.color.range) across the
