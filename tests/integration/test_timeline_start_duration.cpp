@@ -314,3 +314,47 @@ TEST_CASE("timeline_start_duration - timeline.duration.coherence only tests a pa
   const std::vector<std::string> tested = candidate_evidence.at("tested_pairs").get<std::vector<std::string>>();
   REQUIRE(tested == std::vector<std::string>{"container_vs_computed"});
 }
+
+// --- 05-04-PLAN.md Task 3: the timeline.duration DOC-03 trigger pair's own
+// COMPLETE declared finding set (D-02) -- a duration halved from 4s to 2s is
+// ONE cause that legitimately moves several facts beyond timeline.duration
+// itself, each verified empirically against the real binary before being
+// declared here, never guessed from the recipe alone. --------------------
+
+TEST_CASE("timeline_start_duration - the duration-short trigger pair (timeline_start_base.mp4 vs "
+          "timeline_duration_short.mp4) declares its complete expected finding set under --profile remux, and "
+          "count_non_pass equals that set's size exactly",
+          "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_duration_short.mp4"), "remux");
+
+  expect_declared_set(report, {
+                                   // The check this task registers -- the computed member (last
+                                   // presentation end - first PTS) genuinely halves along with the
+                                   // recipe's own duration=4 -> duration=2 change, at both scopes
+                                   // (this recipe carries one video and one audio stream).
+                                   "timeline.duration",
+                                   "timeline.duration",
+                                   // MP4's edit-list entry carries each track's own presentation
+                                   // SEGMENT DURATION (bmff_scan's own EditListEntry::
+                                   // segment_duration) -- a shorter recipe genuinely shortens that
+                                   // field too, at both scopes, a real property of the mp4 muxer's
+                                   // own edit-list construction, not a defect this analyzer
+                                   // introduces.
+                                   "container.mp4.edit_list",
+                                   "container.mp4.edit_list",
+                                   // Half the duration at the same 25fps rate is genuinely half the
+                                   // frame count (50 vs 100 frames) -- video.frame_count counts from
+                                   // the real packet/parser scan (VIDEO-02's own rule), never from a
+                                   // container-declared value, so this is a real, counted difference.
+                                   "video.frame_count",
+                                   // A shorter encode is genuinely a smaller file at a genuinely
+                                   // different average bitrate/overhead ratio -- the SAME
+                                   // size.file/size.stream_bitrate/size.overhead cluster this
+                                   // project's own MP4-to-TS tracer pair (Test 4 above) already
+                                   // established fires on any real byte-size change.
+                                   "size.file",
+                                   "size.stream_bitrate",
+                                   "size.overhead",
+                               });
+}

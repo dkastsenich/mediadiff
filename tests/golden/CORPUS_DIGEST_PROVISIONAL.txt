@@ -49,6 +49,11 @@
 # 05-03-PLAN.md Task 1 adds the NTSC-in-MKV D-05 false-positive repro pair
 # below, workstation-computed hashes awaiting the same designated-leg
 # transcription as the three 05-01 entries above.
+#
+# 05-04-PLAN.md Task 3 adds the timeline.duration DOC-03 trigger fixture
+# below, same workstation-computed-awaiting-designated-leg-transcription
+# status as every other entry in this file.
+timeline_duration_short.mp4
 timeline_ntsc_base.mp4
 timeline_ntsc_remux.mkv
 timeline_start_base.mp4

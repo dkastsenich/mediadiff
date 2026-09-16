@@ -28,7 +28,9 @@
 // fifty-eight. 04-12-PLAN.md registers video.hdr.dovi, video.hdr.dovi.config
 // and video.hdr.coherence, bringing the total to sixty-one. 05-01-PLAN.md
 // registers Phase 5's tracer, timeline.start, bringing the total to
-// sixty-two. This file is where a gap becomes visible.
+// sixty-two. 05-04-PLAN.md registers timeline.duration and
+// timeline.duration.coherence, bringing the total to sixty-four. This file
+// is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -392,6 +394,27 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       // byte-identical copy, matching every other tracer's own clean-pair
       // shape.
       {"timeline.start",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_start_shift.ts"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+
+      // --- timeline.duration / timeline.duration.coherence (05-04-PLAN.md,
+      // TIME-01/TIME-03, D-08, Phase 4 D-10's precedent) --- timeline.duration's
+      // trigger is a real 4s-vs-2s content-length change (timeline_duration_short.mp4,
+      // this plan's own new fixture); the clean pair is the same byte-identical
+      // copy every other tracer in this phase uses.
+      //
+      // timeline.duration.coherence's trigger is the SAME MPEG-TS remux pair
+      // timeline.start already declares above -- per this plan's own A1
+      // flagged_assumption, proven empirically against the real binary
+      // (not assumed) before being declared here: the TS demuxer's own
+      // AVStream::duration for the AUDIO stream genuinely disagrees with its
+      // own AVFormatContext::duration by more than the fixed 40ms threshold,
+      // firing `container_vs_stream` at `info` severity. Its clean pair is
+      // the identical byte-identical copy.
+      {"timeline.duration",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_duration_short.mp4"),
+        fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.duration.coherence",
        {fixture("timeline_start_base.mp4"), fixture("timeline_start_shift.ts"), fixture("timeline_start_base.mp4"),
         fixture("timeline_start_base_copy.mp4")}},
   };
