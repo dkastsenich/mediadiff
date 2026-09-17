@@ -224,9 +224,163 @@ class Int128Accum {
     return true;
   }
 
+  // try_reduce_ratio (05-10-PLAN.md Task 1, TIME-07): `this` is the
+  // numerator, `denominator` is the denominator of a fraction BOTH of
+  // which may genuinely exceed int64_t even though the REDUCED fraction
+  // (after dividing out their GCD) very likely does not -- av_drift's own
+  // closed-form slope is exactly this shape: 05-RESEARCH.md's own worked
+  // example shows the RAW denominator (K*Sum(x^2)-(Sum x)^2) reaching
+  // ~3.8e19 for an ordinary two-hour 90kHz file, a genuine ~4x
+  // INT64_MAX -- but the numerator (proportional to the ACTUAL, small
+  // drift rate) is already comfortably int64_t-sized, and REAL tick data
+  // (video frame durations, audio sample-frame sizes) is overwhelmingly
+  // power-of-two-heavy, so the GCD reliably brings the denominator back
+  // into range too. This is NOT a general bignum-rational type -- it
+  // exists for exactly this one closed-form ratio, mirroring
+  // try_isqrt's own "one function for one caller's own real need" scope.
+  //
+  // Implementation: a portable UNSIGNED 128-bit Euclidean GCD plus two
+  // final divisions, composed ENTIRELY from the SAME bit-by-bit
+  // shift/compare/subtract primitives (`_addcarry_u64`/`_subborrow_u64`)
+  // try_isqrt above already uses -- no 128-bit division intrinsic exists
+  // on this toolchain, which is exactly why this whole class is split by
+  // `_MSC_VER` in the first place. Returns false (leaving the
+  // out-parameters untouched) when `denominator` is exactly zero (a
+  // degenerate fit with no real x-variance), or when EITHER reduced
+  // magnitude still does not fit int64_t after GCD reduction -- the
+  // caller maps this to `SkipReason::insufficient_data`, the SAME
+  // "a narrowing that does not fit yields insufficient_data, never a
+  // wrapped or truncated slope" contract every other narrowing in this
+  // file already promises. The reduced denominator is always POSITIVE
+  // (any negative sign folds into the numerator) -- the same convention
+  // every `RationalValue`/`Rational` in this project already assumes.
+  bool try_reduce_ratio(const Int128Accum& denominator, std::int64_t* out_num, std::int64_t* out_den) const {
+    if (denominator.hi_ == 0 && denominator.lo_ == 0) {
+      return false;
+    }
+
+    std::uint64_t num_hi = static_cast<std::uint64_t>(hi_);
+    std::uint64_t num_lo = lo_;
+    std::uint64_t den_hi = static_cast<std::uint64_t>(denominator.hi_);
+    std::uint64_t den_lo = denominator.lo_;
+
+    // Fold the denominator's sign into the numerator -- the reduced
+    // denominator this function emits is always positive.
+    if (denominator.hi_ < 0) {
+      negate_words(&num_hi, &num_lo);
+      negate_words(&den_hi, &den_lo);
+    }
+
+    const bool num_negative = static_cast<std::int64_t>(num_hi) < 0;
+    std::uint64_t abs_num_hi = num_hi;
+    std::uint64_t abs_num_lo = num_lo;
+    if (num_negative) {
+      negate_words(&abs_num_hi, &abs_num_lo);
+    }
+
+    std::uint64_t gcd_hi = 0;
+    std::uint64_t gcd_lo = 0;
+    if (abs_num_hi == 0 && abs_num_lo == 0) {
+      // gcd(0, den) == den -- Euclid's algorithm below would reach the
+      // identical fixed point, spelled out here so the zero-numerator
+      // fit (a perfectly flat, zero-slope trajectory) never enters the
+      // division loop at all.
+      gcd_hi = den_hi;
+      gcd_lo = den_lo;
+    } else {
+      std::uint64_t a_hi = abs_num_hi, a_lo = abs_num_lo;
+      std::uint64_t b_hi = den_hi, b_lo = den_lo;
+      while (b_hi != 0 || b_lo != 0) {
+        std::uint64_t q_hi = 0, q_lo = 0, r_hi = 0, r_lo = 0;
+        udivmod(a_hi, a_lo, b_hi, b_lo, &q_hi, &q_lo, &r_hi, &r_lo);
+        a_hi = b_hi;
+        a_lo = b_lo;
+        b_hi = r_hi;
+        b_lo = r_lo;
+      }
+      gcd_hi = a_hi;
+      gcd_lo = a_lo;
+    }
+
+    std::uint64_t qn_hi = 0, qn_lo = 0, rn_hi = 0, rn_lo = 0;
+    udivmod(abs_num_hi, abs_num_lo, gcd_hi, gcd_lo, &qn_hi, &qn_lo, &rn_hi, &rn_lo);
+    std::uint64_t qd_hi = 0, qd_lo = 0, rd_hi = 0, rd_lo = 0;
+    udivmod(den_hi, den_lo, gcd_hi, gcd_lo, &qd_hi, &qd_lo, &rd_hi, &rd_lo);
+
+    if (qn_hi != 0 || qn_lo > static_cast<std::uint64_t>(INT64_MAX)) {
+      return false;
+    }
+    if (qd_hi != 0 || qd_lo == 0 || qd_lo > static_cast<std::uint64_t>(INT64_MAX)) {
+      return false;
+    }
+
+    std::int64_t reduced_num = static_cast<std::int64_t>(qn_lo);
+    if (num_negative) {
+      if (reduced_num == INT64_MIN) {
+        // -INT64_MIN is not representable -- an astronomically unlikely
+        // exact-boundary case for a real drift numerator, guarded rather
+        // than assumed impossible.
+        return false;
+      }
+      reduced_num = -reduced_num;
+    }
+    *out_num = reduced_num;
+    *out_den = static_cast<std::int64_t>(qd_lo);
+    return true;
+  }
+
  private:
   std::int64_t hi_ = 0;
   std::uint64_t lo_ = 0;
+
+  // Two's-complement negation of a (hi, lo) word pair: ~x + 1, via the
+  // SAME `_addcarry_u64` primitive add_product/add above already use.
+  static void negate_words(std::uint64_t* hi, std::uint64_t* lo) {
+    *lo = ~(*lo);
+    *hi = ~(*hi);
+    const unsigned char carry = _addcarry_u64(0, *lo, 1, lo);
+    _addcarry_u64(carry, *hi, 0, hi);
+  }
+
+  // Unsigned 128-bit binary long division (dividend / divisor -> quotient,
+  // remainder), bit by bit over 128 iterations -- the standard schoolbook
+  // algorithm, composed entirely from shift/compare/subtract on (hi, lo)
+  // word pairs, the SAME primitives try_isqrt's own bit-doubling loop
+  // above already uses. `divisor` must be nonzero (every call site above
+  // guards this before calling). Never invokes a 128-bit division
+  // intrinsic, because none exists on this toolchain.
+  static void udivmod(std::uint64_t dividend_hi, std::uint64_t dividend_lo, std::uint64_t divisor_hi,
+                       std::uint64_t divisor_lo, std::uint64_t* quotient_hi, std::uint64_t* quotient_lo,
+                       std::uint64_t* remainder_hi, std::uint64_t* remainder_lo) {
+    std::uint64_t rem_hi = 0, rem_lo = 0;
+    std::uint64_t quot_hi = 0, quot_lo = 0;
+    for (int i = 127; i >= 0; --i) {
+      // remainder <<= 1 (the bit shifted off the top is always 0: the
+      // loop's own invariant keeps remainder < divisor <= the full 128-bit
+      // range at every step, so no bit is ever lost here).
+      rem_hi = (rem_hi << 1) | (rem_lo >> 63);
+      rem_lo = rem_lo << 1;
+      // Bring down bit `i` of the dividend into remainder's own bit 0.
+      const std::uint64_t bit =
+          (i >= 64) ? ((dividend_hi >> (i - 64)) & 1u) : ((dividend_lo >> i) & 1u);
+      rem_lo |= bit;
+      // if remainder >= divisor: remainder -= divisor; set quotient bit i.
+      const bool ge = (rem_hi != divisor_hi) ? (rem_hi > divisor_hi) : (rem_lo >= divisor_lo);
+      if (ge) {
+        const unsigned char borrow = _subborrow_u64(0, rem_lo, divisor_lo, &rem_lo);
+        _subborrow_u64(borrow, rem_hi, divisor_hi, &rem_hi);
+        if (i >= 64) {
+          quot_hi |= (std::uint64_t{1} << (i - 64));
+        } else {
+          quot_lo |= (std::uint64_t{1} << i);
+        }
+      }
+    }
+    *quotient_hi = quot_hi;
+    *quotient_lo = quot_lo;
+    *remainder_hi = rem_hi;
+    *remainder_lo = rem_lo;
+  }
 };
 #else
 class Int128Accum {
@@ -276,6 +430,61 @@ class Int128Accum {
       return false;
     }
     *out = static_cast<std::int64_t>(root);
+    return true;
+  }
+
+  // try_reduce_ratio -- see the MSVC arm's own identical-contract comment
+  // above (both arms share ONE doc comment's worth of reasoning; not
+  // repeated verbatim here to avoid drift between two copies of the same
+  // prose). Native `__int128` division/modulo makes this arm a direct
+  // Euclidean GCD where the MSVC arm has to compose bit-by-bit division
+  // by hand.
+  bool try_reduce_ratio(const Int128Accum& denominator, std::int64_t* out_num, std::int64_t* out_den) const {
+    if (denominator.value_ == 0) {
+      return false;
+    }
+    __int128 num = value_;
+    __int128 den = denominator.value_;
+    // Fold the denominator's sign into the numerator -- the reduced
+    // denominator this function emits is always positive.
+    if (den < 0) {
+      den = -den;
+      num = -num;
+    }
+    const bool num_negative = num < 0;
+    __int128 abs_num = num_negative ? -num : num;
+
+    __int128 gcd_a = abs_num;
+    __int128 gcd_b = den;
+    while (gcd_b != 0) {
+      const __int128 remainder = gcd_a % gcd_b;
+      gcd_a = gcd_b;
+      gcd_b = remainder;
+    }
+    // gcd(0, den) == den, the fixed point Euclid's algorithm reaches
+    // naturally when abs_num starts at 0 -- no special case needed.
+    const __int128 g = gcd_a;
+
+    const __int128 reduced_num = abs_num / g;
+    const __int128 reduced_den = den / g;
+    if (reduced_num > static_cast<__int128>(INT64_MAX)) {
+      return false;
+    }
+    if (reduced_den <= 0 || reduced_den > static_cast<__int128>(INT64_MAX)) {
+      return false;
+    }
+    std::int64_t reduced_num_i64 = static_cast<std::int64_t>(reduced_num);
+    if (num_negative) {
+      if (reduced_num_i64 == INT64_MIN) {
+        // -INT64_MIN is not representable -- an astronomically unlikely
+        // exact-boundary case for a real drift numerator, guarded rather
+        // than assumed impossible.
+        return false;
+      }
+      reduced_num_i64 = -reduced_num_i64;
+    }
+    *out_num = reduced_num_i64;
+    *out_den = static_cast<std::int64_t>(reduced_den);
     return true;
   }
 

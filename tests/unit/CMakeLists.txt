@@ -178,6 +178,19 @@ add_executable(mediadiff_unit_tests
   # driven directly against plain integers/hand-built scope vectors, no
   # fixture on disk.
   test_av_sync.cpp
+  # TIME-07/TIME-08 (05-10-PLAN.md Task 1, D-04/D-07/D-08): fit_drift's own
+  # eleven hand-derived cases -- constant-offset/linear-drift/step/
+  # irregular classification, the plateau condition asserted load-bearing
+  # (a large jump WITHOUT stable plateaus is irregular, never step), a
+  # two-hour-90kHz-magnitude trajectory that a plain int64_t closed-form
+  # accumulation is shown to overflow while the widened path does not,
+  # x-shift slope invariance, the explicit-failure (never wrapped) paths
+  # for an unnarrowable fit and for fewer than two checkpoints, a
+  # duplicate-`t_v` trajectory still producing a defined fit, and
+  # repeated-call determinism -- driven directly against hand-built
+  # DriftCheckpoint arrays with hand-computed expected values, no fixture
+  # on disk.
+  test_av_drift.cpp
   # VIDEO-05/VIDEO-12 (04-09-PLAN.md): the open/closed GOP classification's
   # own hand-verified NAL-type table, driven directly through
   # detail::classify_access_unit/detail::classify_gop -- every expected

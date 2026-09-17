@@ -498,4 +498,112 @@ std::optional<std::size_t> primary_video_stream(std::span<const std::optional<Sc
 
 }  // namespace detail
 
+// --- 05-10-PLAN.md (TIME-07/TIME-08), doc 04 section 3: the flagship A/V
+// drift algorithm, as a pure, unit-testable function. -----------------------
+
+// K = 32, doc 04 section 3's own fixed checkpoint count (D-08: a detection
+// constant, not a knob, in v1). Named so no bare literal appears at any use
+// site.
+inline constexpr int kDriftCheckpointCount = 32;
+
+// The 2 ms epsilon doc 04 section 3.4's own classification rule and D-07's
+// dual gate both cite -- the SAME constant, never two independently-tuned
+// numbers.
+inline constexpr std::int64_t kDriftEpsilonMs = 2;
+
+// "any single residual step > 3x epsilon" -- doc 04 section 3.4, verbatim.
+inline constexpr std::int64_t kDriftStepResidualMultiple = 3;
+
+// The fixed rate threshold doc 04 section 3.4's own "|slope| below
+// tolerance" clause tests against, expressed as an exact rational (0.2 =
+// 1/5) rather than a decimal -- the SAME magnitude 05-CHECK-ROSTER.md
+// registers as `timeline.av_drift`'s own compare-time tolerance
+// (`"0.2ms/min"`), reused here for fit_drift's OWN single-file
+// constant-offset/linear-drift classification rather than a second,
+// independently-tuned number (D-08).
+inline constexpr std::int64_t kDriftRateEpsilonNumMsPerMin = 1;
+inline constexpr std::int64_t kDriftRateEpsilonDenMsPerMin = 5;
+
+// A safety bound on the least-squares fit's own REDUCED denominator
+// (05-RESEARCH.md's own worked overflow analysis, extended by this task):
+// after `detail::Int128Accum::try_reduce_ratio` narrows the slope to its
+// lowest terms, every SUBSEQUENT residual/classification computation
+// multiplies that denominator by small, fixed factors (K, 1000*tb.num,
+// tb.den) via `detail::checked_mul` -- bounding the reduced denominator to
+// one billion keeps every one of those chained multiplications safely
+// inside int64_t for any REAL media file (frame durations and sample
+// counts are overwhelmingly composite, so the GCD reduction empirically
+// brings realistic denominators far below this bound) while still
+// degrading honestly (`insufficient_data`, never a wrapped value) on the
+// vanishingly unlikely adversarial input that does not reduce enough.
+inline constexpr std::int64_t kMaxDriftDenominator = 1'000'000'000;
+
+// One checkpoint's own inputs to fit_drift (doc 04 section 3 steps 1-2):
+// `t_v_ticks` (the nearest video frame start) and `offset_ticks`
+// (`t_a_aligned - t_v`), BOTH already expressed as exact ticks of ONE
+// common, caller-chosen timebase -- fit_drift itself never rescales
+// between the video and audio axes; finding the nearest video frame /
+// audio sample boundary and rescaling the audio side onto the video's own
+// axis is entirely the CALLER's job (05-10-PLAN.md Task 2). This struct is
+// fit_drift's pure, timebase-agnostic input shape, which is what makes it
+// unit-testable against hand-built trajectories with no real fixture on
+// disk.
+struct DriftCheckpoint {
+  std::int64_t t_v_ticks = 0;
+  std::int64_t offset_ticks = 0;
+};
+
+// The classified pattern (doc 04 section 3.4), exactly the four spellings
+// 05-CHECK-ROSTER.md registers for `timeline.av_drift.pattern`.
+enum class DriftPattern : std::uint8_t {
+  constant_offset,
+  linear_drift,
+  step,
+  irregular,
+};
+
+// fit_drift's own output. `rate_ms_per_min_num/den` is the least-squares
+// slope, converted to ms/min, as an EXACT rational (A2: never a
+// pre-divided value) -- `rate_ms_per_min_den` is always strictly positive.
+// `end_delta_ms`/`residual_max_ms` are already converted to milliseconds
+// (the SAME `detail::ticks_to_ms`-style checked_mul/checked_div truncation
+// every other ms-unit check in this project already uses); `step_time_ms`
+// is populated only when `pattern == step` (the checkpoint's own `t_v`, in
+// ms, at which the step was detected).
+struct DriftFit {
+  std::int64_t rate_ms_per_min_num = 0;
+  std::int64_t rate_ms_per_min_den = 1;
+  std::int64_t end_delta_ms = 0;
+  std::int64_t residual_max_ms = 0;
+  DriftPattern pattern = DriftPattern::constant_offset;
+  std::optional<std::int64_t> step_time_ms;
+};
+
+// fit_drift (05-10-PLAN.md Task 1): doc 04 section 3's algorithm, steps 3-4
+// (the checkpoint CONSTRUCTION, steps 1-2, is Task 2's job in
+// av_sync.cpp's own run() function). Least-squares line over
+// `checkpoints`' own `(t_v_ticks, offset_ticks)` pairs, zero-based at the
+// first checkpoint (mathematically free -- the slope is invariant to a
+// constant shift in x -- and REQUIRED: 05-RESEARCH.md's own worked
+// overflow analysis shows a two-hour 90kHz file's raw ticks are large
+// enough to overflow int64_t otherwise), accumulated exclusively via
+// `detail::Int128Accum` (never plain int64_t -- see that class's own
+// comment for the worked magnitude bound: `K*Sum(x^2)` alone reaches
+// roughly 46x INT64_MAX for this ordinary case), and narrowed to an EXACT
+// rational slope via `Int128Accum::try_reduce_ratio`'s GCD-based
+// reduction. Classification exactly per doc 04 section 3.4, with "stable
+// plateaus" made concrete per this plan's own A3 (see av_sync.cpp's own
+// implementation comment for the transcription).
+//
+// Requires at least 2 checkpoints (a line needs two distinct points);
+// fewer is an explicit failure, never a degenerate fit. Returns
+// std::nullopt when `checkpoints.size() < 2`, when every checkpoint shares
+// the identical `t_v_ticks` (no x-variance to fit against), or when ANY
+// arithmetic step overflows or fails to narrow anywhere in the fit
+// (including the `kMaxDriftDenominator` safety bound above) -- the caller
+// maps this to `SkipReason::insufficient_data`, never a wrapped or
+// truncated slope (05-RESEARCH.md Pitfall 2, `cadence.cpp`'s own identical
+// promise).
+std::optional<DriftFit> fit_drift(std::span<const DriftCheckpoint> checkpoints, Rational tb);
+
 }  // namespace mediadiff
