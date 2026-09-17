@@ -1,31 +1,37 @@
 # tests/golden/CORPUS_DIGEST_PROVISIONAL.txt -- names only, no hashes
 # (D-GAP-01 gap closure, 04-13-PLAN.md Task 2).
 #
-# STATUS: three entries, added by 05-01-PLAN.md Task 2. Every OTHER
-# fixture name that used to be listed below (Phase 4's own additions) was
-# replaced in tests/golden/CORPUS_DIGEST.txt by the designated x64-linux CI
-# leg's own computed hash (04-21-PLAN.md Task 1, transcribing 04-20's
-# captured listing) and cleared from this ledger as a result -- see the
-# TRANSCRIBED-FROM-DESIGNATED-LEG marker below, which still records that
-# historical clearing event. The three entries below are NEW,
-# workstation-computed hashes (this plan's own tracer fixtures) awaiting
-# the same designated-leg transcription; they are not covered by that
-# marker.
+# STATUS: EMPTY. Every fixture Phase 5 added (05-01-PLAN.md through
+# 05-11-PLAN.md) was replaced in tests/golden/CORPUS_DIGEST.txt by the
+# designated x64-linux CI leg's own computed hash (05-13-PLAN.md Task 2,
+# transcribing run 35269755235's captured listing) and cleared from this
+# ledger as a result -- see the second TRANSCRIBED-FROM-DESIGNATED-LEG
+# marker below. Phase 4's own additions were transcribed and cleared the
+# same way in 04-21-PLAN.md Task 1, recorded by the first marker below.
 #
 # Historical context for why this file exists at all: each fixture added
-# during Phase 4 was, at commit time, hashed only on the workstation that
-# added it -- a fixture cannot be transcribed from a CI run that has not
-# happened yet. Those hashes were EXPECTED TO DIFFER on the designated leg,
-# the same host-CPU-dependent ffmpeg-encode nondeterminism documented at
-# length in this file's own "Two kinds of golden live here" section
-# (tests/golden/README.md), and this ledger recorded which committed
-# hashes carried that caveat.
+# during Phase 4 or Phase 5 was, at commit time, hashed only on the
+# workstation that added it -- a fixture cannot be transcribed from a CI
+# run that has not happened yet. Those hashes were EXPECTED TO DIFFER on
+# the designated leg, the same host-CPU-dependent ffmpeg-encode
+# nondeterminism documented at length in this file's own "Two kinds of
+# golden live here" section (tests/golden/README.md), and this ledger
+# recorded which committed hashes carried that caveat.
 #
 # 04-13-PLAN.md's own Human Decision #4 (04-VERIFICATION.md) said every
 # name listed here would be replaced with the designated leg's real
 # transcribed hash once a CI run against this branch produced one. 04-20
 # captured that run's listing verbatim; 04-21 transcribed it into
-# CORPUS_DIGEST.txt and cleared every entry below as a result.
+# CORPUS_DIGEST.txt and cleared every Phase-4 entry as a result.
+#
+# 05-01-PLAN.md through 05-11-PLAN.md added the tracer, D-05 NTSC-in-MKV,
+# DOC-03 duration-trigger, dts_monotonic/pts_unique, gaps/wrap_events,
+# discontinuities/discontinuities.flagged, jitter/vfr_profile, av_offset,
+# av_drift/av_drift.pattern, and timecode/timecode.value fixtures --
+# workstation-computed hashes awaiting the same designated-leg
+# transcription. 05-13-PLAN.md Task 2 captured run 35269755235's listing
+# for all 26 of those names and transcribed it into CORPUS_DIGEST.txt,
+# clearing every entry below as a result.
 #
 # Format: one fixture NAME per line (matching field 2 of a
 # CORPUS_DIGEST.txt listing line), LC_ALL=C sorted, unique. No hashes are
@@ -35,86 +41,15 @@
 #
 # TRANSCRIBED-FROM-DESIGNATED-LEG: run=34776142545 job=103774491730 commit=196b52a68b05b0880c7c8b6335b345ea378f8219 date=2026-09-13
 #
-# The line above is a machine-readable marker, not decoration:
+# TRANSCRIBED-FROM-DESIGNATED-LEG: run=35269755235 job=105365795054 commit=03dd909fac2ffde9f146be47eb7be14ab650f029 date=2026-09-17
+#
+# The lines above are machine-readable markers, not decoration:
 # scripts/lint_corpus_digest_provenance.sh clause 3 accepts a zero-entry
-# ledger ONLY when this exact marker (with a run=<digits> and a
+# ledger ONLY when at least one such marker (with a run=<digits> and a
 # commit=<40 hex> field) is present and well-formed. An empty ledger
-# without this marker still fails clause 3 exactly as it always has --
+# without any such marker still fails clause 3 exactly as it always has --
 # that is the check 04-13 wrote to catch an accidentally emptied ledger,
-# and it still fires for that case. With real entries present (below),
-# that zero-entry branch does not apply -- clause 3 instead checks the
-# entries themselves are LC_ALL=C sorted, unique, and each names a real
-# line in CORPUS_DIGEST.txt (which this same plan's commit adds).
-#
-# 05-03-PLAN.md Task 1 adds the NTSC-in-MKV D-05 false-positive repro pair
-# below, workstation-computed hashes awaiting the same designated-leg
-# transcription as the three 05-01 entries above.
-#
-# 05-04-PLAN.md Task 3 adds the timeline.duration DOC-03 trigger fixture
-# below, same workstation-computed-awaiting-designated-leg-transcription
-# status as every other entry in this file.
-#
-# 05-05-PLAN.md Task 1 adds the two timeline.dts_monotonic /
-# timeline.pts_unique crafted-anomaly fixtures below, same
-# workstation-computed-awaiting-designated-leg-transcription status as
-# every other entry in this file.
-#
-# 05-06-PLAN.md Task 1 adds the timeline.gaps and timeline.wrap_events
-# fixtures below (timeline_gap.mp4, timeline_ts_nowrap.ts,
-# timeline_ts_nowrap_copy.ts, timeline_ts_wrap.ts), same
-# workstation-computed-awaiting-designated-leg-transcription status as
-# every other entry in this file.
-#
-# 05-07-PLAN.md Task 3 adds the timeline.discontinuities and
-# timeline.discontinuities.flagged fixtures below (timeline_ts_jump.ts,
-# timeline_ts_jump_flagged.ts -- byte-identical except for the one
-# transport packet's discontinuity_indicator bit), same
-# workstation-computed-awaiting-designated-leg-transcription status as
-# every other entry in this file.
-#
-# 05-08-PLAN.md Task 3 adds the timeline.jitter and timeline.vfr_profile
-# fixtures below (timeline_jitter.mp4, timeline_vfr.mp4), same
-# workstation-computed-awaiting-designated-leg-transcription status as
-# every other entry in this file.
-#
-# 05-09-PLAN.md Task 3 adds the timeline.av_offset TIME-10 fixtures below
-# (timeline_avoffset_unknown.ts, timeline_avoffset_video_shift.mp4), same
-# workstation-computed-awaiting-designated-leg-transcription status as
-# every other entry in this file.
-#
-# 05-10-PLAN.md Task 3 adds the timeline.av_drift / timeline.av_drift.pattern
-# fixtures below (timeline_drift_base.mp4, timeline_drift_linear.mp4,
-# timeline_drift_step.mp4), same workstation-computed-awaiting-designated-
-# leg-transcription status as every other entry in this file.
-#
-# 05-11-PLAN.md Task 1 adds the timeline.timecode / timeline.timecode.value
-# fixtures below (timeline_tc_absent.mp4, timeline_tc_df.mp4,
-# timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4,
-# timeline_tc_ndf_shifted.mp4), same workstation-computed-awaiting-
-# designated-leg-transcription status as every other entry in this file.
-timeline_avoffset_unknown.ts
-timeline_avoffset_video_shift.mp4
-timeline_drift_base.mp4
-timeline_drift_linear.mp4
-timeline_drift_step.mp4
-timeline_dts_backward.ts
-timeline_duration_short.mp4
-timeline_gap.mp4
-timeline_jitter.mp4
-timeline_ntsc_base.mp4
-timeline_ntsc_remux.mkv
-timeline_pts_dupe.mp4
-timeline_start_base.mp4
-timeline_start_base_copy.mp4
-timeline_start_shift.ts
-timeline_tc_absent.mp4
-timeline_tc_df.mp4
-timeline_tc_ndf.mp4
-timeline_tc_ndf_copy.mp4
-timeline_tc_ndf_shifted.mp4
-timeline_ts_jump.ts
-timeline_ts_jump_flagged.ts
-timeline_ts_nowrap.ts
-timeline_ts_nowrap_copy.ts
-timeline_ts_wrap.ts
-timeline_vfr.mp4
+# and it still fires for that case. With real entries present, that
+# zero-entry branch does not apply -- clause 3 instead checks the entries
+# themselves are LC_ALL=C sorted, unique, and each names a real line in
+# CORPUS_DIGEST.txt.
