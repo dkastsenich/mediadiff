@@ -345,7 +345,7 @@ Plans:
   4. `timeline.av_offset` reports a signed, priming-adjusted offset, and on a fixture with **non-zero encoder priming** — the common case before the audio decode path exists — the finding visibly carries `priming: unknown` with an unadjusted value rather than a confidently wrong number.
   5. `timeline.timecode` reports presence and SMPTE start value including the drop-frame flag; metadata-plus-timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s (recorded, never asserted, D-13) and is measured in CI with regression tracking over time via a committed instruction-count baseline ratchet (`tests/golden/PERF_BASELINE.txt`), not an asserted under-15% ratio (amended, 05-12-PLAN.md, 2026-09-17: measured overhead was 33% against the original <15% target, an absolute cost of 32-50 ms wall-clock — see the amended `PERF-03` text in REQUIREMENTS.md for the full evidence and measurement basis).
 
-**Plans**: 11/13 plans executed
+**Plans**: 12/13 plans executed
 
 Plans:
 **Wave 1**
@@ -391,7 +391,7 @@ Plans:
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [ ] 05-12-PLAN.md — Wave 11: the instruction-count perf harness, the committed baseline ratchet, the designated-leg CI step, and the visible `PERF-03` / SC5 amendments (PERF-01/03/05)
+- [x] 05-12-PLAN.md — Wave 11: the instruction-count perf harness, the committed baseline ratchet, the designated-leg CI step, and the visible `PERF-03` / SC5 amendments (PERF-01/03/05)
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
@@ -445,7 +445,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
-| 5. Timeline Analysis | 11/13 | In Progress|  |
+| 5. Timeline Analysis | 12/13 | In Progress|  |
 | 6. Audio Analysis | 0/TBD | Not started | - |
 | 7. Content & Quality | 0/TBD | Not started | - |
 

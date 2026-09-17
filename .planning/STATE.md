@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-11-PLAN.md
-last_updated: "2026-09-17T13:40:20.330Z"
+stopped_at: Completed 05-12-PLAN.md
+last_updated: "2026-09-17T14:06:32.018Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: 6aa82a64b17673b9546fa3ca5428871cd1dbe3fb
+state_head: 1c6d5f941faa727ca4e884541bb71602c42ff21f
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 78
+  completed_plans: 79
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 12 of 13
+Plan: 13 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -129,6 +129,7 @@ Progress: [█████████░] 92%
 | Phase 05-timeline-analysis P09 | 19min | 3 tasks | 21 files |
 | Phase 05 P10 | this-session | 3 tasks | 10 files |
 | Phase 05 P11 | this-session | 3 tasks | 19 files |
+| Phase 05 P12 | this-session | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -301,6 +302,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-11: drop-frame flag recovered via string punctuation (semicolon vs colon), resolved empirically against the pinned ffmpeg generator before implementation
 - [Phase 05]: 05-11: S12M/GOP timecode sources reported honestly via unreachable_sources evidence, never a separately-triggerable check id
 - [Phase 05]: 05-11: timeline.timecode/timeline.timecode.value scoped Scope::Kind::global (file-level SMPTE origin, mirrors timeline.start's D-03)
+- [Phase 05]: 05-12: PERF_RATCHET_TOLERANCE_PERCENT=2 chosen from real, measured local evidence (5 repeated valgrind --tool=cachegrind runs of both legs against a fixed input produced IDENTICAL instruction counts every time -- zero same-binary run-to-run jitter, confirming D-13's determinism premise empirically)
+- [Phase 05]: 05-12: tests/golden/PERF_BASELINE.txt seeded with a genuinely measured (not invented) LOCAL baseline against the real 600s/1920x1080 D-16 reference file (plain=258117675, full=345365337 instructions, 33% overhead), explicitly marked provisional pending 05-13's designated-leg CI transcription
 
 ### Pending Todos
 
@@ -340,6 +343,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-17T13:40:20.144Z
-Stopped at: Completed 05-11-PLAN.md
+Last session: 2026-09-17T14:06:31.826Z
+Stopped at: Completed 05-12-PLAN.md
 Resume file: None
