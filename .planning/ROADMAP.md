@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation & Toolchain** - Static binary builds and runs on three platforms, with every toolchain decision recorded (completed 2026-08-15)
 - [x] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements (completed 2026-08-18)
 - [x] **Phase 3: Probe Layer, Container & Size** - Real media enters: header pass, packet sweep, raw scanners, all `container.*`/`meta.*`/`size.*` checks (completed 2026-09-06)
-- [ ] **Phase 4: Video Analysis** - Parser pass plus every `video.*` parameter, GOP, colorimetry and HDR check
+- [x] **Phase 4: Video Analysis** - Parser pass plus every `video.*` parameter, GOP, colorimetry and HDR check (completed 2026-09-14)
 - [ ] **Phase 5: Timeline Analysis** - Every `timeline.*` check and the flagship A/V drift algorithm on integer/rational math
 - [ ] **Phase 6: Audio Analysis** - Audio decode path, determinism classes in practice, every `audio.*` check plus sample hashing
 - [ ] **Phase 7: Content & Quality** - Video decode path, `content.video.*`, opt-in `quality.*` — closes v1
@@ -266,10 +266,69 @@ Plans:
   1. A silent color-range flip produces exactly **one** finding, on `video.color.range`, whether it was spelled as a `yuvj420p` pix_fmt or as a range flag; primaries, transfer, matrix and chroma location compare alongside it; and a change **to** `unspecified` is reported as metadata loss rather than treated as a wildcard match.
   2. `mediadiff inspect` renders a complete video section — codec, profile, level, resolution, SAR/DAR, pix_fmt, declared frame rate, and a frame count always counted from the packet/parser scan rather than trusted from `nb_frames` — with a container-vs-VUI SAR conflict recording both values and flagging the conflict itself as `info`.
   3. GOP structure compares meaningfully: length, IDR interval with open/closed classification from NAL types, refs, I/P/B distribution, and interlace field order cross-checked against per-frame parser flags with `mixed` reported by proportion — while a codec with no available parser degrades to `skipped:no_parser` instead of failing.
-  4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source (stream-level vs first-frame) recorded, and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
-  5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the parser pass measures at under 10% overhead over a plain packet scan on the 10-minute reference file.
+  4. HDR10 and Dolby Vision configuration either survive a round trip or are reported as lost, with the extraction source recorded as Phase 4's stream-level `coded_side_data` arm — the first-frame side-data arm arrives with the decode pass in Phase 7 (Human Decision 1, 2026-09-13) — and internally incoherent HDR metadata raises a non-gating `info` note even when both files share it.
+  5. `video.frame_rate.measured` consumes the shared interval statistics delivered in phase 3 rather than computing its own, and the fused parser pass ships a harness that measures its overhead against a plain packet scan on the 10-minute reference file and records the result as evidence; the under-10% overhead target itself is gated in Phase 5 under PERF-03 and PERF-05 (Human Decision 2, 2026-09-13).
 
-**Plans**: TBD
+**Plans**: 21/21 plans executed in 11 waves; 9 gap-closure plans added in 6 further waves (21 total)
+
+Plans:
+**Wave 1**
+
+- [x] 04-01-PLAN.md — Tracer: ParserScan fused into the existing sweep, carrying `video.gop.length` end to end (+ check-id roster gate)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 04-02-PLAN.md — Encoder-based video fixtures and the `mjpeg`/`ffv1` pinned-build preflight
+- [x] 04-03-PLAN.md — Parser-overhead measurement harness, recorded not gated (D-11/D-12)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 04-04-PLAN.md — HDR MDCV/CLL and coherence fixtures via codec-independent metadata options (D-09)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 04-05-PLAN.md — Hand-constructed H.264/HEVC Annex-B streams, the `dvcC` box and the SAR-conflict patch (D-01/D-02/D-03)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 04-06-PLAN.md — Stream parameters: codec, profile, level, resolution, frame_count (VIDEO-01/02)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 04-07-PLAN.md — Shared cadence derivation (D-05/D-06/D-07), SAR/DAR/conflict and frame rate (VIDEO-01/04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [x] 04-08-PLAN.md — pix_fmt range fold and colorimetry, with the exactly-one-finding signature test (VIDEO-03/07/08)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [x] 04-09-PLAN.md — GOP family: IDR cadence, open/closed from NAL types, refs, frame types, no-parser degradation (VIDEO-05/12)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [x] 04-10-PLAN.md — `video.interlace`, declared field order cross-checked against per-frame flags (VIDEO-06)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [x] 04-11-PLAN.md — HDR mastering-display and content-light with the D-08 precedence seam (VIDEO-09)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [x] 04-12-PLAN.md — Dolby Vision configuration, the D-10 coherence guard, and the corpus-wide inspect section test (VIDEO-09/10)
+
+**Gap closure** *(planned 2026-09-13 from 04-VERIFICATION.md's six gaps and its Human Decisions table; executed with `/gsd-execute-phase 4 --gaps-only`)*
+
+- [x] 04-13-PLAN.md — Wave 1: restore main's designated-leg corpus digest lines, name the provisional ones, and make the no-rewrite rule an executable lint (BUILD-08)
+- [x] 04-14-PLAN.md — Wave 2: the `resolve_sar` non-positive-denominator guard (WR-01), the AV1 level bound (IN-01) and `video.sar.md`'s unset rule (IN-02) (VIDEO-01/04)
+- [x] 04-15-PLAN.md — Wave 2: `video.interlace`'s disagreement evidence compares field-order class, not raw ordinal, with both directions proven on real fixtures (VIDEO-06)
+- [x] 04-16-PLAN.md — Wave 2: a fixture pair whose two colorimetric spellings survive distinctly, replacing the vacuous yuvj mirror test and the byte-identical DOC-03 clean pair (VIDEO-03)
+- [x] 04-17-PLAN.md — Wave 3: scope or remove the file-wide `-Wmaybe-uninitialized` suppressions in all six video analyzers, enforced by a lint (WR-03, BUILD-05)
+- [x] 04-18-PLAN.md — Wave 3: correct what a `state`-semantic pass means (WR-02) and the registry comment behind it, and decide the inspect test's scope outside its own output (VIDEO-01/02/10)
+- [x] 04-19-PLAN.md — Wave 4: PROBE-03 and VIDEO-09 set to `Deferred` with amended SC4/SC5 and placement rows, and VIDEO-03's text corrected to its tested behaviour (PROBE-03, VIDEO-03/09)
+- [x] 04-20-PLAN.md — Wave 5: confirm, push, open a DRAFT PR, and capture the designated x64-linux leg's corpus digest listing (BUILD-05/08, checkpoints)
+- [x] 04-21-PLAN.md — Wave 6: transcribe that listing, push behind a confirmation, and confirm the designated leg green including its five leg-only goldens (BUILD-05/08, checkpoints)
+
 **Source doc**: `claude_docs/03-video-analysis.md` (design-doc phase 3)
 
 ### Phase 5: Timeline Analysis
@@ -322,6 +381,7 @@ Plans:
 
 **Plans**: TBD
 **Source doc**: `claude_docs/06-content-and-size-analysis.md` (design-doc phase 6), minus `size.*` (moved to Phase 3)
+**Cross-cutting note**: Phase 7 also completes VIDEO-09's first-frame HDR side-data extraction arm, deferred from Phase 4 with the decode pass (Human Decision 1, 2026-09-13) — see Cross-cutting requirement placements below.
 
 ## Progress
 
@@ -333,7 +393,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 1. Foundation & Toolchain | 5/5 | Complete | 2026-08-15 |
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
-| 4. Video Analysis | 0/TBD | Not started | - |
+| 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 0/TBD | Not started | - |
 | 6. Audio Analysis | 0/TBD | Not started | - |
 | 7. Content & Quality | 0/TBD | Not started | - |
@@ -361,7 +421,8 @@ These requirements do not sit in the phase their ID prefix suggests. Each is pla
 |---|---|---|
 | SIZE-01 | 3 (not 7) | Depends only on PacketScan; doc 06's own intro concedes this. Research recommends the move; it also shrinks the heaviest phase. |
 | PROBE-10 | 3 | Shared interval-statistics primitive must exist in the phase that builds PacketScan, so phases 4 and 5 consume rather than duplicate it (hazard A). |
-| PROBE-03 | 4 (not 3) | `ParserScan` is built in doc 03 as an extension of the same sweep; it is the video phase's own infrastructure. |
+| PROBE-03 | 4 (not 3) | `ParserScan` is built in doc 03 as an extension of the same sweep; it is the video phase's own infrastructure. Its under-10% overhead target is gated in Phase 5 alongside PERF-03/PERF-05, not asserted as a Phase 4 success criterion (Human Decision 2, 2026-09-13). |
+| VIDEO-09 | 4 (first-frame arm in 7) | HDR checks (`hdr.mdcv`/`hdr.cll`/`hdr.dovi`) ship in Phase 4 via the stream-level `coded_side_data` extraction source; the first-frame side-data source needs a decoded frame, which the decode pass does not deliver until phase 7 — mirroring VIDEO-11's split (Human Decision 1, 2026-09-13). |
 | DIR-06 | 3 (not 2) | Per-file peak memory can only be asserted for real once PacketScan's packet arrays exist; phase 2 still delivers the `--threads` pool bound (DIR-05). |
 | VIDEO-11 | 7 (not 4) | `video.closed_captions` detects during the decode pass, which does not exist until phase 7. Phase 4 registers the check and ships the `skipped:requires_decode` path; phase 7 makes detection real. **Flagged as a judgment call beyond the four mandated corrections.** |
 | TRUST-03 | 2 | The path-signature composition (must include libav* toolchain versions) is verifiable as engine work before any decoder exists — and must be right before phases 6/7 write signatures. |

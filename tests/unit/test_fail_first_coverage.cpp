@@ -67,6 +67,8 @@ std::string semantic_name(Semantic semantic) {
       return "dist";
     case Semantic::span:
       return "span";
+    case Semantic::state:
+      return "state";
   }
   return "<unknown semantic>";
 }
@@ -102,6 +104,11 @@ const std::map<Semantic, std::vector<Status>>& coverage_table() {
       {Semantic::hash, {Status::pass, Status::fail, Status::skipped, Status::error}},
       {Semantic::dist, {Status::pass, Status::warn, Status::fail, Status::error}},
       {Semantic::span, {Status::pass, Status::info, Status::fail, Status::error}},
+      // 04-12-PLAN.md (D-10): the eighth semantic, added additively --
+      // pass when neither side's value is flagged, fail (t.state_flag's
+      // own severity) when either side's is, error on a value_kind
+      // mismatch like every other semantic.
+      {Semantic::state, {Status::pass, Status::fail, Status::error}},
   };
   return table;
 }

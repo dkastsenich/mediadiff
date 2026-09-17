@@ -28,3 +28,34 @@ size.file  severity=fail  tolerance=8/1 % (warn 3/1)
 size.stream_bitrate  severity=fail  tolerance=10/1 % (warn 3/1)
 size.peak_bitrate  severity=fail  tolerance=15/1 % (warn 5/1)
 size.overhead  severity=info  tolerance=5/1 %
+video.gop.length  severity=fail  tolerance=10/1 %
+video.codec  severity=fail  tolerance=<none>
+video.profile  severity=fail  tolerance=<none>
+video.level  severity=fail  tolerance=<none>
+video.resolution  severity=fail  tolerance=<none>
+video.frame_count  severity=fail  tolerance=0/1 frames
+video.sar  severity=fail  tolerance=<none>
+video.dar  severity=fail  tolerance=<none>
+video.sar.conflict  severity=info  tolerance=<none>
+video.frame_rate.declared  severity=fail  tolerance=<none>
+video.frame_rate.measured  severity=warn  tolerance=1/10 %
+video.pix_fmt  severity=fail  tolerance=<none>
+video.color.range  severity=fail  tolerance=<none>
+video.color.primaries  severity=fail  tolerance=<none>
+video.color.transfer  severity=fail  tolerance=<none>
+video.color.matrix  severity=fail  tolerance=<none>
+video.color.chroma_loc  severity=warn  tolerance=<none>
+video.gop.idr_interval  severity=fail  tolerance=10/1 %
+video.gop.closed  severity=fail  tolerance=<none>
+video.gop.refs  severity=warn  tolerance=<none>
+video.frame_types  severity=warn  tolerance=5/1 %
+video.interlace  severity=fail  tolerance=<none>
+video.hdr.mdcv  severity=fail  tolerance=<none>
+video.hdr.mdcv.luminance  severity=fail  tolerance=5/1 %
+video.hdr.mdcv.primaries  severity=fail  tolerance=<none>
+video.hdr.cll  severity=fail  tolerance=<none>
+video.hdr.cll.max  severity=fail  tolerance=5/1 %
+video.hdr.cll.avg  severity=fail  tolerance=5/1 %
+video.hdr.dovi  severity=fail  tolerance=<none>
+video.hdr.dovi.config  severity=fail  tolerance=<none>
+video.hdr.coherence  severity=info  tolerance=<none>

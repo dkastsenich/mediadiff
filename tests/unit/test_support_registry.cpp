@@ -20,10 +20,12 @@ TEST_CASE("test_registry: every Semantic enumerator is declared by at least one 
     seen.insert(def.semantic);
   }
 
+  // 04-12-PLAN.md (D-10): `state`, the eighth semantic, joins this list --
+  // t.state_flag (tests/support/test_checks.def) declares it.
   static const std::set<mediadiff::Semantic> kAllSemantics = {
       mediadiff::Semantic::exact, mediadiff::Semantic::tol,      mediadiff::Semantic::set,
       mediadiff::Semantic::presence, mediadiff::Semantic::hash,  mediadiff::Semantic::dist,
-      mediadiff::Semantic::span,
+      mediadiff::Semantic::span,  mediadiff::Semantic::state,
   };
   REQUIRE(seen == kAllSemantics);
 }

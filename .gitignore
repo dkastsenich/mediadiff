@@ -51,3 +51,10 @@ tests/fixtures/*
 # a downloaded, checksum-verified binary, never committed — the pin itself
 # (URL + SHA-256) lives in the tracked scripts/ffmpeg_pin.json.
 /.ffmpeg-pinned/
+
+# scripts/measure_parser_overhead.sh's on-demand multi-minute input (D-12,
+# 04-03-PLAN.md): deliberately OUTSIDE tests/fixtures/ so it never enters
+# tests/golden/CORPUS_DIGEST.txt or any corpus gate — it exists only to
+# measure PROBE-03's parser-pass overhead (D-11: recorded, never gated) and
+# is regenerated on demand, never committed.
+/.mediadiff-bench/

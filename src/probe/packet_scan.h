@@ -4,12 +4,11 @@
 // rate, timeline and size measurement in this project consumes (doc 02
 // section 1.2). Borrows the AVFormatContext DemuxSession already opened
 // (via DemuxSession::native_context()) -- never re-opens the file, never
-// calls any avcodec_* decode function (no avcodec_send_packet, no
-// avcodec_receive_frame, no AVCodecContext anywhere in this translation
-// unit). Every packet's own {pts, dts, duration, size, flags, pos}
-// survives verbatim -- pts/dts sentinels (AV_NOPTS_VALUE) are NEVER
-// normalized to 0, since a fabricated 0 would place a timing-less packet
-// at the origin of the DTS axis.
+// calls any avcodec_* decode function ITSELF (no avcodec_send_packet, no
+// avcodec_receive_frame). Every packet's own {pts, dts, duration, size,
+// flags, pos} survives verbatim -- pts/dts sentinels (AV_NOPTS_VALUE) are
+// NEVER normalized to 0, since a fabricated 0 would place a timing-less
+// packet at the origin of the DTS axis.
 //
 // PROBE-10's shared primitive IS this raw per-stream array
 // (StreamPacketScan::packets), not a pre-computed statistics struct: a
@@ -23,12 +22,26 @@
 // array -- see src/probe/pass.h's ProbeResults for how it is shared:
 // held by value/optional, handed out only as `const ProbeResults&`, never
 // copied (a copy would double the footprint D-01's budget just bounded).
+//
+// PROBE-03 (04-01-PLAN.md Task 2): `run_packet_scan(DemuxSession&, const
+// PacketScanRequest&)` optionally fuses probe/parser_scan.h's per-AU walk
+// INSIDE this same `av_read_frame` loop -- never a second sweep, and
+// probe/parser_scan.cpp's own StreamParserState (not this translation
+// unit) is the only place an AVCodecContext is ever constructed; this file
+// only ever calls into that helper's own no-decode contract, never
+// avcodec_send_packet/avcodec_receive_frame itself, directly or
+// indirectly. The pre-Phase-4 `run_packet_scan(DemuxSession&, const
+// PacketScanLimits&)` overload below is preserved as a thin inline
+// wrapper so every Phase-3 call site and test compiles untouched.
 
 #include <cstdint>
+#include <optional>
+#include <utility>
 #include <vector>
 
 #include "core/error.h"
 #include "core/rational.h"
+#include "probe/parser_scan.h"
 #include "util/expected.h"
 
 // Opaque forward declaration, at global scope matching libav's own C
@@ -97,6 +110,18 @@ struct PacketRecord {
   std::int64_t pos = 0;
   int flags = 0;
 };
+
+// AVPacket::flags' AV_PKT_FLAG_KEY bit (libavcodec/packet.h) -- confirmed
+// stable at 0x0001 since the flag's introduction. Exposed here, next to
+// `PacketRecord::flags` itself (rather than hardcoded per-file, this
+// project's usual convention for a libav-derived sentinel -- see
+// stream_params.cpp's own `kUnknownProfileOrLevel` comment), because TWO
+// independent analyzer families need the IDENTICAL bit value:
+// src/analyzers/container/mp4.cpp's fragment-duration keyframe walk, and
+// src/analyzers/video/frame_types.cpp's VIDEO-12 keyframe-vs-non-keyframe
+// degraded histogram (04-09-PLAN.md) -- a single source of truth here is
+// what keeps the two from silently drifting apart.
+inline constexpr int kPacketFlagKeyframe = 0x0001;
 
 // One stream's own packet array plus its byte total and timebase. `tb` is
 // held ONCE per stream, not once per record -- every packet in a stream
@@ -173,16 +198,58 @@ struct PacketScanLimits {
   std::int64_t max_packets_per_stream = kMaxPacketsPerStream;
 };
 
+// PROBE-03 (04-01-PLAN.md Task 2): the request/outputs pair for the
+// parser-enabled form of run_packet_scan below. `parse_access_units` is
+// what src/probe/orchestrator.cpp sets from
+// `union_passes.test(Pass::parser_scan)` -- when false, `access_units`
+// stays std::nullopt and the whole call behaves identically to the
+// pre-Phase-4 PacketScanLimits-only overload (Test 4).
+struct PacketScanRequest {
+  PacketScanLimits limits{};
+  bool parse_access_units = false;
+};
+
+struct PacketScanOutputs {
+  PacketScanResult packets;
+  std::optional<ParserScanResult> access_units;
+};
+
 // One `av_read_frame` sweep of `session`'s already-open AVFormatContext,
-// bounded by `limits`. Loops av_read_frame until it returns
+// bounded by `request.limits`. Loops av_read_frame until it returns
 // AVERROR_EOF (the clean end of the readable region); any OTHER negative
 // return ends the sweep early and marks the WHOLE result `partial` (a
 // stream that stopped early is exactly the D-02 case) -- never calls any
-// avcodec_* decode function. A zero-packet input (a valid container with
-// no readable packets) returns an empty-but-valid result, not an error.
-// Never throws; every failure this function itself can produce (e.g. an
-// av_packet_alloc allocation failure) returns through the Error channel.
-mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& session, const PacketScanLimits& limits);
+// avcodec_* decode function ITSELF (see this header's own top comment for
+// the parser-fusion exception, entirely inside probe/parser_scan.cpp). A
+// zero-packet input (a valid container with no readable packets) returns
+// an empty-but-valid result, not an error. Never throws; every failure
+// this function itself can produce (e.g. an av_packet_alloc allocation
+// failure) returns through the Error channel.
+//
+// When `request.parse_access_units` is set, this is the ONE place either
+// Pass::packet_scan's or Pass::parser_scan's own data is ever produced --
+// fused INSIDE this same loop (probe/packet_scan.cpp), never a second
+// sweep (PROBE-03, this plan's own single-sweep invariant,
+// packet_scan.h's own read_frame_call_count field is the proof a test
+// pins this against).
+mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& session, const PacketScanRequest& request);
+
+// Pre-Phase-4 overload, preserved for every existing call site and test
+// (04-01-PLAN.md Task 2): a thin inline wrapper over the new form above
+// with `parse_access_units = false`, discarding the (always-nullopt)
+// ParserScanResult. Never touches probe/parser_scan.h's own detail:: seam
+// itself -- the new overload it forwards to is what may.
+inline mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& session,
+                                                                      const PacketScanLimits& limits) {
+  PacketScanRequest request;
+  request.limits = limits;
+  request.parse_access_units = false;
+  auto outputs = run_packet_scan(session, request);
+  if (!outputs) {
+    return mediadiff::unexpected(outputs.error());
+  }
+  return std::move(outputs->packets);
+}
 
 namespace detail {
 

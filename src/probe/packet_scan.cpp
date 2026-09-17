@@ -87,7 +87,7 @@ class ScratchPacket {
 
 }  // namespace
 
-mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& session, const PacketScanLimits& limits) {
+mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& session, const PacketScanRequest& request) {
   AVFormatContext* ctx = session.native_context();
   if (ctx == nullptr) {
     // Defensive only -- every DemuxSession this function is ever handed
@@ -99,12 +99,28 @@ mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& sessi
     return mediadiff::unexpected(Error{ErrorKind::internal, "run_packet_scan called on a closed/moved-from DemuxSession"});
   }
 
-  PacketScanResult result;
+  const PacketScanLimits& limits = request.limits;
+
+  PacketScanOutputs outputs;
+  PacketScanResult& result = outputs.packets;
   const std::size_t stream_count = static_cast<std::size_t>(ctx->nb_streams);
   result.per_stream.resize(stream_count);
   for (std::size_t i = 0; i < stream_count; ++i) {
     const AVRational tb = ctx->streams[i]->time_base;
     result.per_stream[i].tb = Rational{tb.num, tb.den};
+  }
+
+  // PROBE-03 (04-01-PLAN.md Task 2): per-stream parser lifetime, mirroring
+  // ScratchPacket's own "one RAII holder, freed on every exit path"
+  // discipline (T-4-02). Only allocated at all when parsing was
+  // requested -- an ordinary Phase-3 caller (the inline
+  // PacketScanLimits-only overload, packet_scan.h) never pays for this
+  // vector.
+  std::vector<detail::StreamParserState> parser_states;
+  if (request.parse_access_units) {
+    outputs.access_units = ParserScanResult{};
+    outputs.access_units->per_stream.resize(stream_count);
+    parser_states.resize(stream_count);
   }
 
   ScratchPacket pkt;
@@ -124,8 +140,12 @@ mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& sessi
     if (rc < 0) {
       // Any other negative return ends the sweep early: the D-02 case.
       // The whole result is partial, whether or not any individual
-      // stream's own ceiling was ever reached.
+      // stream's own ceiling was ever reached. The parser result (when
+      // requested) is truncated by the same event, for the same reason.
       result.partial = true;
+      if (outputs.access_units.has_value()) {
+        outputs.access_units->partial = true;
+      }
       break;
     }
 
@@ -140,7 +160,8 @@ mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& sessi
       continue;
     }
 
-    StreamPacketScan& stream = result.per_stream[static_cast<std::size_t>(pkt.get()->stream_index)];
+    const std::size_t stream_index = static_cast<std::size_t>(pkt.get()->stream_index);
+    StreamPacketScan& stream = result.per_stream[stream_index];
 
     // doc 02's per-stream packet-count ceiling (checked first -- cheap,
     // and avoids ever evaluating the byte-budget arithmetic for a stream
@@ -148,6 +169,12 @@ mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& sessi
     if (static_cast<std::int64_t>(stream.packets.size()) >= limits.max_packets_per_stream) {
       stream.partial = true;
       result.partial = true;
+      if (outputs.access_units.has_value()) {
+        // This stream stopped collecting packets entirely -- its own
+        // access-unit array is truncated by the same event.
+        outputs.access_units->per_stream[stream_index].partial = true;
+        outputs.access_units->partial = true;
+      }
       pkt.unref();
       continue;
     }
@@ -165,6 +192,10 @@ mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& sessi
     if (!would_fit) {
       stream.partial = true;
       result.partial = true;
+      if (outputs.access_units.has_value()) {
+        outputs.access_units->per_stream[stream_index].partial = true;
+        outputs.access_units->partial = true;
+      }
       pkt.unref();
       continue;
     }
@@ -174,11 +205,54 @@ mediadiff::expected<PacketScanResult, Error> run_packet_scan(DemuxSession& sessi
     stream.byte_total += record.size;
     stream.packets.push_back(record);
 
+    // PROBE-03: the parser fusion point -- AFTER the PacketRecord append,
+    // BEFORE pkt.unref(), inside this SAME loop iteration (never a second
+    // av_read_frame sweep, never a second orchestrator dispatch arm; see
+    // probe/orchestrator.cpp's own comment on Pass::parser_scan). Only
+    // reached for a packet whose OWN PacketRecord was just accepted --
+    // a packet refused above (either ceiling) never reaches the parser
+    // either, matching the accepted-only shape the D-01 budget below
+    // assumes.
+    if (request.parse_access_units) {
+      StreamParserScan& pstream = outputs.access_units->per_stream[stream_index];
+      detail::StreamParserState& pstate = parser_states[stream_index];
+      pstate.ensure_initialized(*ctx->streams[stream_index]->codecpar);
+      pstream.has_parser = pstate.has_parser();
+
+      if (pstate.has_parser()) {
+        AccessUnitRecord au{};
+        const bool is_key = (pkt.get()->flags & AV_PKT_FLAG_KEY) != 0;
+        if (pstate.parse_packet(pkt.get()->data, pkt.get()->size, pkt.get()->pts, pkt.get()->dts, pkt.get()->pos,
+                                 is_key, &au)) {
+          // The SAME accounted_bytes running total and the SAME
+          // limits.max_bytes ceiling the PacketRecord append above just
+          // checked -- no second, independent per-AU budget (T-4-01).
+          std::int64_t au_next_total = 0;
+          const bool au_would_fit = detail::checked_add(accounted_bytes, static_cast<std::int64_t>(sizeof(AccessUnitRecord)),
+                                                          &au_next_total) &&
+                                     au_next_total <= limits.max_bytes;
+          if (!au_would_fit) {
+            pstream.partial = true;
+            outputs.access_units->partial = true;
+          } else {
+            accounted_bytes = au_next_total;
+            pstream.access_units.push_back(au);
+          }
+        }
+      }
+      // 04-09-PLAN.md Task 2 (`video.gop.refs`): not per-AU-budgeted (a
+      // single optional int64 per stream, unlike AccessUnitRecord) --
+      // refreshed every iteration rather than only once, so it reflects
+      // `pstate`'s own state as soon as its first SPS resolves, whether or
+      // not this particular packet produced an access unit.
+      pstream.ref_frame_count = pstate.ref_frame_count();
+    }
+
     pkt.unref();
   }
 
   result.accounted_bytes = accounted_bytes;
-  return result;
+  return outputs;
 }
 
 }  // namespace mediadiff

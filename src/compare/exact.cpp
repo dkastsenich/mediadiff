@@ -132,8 +132,9 @@ mediadiff::expected<Finding, Error> compare_exact(const CheckDef& check, const M
 }
 
 // comparator_for: all seven Semantic enumerators dispatch to a real
-// comparator as of plan 02-04 — a switch with no default: arm, so a future
-// Semantic added without a matching case is a -Wswitch (-Werror
+// comparator as of plan 02-04, joined by an EIGHTH (`state`) added
+// additively by 04-12-PLAN.md (D-10) — a switch with no default: arm, so a
+// future Semantic added without a matching case is a -Wswitch (-Werror
 // project-wide) compile failure, not a silent gap.
 Comparator comparator_for(Semantic semantic) {
   switch (semantic) {
@@ -151,6 +152,8 @@ Comparator comparator_for(Semantic semantic) {
       return &compare_dist;
     case Semantic::span:
       return &compare_span;
+    case Semantic::state:
+      return &compare_state;
   }
   // Unreachable for any valid Semantic — see src/cli/exit_code.h's own
   // no-default:-arm-plus-trailing-return pattern for why this shape.

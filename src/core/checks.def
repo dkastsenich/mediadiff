@@ -22,12 +22,19 @@
 #                 check the `transform` profile's declared expectation
 #                 converts into a comparison against that expectation
 #                 rather than baseline equality (doc 01 section 5, ENG-10).
-#                 The key exists as of 02-05-PLAN.md but no check below
-#                 declares it yet: the resolution identity check that would
-#                 carry it in production lands in Phase 4. Proven against a
-#                 test-only check in tests/support/test_checks.def instead.
+#                 The key exists as of 02-05-PLAN.md; `video.resolution`
+#                 (04-06-PLAN.md, below) is the first shipped check to
+#                 declare it. Also proven against a test-only check in
+#                 tests/support/test_checks.def.
 #   aliases       optional array of deprecated-alias id strings that now
 #                 resolve to this check (doc 01 section 2)
+#   flagged_values  array of strings; REQUIRED and non-empty when
+#                 semantic = "state" (04-12-PLAN.md, D-10) -- the closed set
+#                 of compared-value spellings that make the `state`
+#                 comparator report a Finding (baseline OR candidate value
+#                 in this set) rather than pass. REJECTED (a validation
+#                 error) on any other semantic -- `video.hdr.coherence` is
+#                 the first and, as of this phase, only check to declare it.
 #
 # Per-profile exceptions are declared as sub-tables on the check's own
 # `[[check]]` array element — standard TOML array-of-tables-with-subtable
@@ -476,3 +483,560 @@ unit = "percent"
 value_kind = "rational"
 severity = "info"
 tolerance = "5%"
+
+# Phase 4's tracer (04-01-PLAN.md Task 2, PROBE-03/VIDEO-05), src/analyzers/
+# video/gop.cpp. The median keyframe-to-keyframe access-unit distance,
+# derived from ParserScanResult::key_frame flags -- Pass::parser_scan's own
+# first production consumer, fused into the SAME av_read_frame sweep
+# PacketScan already performs (never a second sweep -- see
+# src/probe/orchestrator.cpp's own comment on Pass::parser_scan). Kept as
+# an exact RationalValue (num=median distance, den=1), never pre-divided.
+# Approved at 04-CHECK-ROSTER.md (the frozen Phase-4 id roster). Skip-reason
+# vocabulary: `insufficient_data` (fewer than two keyframes on the stream),
+# `no_parser` (VIDEO-12 -- a codec with no registered libav parser),
+# `partial_scan` (D-02 -- either PacketScan or ParserScan truncated).
+[[check]]
+id = "video.gop.length"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "10%"
+
+# 04-06-PLAN.md (VIDEO-01, VIDEO-02), src/analyzers/video/stream_params.cpp
+# -- the five per-video-stream identity checks: what codec, what profile,
+# what level, what resolution, and how many frames. Approved at
+# 04-CHECK-ROSTER.md (the frozen Phase-4 id roster). All five are
+# codec-scoped, not container-scoped (ContainerFamily::other): every one
+# extracts directly from AVStream.codecpar after the header pass alone, no
+# registered parser required -- none of the five ever emits
+# skipped:no_parser (that skip reason is reserved for a check that needs a
+# real libav parser, e.g. video.gop.length above).
+
+# codecpar->codec_id -> avcodec_get_name. `transform`: an intentional
+# transcode is expected to change the codec, hence `info` there.
+[[check]]
+id = "video.codec"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[check.profile_severity]
+transform = "info"
+
+# codecpar->profile -> avcodec_profile_name when it resolves, the raw
+# integer's decimal spelling when it does not (VIDEO-01-E2: two different
+# unrecognised profiles must compare as different, never as one shared
+# "unknown" word). The raw integer, including AV_PROFILE_UNKNOWN (-99), is
+# always in evidence.
+[[check]]
+id = "video.profile"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[check.profile_severity]
+transform = "info"
+
+# codecpar->level -> this project's own codec-specific human-string table
+# (H.264 level_idc/10, HEVC general_level_idc/30, AV1's 2+idx/4 . idx%4);
+# an uncovered codec or level renders its raw integer rather than guessing
+# -- a wrong rendered string would be permanent once it enters a committed
+# snapshot. HEVC tier is NOT folded into the rendered string:
+# general_tier_flag is not exposed by any public libav surface reachable
+# without a decode pass (docs/checks/video.level.md records the empirical
+# finding in full; this phase has no decode pass, 04-CONTEXT.md D-08/D-09).
+[[check]]
+id = "video.level"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[check.profile_severity]
+transform = "info"
+
+# codecpar->width/height as "WIDTHxHEIGHT". The first shipped check to
+# declare transform_affected = true (src/compare/exact.cpp's own
+# transform_active branch is the consumer) -- under `transform` with a
+# declared expect.resolution, the candidate is compared against the
+# derived target instead of against the baseline.
+[[check]]
+id = "video.resolution"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+transform_affected = true
+
+# Counted from the shared packet scan (or the parser scan's own
+# access-unit count when available, preferred for codecs where one packet
+# is not one access unit) -- NEVER read from AVStream::nb_frames, which
+# rides in evidence only (VIDEO-02: a container-trusted count would not be
+# comparable across container types). A zero-magnitude tolerance
+# ("0frames"), not `exact`, so `--tol video.frame_count=2frames` stays
+# meaningful. Skip-reason vocabulary: `partial_scan` (either scan
+# truncated -- a count from an incomplete sweep is a confidently wrong
+# number, D-02).
+[[check]]
+id = "video.frame_count"
+group = "video"
+semantic = "tol"
+unit = "frames"
+value_kind = "int64"
+severity = "fail"
+tolerance = "0frames"
+
+# 04-07-PLAN.md (VIDEO-01, VIDEO-04), src/analyzers/video/stream_params.cpp
+# -- the aspect-ratio pair, the container-vs-bitstream conflict, and the two
+# frame-rate checks. Approved at 04-CHECK-ROSTER.md (the frozen Phase-4 id
+# roster). All five are codec-scoped (ContainerFamily::other).
+
+# The EFFECTIVE sample aspect ratio: AVStream::sample_aspect_ratio
+# (container, e.g. mp4's own `pasp`) wins per libav's own resolution and
+# doc 03's explicit instruction. A 0/1 in either position means unset,
+# treated as 1:1 for comparison -- `unset` rides in evidence for whichever
+# position actually was (VIDEO-01-E1: a stream declaring nothing must stay
+# distinguishable in evidence from one explicitly declaring 1:1, even
+# though both compare equal).
+[[check]]
+id = "video.sar"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "rational"
+severity = "fail"
+
+# width*sar_num / height*sar_den, reduced by the greatest common divisor,
+# every step through the checked helpers -- never a non-integer division. A
+# zero width/height/sar-denominator skips insufficient_data rather than
+# reporting a rational this project would then have to render.
+[[check]]
+id = "video.dar"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "rational"
+severity = "fail"
+
+# VIDEO-04's third clause, its own check id (04-CHECK-ROSTER.md's own
+# SAR-conflict resolution -- decided at the roster's checkpoint: a real,
+# comparable, --explain-documented finding, same shape as
+# container.ts.cc_discontinuities, not an evidence field on video.sar).
+# Compares the EFFECTIVE (unset-normalized) container and bitstream SAR
+# values: an unset container SAR resolving to the same effective ratio as
+# an explicit bitstream one is NOT a conflict (VIDEO-04-E1 -- a conflict
+# check that fires on every well-formed file is exactly the noise this
+# project treats as P0). `info` severity: informational by design, never
+# gates the exit code under normal severity policy.
+[[check]]
+id = "video.sar.conflict"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "info"
+
+# avg_frame_rate as an exact RationalValue with the stream's own timebase --
+# r_frame_rate rides in evidence. 30000/1001 vs 29.97 must never be compared
+# as floats (doc 03's own line); this check never renders either value to a
+# float at any point.
+[[check]]
+id = "video.frame_rate.declared"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "rational"
+severity = "fail"
+
+# D-05/D-06/D-07 (04-CONTEXT.md): the shared probe-level cadence
+# derivation's (src/probe/cadence.h) mode interval, expressed as a rate --
+# never a second sweep, never re-derived independently of
+# derive_cadence. `±0.1%` is deliberately tight: a measured cadence that
+# moves at all is usually a real rate change, not noise. Skip-reason
+# vocabulary: `no_timing_data`/`insufficient_data` (from the derivation
+# itself), `partial_scan` (D-02, ahead of both -- a rate derived from a
+# truncated sweep is a confidently wrong number).
+[[check]]
+id = "video.frame_rate.measured"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "warn"
+tolerance = "0.1%"
+
+# 04-08-PLAN.md (VIDEO-03, VIDEO-07, VIDEO-08), src/analyzers/video/
+# color.cpp -- video.pix_fmt and the five colour-identity checks. Approved
+# at 04-CHECK-ROSTER.md (the frozen Phase-4 id roster). All six are
+# codec-scoped (ContainerFamily::other), extracted directly from
+# AVStream.codecpar after the header pass alone -- no scan of any kind
+# needed.
+
+# av_get_pix_fmt_name of the FOLDED pixel format (VIDEO-03's yuvj-trap
+# fold, detail::fold_pix_fmt_range) -- the five deprecated yuvj* names
+# fold to their plain counterpart before this value is computed, so a
+# yuvj420p file and an equivalent yuv420p-with-full-range file compare
+# EQUAL here; the range delta itself is owned solely by the colour-range
+# check below. `transform`: an intentional transcode is expected to change the
+# pixel format, hence `info` there, matching video.codec's own reasoning.
+[[check]]
+id = "video.pix_fmt"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+[check.profile_severity]
+transform = "info"
+
+# av_color_range_name of the EFFECTIVE colour range after
+# detail::fold_pix_fmt_range's SAME fold seam video.pix_fmt reads above
+# (VIDEO-03) -- never a second, independently-written branch, which is
+# what makes "yuvj420p vs yuv420p+full-range produces ZERO findings, but
+# yuvj420p vs yuv420p+limited-range produces EXACTLY ONE (this check)" a
+# provable property rather than an accident of two branches agreeing.
+#
+# DELIBERATELY carries NO [check.profile_severity] and NO
+# [check.profile_tolerance] sub-table of any kind, in ANY profile,
+# including `transform` -- VIDEO-07 and doc 03 section 5 require this
+# check to fail in EVERY profile with no exceptions: preserving colour
+# intent through an intentional transformation is exactly the invariant
+# the `transform` profile exists to protect. Do NOT add a `transform`
+# demotion here for symmetry with video.pix_fmt's own `info` override
+# above -- that would silently break this guarantee. The absence of a
+# declared override IS the mechanism (04-CHECK-ROSTER.md's own scope
+# decision on this id).
+[[check]]
+id = "video.color.range"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 04-08-PLAN.md Task 2 (VIDEO-07, VIDEO-08): the remaining three colour-
+# primaries/transfer-characteristic/matrix identity checks, each a DIRECT
+# codecpar field rendered through its own av_color_*_name counterpart --
+# no fold, no seam. `unspecified` compares as its OWN value in both
+# directions (VIDEO-08): no wildcard, no absent-treated-as-match. This is
+# a deliberate omission of an "obvious" convenience, not an oversight.
+[[check]]
+id = "video.color.primaries"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# av_color_transfer_name(codecpar->color_trc) -- see
+# docs/checks/video.color.transfer.md's own "Why it matters" for PQ
+# (smpte2084) and HLG (arib-std-b67) named explicitly.
+[[check]]
+id = "video.color.transfer"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# av_color_space_name(codecpar->color_space) -- libav's own field/enum
+# name is "color_space" (AVColorSpace); this project's own id and doc 03
+# call the identical YCbCr conversion matrix "matrix".
+[[check]]
+id = "video.color.matrix"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# av_chroma_location_name(codecpar->chroma_location) -- `warn`, not
+# `fail`, per 04-CHECK-ROSTER.md: a scaler-chain drift tell, real but
+# rarely a shipping blocker on its own (see
+# docs/checks/video.color.chroma_loc.md's own "### Tune"). `unspecified`
+# (this field's own UNSPECIFIED spelling, distinct from the other three
+# fields' "unknown") compares as its own value in both directions, same
+# VIDEO-08 rule as the three checks above.
+[[check]]
+id = "video.color.chroma_loc"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "warn"
+
+# 04-09-PLAN.md Task 1 (VIDEO-05, VIDEO-12), src/analyzers/video/gop.cpp --
+# the IDR cadence and the open/closed GOP classification, extending
+# video.gop.length above. Approved at 04-CHECK-ROSTER.md (the frozen
+# Phase-4 id roster). Classification reads the leading VCL NAL type
+# directly, NEVER the `key_frame` boolean (04-RESEARCH.md Priority
+# Finding 3: HEVC sets key_frame for every IRAP including CRA_NUT, and the
+# H.264 parser's own ref-count heuristic can mark a non-IDR I slice as a
+# keyframe too) -- see docs/checks/video.gop.closed.md's own "Why it
+# matters" for the segment-alignment consequence this is meant to catch.
+# Skip-reason vocabulary, shared by both ids below: `insufficient_data`
+# (fewer than two IDRs for the interval; no random-access point at all for
+# the classification; or more access units than
+# detail::kMaxAccessUnitsForGopClassification's own bound, T-4-40),
+# `no_parser` (either no registered libav parser, or a codec with no NAL
+# layer at all -- evidence names the codec in the second case), and
+# `partial_scan` (D-02, checked ahead of everything else).
+[[check]]
+id = "video.gop.idr_interval"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "10%"
+
+# Split from video.gop.idr_interval above (04-CHECK-ROSTER.md's own one-
+# semantic-per-id rule -- doc 03's single row words both an interval
+# tolerance and an exact open/closed classification, which a CheckDef
+# cannot carry at once). The classification itself, as an exact string
+# ("open"/"closed"), with the three random-access-point-kind counts in
+# evidence so a reader can see WHY the classification came out as it did.
+[[check]]
+id = "video.gop.closed"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 04-09-PLAN.md Task 2 (VIDEO-05), src/probe/parser_scan.{h,cpp}'s own
+# bounded Exp-Golomb SPS reader -- the H.264 SPS's own `max_num_ref_frames`
+# field. No public libav accessor exposes this value (this plan's own
+# flagged assumption A1: `AVCodecParameters` carries no reference-frame
+# count, and `AVCodecParserContext` does not publish the H.264 parser's
+# own internal `sps->ref_frame_count` either). `warn`, not `fail`
+# (04-CHECK-ROSTER.md): a real, worth-noticing reference-structure signal,
+# not on its own a shipping blocker. Skip-reason vocabulary: `no_parser`
+# (no registered libav parser, OR a codec this reader does not extract a
+# reference count from -- mpeg4/mpeg2video have no SPS concept at all,
+# HEVC's own SPS is a structurally different layout this reader does not
+# parse -- evidence names the codec either way), `unparsed_mechanism` (a
+# truncated, unreadable, or scaling-list-carrying SPS, matching PROBE-09's
+# established degradation shape), `partial_scan` (D-02).
+[[check]]
+id = "video.gop.refs"
+group = "video"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "warn"
+
+# 04-09-PLAN.md Task 2 (VIDEO-01/VIDEO-05, VIDEO-12), src/analyzers/video/
+# frame_types.cpp -- the I/P/B (and S/SI/SP/BI) picture-type distribution,
+# as a proportion histogram (`dist`'s own normalisation happens at
+# comparison time -- this check emits raw bin COUNTS, never a pre-divided
+# percentage). Bin names are libav's own single-letter picture-type
+# spelling (`av_get_picture_type_char`, `probe/parser_scan.h`'s own
+# `picture_type_name`). VIDEO-12's own degradation: a codec with no
+# registered parser still reports a keyframe-vs-non-keyframe two-bin
+# histogram from `PacketRecord::flags`' own keyframe bit, never a skip --
+# doc 03 section 1's own "frame-type distribution DEGRADES to
+# keyframe-flag granularity" wording. `warn` baseline, escalated to `fail`
+# under `strict_bitexact`/`remux` (an unexpected B-picture disappearance is
+# exactly the silent configuration regression those two profiles exist to
+# catch) and widened to `10%` under `hw_encoder` (hardware rate control
+# legitimately redistributes picture types more than a software encoder
+# would, doc 03 section 5).
+[[check]]
+id = "video.frame_types"
+group = "video"
+semantic = "dist"
+unit = "percent"
+value_kind = "histogram"
+severity = "warn"
+tolerance = "5%"
+
+[check.profile_severity]
+strict_bitexact = "fail"
+remux = "fail"
+
+[check.profile_tolerance]
+hw_encoder = "10%"
+
+# 04-10-PLAN.md (VIDEO-06), src/analyzers/video/interlace.cpp -- the
+# declared field order (codecpar->field_order) cross-checked against the
+# PER-ACCESS-UNIT field order ParserScanResult records, never reported as
+# the value without recording whether that cross-check was possible.
+# Approved at 04-CHECK-ROSTER.md (the frozen Phase-4 id roster). The
+# observed value wins whenever a cross-check was possible; a uniform
+# observed value that disagrees with the declared one is still the
+# compared value, with the disagreement recorded in evidence only (never
+# gating the comparison). Non-uniform observed content is reported as
+# `mixed`, with one exact num/den rational proportion per distinct
+# observed field order in evidence -- never a floating-point percentage
+# (T-4-45). Skip-reason vocabulary: `partial_scan` (either scan
+# truncated, D-02, checked ahead of everything else). Deliberately never
+# `no_parser` -- unlike video.gop.*/video.frame_types above, a codec with
+# no registered parser (or a registered parser that never sets
+# field_order) still reports the declared value, with evidence recording
+# that no per-frame cross-check was possible (VIDEO-06-E1).
+[[check]]
+id = "video.interlace"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 04-11-PLAN.md (VIDEO-09), src/analyzers/video/hdr.cpp -- HDR10 mastering-
+# display metadata read from codecpar->coded_side_data
+# (AV_PKT_DATA_MASTERING_DISPLAY_METADATA), populated at DEMUX time (mov.c's
+# own av_packet_side_data_add path for the mp4 `mdcv` box, D-09) -- no
+# decode pass exists in this phase (D-08). `presence` semantic: Absent{}
+# when this codec cannot carry frame-level HDR metadata either (mpeg4,
+# mpeg2video -- an ordinary, permanent absence); `skipped:requires_decode`
+# when it COULD (HEVC, AV1) but the stream-level source was empty -- the
+# precedence seam's second arm (first-frame side data) is declared in
+# hdr.cpp's own resolve_hdr_source but not wired until Phase 7. Approved at
+# 04-CHECK-ROSTER.md.
+[[check]]
+id = "video.hdr.mdcv"
+group = "video"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# Split from video.hdr.mdcv (the presence check above) per src/compare/
+# presence.cpp's own documented "a value comparison is a separate tol check
+# on the same extraction" rule (04-CHECK-ROSTER.md's own addition
+# rationale). Max luminance compared under a five percent tolerance (doc 03
+# section 4) -- a pipeline that re-derives mastering metadata from pixels
+# legitimately drifts slightly, so treating any nonzero delta as a
+# regression would be a false positive. Skips `requires_decode` (never
+# Absent{} -- src/compare/tol.cpp turns Absent into Status::error) when
+# mdcv is not present at the stream level, is present but its own
+# has_luminance flag is false, or its max_luminance denominator is invalid
+# (T-4-49).
+[[check]]
+id = "video.hdr.mdcv.luminance"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "rational"
+severity = "fail"
+tolerance = "5%"
+
+# Split from video.hdr.mdcv, same rationale as .luminance above. Eight
+# chromaticities (the three display primaries plus the white point, each an
+# x/y pair) compared `exact` over a canonical string of each rational
+# QUANTISED to the 0.0002 grid via integer arithmetic
+# (detail::quantize_chromaticity) -- the design doc's absolute tolerance
+# expressed as fixed-epsilon integer quantisation, never a literal ±0.0002
+# `tol` (a `tol` check compares exactly one scalar; eight chromaticities
+# need one canonical value, 04-CHECK-ROSTER.md's own approved resolution of
+# flagged assumption A1). Skips `requires_decode` under the identical
+# conditions as .luminance, substituting has_primaries for has_luminance.
+[[check]]
+id = "video.hdr.mdcv.primaries"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 04-11-PLAN.md (VIDEO-09), src/analyzers/video/hdr.cpp -- HDR10 content-
+# light metadata (AVContentLightMetadata, AV_PKT_DATA_CONTENT_LIGHT_LEVEL)
+# -- the SAME stream-level-only extraction and the SAME could/could-not-
+# carry distinction as video.hdr.mdcv above, sharing one extraction seam
+# and one codec-capability decision (hdr.cpp's own resolve_hdr_source /
+# detail::could_carry_frame_level_hdr, never a second, independently-
+# written copy).
+[[check]]
+id = "video.hdr.cll"
+group = "video"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# Split from video.hdr.cll (the presence check above) for MaxCLL --
+# AVContentLightMetadata's own plain unsigned integer, cd/m^2 directly (no
+# rational wrapping, unlike the mastering-display family -- 04-RESEARCH.md's
+# own "Anti-Patterns to Avoid": the two families are not symmetric). Five
+# percent tolerance, same reasoning as video.hdr.mdcv.luminance's own
+# comment.
+[[check]]
+id = "video.hdr.cll.max"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "int64"
+severity = "fail"
+tolerance = "5%"
+
+# Split from video.hdr.cll for MaxFALL -- its OWN id, never evidence riding
+# on video.hdr.cll.max, so a pipeline that halved MaxFALL alone is still
+# caught (04-CHECK-ROSTER.md's own addition rationale).
+[[check]]
+id = "video.hdr.cll.avg"
+group = "video"
+semantic = "tol"
+unit = "percent"
+value_kind = "int64"
+severity = "fail"
+tolerance = "5%"
+
+# 04-12-PLAN.md (VIDEO-09's third HDR family), src/analyzers/video/hdr.cpp --
+# the Dolby Vision configuration record, read from codecpar->coded_side_data
+# (AV_PKT_DATA_DOVI_CONF), reusing the SAME resolve_hdr_source seam
+# mdcv/cll share -- no second, independently-written codec-capability
+# table. `presence`: whether a dvcC/dvvC-derived configuration record is
+# present at all.
+[[check]]
+id = "video.hdr.dovi"
+group = "video"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# Split from video.hdr.dovi (the presence check above), same rationale as
+# video.hdr.mdcv.luminance/.primaries -- a value comparison is a separate
+# check on the same extraction. `exact` over a canonical
+# profile/level/rpu/el/bl string (docs/checks/video.hdr.dovi.config.md's
+# own Tune section documents the field order). v1 compares the
+# configuration record only; per-frame RPU diffing is explicitly out of
+# scope (04-CONTEXT.md's own Deferred Ideas).
+[[check]]
+id = "video.hdr.dovi.config"
+group = "video"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 04-12-PLAN.md (VIDEO-10, D-10), src/analyzers/video/hdr.cpp -- the
+# incoherence guard: whether the transfer characteristic and the presence
+# of mastering-display/content-light metadata agree. `state` semantic
+# (04-CHECK-ROSTER.md's resolved checkpoint, src/compare/state.cpp): fires
+# whenever EITHER side's value is one of the two flagged (incoherent)
+# values, so two files that SHARE an incoherence still report it rather
+# than comparing away to `pass` under `exact`'s baseline-equality rule
+# (VIDEO-10's own "even when both files share it"). `info` severity, and
+# DELIBERATELY no [check.profile_severity]/[check.profile_tolerance] of any
+# kind, in ANY profile -- this check never gates the exit code, by design,
+# not by omission (mirrors video.color.range's own "the absence of a
+# declared override IS the mechanism" precedent).
+[[check]]
+id = "video.hdr.coherence"
+group = "video"
+semantic = "state"
+unit = "none"
+value_kind = "string"
+severity = "info"
+flagged_values = ["hdr_meta_sdr_transfer", "pq_without_mdcv"]

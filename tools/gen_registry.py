@@ -9,7 +9,9 @@ library, so this generator has zero non-stdlib dependencies.
 `checks.def` record keys, all read from the `[[check]]` array-of-tables:
   id             dotted lowercase grammar [a-z0-9_]+(\\.[a-z0-9_]+)*
   group          the check's family, e.g. "meta"
-  semantic       exact | tol | set | presence | hash | dist | span
+  semantic       exact | tol | set | presence | hash | dist | span | state
+                 ("state" added additively by 04-12-PLAN.md, D-10 -- see
+                 src/core/registry.h's own Semantic enum comment)
   unit           none | ms | ms_per_min | frames | percent | db | lu |
                  samples | ticks | count
   value_kind     int64 | rational | real | string | string_set |
@@ -24,6 +26,11 @@ library, so this generator has zero non-stdlib dependencies.
                  baseline equality (doc 01 section 5, ENG-10, 02-05-PLAN.md)
   aliases        optional array of deprecated-alias id strings that now
                  resolve to this check (doc 01 section 2)
+  flagged_values array of strings; REQUIRED and non-empty when
+                 semantic = "state", REJECTED on any other semantic
+                 (04-12-PLAN.md, D-10) -- the closed set of compared-value
+                 spellings the `state` comparator (src/compare/state.cpp)
+                 fires a Finding for.
 
 Per-profile exceptions are the only per-profile data present, declared as
 TOML sub-tables on the check's own array element:
@@ -102,7 +109,9 @@ REQUIRED_KEYS = ("id", "group", "semantic", "unit", "value_kind", "severity")
 # These spellings must match the hand-written enum names in
 # src/core/registry.h exactly -- this is the single point where "what
 # checks.def may say" is cross-checked against "what registry.h defines".
-SEMANTICS = {"exact", "tol", "set", "presence", "hash", "dist", "span"}
+# "state" is an EIGHTH semantic added additively by 04-12-PLAN.md (D-10) --
+# see src/core/registry.h's own Semantic enum comment for why.
+SEMANTICS = {"exact", "tol", "set", "presence", "hash", "dist", "span", "state"}
 VALUE_KINDS = {"int64", "rational", "real", "string", "string_set", "histogram", "span_list", "hash_chain"}
 SEVERITIES = {"ignore", "info", "warn", "fail"}
 UNITS = {"none", "ms", "ms_per_min", "frames", "percent", "db", "lu", "samples", "ticks", "count"}
@@ -197,6 +206,23 @@ def validate_fields(checks):
             errors.append(f"{cid}: unknown unit '{c['unit']}' (expected one of {sorted(UNITS)})")
         if "aliases" in c and not isinstance(c["aliases"], list):
             errors.append(f"{cid}: 'aliases' must be an array of strings")
+        # flagged_values (04-12-PLAN.md, D-10): required and non-empty for
+        # semantic = "state"; rejected outright for every other semantic --
+        # a flagged_values list declared against a non-`state` check is
+        # dead configuration no comparator ever reads, which is exactly the
+        # kind of silent drift this generator's own validation exists to
+        # catch rather than let a future reader assume it does something.
+        has_flagged_values = "flagged_values" in c
+        is_state = c.get("semantic") == "state"
+        if is_state:
+            if not has_flagged_values:
+                errors.append(f"{cid}: semantic = 'state' requires a non-empty 'flagged_values' array")
+            elif not isinstance(c["flagged_values"], list) or len(c["flagged_values"]) == 0:
+                errors.append(f"{cid}: 'flagged_values' must be a non-empty array of strings")
+            elif not all(isinstance(v, str) for v in c["flagged_values"]):
+                errors.append(f"{cid}: 'flagged_values' must be an array of strings")
+        elif has_flagged_values:
+            errors.append(f"{cid}: 'flagged_values' is only valid when semantic = 'state' (found semantic '{c.get('semantic')}')")
         for profile, severity in c.get("profile_severity", {}).items():
             if profile not in PROFILES:
                 errors.append(
@@ -498,6 +524,31 @@ def render_profile_overrides_block(checks):
     return lines
 
 
+def render_flagged_values_block(checks):
+    """Emits, for every check declaring a non-empty `flagged_values` array
+    (04-12-PLAN.md, D-10 -- validated required-and-non-empty for
+    semantic = "state" and rejected for every other semantic by
+    validate_fields above), a small constexpr std::string_view array named
+    after the check's own enum identifier. CheckDef then points at this
+    array via a pointer+count span, mirroring
+    render_profile_overrides_block's own span shape immediately above.
+    Preserves checks.def's own declared array order (unlike the
+    profile-override tables, this is a plain compared-value list with no
+    natural sort key of its own -- the source order IS the canonical
+    order, so a spelling's position in --explain output/evidence stays
+    predictable across regenerations of the SAME checks.def)."""
+    lines = []
+    for c in checks:
+        name = enum_name(c["id"])
+        flagged_values = c.get("flagged_values", [])
+        if flagged_values:
+            lines.append(f"constexpr std::string_view kFlaggedValues_{name}[] = {{")
+            for value in flagged_values:
+                lines.append(f"    {cpp_string_literal(value)},")
+            lines.append("};")
+    return lines
+
+
 def render_check_registry_cpp(checks, aliases, names, include_dir, docs_dir):
     ats = load_ats_sections(checks, docs_dir)
     lines = [
@@ -516,6 +567,11 @@ def render_check_registry_cpp(checks, aliases, names, include_dir, docs_dir):
         lines.extend(overrides_block)
         lines.append("")
 
+    flagged_values_block = render_flagged_values_block(checks)
+    if flagged_values_block:
+        lines.extend(flagged_values_block)
+        lines.append("")
+
     lines.append("constexpr CheckDef kCheckDefs[] = {")
     for c in checks:
         name = enum_name(c["id"])
@@ -529,6 +585,9 @@ def render_check_registry_cpp(checks, aliases, names, include_dir, docs_dir):
         severity_count = str(len(severity_overrides)) if severity_overrides else "0"
         tolerance_ptr = f"kProfileTolerance_{name}" if tolerance_overrides else "nullptr"
         tolerance_count = str(len(tolerance_overrides)) if tolerance_overrides else "0"
+        flagged_values = c.get("flagged_values", [])
+        flagged_values_ptr = f"kFlaggedValues_{name}" if flagged_values else "nullptr"
+        flagged_values_count = str(len(flagged_values)) if flagged_values else "0"
         accept_text, tune_text, silence_text = ats[c["id"]]
         lines.append("    CheckDef{")
         lines.append(f'        .id = {cpp_string_literal(c["id"])},')
@@ -545,6 +604,8 @@ def render_check_registry_cpp(checks, aliases, names, include_dir, docs_dir):
         lines.append(f"        .profile_severity_override_count = {severity_count},")
         lines.append(f"        .profile_tolerance_overrides = {tolerance_ptr},")
         lines.append(f"        .profile_tolerance_override_count = {tolerance_count},")
+        lines.append(f"        .flagged_values = {flagged_values_ptr},")
+        lines.append(f"        .flagged_values_count = {flagged_values_count},")
         lines.append(f"        .explain_accept = {cpp_string_literal(accept_text)},")
         lines.append(f"        .explain_tune = {cpp_string_literal(tune_text)},")
         lines.append(f"        .explain_silence = {cpp_string_literal(silence_text)},")

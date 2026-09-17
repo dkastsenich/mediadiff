@@ -303,7 +303,30 @@ fi
 chmod +x "$REAL_CANDIDATE_PATH" 2>/dev/null || true
 
 # --- Assert the codec/muxer surface scripts/gen_corpus.sh's recipes need ----
-REQUIRED_ENCODERS="mpeg4 mpeg2video aac mp2 pcm_s16le libopus"
+# `mjpeg` and `huffyuv` (04-02-PLAN.md Task 1) close 04-RESEARCH.md's
+# assumption A3: both were confirmed present only on the Linux pinned
+# build during Phase 4 planning/research, never on the Windows `-lgpl`
+# artifact this same manifest also pins. Asserting them here, before
+# scripts/gen_corpus.sh runs on any leg, turns a missing encoder into a
+# named failure at install time rather than an inexplicable missing
+# fixture at generation time.
+#   - `mjpeg` is the only built-in LGPL encoder that accepts `yuvj420p` as
+#     input (neither `mpeg4` nor `mpeg2video` does) -- required for
+#     VIDEO-03's signature yuvj/range-fold fixture trio.
+#   - `huffyuv` is the LGPL-safe native codec chosen for VIDEO-12's
+#     no-parser-degradation fixture. 04-02-PLAN.md Task 2 named `ffv1`
+#     (falling back to `prores`) as the candidate, both verified against
+#     an OLDER FFmpeg source tree; empirically, against THIS phase's
+#     actually-linked FFmpeg 8.1, both `ffv1_parser.c` and
+#     `prores_parser.c` now exist and `av_parser_init` returns non-null
+#     for both (a genuine av_parser_init probe, not a recollection).
+#     `huffyuv` has no `*_parser.c` file at all in the same source tree
+#     and `av_parser_init(AV_CODEC_ID_HUFFYUV)` returns null, confirmed
+#     against `build/x64-linux/vcpkg_installed/x64-linux`'s linked
+#     libavcodec. huffyuv is a native, always-built-in lossless codec
+#     with no external library dependency, same LGPL-safety profile as
+#     the two candidates it replaces.
+REQUIRED_ENCODERS="mpeg4 mpeg2video aac mp2 pcm_s16le libopus mjpeg huffyuv"
 REQUIRED_MUXERS="mp4 mov matroska webm mpegts srt ffmetadata"
 
 if ! VERSION_OUTPUT="$("$REAL_CANDIDATE_PATH" -version 2>&1)"; then

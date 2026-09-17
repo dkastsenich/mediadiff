@@ -26,7 +26,15 @@ TEST_CASE("find returns the declaration index for each seed id", "[registry]") {
 }
 
 TEST_CASE("find returns nullopt for an unregistered id", "[registry]") {
-  REQUIRE_FALSE(mediadiff::builtin_registry().find("video.color.range").has_value());
+  // 04-08-PLAN.md (Rule 1 -- bug): this test originally used
+  // "video.color.range" as its unregistered-id example, written before
+  // that id existed. It is now a real, registered check
+  // (src/core/checks.def), so this assertion started failing the moment
+  // it landed -- a synthetic, deliberately-never-real id (matching
+  // tests/unit/test_report_model.cpp's own "meta.unregistered_probe"
+  // convention) is used instead, so this test's own correctness no longer
+  // depends on which ids happen to be registered.
+  REQUIRE_FALSE(mediadiff::builtin_registry().find("video.unregistered_probe").has_value());
 }
 
 TEST_CASE("resolve_alias returns the owning check for a declared alias and reports it was aliased", "[registry]") {

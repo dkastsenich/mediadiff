@@ -70,6 +70,18 @@ add_executable(mediadiff_integration_tests
   # verified count must equal the registry's own check count
   # (03-11-PLAN.md Task 4).
   test_doc03_coverage.cpp
+  # 04-08-PLAN.md Task 3 (VIDEO-03): the phase's own signature test made
+  # into a counting assertion -- yuvj420p vs yuv420p-limited-range
+  # produces EXACTLY ONE non-pass finding (video.color.range) across the
+  # WHOLE report; the same file against the full-range spelling produces
+  # ZERO; video.pix_fmt is present and pass, not absent; video.color.range
+  # stays non-pass under every profile.
+  test_video_yuvj.cpp
+  # ROADMAP SC2 (04-12-PLAN.md Task 3): every fixture with a video stream,
+  # enumerated from tests/fixtures/ rather than a hand list, renders all
+  # nine video-identity checks through BOTH inspect renderers (--json and
+  # text).
+  test_video_inspect_section.cpp
   # SIZE-01/DIR-06: the VERIFICATION.md gap-2 reproductions, inverted
   # permanently -- an extreme but CLI11-legal --probe-memory-budget-mb/
   # --probe-timeout value exits 64 naming the maximum, across all four

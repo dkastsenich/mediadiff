@@ -111,7 +111,7 @@ TEST_CASE("size_checks - the size.* findings are pinned by a committed, read-onl
   REQUIRE(block.find("size.stream_bitrate ") != std::string::npos);
   REQUIRE(block.find("size.peak_bitrate ") != std::string::npos);
 
-  mediadiff::test::check_golden("size_checks_size_crf20", block);
+  mediadiff::test::check_golden_designated_leg("size_checks_size_crf20", block);
 }
 
 // --- Test 4: a byte-identical pair compares clean on every size.* check ---

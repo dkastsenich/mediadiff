@@ -12,56 +12,32 @@
 # regression, or did someone's system ffmpeg change? The manifest is what
 # makes that question answerable at all, and is the prerequisite for ever
 # pinning the generator later without a churn of unexplained fixture diffs.
+#
+# Binary resolution (MEDIADIFF_FFMPEG override -> the repo-local pinned
+# install -> PATH), the version floor, and a release-identity gate against
+# scripts/ffmpeg_pin.json all live in scripts/resolve_pinned_ffmpeg.sh,
+# sourced below. Any other script needing this same generator's ffmpeg
+# resolved the same way (e.g. a future scripts/measure_parser_overhead.sh)
+# should source that file rather than copy this logic.
 
 set -euo pipefail
 
-# The version floor, held as named constants rather than inlined into the
-# comparison below.
-readonly MIN_MAJOR=6
-readonly MIN_MINOR=1
-
-# Resolve which binary to invoke from MEDIADIFF_FFMPEG (defaulting to the
-# bare name "ffmpeg" on PATH), so a developer can point this at a specific
-# build and so the absent/too-old failure branches below are testable
-# without mutating PATH itself.
-FFMPEG_BIN="${MEDIADIFF_FFMPEG:-ffmpeg}"
-
-if ! command -v "$FFMPEG_BIN" >/dev/null 2>&1; then
-  echo "gen_corpus requires a system ffmpeg >= ${MIN_MAJOR}.${MIN_MINOR} on PATH (or MEDIADIFF_FFMPEG pointing at one); '${FFMPEG_BIN}' was not found." >&2
+# Binary resolution + the version floor + the release-identity gate now
+# live in the sibling file below (see this file's own header above). A
+# missing sibling fails loudly rather than degrading to the old inline
+# behavior.
+RESOLVE_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/resolve_pinned_ffmpeg.sh"
+if [ ! -f "$RESOLVE_SCRIPT" ]; then
+  echo "gen_corpus error: required sibling script '${RESOLVE_SCRIPT}' is missing." >&2
   exit 1
 fi
+# shellcheck source=resolve_pinned_ffmpeg.sh
+source "$RESOLVE_SCRIPT"
 
-VERSION_OUTPUT=$("$FFMPEG_BIN" -version)
-FFMPEG_VERSION_LINE=$(printf '%s\n' "$VERSION_OUTPUT" | head -n1)
-FFMPEG_CONFIG_LINE=$(printf '%s\n' "$VERSION_OUTPUT" | grep '^configuration:' || true)
-
-# "ffmpeg version <TOKEN> Copyright (c) ..." — pull just the version token.
-VERSION_TOKEN=$(printf '%s\n' "$FFMPEG_VERSION_LINE" | sed -E 's/^ffmpeg version ([^ ]+).*/\1/')
-
-VERSION_OK=0
-if [[ "$VERSION_TOKEN" =~ ^[nN]-[0-9]+-g[0-9a-fA-F]+ ]]; then
-  # A git-describe "N-<commits-since-tag>-g<hash>" snapshot build — this is
-  # what ffmpeg's own -version reports for a git-master checkout built past
-  # its last tagged release (e.g. "N-126086-ge5ecfe8970-20260812"). It
-  # carries no bare MAJOR.MINOR to compare, but by construction it is always
-  # newer than the release tag it is offset from, which is itself far above
-  # this script's ${MIN_MAJOR}.${MIN_MINOR} floor. Treat it as satisfying the
-  # floor rather than rejecting it for lacking a parseable release number.
-  VERSION_OK=1
-elif [[ "$VERSION_TOKEN" =~ ^[nN]?([0-9]+)\.([0-9]+) ]]; then
-  # A normal release version, optionally "n"-prefixed by some distro builds
-  # (e.g. "7.0.2" or "n7.0.2").
-  MAJOR="${BASH_REMATCH[1]}"
-  MINOR="${BASH_REMATCH[2]}"
-  if [ "$MAJOR" -gt "$MIN_MAJOR" ] || { [ "$MAJOR" -eq "$MIN_MAJOR" ] && [ "$MINOR" -ge "$MIN_MINOR" ]; }; then
-    VERSION_OK=1
-  fi
-fi
-
-if [ "$VERSION_OK" -ne 1 ]; then
-  echo "gen_corpus requires a system ffmpeg >= ${MIN_MAJOR}.${MIN_MINOR}; found: ${FFMPEG_VERSION_LINE}" >&2
-  exit 1
-fi
+# Sets FFMPEG_BIN (invoked by every fixture recipe below), FFMPEG_ROUTE,
+# FFMPEG_VERSION_LINE and FFMPEG_CONFIG_LINE, or aborts before a byte of
+# this manifest or any fixture is written.
+mediadiff_resolve_ffmpeg gen_corpus
 
 OUT_DIR="tests/fixtures"
 mkdir -p "$OUT_DIR"
@@ -1017,4 +993,561 @@ cp "$OUT_DIR/size_crf20.mp4" "$OUT_DIR/size_crf20_copy.mp4"
   -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/size_partial.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4."
+# --- 04-01-PLAN.md Task 2 (PROBE-03/VIDEO-05, Phase 4's tracer): D-04 real-
+# encoder fixture pair for `video.gop.length` -- a genuine `mpeg4` encode
+# (never a GPL encoder), 4 seconds at 25fps (100 frames), differing ONLY in
+# `-g` (GOP size). `-g 48` produces 3 keyframes (median GOP-length distance
+# 48); `-g 96` produces 2 keyframes (median distance 96) -- a 100% delta
+# against the check's own 10% tolerance, verified during planning against
+# the pinned 9.0.1 generator (04-01-PLAN.md's own flagged assumption A3).
+# `-bf 0` (no B-frames) keeps packet order == display order, so access-unit
+# array index doubles as display-order index for the median computation.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_gop_g48.mp4"
+
+cp "$OUT_DIR/video_gop_g48.mp4" "$OUT_DIR/video_gop_g48_copy.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg4 -g 96 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_gop_g96.mp4"
+
+# --- 04-02-PLAN.md Task 2: stream-parameter, GOP and no-parser fixtures ----
+# Every pair below is D-04's "real encoder wherever it can express the
+# check" -- `mpeg4`/`mpeg2video`/`huffyuv`, never a GPL encoder -- and
+# differs from `video_base.mp4` in exactly one dimension, verified by
+# reading the produced file back rather than trusting the CLI flag was
+# accepted (see this task's own read-back table in 04-02-SUMMARY.md).
+
+# Baseline (VIDEO-01/02/04/05) and its byte-identical clean partner: the
+# shared "differs in nothing" half of every pair below that compares
+# against video_base.mp4.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_base.mp4"
+
+cp "$OUT_DIR/video_base.mp4" "$OUT_DIR/video_base_copy.mp4"
+
+# video.codec (VIDEO-01): same geometry/frame-count as video_base.mp4,
+# different codec_name only.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg2video -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_codec_mpeg2.mp4"
+
+# video.profile / video.level (VIDEO-01): `-profile:v`/`-level` values read
+# from `"$FFMPEG_BIN" -hide_banner -h encoder=mpeg2video`'s own accepted
+# range (0-11 per libavcodec/mpeg12enc.c's profile table) and verified by
+# reading the two produced files back -- `4`/`8` reads back as profile
+# "Main", level 8; `5`/`10` reads back as profile "Simple", level 10, two
+# genuinely distinct integer pairs (not merely distinct display strings).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg2video -profile:v 4 -level:v 8 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_prof_a.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg2video -profile:v 5 -level:v 10 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_prof_b.mp4"
+
+# video.resolution (VIDEO-01), and the first shipped `transform_affected`
+# check's fixture: an exact 2x scale of video_base.mp4's 320x240, so a
+# `transform` profile's declared "2x" expectation has a real pair to be
+# satisfied by.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=640x480:rate=25:duration=4" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_res_640.mp4"
+
+# video.frame_count (VIDEO-02): identical to the baseline except a 2s
+# source (50 packets vs the baseline's 100) -- always counted from the
+# scan, never from a container-reported `nb_frames`.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frames_50.mp4"
+
+# video.sar / video.dar (VIDEO-01): `setsar=4/3` against the baseline's
+# implicit 1:1, otherwise identical.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -vf "setsar=4/3" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_sar_4_3.mp4"
+
+# video.frame_rate.declared (VIDEO-01): 30fps source against the
+# baseline's 25fps, otherwise identical.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=30:duration=4" \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_fps_30.mp4"
+
+# video.frame_rate.measured (VIDEO-01, D-05/D-06/D-07): a deterministic,
+# non-uniform frame selection over the baseline source -- drops every 7th
+# frame's 4th-from-start member (`mod(n,7)==3`), producing genuinely
+# unequal packet PTS deltas (verified: 512/1024 tick deltas, never all
+# equal) rather than a silently re-timed CFR stream. This is the CFR/VFR
+# distinction plan 04-07 classifies.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -vf "select='not(eq(mod(n\,7),3))'" -fps_mode vfr \
+  -c:v mpeg4 -g 48 -bf 0 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_vfr.mp4"
+
+# video.frame_types (VIDEO-05): `-bf 3` against the baseline's `-bf 0` --
+# verified: video_base.mp4 has zero B-pictures, video_bf3.mp4 has 74.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg4 -g 48 -bf 3 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_bf3.mp4"
+
+# VIDEO-12's no-parser-degradation fixture. 04-02-PLAN.md's own text named
+# `ffv1` (falling back to `prores` if it turned out to have a parser) as
+# the candidate LGPL-safe no-parser codec; both were verified against an
+# OLDER FFmpeg source tree during research. Empirically, against THIS
+# phase's actually-linked FFmpeg 8.1 (build/x64-linux/vcpkg_installed),
+# `ffv1_parser.c` and `prores_parser.c` both now exist and
+# `av_parser_init` returns NON-null for both codec ids -- so neither
+# candidate exercises VIDEO-12's no-parser path any more. `huffyuv` has no
+# `*_parser.c` file at all in the same linked source tree, and a
+# throwaway `av_parser_init(AV_CODEC_ID_HUFFYUV)` probe against the linked
+# libavcodec returned null, confirming the no-parser path this fixture
+# needs. `huffyuv` is a native, always-built-in lossless codec with the
+# same LGPL-safety profile as the two candidates it replaces (see
+# scripts/install_pinned_ffmpeg.sh's REQUIRED_ENCODERS comment for the
+# encoder-availability half of this same finding).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v huffyuv -g 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_noparser.mkv"
+
+cp "$OUT_DIR/video_noparser.mkv" "$OUT_DIR/video_noparser_copy.mkv"
+
+# --- 04-02-PLAN.md Task 3: colorimetry, the yuvj signature trio, and
+# interlace fixtures --------------------------------------------------------
+
+# VIDEO-03's signature trio (the orchestrator's own verified recipe;
+# `mjpeg` only, never `mpeg4`/`mpeg2video`, neither of which can express
+# `yuvj420p` at all -- Priority Finding 4C). The first two are the SAME
+# intent spelled two ways and must compare with ZERO findings once the
+# range fold lands; the first and third differ in exactly one dimension
+# (full vs limited range) and must produce EXACTLY ONE finding
+# (`video.color.range`) -- the clearest expression of this project's
+# false-positives-are-P0 rule in the whole phase.
+#
+# 04-08-PLAN.md Task 3 (Rule 1 -- bug): the source was originally
+# `testsrc2`, a full gradient pattern. mjpeg's limited-range encode
+# rescales every sample toward the pattern's own real content before DCT
+# quantization, which measurably changes the compressed byte count (~8%
+# smaller for the "tv" member of this trio against a testsrc2 source,
+# empirically measured) -- enough to trip `size.file`/`size.stream_bitrate`/
+# `size.peak_bitrate` under `--profile sw-encoder`'s own tolerance and
+# pollute VIDEO-03's own signature test with unrelated findings, which is
+# exactly the false-positive class this project treats as P0. Switched to
+# `color=c=gray`, a flat, constant-value source: a JPEG block's DCT of a
+# constant region is dominated by the DC term alone regardless of the
+# level a tv/pc range rescale shifts it to, so the ENCODED BYTE SIZE stays
+# effectively invariant to the range flip (empirically verified:
+# byte-identical file size between the full-range member and the
+# yuvj-spelling member; ~2.4% between the full-range and limited-range
+# members, under `size.file`'s own 3% warn threshold) while the pix_fmt/
+# color_range values this trio exists to prove remain unaffected by the
+# source's own content -- VIDEO-03 is a metadata-fold test, not a content
+# test, so a flat source loses nothing this trio is meant to prove.
+"$FFMPEG_BIN" -f lavfi -i "color=c=gray:size=320x240:rate=25:duration=2" \
+  -c:v mjpeg -pix_fmt yuvj420p -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_yuvj420p.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "color=c=gray:size=320x240:rate=25:duration=2" \
+  -c:v mjpeg -pix_fmt yuv420p -color_range pc -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_yuv420p_pc.mp4"
+
+# `-strict unofficial` is required here (a Task 3 blocking-issue fix, not
+# in the plan's literal recipe text): `mjpeg`'s encoder refuses to open at
+# all for a non-full-range request ("Non full-range YUV is non-standard,
+# set strict_std_compliance to at most unofficial to use it") without it.
+# Read back and confirmed distinct from the two fixtures above on both
+# pix_fmt and color_range (mjpeg,yuv420p,tv vs mjpeg,yuvj420p,pc).
+"$FFMPEG_BIN" -f lavfi -i "color=c=gray:size=320x240:rate=25:duration=2" \
+  -c:v mjpeg -pix_fmt yuv420p -color_range tv -strict unofficial \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_yuv420p_tv.mp4"
+
+# 04-16-PLAN.md Task 1 (gap closure, human decision 3): VIDEO-03's
+# signature pair needs a genuinely distinct second spelling. The obvious
+# candidate -- `-pix_fmt yuv420p -color_range pc` encoded directly with
+# `mjpeg` -- is exactly `video_yuv420p_pc.mp4` above, and the pinned mjpeg
+# encoder (and every other encoder in this build that accepts a `yuvj*`
+# format: `ljpeg`, `amv`) NORMALISES that request back to a `yuvj*` name
+# before muxing. `video_yuvj420p.mp4` and `video_yuv420p_pc.mp4` read back
+# byte-identical (sha256 `f9d92aff10ff030a...`, confirmed in
+# deferred-items.md's 04-08 entry) -- the "two spellings" distinction never
+# reaches the file, which made `integration.video_yuvj` Test 2 vacuous.
+#
+# A stream-COPY remux of the already-generated `video_yuv420p_tv.mp4` is
+# the only way to change the range TAG without letting the encoder
+# re-pick `yuvj420p`: `-c copy` never re-invokes the mjpeg encoder, so the
+# plain `yuv420p` bitstream survives untouched while `-color_range pc`
+# plus `-movflags +write_colr` writes the full-range `nclx` colour box
+# into the container. `-movie_timescale 1000` and
+# `-video_track_timescale 12800` pin both timescales to the values a
+# fresh encode already produces (see `video_yuv420p_tv.mp4` above and
+# `mp4_ts_a.mp4`'s own `-video_track_timescale 12800` precedent) --
+# empirically confirmed: an UNPINNED remux rewrites the mvhd timescale
+# from 1000 to 12800 and the video trak's own mdhd timescale from 12800
+# to (ffmpeg's post-remux default), each of which independently fires a
+# `warn` on `container.mp4.timescale`/`container.mp4.edit_list` against
+# the baseline -- two unrelated findings that would destroy this pair's
+# zero-count assertion. Pinning both eliminates them.
+#
+# Read back (pinned binary): `mjpeg (Baseline) (mp4v / 0x7634706D),
+# yuv420p(pc, bt470bg/unknown/unknown, progressive), 320x240 [SAR 1:1 DAR
+# 4:3]` -- codec, resolution, SAR and DAR identical to
+# `video_yuvj420p.mp4`; pixel format spelled `yuv420p`, not `yuvj420p`;
+# range `pc`. sha256 differs from `video_yuvj420p.mp4`'s, and two
+# back-to-back runs of this exact recipe produce the identical sha256.
+"$FFMPEG_BIN" -i "$OUT_DIR/video_yuv420p_tv.mp4" \
+  -c copy -color_range pc -movflags +write_colr \
+  -movie_timescale 1000 -video_track_timescale 12800 \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_yuv420p_pc_tagged.mp4"
+
+# Colorimetry (VIDEO-07, VIDEO-08) -- the verified `setparams` + top-level
+# `-color_range` + `-movflags +write_colr` form (Priority Finding 4B),
+# never the top-level `-color_primaries`/`-color_trc` options, which do
+# not round-trip for `mpeg4`. Read back (raw enum ints) as: bt709 ->
+# 1,1,1; bt601 -> 6,6,6 (smpte170m, distinct from bt709 on all three
+# fields); unspec -> 2,2,2 (genuinely unspecified, the fixture VIDEO-08's
+# metadata-loss direction needs). `setparams`' own AVOption spelling for
+# "unspecified" is `unknown` (its help text names value 2 `unknown`, not
+# `unspecified`); the numeric result read back is identical either way.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" \
+  -c:v mpeg4 -color_range tv -movflags +write_colr \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_color_bt709.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=smpte170m:color_trc=smpte170m:colorspace=smpte170m" \
+  -c:v mpeg4 -color_range tv -movflags +write_colr \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_color_bt601.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=unknown:color_trc=unknown:colorspace=unknown" \
+  -c:v mpeg4 -color_range tv -movflags +write_colr \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_color_unspec.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" \
+  -c:v mpeg4 -color_range pc -movflags +write_colr \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_range_pc.mp4"
+
+cp "$OUT_DIR/video_color_bt709.mp4" "$OUT_DIR/video_color_bt709_copy.mp4"
+
+# Chroma location (VIDEO-07). Deviation from the plan's literal recipe
+# text (which named `.mp4` and `setparams`' own `chroma_location`
+# suboption): empirically, against the linked FFmpeg 8.1
+# (build/x64-linux/vcpkg_installed), `libavformat/movenc.c` has NO code
+# path that writes chroma sample location into any mp4/mov box at all --
+# grepped directly, zero hits -- so an mp4-muxed fixture reads back
+# `chroma_location=left` regardless of what was requested, on every
+# allowed codec tried. `libavformat/matroskaenc.c` DOES write it (the
+# Colour master element's ChromaSitingHorz/Vert fields,
+# `av_chroma_location_enum_to_pos`), and `matroskadec.c` reads it back
+# correctly. These two fixtures therefore mux to Matroska, not MP4, and
+# use the top-level `-chroma_sample_location` option (the `setparams`
+# filter's own `chroma_location` suboption was tried first and did not
+# propagate through mpeg4/mov at all). Read back distinct: left(1) vs
+# center(2), both alongside the same bt709 colorimetry as
+# video_color_bt709.mp4 for consistency.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" \
+  -c:v mpeg4 -color_range tv -chroma_sample_location 1 \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_chroma_left.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" \
+  -c:v mpeg4 -color_range tv -chroma_sample_location 2 \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_chroma_center.mkv"
+
+# Interlace (VIDEO-06). Deviation from the plan's literal recipe text
+# (which named `mpeg4`): empirically, `libavcodec/mpeg4video_parser.c`
+# never sets `AVCodecParserContext::field_order` at all -- grepped
+# directly against every parser source file that touches `field_order`,
+# `mpeg4video_parser.c` is absent from that list. `mpegvideo_parser.c`
+# (MPEG-1/2 only) DOES set it from the picture coding extension's
+# `top_field_first` bit. `mpeg2video` is therefore the codec used here,
+# still a real, always-built-in, never-GPL encoder per D-04. Read back
+# (per-AU, via a throwaway `av_parser_parse2` probe mirroring 04-01's own
+# `PARSER_FLAG_COMPLETE_FRAMES` fusion): TFF -> `AV_FIELD_TT`, BFF ->
+# `AV_FIELD_BB`, both container-level `codecpar->field_order` values also
+# distinct (`TB`/`BT`) and neither progressive.
+#
+# Quick task 260914-t47: the prior quick task's finding was incomplete.
+# FFmpeg n9.0.1's configure gates the `interlace` filter ALSO on GPL, just
+# like `tinterlace` (`tinterlace_filter_deps="gpl"` AND
+# `interlace_filter_deps="gpl"`), so the `interlace` filter used by that
+# prior task is likewise absent from the LGPL Windows pinned build, which
+# is how draft PR #5's CI run 34882668138, job `build
+# (x64-windows-static-md)`, step 9 died with `No such filter: 'interlace'`.
+# The three recipes below instead use an LGPL-only
+# `separatefields`/`select`/`weave` chain that reproduces the same bytes.
+# The old filter was the temporal interleave-top/bottom mode without
+# lowpass, i.e. the upper field of odd frames woven with the lower field
+# of even frames at half the frame rate. `setparams=field_mode=tff` makes
+# `separatefields` emit each frame's top field first (F1T,F1B,F2T,F2B,...);
+# `select='eq(mod(n\,4)\,0)+eq(mod(n\,4)\,3)'` keeps field frames with n
+# mod 4 in {0,3} (F1T,F2B,F3T,F4B,...); `weave=first_field=top` writes the
+# first frame of each pair into the even lines and the second into the odd
+# lines. For BFF, `setparams=field_mode=bff` makes `separatefields` emit
+# the bottom field first, the same `select` keeps (F1B,F2T,...), and
+# `weave=first_field=bottom` writes them into the odd and even lines
+# respectively. The output option `-r 25/2` hands the encoder the same
+# 12.5 fps time base the old filter advertised, so the MPEG-2 sequence
+# header and the mp4 timing tables come out identical -- an `fps=25/2`
+# FILTER must not be used instead (it drops the last frame, 24 instead of
+# 25, and moves the bytes) and the rate option must not be omitted either
+# (`weave`'s output link still advertises 25 fps with a frame on every
+# other tick, so the CLI would duplicate frames to fill it). The committed
+# digest lines for `video_ilace_tff.mp4`, `video_ilace_tff_copy.mp4`,
+# `video_ilace_bff.mp4`, `video_ilace_mixed.mp4` and the three
+# `.video_ilace_*.m2v` sidecars are unchanged BY DESIGN, proven old-vs-new
+# on a generator that has both filters before the swap landed.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=field_mode=tff,separatefields,select='eq(mod(n\,4)\,0)+eq(mod(n\,4)\,3)',weave=first_field=top,setparams=field_mode=tff" -r 25/2 \
+  -c:v mpeg2video -flags +ilme+ildct \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_ilace_tff.mp4"
+
+cp "$OUT_DIR/video_ilace_tff.mp4" "$OUT_DIR/video_ilace_tff_copy.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=field_mode=bff,separatefields,select='eq(mod(n\,4)\,0)+eq(mod(n\,4)\,3)',weave=first_field=bottom,setparams=field_mode=bff" -r 25/2 \
+  -c:v mpeg2video -flags +ilme+ildct \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_ilace_bff.mp4"
+
+# `video_ilace_mixed.mp4`: two independently-encoded raw MPEG-2
+# elementary-stream segments (an interlaced TFF one, a plain progressive
+# one), binary-concatenated and remuxed with `-c copy` -- so the
+# container-level declared field order (taken from the FIRST sequence
+# header) and the per-AU parser flags genuinely disagree partway through
+# the file, which is the whole point of this fixture (VIDEO-06's
+# declared-vs-per-frame cross-check). The two `.m2v` segments and their
+# concatenation are non-media sidecars kept on disk (never deleted),
+# mirroring the `.topo_subs.srt`/`.topo_chapters.ffmeta` convention
+# above -- literal `$OUT_DIR/` tokens so `check_corpus.sh`'s mechanical
+# extraction sees them too.
+ILACE_SEG_A="$OUT_DIR/.video_ilace_seg_a.m2v"
+ILACE_SEG_B="$OUT_DIR/.video_ilace_seg_b.m2v"
+ILACE_MIXED_RAW="$OUT_DIR/.video_ilace_mixed_raw.m2v"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=1" \
+  -vf "setparams=field_mode=tff,separatefields,select='eq(mod(n\,4)\,0)+eq(mod(n\,4)\,3)',weave=first_field=top,setparams=field_mode=tff" -r 25/2 \
+  -c:v mpeg2video -flags +ilme+ildct \
+  -flags +bitexact -fflags +bitexact -y \
+  "$ILACE_SEG_A"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=1" \
+  -c:v mpeg2video -flags +bitexact -fflags +bitexact -y \
+  "$ILACE_SEG_B"
+
+cat "$ILACE_SEG_A" "$ILACE_SEG_B" > "$ILACE_MIXED_RAW"
+
+"$FFMPEG_BIN" -f mpegvideo -i "$ILACE_MIXED_RAW" -c copy \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_ilace_mixed.mp4"
+
+# --- 04-04-PLAN.md Task 1 (VIDEO-09, D-09): MDCV/CLL fixtures, each
+# isolating one comparison dimension -----------------------------------
+#
+# D-09: MDCV/CLL are written as container-level boxes (mp4 `mdcv`/`clli`)
+# around an ordinary `mpeg4` encode, never as in-bitstream SEI. This is
+# achieved with FFmpeg's generic, CODEC-INDEPENDENT per-stream INPUT
+# options `-mastering_display`/`-content_light` -- they attach
+# AVMasteringDisplayMetadata/AVContentLightMetadata to the demuxed/generated
+# input stream itself, so they MUST be placed BEFORE `-i`. Placing them
+# after `-i` errors ("you are trying to apply an input option to an output
+# file") -- do not "tidy" them to output position, that would silently
+# break the whole HDR family. 04-RESEARCH.md Priority Finding 1 confirms
+# libavformat/mov.c writes real `mdcv`/`clli` ISOBMFF boxes from these and
+# that libavformat/mov.c populates st->codecpar->coded_side_data on
+# read-back -- the exact stream-level source VIDEO-09 names first, with no
+# decode pass required. Every fixture here is a plain `mpeg4` encode
+# (never libx264/libx265/libsvtav1), which is what keeps this recipe
+# reproducible on the Windows `-lgpl` pinned build.
+#
+# video_hdr_a.mp4 is the baseline every HDR pair compares against
+# (chromaticities/luminance/content-light values from the research pass's
+# own verified recipe). Each _b variant changes exactly ONE of
+# {luminance, chromaticities, content light} from the baseline so each
+# check (video.hdr.mdcv.luminance / .primaries / video.hdr.cll.max/.avg)
+# has a fixture that isolates its own dimension. video_hdr_none.mp4 omits
+# both metadata options entirely -- the presence partner for
+# video.hdr.mdcv/video.hdr.cll.
+"$FFMPEG_BIN" \
+  -mastering_display "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)" \
+  -content_light "1000,400" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_a.mp4"
+
+cp "$OUT_DIR/video_hdr_a.mp4" "$OUT_DIR/video_hdr_a_copy.mp4"
+
+# Isolates video.hdr.mdcv.luminance: identical chromaticities and content
+# light, max_luminance 400 cd/m^2 (L(4000000,50), i.e. 4000000/10000)
+# instead of the baseline's 1000 cd/m^2 -- far more than the 5% tolerance.
+"$FFMPEG_BIN" \
+  -mastering_display "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(4000000,50)" \
+  -content_light "1000,400" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_lum_b.mp4"
+
+# Isolates video.hdr.mdcv.primaries: identical luminance and content
+# light, BT.2020 chromaticities instead of the baseline's DCI-P3-ish set --
+# a substantially larger delta than one 0.0002 quantisation-grid step (A2).
+"$FFMPEG_BIN" \
+  -mastering_display "G(8500,39850)B(6550,2300)R(35400,14600)WP(15635,16450)L(10000000,1)" \
+  -content_light "1000,400" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_prim_b.mp4"
+
+# Isolates video.hdr.cll.max/video.hdr.cll.avg: identical mastering
+# display, MaxCLL/MaxFALL of 400/120 instead of the baseline's 1000/400 --
+# far more than the 5% tolerance on both.
+"$FFMPEG_BIN" \
+  -mastering_display "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)" \
+  -content_light "400,120" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_cll_b.mp4"
+
+# The presence partner for video.hdr.mdcv/video.hdr.cll: the same encode
+# with NEITHER metadata option -- no mdcv/clli box, no HDR side data at
+# all on read-back.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -c:v mpeg4 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_none.mp4"
+
+# --- 04-04-PLAN.md Task 2 (VIDEO-10, D-10): coherence fixtures ----------
+#
+# D-10: VIDEO-10's incoherence guard (`video.hdr.coherence`, info
+# severity) needs a triggering pair, a clean pair, and a
+# both-sides-share-the-incoherence pair. A real transfer characteristic
+# only reaches an `mpeg4`/mov-muxed file via the verified
+# `setparams=...:color_trc=...` filter PLUS the top-level
+# `-movflags +write_colr` (04-RESEARCH.md Priority Finding 4B) -- without
+# `+write_colr` no `colr` box is written at all and every coherence
+# fixture would collapse to the same unspecified-transfer case, making the
+# comparison look clean for the wrong reason.
+#
+# video_hdr_coherent.mp4: MDCV/CLL present AND transfer=smpte2084 (PQ) --
+# a coherent HDR file.
+"$FFMPEG_BIN" \
+  -mastering_display "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)" \
+  -content_light "1000,400" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc" \
+  -c:v mpeg4 -color_range tv -movflags +write_colr \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_coherent.mp4"
+
+cp "$OUT_DIR/video_hdr_coherent.mp4" "$OUT_DIR/video_hdr_coherent_copy.mp4"
+
+# video_hdr_pq_nomdcv.mp4: transfer=smpte2084 (PQ) with NO mastering
+# display / content light metadata at all -- the PQ-without-MDCV
+# incoherence (VIDEO-10-E1's triggering shape).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc" \
+  -c:v mpeg4 -color_range tv -movflags +write_colr \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_pq_nomdcv.mp4"
+
+# video_hdr_sdr_mdcv.mp4: MDCV/CLL present but transfer=bt709 (SDR) -- the
+# HDR-metadata-with-SDR-transfer incoherence.
+"$FFMPEG_BIN" \
+  -mastering_display "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)" \
+  -content_light "1000,400" \
+  -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709" \
+  -c:v mpeg4 -color_range tv -movflags +write_colr \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_sdr_mdcv.mp4"
+
+# Byte-identical copy of the SDR+MDCV incoherence, so plan 04-12 can prove
+# the guard fires (VIDEO-10-E1) even when BOTH files SHARE the same
+# incoherence and there is no delta to hang it on.
+cp "$OUT_DIR/video_hdr_sdr_mdcv.mp4" "$OUT_DIR/video_hdr_sdr_mdcv_copy.mp4"
+
+# --- 04-12-PLAN.md Task 3 (VIDEO-10, D-10 Decision 2): the HLG-without-MDCV
+# coherence fixture --------------------------------------------------------
+#
+# Decision 2 (04-CHECK-ROSTER.md's resolved checkpoint): HLG (arib-std-b67)
+# is scene-referred and legitimately ships without mastering-display
+# metadata under ITU-R BT.2100, so this fixture must classify as
+# `coherent`, never `pq_without_mdcv`. Same verified
+# `setparams=...:color_trc=...` + `-movflags +write_colr` colorimetry form
+# 04-04-PLAN.md's own coherence fixtures use, transfer=arib-std-b67, and
+# NEITHER -mastering_display NOR -content_light (no HDR metadata at all).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -vf "setparams=color_primaries=bt2020:color_trc=arib-std-b67:colorspace=bt2020nc" \
+  -c:v mpeg4 -color_range tv -movflags +write_colr \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hdr_hlg_nomdcv.mp4"
+
+# --- 04-05-PLAN.md: hand-constructed H.264/HEVC/DOVI/SAR-conflict fixtures
+# (PROBE-03, VIDEO-04, VIDEO-05, VIDEO-09) ----------------------------------
+#
+# D-01: the corpus stays LGPL-only -- this project's only real encoders
+# (mpeg4, mpeg2video, mjpeg, huffyuv) have no NAL units and no IDR concept at
+# all, so IDR-versus-CRA open/closed GOP classification and a Dolby Vision
+# configuration record cannot be produced by any encoder this project is
+# allowed to invoke; tools/gen_video_fixtures.py hand-constructs the
+# bitstreams and boxes directly instead. D-02: every fixture below is an
+# ordinary corpus member -- entering tests/golden/CORPUS_DIGEST.txt like any
+# other fixture -- so DOC-03's registry-enumerated coverage gate needs no
+# exemption. D-03: the byte-level NAL/box construction lives in a Python
+# 3.11, stdlib-only helper under tools/, out of this script's own bash-3.2
+# gate (scripts/lint_bash4_builtins.sh).
+#
+# Gate on the interpreter first, in the same shape the ffmpeg version gate
+# above uses: fail with a message naming the requirement and the reason,
+# rather than proceeding to a partial corpus.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "gen_corpus error: 04-05-PLAN.md's hand-constructed video fixtures require python3 >= 3.11, but no 'python3' was found on PATH." >&2
+  exit 1
+fi
+PYTHON3_VERSION_OK=$(python3 -c 'import sys; print(1 if sys.version_info >= (3, 11) else 0)' 2>/dev/null || echo 0)
+if [ "$PYTHON3_VERSION_OK" != "1" ]; then
+  echo "gen_corpus error: 04-05-PLAN.md's hand-constructed video fixtures require python3 >= 3.11; found: $(python3 --version 2>&1)" >&2
+  exit 1
+fi
+
+# One invocation, every hand-constructed fixture's output path passed as an
+# explicit literal $OUT_DIR/<name> token -- the only form
+# scripts/check_corpus.sh's mechanical extraction can see (its own header
+# comment states this explicitly). The DOVI and SAR-conflict fixtures splice
+# or patch a copy of an already-generated carrier file (04-02's
+# video_base.mp4, video_sar_4_3.mp4), so this block runs after both exist.
+python3 tools/gen_video_fixtures.py \
+  --h264-closed "$OUT_DIR/video_h264_closed.h264" \
+  --h264-idr48 "$OUT_DIR/video_h264_idr48.h264" \
+  --h264-open "$OUT_DIR/video_h264_open.h264" \
+  --h264-refs1 "$OUT_DIR/video_h264_refs1.h264" \
+  --h264-refs4 "$OUT_DIR/video_h264_refs4.h264" \
+  --hevc-idr "$OUT_DIR/video_hevc_idr.hevc" \
+  --hevc-cra "$OUT_DIR/video_hevc_cra.hevc" \
+  --dovi-carrier "$OUT_DIR/video_base.mp4" \
+  --dovi-a "$OUT_DIR/video_dovi_a.mp4" \
+  --dovi-b "$OUT_DIR/video_dovi_b.mp4" \
+  --dovi-a-copy "$OUT_DIR/video_dovi_a_copy.mp4" \
+  --sar-carrier "$OUT_DIR/video_sar_4_3.mp4" \
+  --sar-conflict "$OUT_DIR/video_sar_conflict.mp4"
+
+# 04-09-PLAN.md Task 3: video.gop.idr_interval/video.gop.closed/
+# video.gop.refs' own DOC-03 clean pair needs a byte-identical copy of
+# video_h264_closed.h264 -- the same "prove nothing changed" shape every
+# other *_copy.* fixture above already follows (video_base_copy.mp4,
+# video_gop_g48_copy.mp4, etc.), not a clean pair borrowed from an
+# unrelated codec family, which would prove a different property.
+cp "$OUT_DIR/video_h264_closed.h264" "$OUT_DIR/video_h264_closed_copy.h264"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4."

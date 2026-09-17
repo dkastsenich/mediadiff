@@ -52,6 +52,14 @@ add_executable(mediadiff_unit_tests
   # budget/threads derivation, and the T-2-41 --threads/[dir] threads
   # ceiling (03-03-PLAN.md Task 2).
   test_packet_budget.cpp
+  # PROBE-03: the single-sweep invariant (read_frame_call_count equality
+  # with/without parsing enabled), the one-mpeg4-packet-is-one-access-unit
+  # count, the key_frame-vs-packet-flag agreement, the parser-disabled
+  # nullopt/unchanged-shape case, the hand-verified H.264/HEVC NAL-type
+  # walk (including the truncated-NAL and kMaxNalsPerAccessUnit bounds),
+  # and the shared T-4-01 byte-budget exhaustion setting `partial` on both
+  # the packet and parser results (04-01-PLAN.md Task 3).
+  test_parser_scan.cpp
   # CONT-01/CONT-09: container.track_count/track_types/track_order/chapters
   # -- the four remaining container-agnostic topology checks, expanding the
   # tracer's own container.format (03-04-PLAN.md Task 1).
@@ -128,6 +136,55 @@ add_executable(mediadiff_unit_tests
   # stream whose every packet lacks a DTS) via direct PacketScanResult
   # construction (03-09-PLAN.md Task 1).
   test_size_analyzer.cpp
+  # VIDEO-01/VIDEO-02: video.codec/profile/level/resolution/frame_count --
+  # one Measurement per video stream, the right Value alternative per
+  # check, none on a file with no video stream, the transform-affected
+  # resolution flag's own compared-value shape, the container-declared vs
+  # counted frame-count disagreement (VIDEO-02-E1), the D-02 partial_scan
+  # skip, and detail::render_profile_value/render_level_value's own rules
+  # (VIDEO-01-E2, the level table) driven directly (04-06-PLAN.md).
+  test_video_stream_params.cpp
+  # 04-08-PLAN.md (VIDEO-03/VIDEO-07/VIDEO-08): video.pix_fmt and the five
+  # colour-identity checks -- the five-entry yuvj* range-fold table driven
+  # directly via detail::fold_pix_fmt_range, the "already-explicit range
+  # is never overwritten" behavior, the folded value's identity across the
+  # yuvj420p/yuv420p-full-range spelling pair, and the effective range
+  # split between the full-range and limited-range fixtures.
+  test_video_color.cpp
+  # 04-07-PLAN.md Task 1 (D-05/D-06/D-07): derive_cadence's nine
+  # hand-verified behaviors -- mode-interval selection, PTS-then-DTS axis
+  # fallback, the no_timing_data/insufficient_data split, shuffled-order
+  # invariance, a non-unit-numerator timebase, and overflow-refuses-a-
+  # wrapped-value, driven directly against hand-built PacketRecord arrays
+  # with hand-computed expected values (no fixture on disk).
+  test_cadence.cpp
+  # VIDEO-05/VIDEO-12 (04-09-PLAN.md): the open/closed GOP classification's
+  # own hand-verified NAL-type table, driven directly through
+  # detail::classify_access_unit/detail::classify_gop -- every expected
+  # value hand-verified against 04-RESEARCH.md's Priority Finding 3 before
+  # the assertion was written, never captured from the implementation
+  # (test_ts_continuity.cpp's own governing discipline, inherited
+  # verbatim). Extended in Task 3 with the H.264 SPS reference-frame
+  # reader's own hand-built payload table (`detail::
+  # read_h264_max_num_ref_frames`).
+  test_gop_classification.cpp
+  # VIDEO-06 (04-10-PLAN.md): video.interlace's own cross-check --
+  # detail::classify_interlace driven directly over hand-built
+  # AccessUnitRecord arrays for the mixed/disagreement/no-cross-check
+  # cases (the only reliable way to reach them, this plan's own flagged
+  # assumption A1), plus video_interlace_analyzer() run end to end against
+  # real interlace fixtures (a real run_packet_scan sweep, never a
+  # hand-built ProbeResults) for the TFF/BFF/progressive/no-parser/
+  # partial-scan/mixed/determinism behaviors.
+  test_video_interlace.cpp
+  # VIDEO-09 (04-11-PLAN.md): video.hdr.mdcv/.luminance/.primaries and
+  # video.hdr.cll/.max/.avg -- detail::quantize_chromaticity and
+  # detail::could_carry_frame_level_hdr driven directly (hand-computed
+  # tables, including the fixed away-from-zero midpoint-rounding rule),
+  # plus video_hdr_analyzer()'s own run() end to end against the real
+  # HDR fixture corpus (plan 04-04) for the mastering-display/content-
+  # light presence, value and cross-family-independence behaviors.
+  test_video_hdr.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the

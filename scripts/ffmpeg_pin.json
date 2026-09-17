@@ -1,6 +1,6 @@
 {
   "version": "9.0.1",
-  "provider": "martin-riedl.de static builds (linux-x86_64, linux-aarch64, macos-arm64); BtbN/FFmpeg-Builds LGPL static build (windows-x86_64)",
+  "provider": "martin-riedl.de static builds (linux-x86_64, linux-aarch64, macos-arm64); windows-x86_64 is a BtbN/FFmpeg-Builds LGPL static build, mirrored as an asset of this repository's ffmpeg-pins release because upstream BtbN autobuild releases are purged after about a week",
   "builds": {
     "linux-x86_64": {
       "url": "https://ffmpeg.martin-riedl.de/download/linux/amd64/1787074600_9.0.1/ffmpeg.zip",
@@ -21,10 +21,10 @@
       "ffmpeg_path": "ffmpeg"
     },
     "windows-x86_64": {
-      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-02-13-13/ffmpeg-n9.0.1-11-ge47273f4d9-win64-lgpl-9.0.zip",
-      "sha256": "14ce996102bcaccdc8de62e404dd96c9e6eb4c7ae28a25eb3537817f1e4d60fd",
+      "url": "https://github.com/dkastsenich/mediadiff/releases/download/ffmpeg-pins/ffmpeg-n9.0.1-29-gad500d59cb-win64-lgpl-9.0.zip",
+      "sha256": "084874559d629b29cea0cae5b4d3cbb8e384d323f4eb3f1835bd9705d83bf58e",
       "archive": "zip",
-      "ffmpeg_path": "ffmpeg-n9.0.1-11-ge47273f4d9-win64-lgpl-9.0/bin/ffmpeg.exe"
+      "ffmpeg_path": "ffmpeg-n9.0.1-29-gad500d59cb-win64-lgpl-9.0/bin/ffmpeg.exe"
     }
   }
 }

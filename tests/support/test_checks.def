@@ -166,6 +166,19 @@ severity = "fail"
 aliases = ["t.aliased_old"]
 
 [[check]]
+# 04-12-PLAN.md (D-10): the `state` semantic's own test-registry coverage --
+# see src/core/registry.h's Semantic enum / src/compare/state.cpp. Backs
+# the fail_first coverage gate's (state, pass)/(state, fail)/(state, error)
+# cells (tests/unit/test_fail_first_coverage.cpp).
+id = "t.state_flag"
+group = "t"
+semantic = "state"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+flagged_values = ["flagged"]
+
+[[check]]
 id = "t.transform_resolution"
 group = "t"
 semantic = "exact"
