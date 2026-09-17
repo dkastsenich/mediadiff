@@ -341,6 +341,16 @@ StreamInfo DemuxSession::stream_info(int index) const {
   info.is_timecode = codecpar->codec_tag == MKTAG('t', 'm', 'c', 'd');
   info.is_caption = codecpar->codec_id == AV_CODEC_ID_EIA_608;
 
+  // 05-11-PLAN.md (TIME-11): AVStream::metadata["timecode"], resolved here
+  // -- the ONE place this project reads this key, same per-field boundary
+  // as every other value above. Populated by the MOV/MP4 demuxer during
+  // avformat_find_stream_info itself (05-RESEARCH.md Pattern 4), never by
+  // a decode call.
+  const AVDictionaryEntry* timecode_entry = av_dict_get(stream->metadata, "timecode", nullptr, 0);
+  if (timecode_entry != nullptr && timecode_entry->value != nullptr) {
+    info.timecode_metadata = timecode_entry->value;
+  }
+
   // 04-06-PLAN.md (VIDEO-01/02): resolved here, never past this file's own
   // opaque-AVFormatContext boundary -- see StreamInfo's own comment.
   info.codec_id_raw = static_cast<std::int64_t>(codecpar->codec_id);

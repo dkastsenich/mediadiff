@@ -174,6 +174,12 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // the family stays grouped in the stable, hand-written analyzer
       // order (TRUST-05).
       timeline_av_sync_analyzer(),
+      // 05-11-PLAN.md (TIME-11): timeline.timecode / timeline.timecode.value
+      // -- listed directly after this phase's own av_offset/av_drift
+      // analyzer so the family stays grouped in the stable, hand-written
+      // analyzer order (TRUST-05). Pass::demux_header only -- no scan of
+      // any kind needed, matching video_color_analyzer()'s own shape.
+      timeline_timecode_analyzer(),
   };
   return registry;
 }

@@ -202,6 +202,10 @@ add_library(libmediadiff STATIC
   # TIME-06/TIME-09/TIME-10 (05-09-PLAN.md): timeline.av_offset, plus the
   # shared resolve_priming primitive Phase 6's audio.priming extends.
   src/analyzers/timeline/av_sync.cpp
+  # TIME-11 (05-11-PLAN.md): timeline.timecode and timeline.timecode.value
+  # -- a QuickTime tmcd track's SMPTE start timecode, reachable from
+  # Pass::demux_header alone (no scan of any kind needed).
+  src/analyzers/timeline/timecode.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

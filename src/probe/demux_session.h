@@ -424,6 +424,18 @@ struct StreamInfo {
   // hand-maintained stream-to-PID table. Meaningless (and never read) on
   // any non-MPEG-TS container.
   std::int64_t stream_id = -1;
+
+  // 05-11-PLAN.md (TIME-11): AVStream::metadata["timecode"] verbatim -- the
+  // MOV/MP4 demuxer resolves a `tmcd` track's starting SMPTE timecode
+  // during avformat_find_stream_info itself (confirmed against the linked
+  // FFmpeg 8.1 source, 05-RESEARCH.md Pattern 4) and publishes it as a
+  // plain string under this exact metadata key, with ZERO additional
+  // decode calls -- reachable from Pass::demux_header alone. std::nullopt
+  // distinguishes "no such key" (a stream that never carries one) from
+  // "key present with an empty value" -- the same absent-versus-empty
+  // convention declared_duration_ticks above already follows for
+  // AVStream::duration's AV_NOPTS_VALUE sentinel.
+  std::optional<std::string> timecode_metadata;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

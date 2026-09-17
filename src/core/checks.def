@@ -1454,3 +1454,57 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 05-11-PLAN.md (TIME-11), src/analyzers/timeline/timecode.cpp -- SMPTE
+# timecode PRESENCE from a QuickTime `tmcd` track, reachable from
+# Pass::demux_header ALONE (05-RESEARCH.md Pattern 4: the MOV/MP4 demuxer
+# resolves the tmcd track's starting timecode during
+# avformat_find_stream_info itself, ZERO decode calls). `presence`
+# semantic, `info` severity (doc 04's own table: "broadcast configs raise
+# to fail via one --set"). A file with no tmcd track reports Absent{} --
+# an explicit, comparable absence, never an empty string, so a timecode
+# that DISAPPEARS between two builds is reported (TIME-11's empty edge).
+# SkipReason::none in every case (an ordinary, real, permanent absence,
+# never `skipped`). Evidence carries `source` ("tmcd"), `drop_frame`,
+# `timecode_stream_index` and `unreachable_sources` -- the latter names
+# AV_PKT_DATA_S12M_TIMECODE (no file-demuxer producer in this build,
+# libavdevice is not linked) and MPEG-2 GOP timecode
+# (AV_FRAME_DATA_GOP_TIMECODE, decode-only) with the reason
+# "requires_decode", so a user asking why their broadcast/GOP timecode was
+# not detected gets the answer from `mediadiff explain` (05-RESEARCH.md
+# Pitfall 6). No separately-triggerable S12M id: DOC-03 requires a real
+# trigger fixture, and none can exist for a source this build cannot ever
+# reach (05-CHECK-ROSTER.md).
+[[check]]
+id = "timeline.timecode"
+group = "timeline"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "info"
+
+# 05-11-PLAN.md (TIME-11), the SAME `run_timeline_timecode` call as
+# `timeline.timecode` immediately above -- this id is the SMPTE START
+# VALUE itself, split per src/compare/presence.cpp's own documented "a
+# value comparison is a separate check on the same extraction" rule
+# (mirrors video.hdr.mdcv/.luminance's own split, 04-CHECK-ROSTER.md
+# precedent). `exact` semantic: the value libav publishes compared BYTE
+# FOR BYTE -- never parsed into fields, never normalised, trimmed or
+# case-folded, so the drop-frame punctuation (a semicolon before the frame
+# field, confirmed reachable on the no-decode path, 05-RESEARCH.md/
+# 05-11-SUMMARY.md's own empirical resolution of Open Question 1) is part
+# of the compared value: a drop-frame and non-drop-frame timecode at the
+# same nominal position compare as DIFFERENT. `Absent{}` (never an empty
+# string) when no tmcd track exists -- `compare/exact.cpp`'s structural
+# Value::operator== makes an Absent-versus-string pair a genuine
+# difference, so a timecode that disappears is caught by THIS id too, not
+# only by the presence id above. Same skip-reason behaviour and the same
+# `unreachable_sources` evidence as `timeline.timecode`, since both ids
+# skip together from the same call.
+[[check]]
+id = "timeline.timecode.value"
+group = "timeline"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "info"
