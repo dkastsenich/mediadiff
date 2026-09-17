@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-10-PLAN.md
-last_updated: "2026-09-17T13:14:29.538Z"
+stopped_at: Completed 05-11-PLAN.md
+last_updated: "2026-09-17T13:40:20.330Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: a54887907663c4581db2e3dc0a3b4c6d8fe303ff
+state_head: 6aa82a64b17673b9546fa3ca5428871cd1dbe3fb
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 77
+  completed_plans: 78
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 11 of 13
+Plan: 12 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -128,6 +128,7 @@ Progress: [█████████░] 92%
 | Phase 05 P08 | ~2h | 3 tasks | 24 files |
 | Phase 05-timeline-analysis P09 | 19min | 3 tasks | 21 files |
 | Phase 05 P10 | this-session | 3 tasks | 10 files |
+| Phase 05 P11 | this-session | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -297,6 +298,9 @@ Recent decisions affecting current work:
 - [Phase 05]: clamp_into_nearest_packet caps containment width at 2x the stream's own median packet duration -- libavformat's gap-absorbing duration heuristic otherwise masks genuine splices.
 - [Phase 05]: Added an ordinal (packet-count-proportional) checkpoint cross-check alongside the time-proportional estimate -- the time-proportional value is provably self-correcting and cannot alone surface a mid-file discontinuity.
 - [Phase 05]: timeline.av_drift.pattern == step was not achieved for any fixture: proven algebraically unreachable under this checkpoint-construction architecture; flagged as a follow-up architecture item, not silently worked around.
+- [Phase 05]: 05-11: drop-frame flag recovered via string punctuation (semicolon vs colon), resolved empirically against the pinned ffmpeg generator before implementation
+- [Phase 05]: 05-11: S12M/GOP timecode sources reported honestly via unreachable_sources evidence, never a separately-triggerable check id
+- [Phase 05]: 05-11: timeline.timecode/timeline.timecode.value scoped Scope::Kind::global (file-level SMPTE origin, mirrors timeline.start's D-03)
 
 ### Pending Todos
 
@@ -336,6 +340,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-17T13:14:29.356Z
-Stopped at: Completed 05-10-PLAN.md
+Last session: 2026-09-17T13:40:20.144Z
+Stopped at: Completed 05-11-PLAN.md
 Resume file: None

@@ -54,7 +54,12 @@ key-decisions:
 patterns-established:
   - "Structurally-unreachable check source disclosed via a static evidence array cited in docs/checks/<id>.md's own What it measures section -- the pattern a future decode-pass phase (S12M/GOP timecode) or any other build-time-unreachable source should follow instead of a dead code path."
 
-requirements-completed: [TIME-11, DOC-04]
+requirements-completed: [TIME-11]
+# DOC-04 is shared across sibling plans in this phase and was still blocked
+# (requirements.ready-ids: blocked) at this plan's own close-out -- this
+# plan's own DOC-04 obligation (declared_pairs, no-others sets) is fully
+# met (see D2 in coverage below); the shared id itself will be marked
+# complete once every sibling plan referencing it has also closed out.
 
 coverage:
   - id: D1
