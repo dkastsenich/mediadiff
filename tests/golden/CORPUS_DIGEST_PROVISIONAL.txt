@@ -86,6 +86,12 @@
 # fixtures below (timeline_drift_base.mp4, timeline_drift_linear.mp4,
 # timeline_drift_step.mp4), same workstation-computed-awaiting-designated-
 # leg-transcription status as every other entry in this file.
+#
+# 05-11-PLAN.md Task 1 adds the timeline.timecode / timeline.timecode.value
+# fixtures below (timeline_tc_absent.mp4, timeline_tc_df.mp4,
+# timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4,
+# timeline_tc_ndf_shifted.mp4), same workstation-computed-awaiting-
+# designated-leg-transcription status as every other entry in this file.
 timeline_avoffset_unknown.ts
 timeline_avoffset_video_shift.mp4
 timeline_drift_base.mp4
@@ -101,6 +107,11 @@ timeline_pts_dupe.mp4
 timeline_start_base.mp4
 timeline_start_base_copy.mp4
 timeline_start_shift.ts
+timeline_tc_absent.mp4
+timeline_tc_df.mp4
+timeline_tc_ndf.mp4
+timeline_tc_ndf_copy.mp4
+timeline_tc_ndf_shifted.mp4
 timeline_ts_jump.ts
 timeline_ts_jump_flagged.ts
 timeline_ts_nowrap.ts

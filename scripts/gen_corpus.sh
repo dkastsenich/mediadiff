@@ -2061,4 +2061,58 @@ python3 tools/gen_ts_discontinuity.py \
   -bsf:a "setts=pts='if(gte(N\,95)\,PTS+4410\,PTS)':dts='if(gte(N\,95)\,DTS+4410\,DTS)'" -y \
   "$OUT_DIR/timeline_drift_step.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4."
+# --- 05-11-PLAN.md (TIME-11): timeline.timecode / timeline.timecode.value's
+# own fixtures. `-timecode` makes the MOV/MP4 muxer add a `tmcd` timecode
+# data track automatically (the SAME mechanism topo_tmcd.mp4 above already
+# exercises for CONT-09) -- the MOV/MP4 demuxer resolves that track's own
+# starting SMPTE timecode during avformat_find_stream_info itself and
+# publishes it as a plain string under AVStream::metadata["timecode"], with
+# ZERO decode calls (05-RESEARCH.md Pattern 4, re-verified this task against
+# the pinned generator: `ffprobe -show_entries stream_tags=timecode` reports
+# exactly `00:00:10:00` for a `-timecode 00:00:10:00` non-drop-frame input).
+# `timeline_tc_ndf.mp4`/`timeline_tc_ndf_copy.mp4`/`timeline_tc_ndf_shifted.mp4`/
+# `timeline_tc_absent.mp4` all share the SAME 320x240/25fps/4s video+audio
+# shape as timeline_start_base.mp4 above, differing ONLY in the `-timecode`
+# option -- the ONLY structural change between the with-tmcd and
+# without-tmcd fixtures is the tmcd track itself.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -timecode 00:00:10:00 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_tc_ndf.mp4"
+
+cp "$OUT_DIR/timeline_tc_ndf.mp4" "$OUT_DIR/timeline_tc_ndf_copy.mp4"
+
+# The trigger pair for timeline.timecode.value: identical except the START
+# timecode (`00:00:20:00` instead of `00:00:10:00`). Presence is unchanged
+# (both carry a tmcd track) -- only the compared STRING changes.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -timecode 00:00:20:00 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_tc_ndf_shifted.mp4"
+
+# The trigger pair for timeline.timecode (presence): the IDENTICAL encode
+# with NO `-timecode` option at all -- no tmcd track at all, TIME-11's own
+# empty edge.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_tc_absent.mp4"
+
+# `timeline_tc_df.mp4`: the DROP-FRAME arm -- 05-RESEARCH.md's own Open
+# Question 1, resolved empirically this task (05-11-SUMMARY.md): a
+# drop-frame-rate `-timecode` input renders with a SEMICOLON before the
+# frame field (`00:00:10;00`) rather than a colon, confirmed against the
+# pinned generator -- the drop-frame flag IS recoverable from the string's
+# own punctuation on the no-decode path, no rate-derived fallback needed.
+# 30000/1001 (NTSC) is the only rate class SMPTE drop-frame timecode
+# applies to, so there is no same-rate non-drop-frame counterpart to pair
+# this against for a whole-report comparison (a rate change moves several
+# collateral checks at once) -- this fixture is proven standalone via
+# `mediadiff inspect --json` (05-11-SUMMARY.md), not folded into a DOC-04
+# declared-set pair.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=30000/1001:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -timecode "00:00:10;00" -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_tc_df.mp4"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4."
