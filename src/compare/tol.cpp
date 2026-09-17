@@ -160,29 +160,37 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
 
   // D-07 (05-10-PLAN.md, timeline.av_drift) -- Rule 2 addition, not named
   // in that plan's own `files_modified`, mirroring D-10's own precedent
-  // immediately above exactly: a GENERIC, evidence-shape-driven override,
-  // never gated on `check.id` -- a check with no `end_delta_ms` evidence
-  // key on BOTH sides never triggers this branch at all. `timeline.
-  // av_drift` gates on the fitted RATE only when the ACCUMULATED end
-  // delta on BOTH sides also clears the SAME 2ms epsilon `timeline.
-  // av_drift.pattern`'s own classifier uses (kDriftEpsilonMs,
+  // immediately above in SHAPE (a GENERIC, evidence-shape-driven
+  // override, never gated on `check.id` -- a check with no
+  // `end_delta_ms` evidence key on BOTH sides never triggers this branch
+  // at all), but DELTA-based rather than a per-side magnitude test, for
+  // the same reason every OTHER comparison in this file is delta-based
+  // (the RATE itself, immediately below, is `candidate - baseline`, never
+  // an absolute magnitude on either side alone): `timeline.av_drift`
+  // gates on the fitted RATE only when the ACCUMULATED end delta CHANGE
+  // between baseline and candidate also clears the SAME 2ms epsilon
+  // `timeline.av_drift.pattern`'s own classifier uses (kDriftEpsilonMs,
   // analyzers/timeline/analyzers.h -- ONE constant, never a second,
-  // independently-tuned copy). Reason (D-07's own worked coincidence): a
-  // fitted rate is an EXTRAPOLATION over the file's own span -- on a
-  // short clip at a fine timebase, packet-timestamp rounding alone can
-  // push it past the 0.2ms/min tolerance with no real drift present. The
+  // independently-tuned copy). A per-side (rather than delta) test was
+  // tried first and rejected during this task's own execution (recorded
+  // in 05-10-SUMMARY.md): requiring BOTH sides' own end delta to
+  // independently clear the epsilon can never fire when baseline is a
+  // clean reference (end_delta ~ 0, the common case), which would make
+  // the flagship check structurally unable to catch a real regression
+  // against a clean baseline -- exactly backwards from D-07's own intent.
+  // Reason (D-07's own worked coincidence): a fitted rate is an
+  // EXTRAPOLATION over the file's own span -- on a short clip at a fine
+  // timebase, packet-timestamp rounding alone can push it past the
+  // 0.2ms/min tolerance with no real drift present on EITHER side. The
   // accumulated end delta is a directly MEASURED quantity, not an
-  // extrapolation, so it stays small when the "drift" is really rounding
-  // noise. 0.2ms/min sustained over the 10-minute reference file this
-  // tolerance was calibrated against is exactly 2ms -- where the two
-  // thresholds coincide. Requiring BOTH sides' own end delta to clear the
-  // epsilon (never just one) mirrors D-10's own "both sides must agree"
-  // posture directly above: false positives are P0, so either side's
-  // rounding-dominated end delta is enough to treat the whole comparison
-  // as noise, never a fabricated regression. `abs()` routes through
-  // `detail::checked_negate` for the SAME CR-03 reason as every other
-  // magnitude in this file: `end_delta_ms` is read from an untrusted
-  // snapshot too.
+  // extrapolation, so its OWN cross-side delta stays small when the
+  // "drift" is really rounding noise on both sides. 0.2ms/min sustained
+  // over the 10-minute reference file this tolerance was calibrated
+  // against is exactly 2ms of ACCUMULATED delta relative to a
+  // zero-drift baseline -- where the two thresholds coincide. `abs()`
+  // routes through `detail::checked_negate` for the SAME CR-03 reason as
+  // every other magnitude in this file: `end_delta_ms` is read from an
+  // untrusted snapshot too.
   const auto side_end_delta_ms = [](const Measurement& side) -> std::optional<std::int64_t> {
     if (!side.evidence.is_object() || !side.evidence.contains("end_delta_ms") ||
         !side.evidence.at("end_delta_ms").is_number_integer()) {
@@ -195,15 +203,15 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   const bool has_end_delta_gate = baseline_end_delta_ms.has_value() && candidate_end_delta_ms.has_value();
   bool end_delta_clears_epsilon = true;  // No gate evidence -- never suppresses the verdict.
   if (has_end_delta_gate) {
-    std::int64_t abs_baseline_end_delta = *baseline_end_delta_ms;
-    if (abs_baseline_end_delta < 0 && !detail::checked_negate(abs_baseline_end_delta, &abs_baseline_end_delta)) {
-      return overflow_finding("abs_baseline_end_delta (D-07 gate)");
+    std::int64_t end_delta_change = 0;
+    if (!detail::checked_sub(*candidate_end_delta_ms, *baseline_end_delta_ms, &end_delta_change)) {
+      return overflow_finding("end_delta_change (D-07 gate)");
     }
-    std::int64_t abs_candidate_end_delta = *candidate_end_delta_ms;
-    if (abs_candidate_end_delta < 0 && !detail::checked_negate(abs_candidate_end_delta, &abs_candidate_end_delta)) {
-      return overflow_finding("abs_candidate_end_delta (D-07 gate)");
+    std::int64_t abs_end_delta_change = end_delta_change;
+    if (abs_end_delta_change < 0 && !detail::checked_negate(abs_end_delta_change, &abs_end_delta_change)) {
+      return overflow_finding("abs_end_delta_change (D-07 gate)");
     }
-    end_delta_clears_epsilon = abs_baseline_end_delta >= kDriftEpsilonMs && abs_candidate_end_delta >= kDriftEpsilonMs;
+    end_delta_clears_epsilon = abs_end_delta_change >= kDriftEpsilonMs;
   }
   // Applied at every return point below, after `finding.status`/`finding.
   // message` are set: downgrades a non-pass verdict to `pass` when the
@@ -213,7 +221,7 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   const auto apply_end_delta_gate = [&]() {
     if (!end_delta_clears_epsilon && finding.status != Status::pass) {
       finding.status = Status::pass;
-      finding.message += " (D-07: end delta below 2ms epsilon on at least one side, rate delta ignored)";
+      finding.message += " (D-07: end delta change below 2ms epsilon, rate delta ignored)";
     }
   };
 

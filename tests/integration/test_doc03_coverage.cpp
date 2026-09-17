@@ -37,7 +37,9 @@
 // discontinuities.flagged, bringing the total to seventy. 05-08-PLAN.md
 // registers timeline.jitter and timeline.vfr_profile, bringing the total
 // to seventy-two. 05-09-PLAN.md registers timeline.av_offset, bringing the
-// total to seventy-three. This file is where a gap becomes visible.
+// total to seventy-three. 05-10-PLAN.md registers timeline.av_drift and
+// timeline.av_drift.pattern, bringing the total to seventy-five. This file
+// is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -527,6 +529,25 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       // byte-identical pair, confirmed empirically).
       {"timeline.av_offset",
        {fixture("timeline_start_base.mp4"), fixture("timeline_avoffset_video_shift.mp4"),
+        fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
+      // 05-10-PLAN.md Task 3 (TIME-07/TIME-08, D-04): timeline.av_drift and
+      // timeline.av_drift.pattern -- ONE trigger pair covers BOTH ids.
+      // timeline_drift_base.mp4/timeline_drift_linear.mp4 (the classic 0.1%
+      // clock-error recipe, doc 04 section 5, `asetrate=48048,
+      // aresample=48000`) verified empirically under --profile sw-encoder:
+      // timeline.av_drift reports `fail` (measured rate ~-60.28ms/min,
+      // beyond the registered 0.2ms/min fail threshold) and
+      // timeline.av_drift.pattern reports `fail` with candidate value
+      // `linear-drift`. Its clean pair reuses the same
+      // timeline_start_base.mp4/_copy.mp4 byte-identical pair every other
+      // timeline check above reuses (both ids `pass`, confirmed
+      // empirically: rate/end_delta exactly zero, pattern `constant-
+      // offset`).
+      {"timeline.av_drift",
+       {fixture("timeline_drift_base.mp4"), fixture("timeline_drift_linear.mp4"),
+        fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.av_drift.pattern",
+       {fixture("timeline_drift_base.mp4"), fixture("timeline_drift_linear.mp4"),
         fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
   };
   return pairs;

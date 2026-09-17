@@ -1980,4 +1980,85 @@ python3 tools/gen_ts_discontinuity.py \
   -flags +bitexact -fflags +bitexact -y \
   -f mpegts "$OUT_DIR/timeline_avoffset_unknown.ts"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts."
+# --- 05-10-PLAN.md Task 3 (TIME-07/TIME-08, D-04/D-07/D-08): the flagship
+# `timeline.av_drift` / `timeline.av_drift.pattern` checks' own fixtures ---
+#
+# `timeline_drift_linear.mp4` / `timeline_drift_base.mp4`: the LINEAR-DRIFT
+# arm, doc 04 section 5's own "classic 0.1% clock error" recipe --
+# `asetrate=48048,aresample=48000` reads the sine source at 48048Hz then
+# resamples it down to a DECLARED 48000Hz, so the encoded content plays
+# 48048/48000 = 1.001x faster than its own declared rate: a genuine,
+# uniform clock-rate mismatch between the audio and video timelines, not a
+# PTS-level artifact. 20 SECONDS, not doc 04's own unqualified duration --
+# this task's own empirical finding: at 30s/60s, the K=32 least-squares
+# fit's own reduced slope denominator exceeds `kMaxDriftDenominator`
+# (analyzers.h) at MILLISECOND-tick granularity over that span, correctly
+# returning `fit_failed` (never a false, truncated rate) rather than a
+# usable measurement -- 20s stays comfortably inside the safe range while
+# still landing close to doc 04's own "~60ms/min" worked prediction
+# (measured: -60.28ms/min against `timeline_drift_base.mp4` below).
+# `sample_rate=48000` explicit on `sine=` is REQUIRED: the `sine` lavfi
+# source's own default rate is 44100Hz, not 48000Hz, so omitting it turns
+# the intended 0.1% error into a ~8.9% one (44100/48048 =/= 48000/48048;
+# this task's own measured regression while iterating this recipe).
+# `timeline_drift_base.mp4` is the CLEAN, same-duration companion -- doc 02's
+# "every fixture produces exactly the intended findings and no others"
+# clause needs a duration-matched baseline, not `timeline_start_base.mp4`'s
+# own 4s tracer, or `timeline.duration`'s own triple-comparison would fire
+# as an unrelated collateral finding on every compare against this pair.
+# `-c:v mpeg4 -c:a aac`, never libx264/GPL, matching every other fixture in
+# this script.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
+  -f lavfi -i "sine=frequency=440:duration=20:sample_rate=48000,asetrate=48048,aresample=48000" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_drift_linear.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
+  -f lavfi -i "sine=frequency=440:duration=20:sample_rate=48000" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_drift_base.mp4"
+
+# `timeline_drift_step.mp4`: the STEP arm -- a genuine, isolated mid-file
+# audio PTS discontinuity, the SAME proven "PTS-only via `setts`, packet
+# N onward" technique `timeline_gap.mp4` above uses for VIDEO, applied to
+# AUDIO instead. Both `pts` AND `dts` are shifted together here (unlike
+# `timeline_gap.mp4`'s video-only, PTS-only shift): this task's own
+# empirical finding is that MP4 audio packets, unlike video, need BOTH set
+# together for the muxer to actually apply a forward PTS shift -- a
+# PTS-only attempt on audio measurably had no effect on the muxed output
+# (this task's own read-back via `ffprobe`, recorded in 05-10-SUMMARY.md).
+# `sine=duration=3.9` (not 4.0, matching the video's own 4s): this task's
+# own worked derivation -- with `N_total` real audio packets and a
+# `+4410`-tick (100ms) shift applied from packet 95 onward, the file's
+# OWN declared audio duration (`AVStream->duration`, computed by the
+# muxer from the actual written packets, shift included) must still equal
+# video's declared 4.0s EXACTLY, or `timeline.av_drift`'s own K=32
+# checkpoint construction (05-10-PLAN.md Task 2, `av_sync.cpp`) reads the
+# resulting total-duration MISMATCH as smooth, whole-file LINEAR drift
+# (correctly, by that construction's own design) rather than an isolated
+# mid-file event -- 3.9s of real source content plus the 100ms shift lands
+# the file's own true final packet position back at 4.0s, matching video
+# exactly (measured: `duration_ts=176400` on both streams, i.e. an EXACT
+# match, confirmed via `ffprobe`). Splice at packet N=95 (not
+# `timeline_gap.mp4`'s own N=50): chosen so the resulting displaced
+# region does not coincide with any of the K=32 checkpoints' own
+# proportionally-mapped audio targets (this task's own worked
+# derivation) -- this project's own `timeline.av_drift.pattern`
+# classifies the measured result `irregular` (residual max 60ms), not
+# `step`: this task's own extensive investigation (05-10-SUMMARY.md
+# Deviations) found that a literal two-flat-plateau `step` classification
+# is unreachable from any ffmpeg-synthesizable fixture under the current
+# checkpoint-construction algorithm (a provable consequence of using a
+# SINGLE whole-file audio/video span ratio, which is self-correcting by
+# construction) -- flagged there as a follow-up architecture item, not
+# silently worked around here. This fixture still exercises the REAL,
+# valuable behavior: a genuine mid-file audio timing anomaly is detected
+# (non-pass `timeline.av_drift.pattern`, non-zero residual) rather than
+# silently smeared into a clean-looking line.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=3.9:sample_rate=44100" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -bsf:a "setts=pts='if(gte(N\,95)\,PTS+4410\,PTS)':dts='if(gte(N\,95)\,DTS+4410\,DTS)'" -y \
+  "$OUT_DIR/timeline_drift_step.mp4"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4."

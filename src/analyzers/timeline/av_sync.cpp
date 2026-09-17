@@ -170,9 +170,31 @@ std::string_view drift_pattern_to_string(DriftPattern pattern) {
 // packet_scan.h), so this sort is O(N log N) for N <= 5,000,000, a fixed,
 // accounted cost, never unbounded.
 struct PtsSpan {
-  std::vector<std::int64_t> pts;  // ascending, valid (non-sentinel) pts, presentation order.
-  std::int64_t span_ticks = 0;    // (last pts + last's own effective duration) - first pts.
-  bool has_span = false;          // pts.size() >= 2 AND span_ticks computed overflow-free and > 0.
+  std::vector<std::int64_t> pts;        // ascending, valid (non-sentinel) pts, presentation order.
+  std::vector<std::int64_t> durations;  // parallel to `pts` -- each entry's own EFFECTIVE duration
+                                         // (declared `PacketRecord::duration` when > 0, else the
+                                         // immediately preceding interval, mirroring the last
+                                         // entry's own fallback below -- so EVERY entry, not just
+                                         // the last, has a usable duration for the containment test
+                                         // `clamp_into_nearest_packet` below performs).
+  std::int64_t span_ticks = 0;          // (last pts + last's own effective duration) - first pts.
+  bool has_span = false;                // pts.size() >= 2 AND span_ticks computed overflow-free and > 0.
+  std::int64_t nominal_duration_ticks = 0;  // MEDIAN of `durations` -- the stream's typical, single-
+                                             // packet extent. `clamp_into_nearest_packet` below caps
+                                             // any one entry's CONTAINMENT width at a bounded multiple
+                                             // of this value, because libavformat's own `AVPacket::
+                                             // duration` for containers/codecs without an explicit
+                                             // per-packet duration (e.g. this project's own AAC-in-MP4
+                                             // fixtures) is filled in by the DEMUXER as the interval to
+                                             // the NEXT packet -- so a genuine splice/gap on the source
+                                             // side is silently reported as one packet's own abnormally
+                                             // WIDE `duration`, not as an absence. Left uncapped, that
+                                             // single value would make `clamp_into_nearest_packet` see
+                                             // "contained" for every target across the whole gap,
+                                             // masking exactly the discontinuity doc 04 section 3's
+                                             // step-pattern detection depends on. 0 when fewer than 1
+                                             // valid duration exists (containment falls back to the
+                                             // entry's own raw duration, unchanged from Task 2).
 };
 
 PtsSpan sorted_pts_with_span(std::span<const PacketRecord> packets) {
@@ -187,26 +209,60 @@ PtsSpan sorted_pts_with_span(std::span<const PacketRecord> packets) {
 
   PtsSpan result;
   result.pts.reserve(entries.size());
-  for (const auto& entry : entries) {
-    result.pts.push_back(entry.first);
+  result.durations.reserve(entries.size());
+  for (std::size_t i = 0; i < entries.size(); ++i) {
+    result.pts.push_back(entries[i].first);
+    std::int64_t effective_duration = entries[i].second;
+    if (effective_duration <= 0) {
+      // No declared duration: the interval to the NEXT entry in
+      // presentation order stands in (the entry BEFORE it, for the very
+      // last entry, exactly like the whole-stream span fallback below) --
+      // a local, O(1) estimate, deliberately simpler than doc 04 section
+      // 1.3's full mode-interval reconstruction, since
+      // clamp_into_nearest_packet below only needs a ROUGHLY right
+      // containment interval, never an exactly right declared duration.
+      const std::size_t neighbor = (i + 1 < entries.size()) ? i + 1 : i - 1;
+      if (i != neighbor) {
+        std::int64_t interval = 0;
+        const bool ok = (neighbor > i) ? detail::checked_sub(entries[neighbor].first, entries[i].first, &interval)
+                                        : detail::checked_sub(entries[i].first, entries[neighbor].first, &interval);
+        effective_duration = (ok && interval > 0) ? interval : 0;
+      } else {
+        effective_duration = 0;
+      }
+    }
+    result.durations.push_back(effective_duration);
   }
+  // Nominal (median) duration -- computed on a LOCAL copy of the positive
+  // entries only (median is robust to the handful of outlier-wide, gap-
+  // absorbed entries this is specifically meant to detect; a mean would be
+  // dragged by exactly the values it needs to discount). O(N log N) here,
+  // same bound as the whole-function sort above.
+  {
+    std::vector<std::int64_t> positive_durations;
+    positive_durations.reserve(result.durations.size());
+    for (const std::int64_t d : result.durations) {
+      if (d > 0) {
+        positive_durations.push_back(d);
+      }
+    }
+    if (!positive_durations.empty()) {
+      const std::size_t mid = positive_durations.size() / 2;
+      std::nth_element(positive_durations.begin(), positive_durations.begin() + static_cast<std::ptrdiff_t>(mid),
+                        positive_durations.end());
+      result.nominal_duration_ticks = positive_durations[mid];
+    }
+  }
+
   if (entries.size() < 2) {
     return result;
   }
 
   const std::int64_t last_pts = entries.back().first;
-  std::int64_t effective_duration = entries.back().second;
-  if (effective_duration <= 0) {
-    const std::int64_t second_last_pts = entries[entries.size() - 2].first;
-    std::int64_t preceding_interval = 0;
-    effective_duration =
-        detail::checked_sub(last_pts, second_last_pts, &preceding_interval) && preceding_interval > 0
-            ? preceding_interval
-            : 0;
-  }
+  const std::int64_t last_effective_duration = result.durations.back();
   std::int64_t last_end = 0;
   std::int64_t span = 0;
-  if (!detail::checked_add(last_pts, effective_duration, &last_end) ||
+  if (!detail::checked_add(last_pts, last_effective_duration, &last_end) ||
       !detail::checked_sub(last_end, entries.front().first, &span) || span <= 0) {
     return result;
   }
@@ -240,6 +296,155 @@ std::int64_t nearest_tick(std::span<const std::int64_t> sorted, std::int64_t tar
   const std::int64_t upper_delta = upper - target;
   const std::int64_t lower_delta = target - lower;
   return (upper_delta < lower_delta) ? upper : lower;
+}
+
+// The audio half of doc 04 section 3.1's checkpoint construction:
+// `target` is the PROPORTIONALLY-mapped position (this file's own
+// `run_timeline_av_sync` -- the same video-span-fraction applied to
+// audio's own span), and this function is what makes that position
+// SAMPLE-ACCURATE against REAL packet data rather than a pure formula --
+// doc 04's own "audio granularity << 1ms makes interpolation
+// unnecessary" (section 3, step 2). For a CONTINUOUS, gapless audio
+// stream, `target` always lands inside SOME real packet's own
+// `[pts, pts+duration)` range (the proportional map and the real packet
+// distribution track each other for a uniformly resampled/compressed
+// stream -- this task's own worked finding, recorded in
+// 05-10-SUMMARY.md), so this function returns `target` UNCHANGED and
+// contributes ZERO quantization noise to the fit -- this is what keeps a
+// genuine, uniform clock-rate mismatch reading as a clean `linear-drift`
+// line (residual max nearly zero) rather than manufacturing per-
+// checkpoint snapping noise the way rounding to the nearest packet
+// START (`nearest_tick` above) would. Only at a genuine DISCONTINUITY in
+// the real packet sequence (a splice, a dropped/duplicated span) does
+// `target` land in a real GAP between two packets' own ranges -- exactly
+// where this function's clamp to the nearer boundary diverges from the
+// smooth proportional formula, which is what lets `fit_drift`'s own
+// step-detection see the jump at all. `nominal_duration_ticks` (the
+// stream's median packet duration, from `sorted_pts_with_span` above)
+// CAPS how far any single entry's own `duration` can extend the
+// containment test: libavformat itself fills a packet's `duration` field
+// as the interval to the NEXT packet when the container/codec has no
+// explicit per-packet value (this project's own AAC-in-MP4 fixtures), so
+// an uncapped containment test would read a genuine splice/gap as one
+// abnormally-WIDE packet's own legitimate extent and never see the
+// discontinuity at all. `kNominalDurationCapMultiplier` (2x) is generous
+// enough to absorb ordinary jitter between neighbouring packet
+// durations while still catching the >=4x-nominal gap-absorbed widths
+// this project's own step fixtures exhibit. 0 (no valid median) leaves
+// containment uncapped, unchanged from Task 2. `sorted`/`durations` are
+// never empty at the only call site below (guarded by the caller's own
+// `size() < 2` check first) and are always the SAME length (both from
+// `sorted_pts_with_span` above).
+// Shared between `clamp_into_nearest_packet` (containment cap) and
+// `index_proportional_raw_ticks` (structural-divergence cap, below): 2x
+// the stream's own median packet duration is generous enough to absorb
+// ordinary jitter between neighbouring packets' own durations while
+// still catching the far-larger (>=4x-nominal, this task's own measured
+// finding) widths that either a demuxer's gap-absorbing `duration`
+// heuristic or a genuine cross-packet divergence produce.
+constexpr std::int64_t kNominalDurationCapMultiplier = 2;
+
+std::int64_t clamp_into_nearest_packet(std::span<const std::int64_t> sorted, std::span<const std::int64_t> durations,
+                                        std::int64_t nominal_duration_ticks, std::int64_t target) {
+  const auto it = std::lower_bound(sorted.begin(), sorted.end(), target);
+  const std::size_t upper_index = static_cast<std::size_t>(it - sorted.begin());
+  // Candidate A: the packet at or before `target` (its own range may
+  // CONTAIN `target`). `lower_bound` gives the first index >= target, so
+  // the containing candidate, if any, is one before that -- UNLESS
+  // `target` exactly equals some entry's own start, in which case that
+  // entry itself is the candidate (index `upper_index`, not
+  // `upper_index - 1`).
+  bool has_lower = false;
+  std::size_t lower_index = 0;
+  if (upper_index < sorted.size() && sorted[upper_index] == target) {
+    has_lower = true;
+    lower_index = upper_index;
+  } else if (upper_index > 0) {
+    has_lower = true;
+    lower_index = upper_index - 1;
+  }
+  if (has_lower) {
+    std::int64_t effective_duration = durations[lower_index];
+    if (nominal_duration_ticks > 0) {
+      std::int64_t cap = 0;
+      if (detail::checked_mul(nominal_duration_ticks, kNominalDurationCapMultiplier, &cap) && cap > 0 &&
+          cap < effective_duration) {
+        effective_duration = cap;
+      }
+    }
+    std::int64_t end_tick = 0;
+    if (detail::checked_add(sorted[lower_index], effective_duration, &end_tick) && target < end_tick) {
+      return target;  // Contained -- sample-accurate, zero clamp.
+    }
+  }
+  // `target` falls in a real gap (or before the first / after the last
+  // entry): clamp to whichever real boundary is nearer -- the lower
+  // candidate's own END (if it exists) or the upper candidate's own
+  // START (if it exists). Ties resolve to the lower boundary, the SAME
+  // fixed rule `nearest_tick` above uses.
+  const bool has_upper = upper_index < sorted.size();
+  const std::int64_t lower_end = has_lower ? sorted[lower_index] + durations[lower_index] : 0;
+  const std::int64_t upper_start = has_upper ? sorted[upper_index] : 0;
+  if (!has_lower) {
+    return upper_start;
+  }
+  if (!has_upper) {
+    return lower_end;
+  }
+  const std::int64_t lower_delta = target - lower_end;
+  const std::int64_t upper_delta = upper_start - target;
+  return (upper_delta < lower_delta) ? upper_start : lower_end;
+}
+
+// Ordinal (packet-COUNT-proportional) cross-check for the audio half of
+// doc 04 section 3.1's checkpoint construction, discovered and added
+// during this task's own fixture work (05-10-SUMMARY.md): the
+// TIME-proportional target above (`clamp_into_nearest_packet`'s own
+// input, built from `audio_span_ticks`) is PROVABLY self-consistent for
+// any input where `audio_span_ticks` accurately reflects real packet
+// coverage -- a pure PTS relabelling (a splice that shifts later
+// packets' own declared timestamps without changing which packet, by
+// ORDER, carries which piece of content) shifts `audio_span_ticks` by
+// exactly the same amount it shifts every later target, so the two
+// cancel and the checkpoint trajectory reads as a smooth affine
+// function of `t_v(k)` -- never a genuine two-plateau `step` (this
+// task's own worked derivation: no TIME-domain-only construction can
+// produce one, recorded in 05-10-SUMMARY.md). Ordinal correspondence --
+// WHICH packet, by COUNT, not by declared timestamp -- is immune to
+// this, since relabelling a packet's OWN pts never changes its ordinal
+// position among its stream's own packets. Doc 04 section 3.2's own
+// "alignment picks the audio time covering the SAME MEDIA POSITION"
+// supports this reading: "same media position" is a content/ordinal
+// notion, not a declared-timestamp one -- using declared timestamps as
+// the alignment's OWN ground truth would be circular for exactly the
+// class of bug this check exists to catch. Returns the RAW (unadjusted)
+// pts of the audio packet at index
+// round(delta_from_video_start_ticks / video_span_ticks * (N-1)),
+// clamped into [0, N-1]. `sorted` is never empty (size >= 2) at the
+// only call site below (guarded by the caller's own `size() < 2` check
+// first); `video_span_ticks` is always > 0 there too (guarded upstream
+// by `video_has_span`).
+std::int64_t index_proportional_raw_ticks(std::span<const std::int64_t> sorted,
+                                           std::int64_t delta_from_video_start_ticks, std::int64_t video_span_ticks) {
+  const std::int64_t last_index = static_cast<std::int64_t>(sorted.size()) - 1;
+  std::int64_t numerator = 0;
+  if (!detail::checked_mul(delta_from_video_start_ticks, last_index, &numerator)) {
+    return sorted.front();
+  }
+  // Round-half-up (never truncate-toward-zero -- an unbiased index pick
+  // matters here since this value is compared against a fixed cap, not
+  // rendered): (numerator + video_span_ticks/2) / video_span_ticks.
+  std::int64_t rounded_numerator = 0;
+  if (!detail::checked_add(numerator, video_span_ticks / 2, &rounded_numerator)) {
+    return sorted.front();
+  }
+  std::int64_t index = rounded_numerator / video_span_ticks;
+  if (index < 0) {
+    index = 0;
+  } else if (index > last_index) {
+    index = last_index;
+  }
+  return sorted[static_cast<std::size_t>(index)];
 }
 
 }  // namespace
@@ -565,17 +770,61 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
             break;
           }
           std::int64_t target_a_ticks = 0;
-          std::int64_t audio_end_ticks = 0;
-          if (!detail::checked_add(audio_start_ticks, audio_delta_ticks, &target_a_ticks) ||
-              !detail::checked_add(audio_start_ticks, audio_span_ticks, &audio_end_ticks)) {
+          if (!detail::checked_add(audio_start_ticks, audio_delta_ticks, &target_a_ticks)) {
             checkpoint_arithmetic_ok = false;
             break;
           }
-          // Safety clamp only -- the construction above is monotonic in
-          // k and stays within [audio_start_ticks, audio_end_ticks] by
-          // its own arithmetic, but a clamp costs nothing and guards the
-          // rare truncation edge case at the exact final checkpoint.
-          const std::int64_t t_a_ticks = std::clamp(target_a_ticks, audio_start_ticks, audio_end_ticks);
+          // clamp_into_nearest_packet operates on `audio_pts_span`'s own
+          // RAW (unadjusted) packet positions -- rebase `target_a_ticks`
+          // out of the priming-ADJUSTED domain before searching, then
+          // rebase the result back, so the search always compares like
+          // with like (priming is a CONSTANT shift, D-10, so rebasing
+          // both directions is exact and lossless).
+          const std::int64_t priming_shift = priming_known ? priming.samples : 0;
+          std::int64_t raw_target_a_ticks = 0;
+          if (!detail::checked_sub(target_a_ticks, priming_shift, &raw_target_a_ticks)) {
+            checkpoint_arithmetic_ok = false;
+            break;
+          }
+          std::int64_t raw_t_a_ticks = clamp_into_nearest_packet(
+              audio_pts_span.pts, audio_pts_span.durations, audio_pts_span.nominal_duration_ticks, raw_target_a_ticks);
+          // Structural (ordinal) cross-check -- 05-10-SUMMARY.md's own
+          // worked finding that the TIME-proportional value above can
+          // never, by construction, diverge from a smooth affine
+          // function of `t_v(k)` for a pure PTS relabelling (a splice).
+          // When the two candidates disagree by more than
+          // `kNominalDurationCapMultiplier` nominal packet widths --
+          // far beyond ordinary quantization between neighbouring
+          // packets -- the ordinal (packet-COUNT-proportional) value is
+          // trusted instead, since it alone is immune to a PTS-only
+          // relabelling. Guarded by `size() >= 2` (this function's own
+          // precondition) and a valid nominal duration (0 means no
+          // reliable per-packet width to cap against, so the TIME-based
+          // value is kept unconditionally, unchanged from Task 2).
+          if (audio_pts_span.pts.size() >= 2 && audio_pts_span.nominal_duration_ticks > 0) {
+            const std::int64_t index_based_raw_ticks = index_proportional_raw_ticks(
+                audio_pts_span.pts, delta_from_video_start_ticks, video_span_ticks);
+            std::int64_t divergence_ticks = 0;
+            if (detail::checked_sub(raw_t_a_ticks, index_based_raw_ticks, &divergence_ticks)) {
+              std::int64_t abs_divergence_ticks = divergence_ticks;
+              bool abs_ok = true;
+              if (abs_divergence_ticks < 0) {
+                abs_ok = detail::checked_negate(abs_divergence_ticks, &abs_divergence_ticks);
+              }
+              std::int64_t divergence_cap = 0;
+              if (abs_ok &&
+                  detail::checked_mul(audio_pts_span.nominal_duration_ticks, kNominalDurationCapMultiplier,
+                                        &divergence_cap) &&
+                  abs_divergence_ticks > divergence_cap) {
+                raw_t_a_ticks = index_based_raw_ticks;
+              }
+            }
+          }
+          std::int64_t t_a_ticks = 0;
+          if (!detail::checked_add(raw_t_a_ticks, priming_shift, &t_a_ticks)) {
+            checkpoint_arithmetic_ok = false;
+            break;
+          }
 
           const std::optional<RationalValue> t_v_ms = detail::ticks_to_ms(t_v_ticks, video_stream.tb);
           const std::optional<RationalValue> t_a_ms = detail::ticks_to_ms(t_a_ticks, audio_stream.tb);

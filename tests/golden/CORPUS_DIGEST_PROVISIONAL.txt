@@ -81,8 +81,16 @@
 # (timeline_avoffset_unknown.ts, timeline_avoffset_video_shift.mp4), same
 # workstation-computed-awaiting-designated-leg-transcription status as
 # every other entry in this file.
+#
+# 05-10-PLAN.md Task 3 adds the timeline.av_drift / timeline.av_drift.pattern
+# fixtures below (timeline_drift_base.mp4, timeline_drift_linear.mp4,
+# timeline_drift_step.mp4), same workstation-computed-awaiting-designated-
+# leg-transcription status as every other entry in this file.
 timeline_avoffset_unknown.ts
 timeline_avoffset_video_shift.mp4
+timeline_drift_base.mp4
+timeline_drift_linear.mp4
+timeline_drift_step.mp4
 timeline_dts_backward.ts
 timeline_duration_short.mp4
 timeline_gap.mp4

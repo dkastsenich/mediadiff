@@ -176,14 +176,19 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
           "meta.tags",
           // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the SAME
           // splice-corrupted timestamp sequence `timeline.duration.
-          // coherence` above already documents nudges the fitted line's
-          // own residual max across the 2ms constant-offset/linear-drift
-          // boundary on the candidate side alone -- `timeline.av_drift`
-          // (the RATE) stays `pass` (D-07's dual gate: the accumulated
-          // end delta never clears the epsilon), but `timeline.
-          // av_drift.pattern` has no such tolerance by design (D-04,
-          // locked one-way) and so reports the classification flip. One
-          // more legitimate effect of the same splice root cause (D-02).
+          // coherence` above already documents (a real, structural
+          // property of the two-segment splice, not per-checkpoint
+          // rounding noise) gives the candidate a genuine -92ms
+          // accumulated end delta against the clean MP4 baseline's own
+          // 0ms -- D-07's dual gate (a delta-based test, the SAME shape
+          // as every other magnitude this comparator checks) clears
+          // comfortably past its 2ms epsilon, so `timeline.av_drift`
+          // (the RATE) genuinely fails, not just `timeline.
+          // av_drift.pattern` (which has no tolerance at all by design,
+          // D-04, locked one-way, and reports the resulting
+          // classification flip). One more legitimate effect of the
+          // same splice root cause (D-02).
+          "timeline.av_drift",
           "timeline.av_drift.pattern",
       });
 }
@@ -596,5 +601,21 @@ TEST_CASE(
           // span here never gates the merge on its own either. This pair
           // is the whole reason this check id exists.
           "timeline.discontinuities.flagged",
+          // 05-10-PLAN.md Task 3 (Rule 1 deviation, av_sync.cpp's ordinal
+          // cross-check -- 05-10-SUMMARY.md): this real splice's own K=32
+          // checkpoint trajectory now correctly reads as a genuine
+          // mid-file discontinuity (three flat groups: -23..-381ms,
+          // +371ms, +337..+13ms, verified via evidence: identical on
+          // baseline and candidate, since the one-byte edit does not
+          // touch either stream's own packet timing) rather than being
+          // smoothed into an ordinary linear-drift line -- but the
+          // resulting least-squares rate's own num/den (both sides
+          // IDENTICAL) is large enough that comparing it cross-
+          // multiplies past int64_t (CR-03's own documented overflow-
+          // safety path, src/compare/tol.cpp), so this finding is
+          // `Status::error`, not a fabricated pass/fail verdict -- `error`
+          // counts as non-pass to `expect_declared_set` (status != pass),
+          // hence its presence here.
+          "timeline.av_drift",
       });
 }

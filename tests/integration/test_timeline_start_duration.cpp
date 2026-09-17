@@ -197,13 +197,17 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the SAME
                                    // MPEG-TS audio-duration disagreement `timeline.
                                    // duration.coherence` above already documents (3877ms vs
-                                   // 4023ms) nudges the fitted line's own residual max across
-                                   // the 2ms constant-offset/linear-drift boundary on the TS
-                                   // side alone -- `timeline.av_drift` (the RATE) stays `pass`
-                                   // (D-07's dual gate: the accumulated end delta never clears
-                                   // the epsilon), but `timeline.av_drift.pattern` has no such
-                                   // tolerance by design (D-04, locked one-way) and so reports
-                                   // the classification flip.
+                                   // 4023ms, a real structural property of this exact
+                                   // container pairing, not per-checkpoint rounding noise)
+                                   // gives the candidate a genuine -122ms accumulated end
+                                   // delta against the clean MP4 baseline's own 0ms -- D-07's
+                                   // dual gate (a delta-based test, the SAME shape as every
+                                   // other magnitude this comparator checks) clears comfortably
+                                   // past its 2ms epsilon, so `timeline.av_drift` (the RATE)
+                                   // genuinely fails, not just `timeline.av_drift.pattern`
+                                   // (which has no tolerance at all by design, D-04, locked
+                                   // one-way, and reports the resulting classification flip).
+                                   "timeline.av_drift",
                                    "timeline.av_drift.pattern",
                                });
 }

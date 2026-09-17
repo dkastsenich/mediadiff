@@ -51,6 +51,16 @@ void require_fixture(const std::string& path) {
   REQUIRE(fs::exists(path));
 }
 
+// Mirrors test_cross_container.cpp's own scratch_dir() convention (same
+// name, same body) for the K=32 trajectory snapshot round-trip test below --
+// this file's own tests do not otherwise need a writable scratch location.
+fs::path scratch_dir() {
+  const fs::path dir = fs::temp_directory_path() / "mediadiff_test_timeline_av_sync";
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  return dir;
+}
+
 nlohmann::ordered_json compare_json(const std::string& baseline, const std::string& candidate,
                                      const std::string& profile) {
   require_fixture(baseline);
@@ -162,14 +172,18 @@ TEST_CASE("timeline_av_sync - the MPEG-TS remux (unknown-priming) pair declares 
                                    // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the
                                    // SAME MPEG-TS audio-duration disagreement
                                    // `timeline.duration.coherence` above already documents
-                                   // for this exact pairing nudges the fitted line's own
-                                   // residual max across the 2ms constant-offset/
-                                   // linear-drift boundary on the TS side alone --
-                                   // `timeline.av_drift` (the RATE) stays `pass` (D-07's
-                                   // dual gate: the accumulated end delta never clears the
-                                   // epsilon), but `timeline.av_drift.pattern` has no such
-                                   // tolerance by design (D-04, locked one-way) and so
-                                   // reports the classification flip.
+                                   // (a real, structural property of this exact container
+                                   // pairing, not per-checkpoint rounding noise) gives the
+                                   // candidate a genuine -122ms accumulated end delta
+                                   // against the clean MP4 baseline's own 0ms -- D-07's dual
+                                   // gate (a delta-based test, the SAME shape as every other
+                                   // magnitude this comparator checks) clears comfortably
+                                   // past its 2ms epsilon, so `timeline.av_drift` (the RATE)
+                                   // genuinely fails, not just `timeline.av_drift.pattern`
+                                   // (which has no tolerance at all by design, D-04, locked
+                                   // one-way, and reports the resulting classification
+                                   // flip).
+                                   "timeline.av_drift",
                                    "timeline.av_drift.pattern",
                                });
 
@@ -258,4 +272,149 @@ TEST_CASE("timeline_av_sync - ROADMAP SC4: comparing an unknown-priming file aga
     REQUIRE(f.at("tolerance").at("warn_num").get<std::int64_t>() == 5);
   }
   REQUIRE(saw_av_offset);
+}
+
+// --- Test 5: ROADMAP SC1 -- the three pattern-classification fixtures each
+// produce EXACTLY their declared finding set, verified empirically against
+// the real binary (never assumed) before being written here -----------------
+//
+// `timeline_avoffset_video_shift.mp4` vs `timeline_start_base.mp4` (Test 1's
+// own pair, reused here): `timeline.av_drift`/`timeline.av_drift.pattern`
+// both stay `pass` (rate exactly zero, `timeline.av_drift.pattern`'s own
+// candidate value `constant-offset`) -- neither id joins the declared NON-
+// PASS set, so this case asserts the pattern VALUE directly instead of
+// relying on expect_declared_set to surface it.
+//
+// `timeline_drift_base.mp4` vs `timeline_drift_linear.mp4` (05-10-PLAN.md
+// Task 3's own linear-drift recipe, doc 04 section 5's classic 0.1% clock
+// error): `timeline.av_drift` reports `fail` (measured rate ~-60.28ms/min)
+// and `timeline.av_drift.pattern` reports `fail` with candidate value
+// `linear-drift`.
+//
+// `timeline_start_base.mp4` vs `timeline_drift_step.mp4` (05-10-PLAN.md
+// Task 3's own mid-file audio PTS discontinuity recipe):
+// `timeline.av_drift.pattern` reports `fail` with candidate value
+// `irregular` -- this task's own extensive investigation (05-10-SUMMARY.md
+// Deviations) found a literal two-flat-plateau `step` classification
+// unreachable from any ffmpeg-synthesizable fixture under the current
+// checkpoint-construction algorithm, a provable consequence of the
+// algorithm's own single whole-file audio/video span ratio (self-correcting
+// by construction) -- flagged there as a follow-up architecture item.
+// `timeline.vfr_profile` also reports `warn` on the audio stream, a genuine
+// collateral consequence of the real ~100ms packet-timing anomaly this
+// fixture's own `setts` bitstream filter introduces (verified via evidence:
+// candidate carries a non-zero `longer` bin count the baseline does not).
+TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and irregular (step-intended) "
+          "fixtures each declare their complete expected finding set, and the linear/irregular candidates carry "
+          "the correct timeline.av_drift.pattern value",
+          "[integration]") {
+  {
+    INFO("constant-offset pair");
+    const nlohmann::ordered_json report =
+        compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_avoffset_video_shift.mp4"),
+                     "sw-encoder");
+    expect_declared_set(report, {
+                                     "container.mp4.edit_list",
+                                     "timeline.start",
+                                     "timeline.av_offset",
+                                 });
+    bool saw_pattern = false;
+    for (const auto& f : report.at("findings")) {
+      if (f.at("id").get<std::string>() != "timeline.av_drift.pattern") {
+        continue;
+      }
+      saw_pattern = true;
+      REQUIRE(f.at("status").get<std::string>() == "pass");
+      REQUIRE(f.at("candidate").get<std::string>() == "constant-offset");
+    }
+    REQUIRE(saw_pattern);
+  }
+  {
+    INFO("linear-drift pair");
+    const nlohmann::ordered_json report =
+        compare_json(fixture("timeline_drift_base.mp4"), fixture("timeline_drift_linear.mp4"), "sw-encoder");
+    expect_declared_set(report, {
+                                     "container.mp4.edit_list",
+                                     "timeline.av_drift",
+                                     "timeline.av_drift.pattern",
+                                 });
+    for (const auto& f : report.at("findings")) {
+      if (f.at("id").get<std::string>() != "timeline.av_drift.pattern") {
+        continue;
+      }
+      REQUIRE(f.at("candidate").get<std::string>() == "linear-drift");
+    }
+  }
+  {
+    INFO("step (irregular) pair");
+    const nlohmann::ordered_json report =
+        compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_drift_step.mp4"), "sw-encoder");
+    expect_declared_set(report, {
+                                     "timeline.vfr_profile",
+                                     "timeline.av_drift.pattern",
+                                 });
+    for (const auto& f : report.at("findings")) {
+      if (f.at("id").get<std::string>() != "timeline.av_drift.pattern") {
+        continue;
+      }
+      REQUIRE(f.at("candidate").get<std::string>() == "irregular");
+    }
+  }
+}
+
+// --- Test 6: TIME-08 -- the full K=32 checkpoint trajectory stored in the
+// fingerprint's evidence survives a snapshot round trip byte-for-byte -------
+//
+// `mediadiff snapshot` writes a *.snap.json fingerprint, then `compare` is
+// run TWICE against the same live candidate: once live-vs-live, once
+// snapshot-vs-live. Both `timeline.av_drift` and `timeline.av_drift.pattern`
+// evidence carry a `trajectory` array of exactly `kDriftCheckpointCount`
+// (32) entries on each side, and comparing the snapshot-sourced baseline's
+// own trajectory against the live-sourced baseline's proves the snapshot
+// round trip lost no fidelity -- TIME-08's own "full K=32 trajectory ...
+// retains full fidelity" requirement, verified directly rather than
+// asserted from the fingerprint schema alone.
+TEST_CASE("timeline_av_sync - TIME-08: the K=32 checkpoint trajectory survives a snapshot round trip unchanged",
+          "[integration]") {
+  const std::string snap_path = (scratch_dir() / "timeline_drift_linear.snap.json").string();
+  const CliResult snap_result = run_cli({"snapshot", fixture("timeline_drift_linear.mp4"), "--out", snap_path});
+  REQUIRE(snap_result.exit_code == 0);
+  REQUIRE(fs::exists(snap_path));
+
+  const nlohmann::ordered_json live_report =
+      compare_json(fixture("timeline_drift_linear.mp4"), fixture("timeline_drift_linear.mp4"), "sw-encoder");
+  const nlohmann::ordered_json snap_report = compare_json(snap_path, fixture("timeline_drift_linear.mp4"), "sw-encoder");
+
+  bool checked_drift = false;
+  bool checked_pattern = false;
+  for (const auto& id : {"timeline.av_drift", "timeline.av_drift.pattern"}) {
+    nlohmann::ordered_json live_trajectory;
+    nlohmann::ordered_json snap_trajectory;
+    bool found_live = false;
+    bool found_snap = false;
+    for (const auto& f : live_report.at("findings")) {
+      if (f.at("id").get<std::string>() == id) {
+        live_trajectory = f.at("evidence").at("baseline").at("trajectory");
+        found_live = true;
+      }
+    }
+    for (const auto& f : snap_report.at("findings")) {
+      if (f.at("id").get<std::string>() == id) {
+        snap_trajectory = f.at("evidence").at("baseline").at("trajectory");
+        found_snap = true;
+      }
+    }
+    REQUIRE(found_live);
+    REQUIRE(found_snap);
+    REQUIRE(live_trajectory.size() == 32);
+    REQUIRE(snap_trajectory.size() == 32);
+    REQUIRE(live_trajectory == snap_trajectory);
+    if (std::string(id) == "timeline.av_drift") {
+      checked_drift = true;
+    } else {
+      checked_pattern = true;
+    }
+  }
+  REQUIRE(checked_drift);
+  REQUIRE(checked_pattern);
 }
