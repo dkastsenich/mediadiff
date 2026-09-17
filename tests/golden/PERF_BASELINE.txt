@@ -1,0 +1,57 @@
+# tests/golden/PERF_BASELINE.txt -- the committed instruction-count ratchet
+# baseline for PERF-03/PERF-05 (05-12-PLAN.md Task 2, D-14/D-15).
+#
+# What each line records: leg, metric, value, and the commit at which the
+# value was measured -- one line per metric, format:
+#
+#   leg=<leg> metric=<metric> value=<retired-instruction-count> commit=<short-sha>
+#
+# `<leg>` is always the one designated leg this file is scoped to
+# (x64-linux, the same leg tests/golden/CORPUS_DIGEST.txt and the five
+# byte-exact fixture-derived goldens are scoped to -- see
+# tests/golden/README.md). `<metric>` is either `plain_instructions` (the
+# baseline PacketScan-alone sweep) or `full_instructions` (the same sweep
+# plus every registered timeline_*_analyzer()'s own run, D-16's "full
+# metadata-plus-timeline analyzer set"). `<value>` is the retired
+# instruction count `valgrind --tool=cachegrind` reported for that leg
+# against the D-16 ten-minute 1080p reference file.
+#
+# CI is READ-ONLY against this file (D-15). scripts/measure_timeline_perf.sh
+# --check-baseline never writes here -- it only READS these lines, compares
+# them against a freshly measured value, and on a regression prints the
+# exact pasteable replacement line to stderr. A HUMAN pastes that line into
+# this file, in a reviewed commit, exactly as tests/golden/README.md's
+# UPDATE_GOLDENS contract already works for renderer goldens (Phase 2
+# D-12) -- CI measures and compares, a human decides whether the new
+# number becomes the new baseline. This file's own git history IS the
+# regression-tracking-over-time PERF-05 asks for: no external service, no
+# bot push, no gh-pages branch, which is also what keeps a fork pull
+# request able to run this gate at all (D-15's own rejected alternatives:
+# github-action-benchmark on gh-pages writes to the repo and breaks on
+# forks; artifacts-plus-job-summary-only loses history outside the Actions
+# retention window).
+#
+# Exceeding a recorded value by more than
+# PERF_RATCHET_TOLERANCE_PERCENT (scripts/measure_timeline_perf.sh) is a
+# hard CI failure on the designated leg; staying within it, including an
+# improvement, is not gated -- a ratchet tightens only by human review of
+# the printed pasteable line, never automatically.
+#
+# STATUS: PROVISIONAL. The two lines below were measured on a developer
+# workstation (not the designated x64-linux CI leg) against the real,
+# full-size D-16 reference file (600s, 1920x1080, mpeg4/aac,
+# 122914409 bytes) via `valgrind --tool=cachegrind` inside a fresh
+# ubuntu:24.04 container (matching the hosted runner's own image and the
+# exact valgrind package version 05-RESEARCH.md confirmed installable,
+# 1:3.22.0-0ubuntu3) -- a real measurement, not an invented or guessed
+# number, but not yet the designated-leg's own. 05-13-PLAN.md's own job is
+# to replace both lines below with the designated leg's real transcribed
+# values, the same workstation-computed-awaiting-designated-leg-
+# transcription convention tests/golden/CORPUS_DIGEST_PROVISIONAL.txt
+# already uses for fixture hashes.
+#
+# For context (not gated, not asserted, D-13): the wall-clock leg for this
+# same reference file measured plain=38317us, full=50818us on the same
+# workstation -- both comfortably under PERF-01's <=3s budget.
+leg=x64-linux metric=plain_instructions value=258117675 commit=b68085d
+leg=x64-linux metric=full_instructions value=345365337 commit=b68085d
