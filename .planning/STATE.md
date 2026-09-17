@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-09-PLAN.md
-last_updated: "2026-09-17T11:10:49.811Z"
+stopped_at: Completed 05-10-PLAN.md
+last_updated: "2026-09-17T13:14:29.538Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: fb82b686240194dd1b20f7f47c299b17740c99cd
+state_head: a54887907663c4581db2e3dc0a3b4c6d8fe303ff
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 76
+  completed_plans: 77
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 10 of 13
+Plan: 11 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -127,6 +127,7 @@ Progress: [█████████░] 92%
 | Phase 05 P07 | 45min | 3 tasks | 20 files |
 | Phase 05 P08 | ~2h | 3 tasks | 24 files |
 | Phase 05-timeline-analysis P09 | 19min | 3 tasks | 21 files |
+| Phase 05 P10 | this-session | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -292,6 +293,10 @@ Recent decisions affecting current work:
 - [Phase 05]: NTSC-remux acceptance criterion documented as a real per-container precision limit (not a defect): MP4's native timebase yields an exact-integer ideal (on_grid), Matroska's 1ms timebase does not (one_tick) -- honestly asserted rather than hacked to force a false pass, per FALSE POSITIVES ARE P0
 - [Phase 05]: 05-09: D-10's cross-file basis selection required a Rule 2 extension to src/compare/tol.cpp (generic evidence-shape-gated override, never gated on check.id)
 - [Phase 05]: 05-09: ROADMAP SC4's no-softening case uses unknown.ts vs video_shift.mp4 (empirically demonstrates the property) rather than the plan's assumed base-vs-unknown pairing, which turns out to pass
+- [Phase 05]: D-07's dual gate is delta-based (|candidate_end_delta - baseline_end_delta| >= epsilon), not per-side AND -- the per-side design can never fire against a clean baseline.
+- [Phase 05]: clamp_into_nearest_packet caps containment width at 2x the stream's own median packet duration -- libavformat's gap-absorbing duration heuristic otherwise masks genuine splices.
+- [Phase 05]: Added an ordinal (packet-count-proportional) checkpoint cross-check alongside the time-proportional estimate -- the time-proportional value is provably self-correcting and cannot alone surface a mid-file discontinuity.
+- [Phase 05]: timeline.av_drift.pattern == step was not achieved for any fixture: proven algebraically unreachable under this checkpoint-construction architecture; flagged as a follow-up architecture item, not silently worked around.
 
 ### Pending Todos
 
@@ -331,6 +336,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-17T11:10:49.651Z
-Stopped at: Completed 05-09-PLAN.md
+Last session: 2026-09-17T13:14:29.356Z
+Stopped at: Completed 05-10-PLAN.md
 Resume file: None
