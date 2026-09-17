@@ -144,6 +144,35 @@ struct StreamPacketScan {
   std::int64_t byte_total = 0;
   Rational tb{0, 1};
   bool partial = false;
+
+  // D-09 (05-09-PLAN.md, TIME-06): the FIRST packet actually accepted into
+  // `packets` for this stream is inspected for `AV_PKT_DATA_SKIP_SAMPLES`
+  // side data, captured INSIDE this existing sweep -- never a second
+  // av_read_frame call, never a decode. `std::optional` distinguishes "the
+  // first packet carried no such side data" (std::nullopt) from "the side
+  // data was present and reported zero" (a real, present 0) -- the same
+  // absent-vs-zero reasoning `EbmlTrack::codec_delay_ns`
+  // (src/probe/ebml_scan.h) and `PidStats::first_cc_error_offset`
+  // (src/probe/ts_scan.h) already establish for this project's own sibling
+  // fields. Only the stream's OWN first packet is ever inspected -- a
+  // later packet carrying `AV_PKT_DATA_SKIP_SAMPLES` never overwrites this
+  // value, whether or not the first packet itself carried the side data.
+  // Exists because `PacketRecord` carries no side data of any kind today,
+  // and `timeline.av_offset`'s priming resolver needs this signal without
+  // opening a decode pass; Phase 6's `audio.priming` (`AUDIO-04`) is this
+  // field's designed second consumer.
+  std::optional<std::int64_t> first_packet_skip_samples;
+
+  // D-09: `codecpar->initial_padding` verbatim, surfaced through this
+  // existing per-stream scan seam (populated alongside `tb` above, from
+  // the SAME already-open `AVFormatContext` -- no new libav call site) so
+  // `timeline.av_offset`'s priming resolver never needs its own libav
+  // include. A plain `std::int64_t`, not `std::optional`: libav's own
+  // `codecpar->initial_padding` is always a real reported int (0 by
+  // default) -- there is no distinct "absent" state to preserve here, only
+  // "declared, and it says N" (05-RESEARCH.md Pattern 3: MP4's own
+  // `initial_padding` is a real, reported 0, not an absence).
+  std::int64_t initial_padding = 0;
 };
 
 // The whole scan's result: one StreamPacketScan per AVStream (doc 02
