@@ -93,6 +93,20 @@ add_executable(mediadiff_integration_tests
   # VFR) -- plus the NTSC remux pair's own timeline.vfr_profile comparison
   # and a dedicated ROADMAP SC3 case.
   test_timeline_jitter.cpp
+  # TIME-06/TIME-09/TIME-10, DOC-04 (05-09-PLAN.md Task 3): the DOC-04
+  # no-others harness proven against this plan's own two crafted fixtures
+  # -- timeline_avoffset_video_shift.mp4 (the RECOVERABLE arm: the SAME
+  # testsrc2/sine sources as timeline_start_base.mp4 with `-itsoffset`
+  # applied to the VIDEO input only, per D-12, so the audio edit list and
+  # therefore its skip_samples priming signal survive) and
+  # timeline_avoffset_unknown.ts (the UNKNOWN arm: a `-c copy` MPEG-TS
+  # remux of timeline_start_base.mp4, structurally identical to
+  # timeline_start_shift.ts's own recipe, whose audio stream carries no
+  # AV_PKT_DATA_SKIP_SAMPLES side data at all) -- plus the shared
+  # byte-identical clean pair and a dedicated ROADMAP SC4 case proving
+  # unknown priming gates at the check's normal severity rather than
+  # being demoted (D-11).
+  test_timeline_av_sync.cpp
   # 04-08-PLAN.md Task 3 (VIDEO-03): the phase's own signature test made
   # into a counting assertion -- yuvj420p vs yuv420p-limited-range
   # produces EXACTLY ONE non-pass finding (video.color.range) across the

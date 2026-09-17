@@ -36,7 +36,8 @@
 // 05-07-PLAN.md registers timeline.discontinuities and timeline.
 // discontinuities.flagged, bringing the total to seventy. 05-08-PLAN.md
 // registers timeline.jitter and timeline.vfr_profile, bringing the total
-// to seventy-two. This file is where a gap becomes visible.
+// to seventy-two. 05-09-PLAN.md registers timeline.av_offset, bringing the
+// total to seventy-three. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -511,6 +512,22 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"timeline.vfr_profile",
        {fixture("timeline_start_base.mp4"), fixture("timeline_vfr.mp4"), fixture("timeline_start_base.mp4"),
         fixture("timeline_start_base_copy.mp4")}},
+
+      // --- timeline.av_offset (05-09-PLAN.md, TIME-06/TIME-09/TIME-10) ---
+      // trigger pair is timeline_start_base.mp4 against
+      // timeline_avoffset_video_shift.mp4 (the SAME testsrc2/sine lavfi
+      // sources with `-itsoffset` applied to the VIDEO input only, per
+      // D-12, so the audio edit list and its skip_samples priming signal
+      // survive) -- verified empirically under --profile sw-encoder: both
+      // sides resolve `priming.source == skip_samples`, the comparison
+      // basis is `adjusted`, and the measured 40ms delta reports `fail`
+      // (beyond the registered 20ms fail threshold). Its clean pair reuses
+      // the same timeline_start_base.mp4/_copy.mp4 pair every other
+      // timeline check above reuses (all-`pass` for this exact
+      // byte-identical pair, confirmed empirically).
+      {"timeline.av_offset",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_avoffset_video_shift.mp4"),
+        fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
   };
   return pairs;
 }

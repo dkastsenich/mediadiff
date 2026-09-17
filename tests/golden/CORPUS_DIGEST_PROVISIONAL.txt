@@ -76,6 +76,13 @@
 # fixtures below (timeline_jitter.mp4, timeline_vfr.mp4), same
 # workstation-computed-awaiting-designated-leg-transcription status as
 # every other entry in this file.
+#
+# 05-09-PLAN.md Task 3 adds the timeline.av_offset TIME-10 fixtures below
+# (timeline_avoffset_unknown.ts, timeline_avoffset_video_shift.mp4), same
+# workstation-computed-awaiting-designated-leg-transcription status as
+# every other entry in this file.
+timeline_avoffset_unknown.ts
+timeline_avoffset_video_shift.mp4
 timeline_dts_backward.ts
 timeline_duration_short.mp4
 timeline_gap.mp4
