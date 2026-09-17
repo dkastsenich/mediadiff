@@ -365,6 +365,14 @@ if(MEDIADIFF_BUILD_BENCH)
   target_link_libraries(mediadiff_parser_overhead PRIVATE libmediadiff fmt::fmt)
   mediadiff_apply_warnings(mediadiff_parser_overhead)
   mediadiff_apply_platform_definitions(mediadiff_parser_overhead)
+
+  # 05-12-PLAN.md Task 1 (PERF-01/PERF-03/PERF-05, D-13/D-16): the timeline
+  # analyzer-set overhead benchmark, mirroring mediadiff_parser_overhead's
+  # own four lines exactly -- same opt-in gate, same no-CTest-case rule.
+  add_executable(mediadiff_timeline_overhead tools/bench/timeline_overhead.cpp)
+  target_link_libraries(mediadiff_timeline_overhead PRIVATE libmediadiff fmt::fmt)
+  mediadiff_apply_warnings(mediadiff_timeline_overhead)
+  mediadiff_apply_platform_definitions(mediadiff_timeline_overhead)
 endif()
 
 enable_testing()
