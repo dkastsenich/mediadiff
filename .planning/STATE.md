@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 05
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-08-PLAN.md
-last_updated: "2026-09-16T23:33:18.390Z"
+stopped_at: Completed 05-09-PLAN.md
+last_updated: "2026-09-17T11:10:49.811Z"
 last_activity: 2026-09-16
 last_activity_desc: Phase 05 execution started
-state_head: 5c42ab29e232ab0c58f840057ecce1bb00f4a7e2
+state_head: fb82b686240194dd1b20f7f47c299b17740c99cd
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 80
-  completed_plans: 75
+  completed_plans: 76
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 05 (Timeline Analysis) — EXECUTING
-Plan: 9 of 13
+Plan: 10 of 13
 Status: Ready to execute
 Last activity: 2026-09-16 — Phase 05 execution started
 
@@ -126,6 +126,7 @@ Progress: [█████████░] 92%
 | Phase 05 P06 | ~50min | 3 tasks | 12 files |
 | Phase 05 P07 | 45min | 3 tasks | 20 files |
 | Phase 05 P08 | ~2h | 3 tasks | 24 files |
+| Phase 05-timeline-analysis P09 | 19min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -289,6 +290,8 @@ Recent decisions affecting current work:
 - [Phase 05]: kMaxDiscontinuityOffsetsPerPid=256 bounds a crafted every-packet-flagged TS stream; truncation is itself a skip condition ahead of every other TS-specific reason (T-05-28/T-05-29).
 - [Phase 05]: timeline.jitter/timeline.vfr_profile: shared single derive_cadence() call per stream feeds both checks; fixed-point sigma (isqrt_i64, kJitterSigmaFixedShift=16, no floating point); vfr_profile bins keyed on deviation from the stream's own ideal_interval_num/den (D-06)
 - [Phase 05]: NTSC-remux acceptance criterion documented as a real per-container precision limit (not a defect): MP4's native timebase yields an exact-integer ideal (on_grid), Matroska's 1ms timebase does not (one_tick) -- honestly asserted rather than hacked to force a false pass, per FALSE POSITIVES ARE P0
+- [Phase 05]: 05-09: D-10's cross-file basis selection required a Rule 2 extension to src/compare/tol.cpp (generic evidence-shape-gated override, never gated on check.id)
+- [Phase 05]: 05-09: ROADMAP SC4's no-softening case uses unknown.ts vs video_shift.mp4 (empirically demonstrates the property) rather than the plan's assumed base-vs-unknown pairing, which turns out to pass
 
 ### Pending Todos
 
@@ -328,6 +331,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-16T23:33:18.218Z
-Stopped at: Completed 05-08-PLAN.md
+Last session: 2026-09-17T11:10:49.651Z
+Stopped at: Completed 05-09-PLAN.md
 Resume file: None
