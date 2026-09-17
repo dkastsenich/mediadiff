@@ -191,6 +191,13 @@ add_executable(mediadiff_unit_tests
   # DriftCheckpoint arrays with hand-computed expected values, no fixture
   # on disk.
   test_av_drift.cpp
+  # TIME-11 (05-11-PLAN.md Task 2): timeline.timecode/timeline.timecode.
+  # value's own pure-function core -- detail::derive_drop_frame's
+  # punctuation-based drop-frame detection (semicolon vs colon before the
+  # frame field), driven directly against hand-built strings, including
+  # the same-nominal-position encoding-edge case (TIME-11's own drop-frame
+  # vs non-drop-frame distinguishability requirement).
+  test_timecode.cpp
   # VIDEO-05/VIDEO-12 (04-09-PLAN.md): the open/closed GOP classification's
   # own hand-verified NAL-type table, driven directly through
   # detail::classify_access_unit/detail::classify_gop -- every expected

@@ -606,4 +606,59 @@ struct DriftFit {
 // promise).
 std::optional<DriftFit> fit_drift(std::span<const DriftCheckpoint> checkpoints, Rational tb);
 
+// timeline.timecode / timeline.timecode.value (05-11-PLAN.md, TIME-11):
+// SMPTE timecode presence and start value from a QuickTime `tmcd` track,
+// reachable from `Pass::demux_header` ALONE -- no scan of any kind needed,
+// matching `video_color_analyzer()`'s own shape exactly (05-RESEARCH.md
+// Pattern 4, empirically re-verified this task: the MOV/MP4 demuxer
+// resolves a `tmcd` track's starting timecode during
+// `avformat_find_stream_info` itself, publishing it as a plain string
+// under `AVStream::metadata["timecode"]` -- `DemuxSession::stream_info`'s
+// own `StreamInfo::timecode_metadata` field, never a raw libav read from
+// this file). `timeline.timecode` reports the `presence` semantic
+// (`"present"` / `Absent{}`); `timeline.timecode.value` reports the exact
+// SMPTE string under `exact` -- compared BYTE FOR BYTE, never parsed into
+// fields, so the drop-frame punctuation (a semicolon before the frame
+// field, confirmed reachable on the no-decode path this task, A1) is part
+// of the compared value. Source stream: the first stream (by array order)
+// whose `StreamInfo::is_timecode` is true (the `tmcd` codec-tag marker
+// DemuxSession already resolves for CONT-09) -- deterministic, mirrors
+// `detail::find_tmcd_stream`'s own doc comment in timecode.cpp. A file
+// with no such stream reports BOTH ids `Absent{}` (TIME-11's own empty
+// edge, must_haves item 5) -- an explicit, comparable absence, never an
+// empty string, with `SkipReason::none` (an ordinary, real, permanent
+// absence, never `skipped`). Evidence on every emitted measurement
+// (present or absent) carries `unreachable_sources` -- 05-RESEARCH.md
+// Pattern 4 / Pitfall 6's own source-tree-grep finding that
+// `AV_PKT_DATA_S12M_TIMECODE` has no file-demuxer producer in this build
+// (only `libavdevice/decklink_dec.cpp`, which `vcpkg.json`'s ffmpeg feature
+// list does not link) and MPEG-2 GOP timecode
+// (`AV_FRAME_DATA_GOP_TIMECODE`) is populated only on a decoded `AVFrame`
+// -- named honestly, in evidence AND in `docs/checks/timeline.timecode.md`,
+// never built out as a real code path (05-CHECK-ROSTER.md: no
+// separately-triggerable S12M id, since DOC-03 requires a real trigger
+// fixture and none can exist for it). `required_passes =
+// {Pass::demux_header}` only, `scope = ContainerFamily::other` (every
+// container). Scoped `Scope::Kind::global` (one file-level SMPTE origin,
+// not a per-stream property -- mirrors `timeline.start`'s own D-03 global
+// measurement, `start_duration.cpp`).
+const AnalyzerSpec& timeline_timecode_analyzer();
+
+namespace detail {
+
+// Whether `timecode_string` carries the drop-frame punctuation -- a
+// semicolon immediately before the frame field (`HH:MM:SS;FF`) rather than
+// a colon (`HH:MM:SS:FF`), confirmed empirically this task (05-11-SUMMARY.md,
+// Task 1) against the pinned FFmpeg 9.0.1 generator: a drop-frame-rate
+// `-timecode` input renders with the semicolon, a non-drop-frame one with
+// all colons. A bare substring search is deliberately sufficient -- not a
+// full SMPTE grammar parse -- because this flag is EVIDENCE ONLY; the
+// COMPARED value (`timeline.timecode.value`) is always the raw byte
+// sequence, so a pathological string that happens to carry a stray `;`
+// elsewhere cannot corrupt the comparison itself, only this one derived
+// evidence field.
+bool derive_drop_frame(const std::string& timecode_string);
+
+}  // namespace detail
+
 }  // namespace mediadiff
