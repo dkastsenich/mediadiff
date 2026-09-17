@@ -199,6 +199,9 @@ add_library(libmediadiff STATIC
   # both consuming derive_cadence (probe/cadence.h) exactly once per
   # stream.
   src/analyzers/timeline/jitter_vfr.cpp
+  # TIME-06/TIME-09/TIME-10 (05-09-PLAN.md): timeline.av_offset, plus the
+  # shared resolve_priming primitive Phase 6's audio.priming extends.
+  src/analyzers/timeline/av_sync.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

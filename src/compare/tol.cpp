@@ -87,14 +87,46 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     return mediadiff::unexpected(tolerance.error());
   }
 
-  const auto baseline_mag = extract_magnitude(baseline.value);
-  const auto candidate_mag = extract_magnitude(candidate.value);
+  auto baseline_mag = extract_magnitude(baseline.value);
+  auto candidate_mag = extract_magnitude(candidate.value);
   if (!baseline_mag.has_value() || !candidate_mag.has_value()) {
     // D-09 already guarantees both sides hold the check's declared
     // value_kind (or Absent) -- reaching here means a tol check declared a
     // value_kind this comparator does not support (only rational and
     // int64 are), which is a registry-authoring bug, not a runtime input.
     return mediadiff::unexpected(Error{ErrorKind::internal, "tol comparator received an unsupported value kind"});
+  }
+
+  // D-10 (05-09-PLAN.md, timeline.av_offset) -- Rule 2 addition, not named
+  // in that plan's own `files_modified`: D-10's "adjusted only when both
+  // sides know their own priming, raw-to-raw when either does not" rule is
+  // inherently a cross-Measurement decision (which side's magnitude to
+  // compare depends on BOTH sides' own evidence, not on either
+  // Measurement's value alone), so it cannot live entirely inside a
+  // per-file analyzer the way every other check in this project is
+  // written. This is a GENERIC, evidence-shape-driven override -- never
+  // gated on `check.id` -- mirroring the `estimated` flag's own precedent
+  // just below (D-03: a Measurement-level flag this SAME comparator
+  // already reads from both sides to change how it compares). A check's
+  // Measurement::value always holds the RAW/unadjusted magnitude -- the
+  // well-defined, single-side-computable default every other `tol` check's
+  // own evidence shape leaves untouched (a check with no `comparison_basis`/
+  // `adjusted_offset_ms` evidence keys never triggers this branch at all).
+  // Only when BOTH sides declare `"comparison_basis": "adjusted"` (each
+  // side's OWN preference, set by the analyzer that populated it) AND both
+  // carry a numeric `"adjusted_offset_ms"` does the compared magnitude swap
+  // to that adjusted value on BOTH sides -- any other combination (either
+  // side missing the keys, or either side reporting `"raw"`) leaves the RAW
+  // magnitude from Measurement::value in place, which is exactly
+  // raw-to-raw.
+  const auto side_prefers_adjusted_magnitude = [](const Measurement& side) {
+    return side.evidence.is_object() && side.evidence.value("comparison_basis", std::string()) == "adjusted" &&
+           side.evidence.contains("adjusted_offset_ms") &&
+           side.evidence.at("adjusted_offset_ms").is_number_integer();
+  };
+  if (side_prefers_adjusted_magnitude(baseline) && side_prefers_adjusted_magnitude(candidate)) {
+    baseline_mag->num = baseline.evidence.at("adjusted_offset_ms").get<std::int64_t>();
+    candidate_mag->num = candidate.evidence.at("adjusted_offset_ms").get<std::int64_t>();
   }
 
   // Sign only, purely for rendering "+"/"-" on the delta -- the magnitude

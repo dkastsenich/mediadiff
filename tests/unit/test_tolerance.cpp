@@ -313,3 +313,115 @@ TEST_CASE("tolerance widening: a tolerance magnitude large enough that the 3x mu
   CHECK(finding->status == Status::error);
   CHECK(finding->message.find("overflow") != std::string::npos);
 }
+
+// --- 05-09-PLAN.md Task 2 (TIME-06, D-10): timeline.av_offset's boundary
+// behavior and the generic priming-basis override -----------------------
+//
+// Boundary behavior needs no check-specific machinery at all -- it is the
+// shared two-threshold `tol` comparator's own generic behavior, exercised
+// here at exactly timeline.av_offset's own registered "5ms,20ms" tolerance
+// (Test 9 in this task's own <behavior> block).
+
+namespace {
+
+CheckDef make_av_offset_check() { return make_tol_check("5ms,20ms", Severity::fail); }
+
+}  // namespace
+
+TEST_CASE("timeline.av_offset boundary: a delta exactly at the 5ms warn threshold passes; one tick past it warns",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  const Measurement baseline = measurement_at(0, /*estimated=*/false);
+
+  {
+    const Measurement candidate = measurement_at(5, /*estimated=*/false);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);
+  }
+  {
+    const Measurement candidate = measurement_at(6, /*estimated=*/false);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::warn);
+  }
+}
+
+TEST_CASE("timeline.av_offset boundary: a delta exactly at the 20ms fail threshold warns; one tick past it fails",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  const Measurement baseline = measurement_at(0, /*estimated=*/false);
+
+  {
+    const Measurement candidate = measurement_at(20, /*estimated=*/false);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::warn);
+  }
+  {
+    const Measurement candidate = measurement_at(21, /*estimated=*/false);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::fail);
+  }
+}
+
+namespace {
+
+// A Measurement carrying D-10's own evidence shape -- raw value as
+// Measurement::value (always `raw_ms`), `adjusted_offset_ms`/
+// `comparison_basis` in evidence, mirroring av_sync.cpp's own construction
+// exactly.
+Measurement priming_measurement(std::int64_t raw_ms, std::int64_t adjusted_ms, const std::string& basis) {
+  Measurement m = measurement_at(raw_ms, /*estimated=*/false);
+  m.evidence = nlohmann::ordered_json{
+      {"raw_offset_ms", raw_ms},
+      {"adjusted_offset_ms", adjusted_ms},
+      {"comparison_basis", basis},
+  };
+  return m;
+}
+
+}  // namespace
+
+TEST_CASE("compare_tol D-10 override: both sides declaring comparison_basis=adjusted swaps the compared magnitude "
+          "to adjusted_offset_ms on both sides",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  // Raw values differ by 23ms (would fail); adjusted values are identical
+  // (0ms delta) -- proving the OVERRIDE, not the raw value, decided the
+  // verdict.
+  const Measurement baseline = priming_measurement(/*raw=*/-23, /*adjusted=*/0, "adjusted");
+  const Measurement candidate = priming_measurement(/*raw=*/0, /*adjusted=*/0, "adjusted");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+}
+
+TEST_CASE("compare_tol D-10 override: EITHER side declaring comparison_basis=raw falls back to the raw magnitude "
+          "on BOTH sides, even when the other side prefers adjusted",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  // Raw values are identical (0ms delta, would pass); adjusted values
+  // differ by 23ms -- proving the candidate's own "raw" preference forced
+  // the WHOLE comparison to raw-to-raw, per D-10's own rule.
+  const Measurement baseline = priming_measurement(/*raw=*/0, /*adjusted=*/0, "adjusted");
+  const Measurement candidate = priming_measurement(/*raw=*/0, /*adjusted=*/23, "raw");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+}
+
+TEST_CASE("compare_tol D-10 override: a check with no comparison_basis/adjusted_offset_ms evidence shape at all is "
+          "entirely unaffected (the override is opt-in via evidence shape, never gated on check.id)",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  const Measurement baseline = measurement_at(0, /*estimated=*/false);
+  const Measurement candidate = measurement_at(6, /*estimated=*/false);  // no evidence at all
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::warn);  // ordinary raw-value comparison, unaffected
+}

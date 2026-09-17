@@ -70,3 +70,4 @@ timeline.discontinuities  severity=fail  tolerance=<none>
 timeline.discontinuities.flagged  severity=info  tolerance=<none>
 timeline.jitter  severity=fail  tolerance=20/10 ms (warn 5/10)
 timeline.vfr_profile  severity=warn  tolerance=2/1 %
+timeline.av_offset  severity=fail  tolerance=20/1 ms (warn 5/1)

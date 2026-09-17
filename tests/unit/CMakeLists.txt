@@ -171,6 +171,13 @@ add_executable(mediadiff_unit_tests
   # -- driven directly against hand-computed expected values, never
   # captured from the implementation.
   test_jitter_vfr.cpp
+  # TIME-06/TIME-09/TIME-10 (05-09-PLAN.md, D-09): resolve_priming's own
+  # skip-samples-first-then-initial_padding-fallback ordering (every
+  # combination the roster's own Test 1-4 name) and
+  # detail::primary_video_stream's first-video-scoped-stream selection --
+  # driven directly against plain integers/hand-built scope vectors, no
+  # fixture on disk.
+  test_av_sync.cpp
   # VIDEO-05/VIDEO-12 (04-09-PLAN.md): the open/closed GOP classification's
   # own hand-verified NAL-type table, driven directly through
   # detail::classify_access_unit/detail::classify_gop -- every expected

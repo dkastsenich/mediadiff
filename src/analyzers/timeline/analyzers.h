@@ -412,4 +412,90 @@ std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t mode_interval
 
 }  // namespace detail
 
+// D-09 (05-09-PLAN.md, TIME-06): the priming resolver -- a SHARED
+// probe-level primitive whose designed second consumer is Phase 6's
+// `audio.priming` (`AUDIO-04`), not a private helper local to
+// `av_sync.cpp`. Declared here, in the family header, for exactly that
+// reason (05-CHECK-ROSTER.md's own precedent: a primitive another phase is
+// planned against lives in the header, not buried in a `.cpp`). Checks the
+// packet-level `skip_samples` signal FIRST and falls back to
+// `codecpar->initial_padding` only when no packet-level signal was
+// captured -- 05-RESEARCH.md's own empirically-verified finding against
+// the linked FFmpeg 8.1 is that MP4's `codecpar->initial_padding` is ZERO
+// while its first AAC packet's own side data carries the real value
+// (`start_skip=1024`); a resolver that checked `initial_padding` FIRST
+// would silently report every MP4 as `priming: unknown` while the signal
+// is present and free. `Source` is OPEN TO EXTENSION without renaming its
+// existing members -- Phase 6 adds the container-mechanism tier (MP4
+// `elst` / iTunSMPB / MKV `CodecDelay`) as further fallback arms, never a
+// second, independently-written resolver.
+struct PrimingResult {
+  enum class Source : std::uint8_t {
+    skip_samples,
+    initial_padding,
+    unknown,
+  };
+  Source source = Source::unknown;
+  std::int64_t samples = 0;
+};
+
+// `first_packet_skip_samples`/`codecpar_initial_padding` both follow the
+// "0 if absent" convention `StreamPacketScan::first_packet_skip_samples`'s
+// own caller resolves via `.value_or(0)` before this call -- resolve_priming
+// itself stays a pure, allocation-free function over two plain integers so
+// it is trivially unit-testable without a `StreamPacketScan` on hand.
+PrimingResult resolve_priming(std::int64_t first_packet_skip_samples, std::int64_t codecpar_initial_padding);
+
+// timeline.av_offset (05-09-PLAN.md, TIME-06/TIME-09/TIME-10, D-09/D-10/
+// D-11): the signed offset between the first audible sample (audio-side
+// priming-adjusted per resolve_priming above) and the first visible frame
+// of the primary video stream, positive meaning audio late (doc 04 section
+// 2's own sign convention). D-10's stored shape: the RAW offset (computed
+// WITHOUT the priming adjustment), the ADJUSTED offset (computed WITH it --
+// identical to raw whenever this side's own priming is `unknown`, since
+// `resolve_priming` reports zero samples in that case) and a structured
+// `priming` evidence object (`state`/`source`/`samples`) both ride in THIS
+// measurement's own evidence; `comparison_basis` records THIS SIDE's own
+// preference (`"adjusted"` when its priming is known, `"raw"` when it is
+// not) -- the generic, evidence-shape-driven override in
+// `src/compare/tol.cpp` (Rule 2 addition, not in this plan's own declared
+// `files_modified`: D-10 cannot be satisfied without it) reads BOTH sides'
+// own `comparison_basis` and only swaps the compared magnitude to
+// `adjusted_offset_ms` when EVERY side agrees -- raw-to-raw whenever
+// either side's priming is unknown, exactly D-10's own rule, decided once,
+// generically, never re-derived per check. D-11: unknown priming is never
+// a reason to soften severity or widen tolerance -- the check gates at its
+// registered `"5ms,20ms"` severity regardless of `comparison_basis`.
+//
+// Primary-stream selection (`detail::primary_video_stream`): the first
+// video-scoped stream, by array (AVStream) order -- `05-CHECK-ROSTER.md`'s
+// own Discretion resolution ("not an attached picture") is declared but
+// not yet wired (no `StreamInfo` field exposes the disposition flag within
+// this plan's own file scope; no fixture in this plan's corpus carries an
+// attached-picture stream, so this is a scoping note, not an observed
+// gap). One measurement per audio stream, scoped to that audio stream. No
+// audio stream, or no video stream, at all: `skipped:insufficient_data`
+// rather than silence -- `skipped != pass` is load-bearing, and a
+// completely silent check on an audio-less or video-less input is
+// indistinguishable from "the check never ran".
+//
+// `required_passes = {Pass::demux_header, Pass::packet_scan}`, `scope =
+// ContainerFamily::other` (every container). Skip-reason priority:
+// `partial_scan` (Phase 3 D-02, ahead of everything), then
+// `insufficient_data` for every "nothing to measure" case (no audio, no
+// video, or any checked-arithmetic overflow in the offset computation,
+// T-05-01-style).
+const AnalyzerSpec& timeline_av_sync_analyzer();
+
+namespace detail {
+
+// The first video-scoped stream's own array (AVStream) index, by position
+// -- `scopes[i]` is `std::nullopt` for a non-scoped (attachment) stream,
+// mirroring `compute_stream_scopes`'s own per-file-copy convention already
+// established in `start_duration.cpp`/`monotonic.cpp`. Returns
+// `std::nullopt` when no video-scoped stream exists at all.
+std::optional<std::size_t> primary_video_stream(std::span<const std::optional<Scope>> scopes);
+
+}  // namespace detail
+
 }  // namespace mediadiff

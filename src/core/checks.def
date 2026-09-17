@@ -1362,3 +1362,35 @@ unit = "percent"
 value_kind = "histogram"
 severity = "warn"
 tolerance = "2%"
+
+# 05-09-PLAN.md (TIME-06/TIME-09/TIME-10, D-09/D-10/D-11), src/analyzers/
+# timeline/av_sync.cpp -- the signed offset between the first audible
+# sample (audio-side priming-adjusted, D-09's resolver) and the first
+# visible frame of the primary video stream; positive means audio late
+# (doc 04 section 2's own sign convention). D-09: priming is read from
+# what the demuxer already exposes without decoding -- packet-level
+# `AV_PKT_DATA_SKIP_SAMPLES` checked FIRST, `codecpar->initial_padding` as
+# fallback (05-RESEARCH.md's own verified finding: MP4 signals priming
+# ONLY via the packet-level side data). D-10: the fingerprint stores the
+# RAW offset, the ADJUSTED offset and a structured `priming`
+# {state,source,samples} object per side; `comparison_basis` records this
+# side's own preference, and src/compare/tol.cpp's generic evidence-driven
+# override (Rule 2 addition) swaps the compared magnitude to
+# `adjusted_offset_ms` only when BOTH sides agree -- raw-to-raw whenever
+# either side's priming is unknown, so a mixed MP4-vs-TS pair compares
+# something meaningful instead of an adjusted number against an
+# unadjusted one. D-11: unknown priming NEVER softens severity or widens
+# tolerance -- the uncertainty is visible structured evidence, not a
+# weaker gate. Primary-stream selection: the first video-scoped stream, by
+# array order; one measurement per audio stream. No audio, or no video, at
+# all: `skipped:insufficient_data`, never silence. Skip-reason priority:
+# `partial_scan` (Phase 3 D-02, ahead of everything), then
+# `insufficient_data` for every other "nothing to measure" case.
+[[check]]
+id = "timeline.av_offset"
+group = "timeline"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "5ms,20ms"

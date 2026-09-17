@@ -169,6 +169,11 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // this phase's own discontinuities pair so the family stays grouped
       // in the stable, hand-written analyzer order (TRUST-05).
       timeline_jitter_vfr_analyzer(),
+      // 05-09-PLAN.md (TIME-06/TIME-09/TIME-10): timeline.av_offset --
+      // listed directly after this phase's own jitter/vfr_profile pair so
+      // the family stays grouped in the stable, hand-written analyzer
+      // order (TRUST-05).
+      timeline_av_sync_analyzer(),
   };
   return registry;
 }

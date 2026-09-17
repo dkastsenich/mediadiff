@@ -206,7 +206,7 @@ Acknowledged but deferred. Tracked, not in the current roadmap.
 - **EXT-02**: PCR accuracy and jitter measured against an ideal clock (deferred until it can meet the idempotence guarantee)
 - **EXT-03**: Per-frame Dolby Vision RPU diffing beyond the configuration record
 - **EXT-04**: `transform` profile gains `expect.frame_rate` alongside `expect.resolution`
-- **EXT-05**: Lightweight audio priming extraction at probe level, ahead of the full audio decode path — **[R]** requires a feasibility spike first (research: ARCHITECTURE open question)
+- **EXT-05**: Lightweight audio priming extraction at probe level, ahead of the full audio decode path — **[R]** requires a feasibility spike first (research: ARCHITECTURE open question) — **partly satisfied by Phase 5's D-09** (`timeline.av_offset`, `resolve_priming` in `src/analyzers/timeline/analyzers.h`): probe-level priming for the sources the demuxer already exposes without decoding (packet-level `AV_PKT_DATA_SKIP_SAMPLES`, `codecpar->initial_padding`). Remaining scope — priming for codecs/containers beyond those two already-exposed sources — stays v2; Phase 6's `AUDIO-04` extends this same resolver.
 
 ### Distribution
 
