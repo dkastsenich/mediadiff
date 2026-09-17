@@ -174,6 +174,17 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
           "meta.tags",
           "meta.tags",
           "meta.tags",
+          // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the SAME
+          // splice-corrupted timestamp sequence `timeline.duration.
+          // coherence` above already documents nudges the fitted line's
+          // own residual max across the 2ms constant-offset/linear-drift
+          // boundary on the candidate side alone -- `timeline.av_drift`
+          // (the RATE) stays `pass` (D-07's dual gate: the accumulated
+          // end delta never clears the epsilon), but `timeline.
+          // av_drift.pattern` has no such tolerance by design (D-04,
+          // locked one-way) and so reports the classification flip. One
+          // more legitimate effect of the same splice root cause (D-02).
+          "timeline.av_drift.pattern",
       });
 }
 
@@ -508,6 +519,19 @@ TEST_CASE(
           "size.stream_bitrate",
           "size.stream_bitrate",
           "size.overhead",
+          // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the ~1.02s
+          // splice jump this fixture exists to prove is exactly the
+          // "single large step" doc 04 section 3 fits a rate against --
+          // the candidate's own accumulated end delta (evidence:
+          // -122ms) clears D-07's 2ms epsilon by a wide margin, so
+          // (unlike Test 1's dts_backward pair, where the effect stays
+          // sub-epsilon on the RATE) the dual gate does NOT suppress
+          // this one: `timeline.av_drift` genuinely fails. Both sides
+          // classify as `linear-drift` (verified via evidence), so
+          // `timeline.av_drift.pattern` itself stays `pass` and is
+          // deliberately absent here. One more legitimate effect of the
+          // same splice root cause (D-02).
+          "timeline.av_drift",
       });
 }
 

@@ -194,6 +194,17 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // (mpeg4's own tbn divides evenly into MPEG-TS's 90kHz grid), so
                                    // only the audio-scoped finding fires.
                                    "timeline.vfr_profile",
+                                   // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the SAME
+                                   // MPEG-TS audio-duration disagreement `timeline.
+                                   // duration.coherence` above already documents (3877ms vs
+                                   // 4023ms) nudges the fitted line's own residual max across
+                                   // the 2ms constant-offset/linear-drift boundary on the TS
+                                   // side alone -- `timeline.av_drift` (the RATE) stays `pass`
+                                   // (D-07's dual gate: the accumulated end delta never clears
+                                   // the epsilon), but `timeline.av_drift.pattern` has no such
+                                   // tolerance by design (D-04, locked one-way) and so reports
+                                   // the classification flip.
+                                   "timeline.av_drift.pattern",
                                });
 }
 

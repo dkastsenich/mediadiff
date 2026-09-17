@@ -159,6 +159,18 @@ TEST_CASE("timeline_av_sync - the MPEG-TS remux (unknown-priming) pair declares 
                                    // 90kHz PTS grid, pushing the worst histogram bin past
                                    // the 2% dist tolerance.
                                    "timeline.vfr_profile",
+                                   // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the
+                                   // SAME MPEG-TS audio-duration disagreement
+                                   // `timeline.duration.coherence` above already documents
+                                   // for this exact pairing nudges the fitted line's own
+                                   // residual max across the 2ms constant-offset/
+                                   // linear-drift boundary on the TS side alone --
+                                   // `timeline.av_drift` (the RATE) stays `pass` (D-07's
+                                   // dual gate: the accumulated end delta never clears the
+                                   // epsilon), but `timeline.av_drift.pattern` has no such
+                                   // tolerance by design (D-04, locked one-way) and so
+                                   // reports the classification flip.
+                                   "timeline.av_drift.pattern",
                                });
 
   // Note this fixture's own priming becomes unknown (verified via evidence

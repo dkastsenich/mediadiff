@@ -1394,3 +1394,63 @@ unit = "ms"
 value_kind = "rational"
 severity = "fail"
 tolerance = "5ms,20ms"
+
+# 05-10-PLAN.md (TIME-07/TIME-08), src/analyzers/timeline/av_sync.cpp --
+# doc 04 section 3's flagship A/V drift algorithm, one `fit_drift` call per
+# audio stream producing TWO ids from the ONE fit (D-04, locked at the
+# 05-01 roster checkpoint: an id comparing rate alone would never fire on
+# a clean step; a THIRD id for end delta would turn one drift report into
+# three findings for a reader to reconcile by hand). This id is the RATE,
+# ms/min, an exact `RationalValue` from `Int128Accum::try_reduce_ratio`'s
+# GCD-reduced slope -- never a pre-divided float. D-07's dual gate: the
+# rate is ALWAYS published, but a non-pass verdict additionally requires
+# the accumulated END DELTA (evidence `end_delta_ms`) to clear the SAME 2
+# ms epsilon `fit_drift`'s own classification uses (kDriftEpsilonMs,
+# analyzers.h) -- src/compare/tol.cpp's generic evidence-shape override
+# (mirrors D-10's `timeline.av_offset` precedent immediately above)
+# forces `pass` when the end delta does not clear it, regardless of the
+# rate delta. Reason: 0.2 ms/min accumulated over the ten-minute reference
+# file is exactly 2 ms -- WITHOUT the dual condition, ordinary timebase
+# rounding on a short clip would false-positive on a rate that is not a
+# real drift (P0: false positives are worse than a missed one). Evidence
+# also carries `residual_max_ms`, `step_time_ms` (when the pattern is
+# `step`), `comparison_basis` (the SAME raw-versus-adjusted basis
+# `timeline.av_offset` chose for this side, D-10) and the full K=32
+# `{k, t_v_ms, offset_ms}` trajectory (TIME-08) -- `05-RESEARCH.md`
+# confirmed `Measurement::evidence` already round-trips through
+# `src/core/snapshot.cpp` (read ~line 297, write ~line 356), so `compare`
+# against a stored snapshot retains full trajectory fidelity, doc 04
+# section 3 step 5. Skip-reason priority identical to `timeline.av_offset`
+# immediately above: `partial_scan`, then `insufficient_data` (no audio,
+# no video, too few usable checkpoints, or `fit_drift` itself refusing an
+# unnarrowable/degenerate fit) -- never a wrapped or fabricated rate.
+[[check]]
+id = "timeline.av_drift"
+group = "timeline"
+semantic = "tol"
+unit = "ms_per_min"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.2ms/min"
+
+# 05-10-PLAN.md (TIME-07/TIME-08), the SAME `fit_drift` call as
+# `timeline.av_drift` immediately above -- this id is the CLASSIFIED
+# PATTERN, doc 04 section 3.4's four spellings exactly:
+# `constant-offset` / `linear-drift` / `step` / `irregular`
+# (`DriftPattern`, analyzers.h). D-04, locked and one-way at the 05-01
+# roster checkpoint: exists so a step small enough to leave the fitted
+# RATE under `timeline.av_drift`'s own 0.2 ms/min tolerance (a brief,
+# large jump can average out to a shallow slope over a long file) still
+# produces a finding a reader can act on -- the rate id alone would stay
+# silent on exactly that case. `exact`/`string`, mirroring
+# `video.pix_fmt`'s own shape immediately below in this file's git
+# history (04-08-PLAN.md) -- no tolerance, any change of class gates.
+# Same skip-reason priority as `timeline.av_drift`: both ids skip
+# together, from the same `fit_drift` call, never independently.
+[[check]]
+id = "timeline.av_drift.pattern"
+group = "timeline"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
