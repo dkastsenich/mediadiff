@@ -38,8 +38,11 @@
 // registers timeline.jitter and timeline.vfr_profile, bringing the total
 // to seventy-two. 05-09-PLAN.md registers timeline.av_offset, bringing the
 // total to seventy-three. 05-10-PLAN.md registers timeline.av_drift and
-// timeline.av_drift.pattern, bringing the total to seventy-five. This file
-// is where a gap becomes visible.
+// timeline.av_drift.pattern, bringing the total to seventy-five.
+// 05-11-PLAN.md registers timeline.timecode and timeline.timecode.value,
+// bringing the total to seventy-seven -- the full 16-id Phase 5 timeline
+// roster, closing out this phase's own DOC-03 obligation. This file is
+// where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -549,6 +552,25 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"timeline.av_drift.pattern",
        {fixture("timeline_drift_base.mp4"), fixture("timeline_drift_linear.mp4"),
         fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
+      // 05-11-PLAN.md Task 3 (TIME-11): timeline.timecode's own trigger
+      // pair -- timeline_tc_ndf.mp4 (a tmcd track present) vs
+      // timeline_tc_absent.mp4 (the identical encode with no `-timecode`
+      // option at all, so no tmcd track) -- verified empirically under
+      // --profile sw-encoder: reports non-pass (`present` -> `Absent`).
+      // Clean pair: the byte-identical `cp` copy, verified `pass`.
+      {"timeline.timecode",
+       {fixture("timeline_tc_ndf.mp4"), fixture("timeline_tc_absent.mp4"), fixture("timeline_tc_ndf.mp4"),
+        fixture("timeline_tc_ndf_copy.mp4")}},
+      // 05-11-PLAN.md Task 3 (TIME-11): timeline.timecode.value's own
+      // trigger pair -- timeline_tc_ndf.mp4 (`00:00:10:00`) vs
+      // timeline_tc_ndf_shifted.mp4 (`00:00:20:00`, the SAME encode,
+      // differing only in the tmcd track's own start timecode) --
+      // verified empirically under --profile sw-encoder: reports
+      // non-pass (`info`, D-04-style exact-string-mismatch). Clean pair:
+      // the same byte-identical copy as timeline.timecode above.
+      {"timeline.timecode.value",
+       {fixture("timeline_tc_ndf.mp4"), fixture("timeline_tc_ndf_shifted.mp4"), fixture("timeline_tc_ndf.mp4"),
+        fixture("timeline_tc_ndf_copy.mp4")}},
   };
   return pairs;
 }

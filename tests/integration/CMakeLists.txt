@@ -107,6 +107,16 @@ add_executable(mediadiff_integration_tests
   # unknown priming gates at the check's normal severity rather than
   # being demoted (D-11).
   test_timeline_av_sync.cpp
+  # TIME-11, DOC-04 (05-11-PLAN.md Task 3): the DOC-04 no-others harness
+  # proven against this plan's own crafted fixtures -- timeline_tc_ndf.mp4/
+  # timeline_tc_ndf_shifted.mp4 (the timeline.timecode.value trigger pair,
+  # differing only in the tmcd track's own start timecode) and
+  # timeline_tc_ndf.mp4/timeline_tc_absent.mp4 (the timeline.timecode
+  # presence trigger pair, differing only in whether a tmcd track exists
+  # at all) -- plus the byte-identical clean pair and a dedicated ROADMAP
+  # SC5 case proving presence, the exact SMPTE value, and the drop-frame
+  # flag are all visible in one finding.
+  test_timeline_timecode.cpp
   # 04-08-PLAN.md Task 3 (VIDEO-03): the phase's own signature test made
   # into a counting assertion -- yuvj420p vs yuv420p-limited-range
   # produces EXACTLY ONE non-pass finding (video.color.range) across the
