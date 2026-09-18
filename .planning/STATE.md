@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 5
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-15-PLAN.md
-last_updated: "2026-09-18T16:48:19.414Z"
+stopped_at: Completed 05-16-PLAN.md
+last_updated: "2026-09-18T17:03:14.728Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 5 execution started
-state_head: b4178d3f70a8644f2793984d3bc3946f0c60a5fb
+state_head: ae81c22c1b78fb83106d934e2ad535c76d5466cc
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 92
-  completed_plans: 82
+  completed_plans: 83
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 5 (Timeline Analysis) — EXECUTING
-Plan: 3 of 25
+Plan: 4 of 25
 Status: Ready to execute
 Last activity: 2026-09-18 — Phase 5 execution started
 
@@ -133,6 +133,7 @@ Progress: [█████████░] 92%
 | Phase 05 P13 | 40min | 3 tasks | 3 files |
 | Phase 05 P14 | 55min | 3 tasks | 8 files |
 | Phase 05 P15 | ~50min | 3 tasks | 3 files |
+| Phase 05 P16 | ~35min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -312,6 +313,7 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-14: re-verified the MP4->TS pairs via a scratch git-worktree build of the pre-fix commit (never git stash) rather than assuming the flagged assumption held -- confirmed byte-identical priming.state/av_drift/av_drift.pattern evidence before and after, because the units bug never reaches an unknown-priming side or an MP4 identity-timebase side
 - [Phase 5]: 05-15: PES-parse PID range (0x0010..0x1FFE excluding known PMT PIDs) needed no new exclusion logic beyond the existing pmt_owner_by_pid table
 - [Phase 5]: 05-15: stride join-rate measurement found a constant +4 byte offset shift on ts_192.ts and +16 on ts_204.ts between ts_scan's own PES offset and libavformat's PacketRecord::pos -- recorded, not adapted, per plan A1
+- [Phase 5]: 05-16: Per-axis unwrap in TimelinePacketView calls unwrap_ts_timestamps directly (not detail::unwrap_axis_view) to expose wrap_events, mirroring monotonic.cpp's emit_wrap_events -- still one unwrap implementation
 
 ### Pending Todos
 
@@ -351,6 +353,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T16:48:19.230Z
-Stopped at: Completed 05-15-PLAN.md
+Last session: 2026-09-18T17:03:14.531Z
+Stopped at: Completed 05-16-PLAN.md
 Resume file: None
