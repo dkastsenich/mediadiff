@@ -319,3 +319,45 @@ TEST_CASE("pass_union - Pass::parser_scan never appears in the log when no analy
     REQUIRE(p != Pass::parser_scan);
   }
 }
+
+// --- 05-20-PLAN.md (Gap 4, TIME-04): on MPEG-TS, packet_scan implies
+// ts_scan -- the orchestrator's own container-DTS post-pass needs 05-15's
+// PES seam (PidStats::pes_timestamps) whenever packets are scanned on a
+// TS input, even when no applicable analyzer's own scope declared
+// Pass::ts_scan directly. Mirrors this file's own
+// parser_scan-implies-packet_scan tests just above.
+
+TEST_CASE("pass_union - on an MPEG-TS input, Pass::packet_scan implies Pass::ts_scan", "[unit]") {
+  const std::vector<AnalyzerSpec> analyzers = {
+      AnalyzerSpec{"synthetic.packet_only", PassSet{Pass::demux_header, Pass::packet_scan}, ContainerFamily::other,
+                   &noop_run},
+  };
+
+  PassExecutionLog log;
+  auto result =
+      mediadiff::detail::run_probe(mediadiff::test::fixture_dir() + "/ts_single.ts", analyzers, &log);
+  REQUIRE(result.has_value());
+
+  int ts_scan_occurrences = 0;
+  for (Pass p : log) {
+    if (p == Pass::ts_scan) {
+      ++ts_scan_occurrences;
+    }
+  }
+  REQUIRE(ts_scan_occurrences == 1);
+}
+
+TEST_CASE("pass_union - the same analyzer list on an MP4 input never logs Pass::ts_scan", "[unit]") {
+  const std::vector<AnalyzerSpec> analyzers = {
+      AnalyzerSpec{"synthetic.packet_only", PassSet{Pass::demux_header, Pass::packet_scan}, ContainerFamily::other,
+                   &noop_run},
+  };
+
+  PassExecutionLog log;
+  auto result = mediadiff::detail::run_probe(tracer_mp4(), analyzers, &log);
+  REQUIRE(result.has_value());
+
+  for (Pass p : log) {
+    REQUIRE(p != Pass::ts_scan);
+  }
+}

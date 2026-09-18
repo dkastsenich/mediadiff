@@ -34,6 +34,55 @@ rather than reporting a count derived from an incomplete sweep -- a count
 from a truncated scan understates the real count, which is worse than no
 answer at all.
 
+## MPEG-TS decode timestamps (UD-3)
+
+The rule above is unchanged: `dts[i] <= dts[i-1]` still counts, including a
+genuine tie. What changes on MPEG-TS is *where the DTS sequence under test
+comes from*.
+
+libavformat's own read-back DTS on MPEG-TS is sometimes **inferred**, not
+read from the container: `compute_pkt_fields`'s own heuristics can
+fabricate a tie that does not exist in the file (05-VERIFICATION.md's
+Gap 4 -- a `-c copy` remux that dropped the MPEG-4 VOL header produced a
+one-frame-lagged DTS guess with no basis in the file's own PES headers).
+This check never judges that inferred value on MPEG-TS.
+
+Instead, the orchestrator's container-DTS post-pass (`src/probe/
+orchestrator.cpp`) substitutes the PES header's own decode-timestamp
+truth (ISO/IEC 13818-1 section 2.4.3.7) for every joined packet -- once,
+ahead of every analyzer, including this one. When a PES header carries
+PTS only (`PTS_DTS_flags` = `10`), its DTS equals its PTS (ISO/IEC
+13818-1's own absent-DTS rule); a frame the demuxer split out of a
+multi-frame PES (no `pos` of its own) keeps the demuxer's value, since it
+carries no PES header of its own to join against.
+
+When container truth is unavailable for a stream (`ts_scan`'s own global
+PES-record budget was exhausted before this stream's list, or a partial
+scan stopped before this stream's last PES start), this check **skips
+with `insufficient_data`** rather than judging libavformat's own inferred
+value -- `pts_unique`, `gaps` and `wrap_events` are unaffected, since none
+of them reads DTS.
+
+### `dts_source` evidence
+
+Every computed `timeline.dts_monotonic` measurement -- MPEG-TS and every
+other container alike -- carries a `dts_source` evidence object:
+
+```json
+{"source": "demuxer", "container_joined": 0, "unjoined_with_pos": 0}
+```
+
+`source` is one of `demuxer` (the value PacketScan read verbatim -- every
+non-TS input, and any MPEG-TS stream whose container truth could not be
+established), `container_pes` (this stream's `dts` came from the PES
+header substitution above), or `container_unavailable` (why this
+measurement is a skip, MPEG-TS only). `container_joined` /
+`unjoined_with_pos` are `detail::apply_container_dts`'s own join counters
+(`src/probe/ts_scan.h`), both `0` when `source` is not `container_pes`.
+
+**Contract note:** `dts_source` is a new evidence key, present on every
+`timeline.dts_monotonic` measurement as of this plan.
+
 ## Why it matters
 
 A decode timestamp that goes backward or repeats usually means a

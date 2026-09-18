@@ -238,12 +238,37 @@ std::optional<PreparedAxis> prepare_axis(std::span<const PacketRecord> packets, 
   return PreparedAxis{std::move(*unwrapped), true};
 }
 
+// 05-20-PLAN.md (Gap 4, TIME-04, UD-3): renders `stream_scan.dts_source`
+// (packet_scan.h's DtsSource, set once by the orchestrator's
+// container-DTS post-pass) as the exact string this check's own evidence
+// and docs/checks/timeline.dts_monotonic.md's contract name.
+const char* dts_source_evidence_string(DtsSource source) {
+  switch (source) {
+    case DtsSource::container_pes:
+      return "container_pes";
+    case DtsSource::container_unavailable:
+      return "container_unavailable";
+    case DtsSource::demuxer:
+      break;
+  }
+  return "demuxer";
+}
+
 // timeline.dts_monotonic for ONE stream. Skip-reason priority (matching
-// this file's own run()): no_timing_data when the axis view is empty
-// (no real DTS at all on this stream), insufficient_data when the TS
-// unwrap overflowed -- partial_scan is handled by the caller, ahead of
-// this function ever being reached.
-void emit_dts_monotonic(Scope scope, std::span<const PacketRecord> packets, bool is_ts, Fingerprint& fp) {
+// this file's own run()): container_unavailable (MPEG-TS only, 05-20's
+// own T-05-85 mitigation -- container truth could not be established for
+// this stream, so libavformat's own possibly-inferred DTS is never
+// judged), no_timing_data when the axis view is empty (no real DTS at
+// all on this stream), insufficient_data when the TS unwrap overflowed
+// -- partial_scan is handled by the caller, ahead of this function ever
+// being reached.
+void emit_dts_monotonic(Scope scope, const StreamPacketScan& stream_scan, bool is_ts, Fingerprint& fp) {
+  if (is_ts && stream_scan.dts_source == DtsSource::container_unavailable) {
+    push_skip(CheckId::timeline_dts_monotonic, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+
+  const std::span<const PacketRecord> packets(stream_scan.packets);
   const std::optional<PreparedAxis> prepared = prepare_axis(packets, detail::Axis::dts, is_ts);
   if (!prepared.has_value()) {
     push_skip(CheckId::timeline_dts_monotonic, scope, SkipReason::insufficient_data, fp);
@@ -260,10 +285,16 @@ void emit_dts_monotonic(Scope scope, std::span<const PacketRecord> packets, bool
   measurement.check_index = static_cast<std::uint32_t>(CheckId::timeline_dts_monotonic);
   measurement.scope = scope;
   measurement.value = result.violation_count;
+  nlohmann::ordered_json dts_source_evidence{
+      {"source", dts_source_evidence_string(stream_scan.dts_source)},
+      {"container_joined", stream_scan.dts_container_joined},
+      {"unjoined_with_pos", stream_scan.dts_unjoined_with_pos},
+  };
   nlohmann::ordered_json evidence{
       {"axis", "dts"},
       {"unwrapped", prepared->unwrapped},
       {"excluded_sentinel_count", prepared->view.excluded_count},
+      {"dts_source", std::move(dts_source_evidence)},
   };
   if (result.first_violation_index.has_value()) {
     evidence["first_violation_index"] = static_cast<std::int64_t>(*result.first_violation_index);
@@ -513,7 +544,7 @@ void run_timeline_monotonic(const ProbeResults& results, Fingerprint& fp) {
       continue;
     }
     const std::span<const PacketRecord> stream_packets(stream_scan.packets);
-    emit_dts_monotonic(*scopes[i], stream_packets, is_ts, fp);
+    emit_dts_monotonic(*scopes[i], stream_scan, is_ts, fp);
     emit_pts_unique(*scopes[i], stream_packets, is_ts, fp);
     emit_timeline_gaps(*scopes[i], stream_packets, stream_scan.tb, is_ts, fp);
     emit_wrap_events(*scopes[i], stream_packets, is_ts, fp);
