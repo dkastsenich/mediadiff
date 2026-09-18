@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -26,10 +27,13 @@
 
 using mediadiff::kNullPid;
 using mediadiff::kPidCount;
+using mediadiff::PacketRecord;
 using mediadiff::PesTimestampRecord;
 using mediadiff::PidStats;
 using mediadiff::run_ts_scan;
 using mediadiff::TsScanResult;
+using mediadiff::detail::apply_container_dts;
+using mediadiff::detail::ContainerDtsJoin;
 using mediadiff::detail::parse_pes_timestamps;
 using mediadiff::detail::PesParseResult;
 using mediadiff::detail::PesParseStatus;
@@ -691,4 +695,98 @@ TEST_CASE("ts_scan - PES record budget: a budget of 2 truncates after two record
   REQUIRE(stats.pes_timestamps.size() == 2);
   REQUIRE(stats.pes_timestamps_truncated);
   REQUIRE(budget == 0);
+}
+
+// --- 05-15-PLAN.md Task 3: apply_container_dts, the pure pos/pts join ------
+
+TEST_CASE("ts_scan - PES join: a PTS-only record replaces dts with the record's pts", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 0);
+  REQUIRE(packets[0].dts == 5000);
+}
+
+TEST_CASE("ts_scan - PES join: a PTS+DTS record replaces dts with the record's own dts", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 1400, true}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 1);
+  REQUIRE(packets[0].dts == 1400);
+}
+
+TEST_CASE("ts_scan - PES join: a pos match with a differing pts does not join", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5001;
+  packets[0].dts = 999;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(packets[0].dts == 999);
+}
+
+TEST_CASE("ts_scan - PES join: a negative pos packet is untouched and uncounted either way", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = -1;
+  packets[0].pts = 5000;
+  packets[0].dts = 777;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 0);
+  REQUIRE(packets[0].dts == 777);
+}
+
+TEST_CASE("ts_scan - PES join: an AV_NOPTS_VALUE (INT64_MIN) pts at a matching pos does not join", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = std::numeric_limits<std::int64_t>::min();
+  packets[0].dts = std::numeric_limits<std::int64_t>::min();
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(packets[0].dts == std::numeric_limits<std::int64_t>::min());
+}
+
+TEST_CASE("ts_scan - PES join: an empty record list leaves every packet unchanged, joined 0", "[unit]") {
+  std::vector<PacketRecord> packets(2);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 111;
+  packets[1].pos = 2000;
+  packets[1].pts = 6000;
+  packets[1].dts = 222;
+  const std::vector<PesTimestampRecord> records;
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 2);
+  REQUIRE(packets[0].dts == 111);
+  REQUIRE(packets[1].dts == 222);
+}
+
+TEST_CASE("ts_scan - PES join: two packets at the same pos, only the first matches pts, join independently",
+          "[unit]") {
+  std::vector<PacketRecord> packets(2);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1;
+  packets[1].pos = 1000;
+  packets[1].pts = 6000;
+  packets[1].dts = 2;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(packets[0].dts == 5000);
+  REQUIRE(packets[1].dts == 2);
 }

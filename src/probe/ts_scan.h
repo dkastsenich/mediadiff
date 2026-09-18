@@ -39,6 +39,7 @@
 #include <vector>
 
 #include "core/error.h"
+#include "probe/packet_scan.h"
 #include "util/expected.h"
 
 namespace mediadiff {
@@ -389,6 +390,36 @@ PesParseResult parse_pes_timestamps(std::span<const std::uint8_t> payload);
 // `record_discontinuity_offset`'s own bounded-seam shape, except the
 // budget here is global rather than per-PID.
 void record_pes_timestamp(PidStats& stats, const PesTimestampRecord& record, std::int64_t& remaining_budget);
+
+// 05-15-PLAN.md (TIME-04, Gap 4): the outcome of `apply_container_dts`
+// below -- how many demuxed packets had their `dts` replaced by
+// container truth (`joined`), and how many carried a non-negative `pos`
+// (so a join was structurally possible) but did not match any recorded
+// PES timestamp (`unjoined_with_pos`). A packet with a negative `pos` (a
+// frame the demuxer split out of a multi-frame PES, carrying no PES
+// header of its own) is neither counted nor touched.
+struct ContainerDtsJoin {
+  std::int64_t joined = 0;
+  std::int64_t unjoined_with_pos = 0;
+};
+
+// Joins `packets` (one stream's demuxed `PacketRecord`s, in `pos`-ascending
+// or arbitrary order -- each is looked up independently) against `records`
+// (one PID's `PidStats::pes_timestamps`, ASCENDING by offset, the
+// invariant that struct's own comment guarantees), replacing `dts` in
+// place wherever a packet's `pos` equals a record's `offset` AND the
+// packet's own raw `pts` equals the record's `pts` -- the pts match is
+// what stops an unrelated record at a coincidentally-reused `pos` from
+// attaching to the wrong packet (T-05-70). On a join, `dts` becomes the
+// record's `dts` when `dts_present`, otherwise the record's `pts`
+// (ISO/IEC 13818-1's own absent-DTS-equals-PTS rule, UD-3). A packet
+// whose `pos` is negative is left untouched and uncounted; a packet with
+// a non-negative `pos` that does not join keeps its own `dts` unchanged.
+// No arithmetic beyond comparisons -- there is no overflow surface here.
+// A pure function: 05-20 is the plan that wires this into the
+// orchestrator's DTS-axis consumers; this plan ships it tested and
+// unwired.
+ContainerDtsJoin apply_container_dts(std::span<PacketRecord> packets, std::span<const PesTimestampRecord> records);
 
 }  // namespace detail
 

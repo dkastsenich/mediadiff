@@ -893,6 +893,32 @@ void record_pes_timestamp(PidStats& stats, const PesTimestampRecord& record, std
   --remaining_budget;
 }
 
+ContainerDtsJoin apply_container_dts(std::span<PacketRecord> packets, std::span<const PesTimestampRecord> records) {
+  ContainerDtsJoin result;
+  for (PacketRecord& packet : packets) {
+    if (packet.pos < 0) {
+      // A frame the demuxer split out of a multi-frame PES: no `pos`, no
+      // PES header of its own -- the container carries no timestamp for
+      // it, so it is left exactly as the demuxer reported it and never
+      // counted either way (05-15-PLAN.md's own flagged item).
+      continue;
+    }
+    // `records` is ascending by offset (PidStats::pes_timestamps's own
+    // invariant) -- binary search, mirroring
+    // src/analyzers/timeline/discontinuities.cpp's own is_flagged join.
+    const auto it = std::lower_bound(
+        records.begin(), records.end(), packet.pos,
+        [](const PesTimestampRecord& record, std::int64_t pos) { return record.offset < pos; });
+    if (it != records.end() && it->offset == packet.pos && it->pts == packet.pts) {
+      packet.dts = it->dts_present ? it->dts : it->pts;
+      ++result.joined;
+    } else {
+      ++result.unjoined_with_pos;
+    }
+  }
+  return result;
+}
+
 }  // namespace detail
 
 mediadiff::expected<TsScanResult, Error> run_ts_scan(const std::string& utf8_path) {
