@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 5
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-18-PLAN.md
-last_updated: "2026-09-18T17:31:51.280Z"
+stopped_at: Completed 05-19-PLAN.md
+last_updated: "2026-09-18T18:35:16.129Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 5 execution started
-state_head: b7abbd76d3a7ffdea6c82357fef388a5905ce85e
+state_head: 94adde6693fba5a7e9a6946e264879db83adf962
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 92
-  completed_plans: 85
+  completed_plans: 86
 milestone_name: milestone
 ---
 
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 5 (Timeline Analysis) — EXECUTING
-Plan: 6 of 25
+Plan: 20 of 25
 Status: Ready to execute
-Last activity: 2026-09-18 — Phase 5 execution started
+Last activity: 2026-09-18 — Completed 05-19-PLAN.md (WINDOWS #28 closed)
 
 Progress: [█████████░] 92%
 
@@ -136,6 +136,7 @@ Progress: [█████████░] 92%
 | Phase 05 P16 | ~35min | 3 tasks | 7 files |
 | Phase 05 P17 | ~15min | 3 tasks | 7 files |
 | Phase 05 P18 | ~25min | 3 tasks | 5 files |
+| Phase 05-timeline-analysis P19 | ~50min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -318,6 +319,8 @@ Recent decisions affecting current work:
 - [Phase 5]: 05-16: Per-axis unwrap in TimelinePacketView calls unwrap_ts_timestamps directly (not detail::unwrap_axis_view) to expose wrap_events, mirroring monotonic.cpp's emit_wrap_events -- still one unwrap implementation
 - [Phase 5]: 05-17: DemuxSession-level declared-duration override (never a call-site parameter) transparently corrects av_sync.cpp's own declared spans (video_span_ticks/audio_span_ticks) on a wrapping TS file with that file untouched -- av_sync.cpp's remaining raw-PTS-read gap (av_offset/av_drift) stays 05-18's scope
 - [Phase 5]: 05-18: av_sync.cpp uses the multi-stream TimelinePacketView builder (cross-stream epoch alignment), jitter_vfr.cpp uses the per-stream builder; the wrap pair's measured complete non-pass set matched flagged assumption A1 exactly (timeline.start global fail, timeline.wrap_events x2 info, timeline.duration.coherence audio info); WINDOWS #26/#27/#30 closed, new entry #31 (av_sync.cpp) recorded and closed, #29 untouched
+- [Phase 5]: [Phase 05]: 05-19: classify_vfr_bin's on_grid/one_tick boundary made quantization-aware (|Q| < ideal_den is on_grid, strictly below one tick) and compute_jitter_sigma re-referenced from the stream's own exact ideal interval rather than the mode -- closes WINDOWS #28's NTSC false positive; integer-ideal streams bin/sigma identically to before (proven by unit test and by the jitter trigger fixture's byte-identical before/after sigma via a scratch pre-change worktree build)
+- [Phase 5]: [Phase 05]: 05-19: the NTSC MP4-to-MKV stream copy now compares clean on timeline.av_offset/jitter/vfr_profile, asserted by one whole-report expect_declared_set landing Gap 3 (05-14) and Gap 5 (this plan) together; the 90kHz-AAC TS-audio timeline.vfr_profile member dropped from test_timeline_start_duration.cpp Test 4 and its test_timeline_av_sync.cpp mirror (171/173 intervals now on_grid, 1.16% remain one_tick, under the 2% dist tolerance)
 
 ### Pending Todos
 
@@ -357,6 +360,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T17:31:51.089Z
-Stopped at: Completed 05-18-PLAN.md
+Last session: 2026-09-18T18:35:15.950Z
+Stopped at: Completed 05-19-PLAN.md
 Resume file: None
