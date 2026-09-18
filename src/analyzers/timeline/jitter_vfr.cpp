@@ -14,6 +14,7 @@
 #include "core/model.h"
 #include "core/rational.h"
 
+#include "analyzers/timeline/unwrap.h"
 #include "probe/cadence.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
@@ -452,6 +453,17 @@ void run_timeline_jitter_vfr(const ProbeResults& results, Fingerprint& fp) {
 
   const std::vector<std::optional<Scope>> scopes = compute_stream_scopes(demux, packet_scan.per_stream.size());
 
+  // 05-18-PLAN.md (Gap 2, TIME-02): every timestamp read below goes through
+  // the ONE promoted `TimelinePacketView` per stream (05-16's
+  // assumption-delta `promote` decision) -- never `StreamPacketScan::
+  // packets` directly. Per-stream builder is sufficient here (unlike
+  // av_sync.cpp's cross-stream comparison): jitter/vfr_profile are
+  // computed independently per stream, with no cross-stream epoch
+  // alignment needed. `is_ts` matches every sibling timeline analyzer's
+  // own established pattern exactly.
+  const bool is_ts = container_family_from_format_name(demux.format_name()) == ContainerFamily::ts;
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(packet_scan, is_ts);
+
   for (std::size_t i = 0; i < scopes.size(); ++i) {
     if (!scopes[i].has_value() || scopes[i]->kind == Scope::Kind::subtitle) {
       continue;
@@ -473,7 +485,16 @@ void run_timeline_jitter_vfr(const ProbeResults& results, Fingerprint& fp) {
       continue;
     }
 
-    const std::span<const PacketRecord> stream_packets(stream_scan.packets);
+    if (i >= views.size() || views[i].overflowed()) {
+      // T-05-71: this stream's own unwrap could not complete without an
+      // int64 overflow -- both ids skip for the SAME reason, following
+      // this file's own established "both ids skip together" rule.
+      push_skip(CheckId::timeline_jitter, scope, SkipReason::insufficient_data, fp);
+      push_skip(CheckId::timeline_vfr_profile, scope, SkipReason::insufficient_data, fp);
+      continue;
+    }
+
+    const std::span<const PacketRecord> stream_packets = views[i].packets();
     const Cadence cadence = derive_cadence(stream_packets, stream_scan.tb);
 
     if (cadence.status == CadenceStatus::no_timing_data) {

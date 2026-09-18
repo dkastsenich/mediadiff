@@ -305,36 +305,54 @@ TEST_CASE(
 // `state` semantic's own asymmetry (one side flagged, one not) is what
 // makes this pair a trigger.
 //
-// Deliberately NOT an expect_declared_set/whole-report assertion here
-// (contrast Test 3's gap trigger pair above): this task's own Rule 1/2
-// deviation (demux_session.{h,cpp}'s correct_ts_overflow=0, needed so
-// unwrap_ts_timestamps ever sees a genuine wrap at all -- see this plan's
-// own commit message) has the side effect of exposing that
-// timeline.start, timeline.duration, timeline.duration.coherence,
-// video.frame_rate.measured and size.stream_bitrate all read RAW,
-// un-unwrapped PTS/DTS axis values directly (never through the shared
-// unwrap this plan's own two checks use), producing nonsensical evidence
-// on ANY genuinely-wrapping TS file (one observed instance: size.
-// stream_bitrate's corrupted rationals used to overflow the tolerance
-// comparator's int64_t cross-multiplication and report `status: error`;
-// since debug session test-898-ci-nonreproducible made that comparator
-// exact, the same corrupted inputs yield an equally meaningless `fail`
-// instead -- the defect is the un-unwrapped INPUT, WINDOWS.md #26, not
-// the comparison). That is a REAL, pre-existing correctness gap
-// this plan's own fix newly makes reachable -- not something a real user
-// would want silently folded into an "expected" declared set (FALSE
-// POSITIVES ARE P0). It is out of THIS plan's declared scope (05-06-
-// PLAN.md's Task 2 is timeline_monotonic_analyzer() only; the affected
-// checks live in three different analyzer files/groups) and is recorded
-// as a follow-up gap in this plan's own SUMMARY.md rather than papered
-// over here. This test therefore asserts ONLY the one finding this
-// fixture pair exists to prove, the same scope discipline
-// doc03_coverage's own statuses_for() helper already applies.
-TEST_CASE("timeline_structure - the wrap trigger pair's timeline.wrap_events finding is the state-semantic "
-          "non-pass case on both streams under --profile remux",
+// 05-18-PLAN.md (Gap 2 closure): a full expect_declared_set/whole-report
+// assertion, replacing the prior scope-limited assertion (05-06-PLAN.md's
+// own Rule 1/2 deviation note, since superseded). 05-16/05-17/05-18 migrated every
+// remaining raw-PTS-read consumer (timeline.start/timeline.duration,
+// video.frame_rate.measured, size.stream_bitrate/size.peak_bitrate,
+// timeline.av_offset/av_drift(.pattern), timeline.jitter/vfr_profile) onto
+// 05-16's TimelinePacketView, so the wrap itself no longer corrupts any of
+// them -- the set below is measured against the real binary and contains
+// ONLY findings whose cause exists independently of the wrap (D-01/D-02;
+// WINDOWS.md #26/#27/#30 are closed on this basis).
+TEST_CASE("timeline_structure - the wrap trigger pair declares its complete expected finding set under "
+          "--profile remux, and timeline.wrap_events is the state-semantic non-pass case on both streams",
           "[integration]") {
   const nlohmann::ordered_json report =
       compare_json(fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_wrap.ts"), "remux");
+
+  expect_declared_set(
+      report,
+      {
+          // D-03: the applied `-output_ts_offset 95440.34` genuinely
+          // shifts the candidate's absolute origin (its earliest
+          // presentation time) relative to the baseline -- a real,
+          // deliberately-applied timestamp offset, not a wrap-corruption
+          // artifact. The wrap itself is unwrapped transparently by
+          // 05-16/05-17/05-18's TimelinePacketView migration (verified
+          // via evidence: baseline/candidate origin_first_pts_ticks
+          // differ by exactly the applied offset once both are on the
+          // same epoch); only the genuine applied offset survives as a
+          // difference.
+          "timeline.start",
+          // The check this pair exists to prove (state semantic, one
+          // finding per stream): the candidate genuinely wraps on both
+          // its video and audio 90kHz PES timestamps at roughly the same
+          // point in the file, the baseline does not -- verified below
+          // via each finding's own baseline/candidate string values
+          // ("no_wrap" vs "ts_33bit_wrap").
+          "timeline.wrap_events",
+          "timeline.wrap_events",
+          // The same pre-existing, both-sides-shared MPEG-TS
+          // audio-duration bookkeeping artifact Test 5 (this file's own
+          // byte-identical clean pair, below) already declares:
+          // libavformat's own audio-duration estimate (3877ms) disagrees
+          // with the container-declared duration (4023ms) on BOTH sides
+          // of this pair -- a property of the TS-muxed AAC encode itself,
+          // unrelated to the wrap and unaffected by 05-16/05-17/05-18's
+          // unwrap fix (state semantic, `info` severity, never gating).
+          "timeline.duration.coherence",
+      });
 
   int wrap_events_non_pass = 0;
   for (const auto& finding : report.at("findings")) {
