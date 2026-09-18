@@ -123,17 +123,17 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Timeline Checks
 
-- [x] **TIME-01**: All timeline math runs on `{int64, AVRational}` with `AV_NOPTS_VALUE` as a first-class `absent` state, never coerced
-- [x] **TIME-02**: MPEG-TS 33-bit PTS wraparound is unwrapped correctly, preserving raw values in evidence and distinguishing a wrap from a genuine backward discontinuity
-- [x] **TIME-03**: `timeline.start` and `timeline.duration` work, with the duration triple (container-declared, stream-declared, computed) cross-checked internally and disagreement raising an `info` note
-- [x] **TIME-04**: Structural integrity checks work: `dts_monotonic`, `pts_unique`, `gaps`, `discontinuities`
-- [x] **TIME-05**: `timeline.jitter` and `timeline.vfr_profile` work, with CFR classified as ≥ 99.5% of intervals equal to the mode interval, and jitter reporting `skipped:vfr` on VFR streams
-- [x] **TIME-06**: `timeline.av_offset` reports the signed offset between first audible sample and first visible frame, priming-adjusted
-- [x] **TIME-07**: `timeline.av_drift` implements the normative 32-checkpoint least-squares algorithm and reports rate (ms/min), end delta, and pattern class (`constant-offset` / `linear-drift` / `step` / `irregular`)
-- [x] **TIME-08**: The drift trajectory (all K offsets) is stored in the fingerprint so snapshot comparison retains full fidelity
-- [x] **TIME-09**: When audio priming is unknown, the offset is computed unadjusted and the finding carries `priming: unknown` rather than hiding the uncertainty
-- [x] **TIME-10**: **[R]** Fixtures cover the non-zero-priming path, not only the priming-unknown degrade path, since phase 4 ships before the audio decode path that supplies priming (research: ARCHITECTURE hazard B)
-- [x] **TIME-11**: `timeline.timecode` detects presence and start value from `tmcd` tracks and S12M/GOP timecode, rendered as a SMPTE string including the drop-frame flag
+- [ ] **TIME-01**: All timeline math runs on `{int64, AVRational}` with `AV_NOPTS_VALUE` as a first-class `absent` state, never coerced
+- [ ] **TIME-02**: MPEG-TS 33-bit PTS wraparound is unwrapped correctly, preserving raw values in evidence and distinguishing a wrap from a genuine backward discontinuity
+- [ ] **TIME-03**: `timeline.start` and `timeline.duration` work, with the duration triple (container-declared, stream-declared, computed) cross-checked internally and disagreement raising an `info` note
+- [ ] **TIME-04**: Structural integrity checks work: `dts_monotonic`, `pts_unique`, `gaps`, `discontinuities`
+- [ ] **TIME-05**: `timeline.jitter` and `timeline.vfr_profile` work, with CFR classified as ≥ 99.5% of intervals equal to the mode interval, and jitter reporting `skipped:vfr` on VFR streams
+- [ ] **TIME-06**: `timeline.av_offset` reports the signed offset between first audible sample and first visible frame, priming-adjusted
+- [ ] **TIME-07**: `timeline.av_drift` implements the normative 32-checkpoint least-squares algorithm and reports rate (ms/min), end delta, and pattern class (`constant-offset` / `linear-drift` / `step` / `irregular`)
+- [ ] **TIME-08**: The drift trajectory (all K offsets) is stored in the fingerprint so snapshot comparison retains full fidelity
+- [ ] **TIME-09**: When audio priming is unknown, the offset is computed unadjusted and the finding carries `priming: unknown` rather than hiding the uncertainty
+- [ ] **TIME-10**: **[R]** Fixtures cover the non-zero-priming path, not only the priming-unknown degrade path, since phase 4 ships before the audio decode path that supplies priming (research: ARCHITECTURE hazard B)
+- [ ] **TIME-11**: `timeline.timecode` detects presence and start value from `tmcd` tracks and S12M/GOP timecode, rendered as a SMPTE string including the drop-frame flag
 
 ### Audio Checks
 
@@ -180,15 +180,15 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **DOC-01**: Every registered check has a `docs/checks/<id>.md` file, enforced by the build rather than by review discipline
 - [x] **DOC-02**: Every check's `--explain` text states what the check measures, why it matters, and how to accept, tune, or silence it
 - [x] **DOC-03**: Every check is demonstrated by at least one fixture pair that triggers it and one that comes back clean
-- [x] **DOC-04**: Timeline fixtures assert the *no-others* clause — the intended finding fires and nothing else does
+- [ ] **DOC-04**: Timeline fixtures assert the *no-others* clause — the intended finding fires and nothing else does
 
 ### Performance
 
-- [x] **PERF-01**: Metadata plus timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s
+- [ ] **PERF-01**: Metadata plus timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s
 - [ ] **PERF-02**: A full content pass runs at ≥ 4× realtime with software decode
-- [x] **PERF-03**: The parser pass adds < 10% over plain PacketScan, and full timeline analysis adds < 15% (amended, 05-12-PLAN.md, 2026-09-17: Phase 4 measured 43-53% parser overhead against the <10% target, at an absolute cost near 1.5 ms — the ratio is high because the baseline PacketScan-alone pass is very cheap, not because the parser is slow. Phase 5's own measurement of the full timeline analyzer set found the identical shape: 33% overhead against the <15% target, at an absolute wall-clock cost of 32-50 ms on the 10-minute 1080p reference file — comfortably inside PERF-01's 3 s budget. Both absolute-percentage targets are superseded by D-13/D-14's ratchet: the gate is a regression check against a committed retired-instruction-count baseline (`tests/golden/PERF_BASELINE.txt`, `scripts/measure_timeline_perf.sh --check-baseline`), not the absolute ratio; the absolute ratios above are measured and printed on every run rather than asserted. Optimising either pass to meet its original absolute target is recorded here as deferred, unowned work, not a target that quietly disappeared.)
+- [ ] **PERF-03**: The parser pass adds < 10% over plain PacketScan, and full timeline analysis adds < 15% (amended, 05-12-PLAN.md, 2026-09-17: Phase 4 measured 43-53% parser overhead against the <10% target, at an absolute cost near 1.5 ms — the ratio is high because the baseline PacketScan-alone pass is very cheap, not because the parser is slow. Phase 5's own measurement of the full timeline analyzer set found the identical shape: 33% overhead against the <15% target, at an absolute wall-clock cost of 32-50 ms on the 10-minute 1080p reference file — comfortably inside PERF-01's 3 s budget. Both absolute-percentage targets are superseded by D-13/D-14's ratchet: the gate is a regression check against a committed retired-instruction-count baseline (`tests/golden/PERF_BASELINE.txt`, `scripts/measure_timeline_perf.sh --check-baseline`), not the absolute ratio; the absolute ratios above are measured and printed on every run rather than asserted. Optimising either pass to meet its original absolute target is recorded here as deferred, unowned work, not a target that quietly disappeared.)
 - [ ] **PERF-04**: An audio sweep of the 10-minute reference stereo AAC completes in < 4 s
-- [x] **PERF-05**: Performance targets are measured in CI on the reference file with regression tracking over time
+- [ ] **PERF-05**: Performance targets are measured in CI on the reference file with regression tracking over time
 
 ## v2 Requirements
 
@@ -331,17 +331,17 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | VIDEO-10 | Phase 4 | Complete |
 | VIDEO-11 | Phase 7 | Pending |
 | VIDEO-12 | Phase 4 | Complete |
-| TIME-01 | Phase 5 | Complete |
-| TIME-02 | Phase 5 | Complete |
-| TIME-03 | Phase 5 | Complete |
-| TIME-04 | Phase 5 | Complete |
-| TIME-05 | Phase 5 | Complete |
-| TIME-06 | Phase 5 | Complete |
-| TIME-07 | Phase 5 | Complete |
-| TIME-08 | Phase 5 | Complete |
-| TIME-09 | Phase 5 | Complete |
-| TIME-10 | Phase 5 | Complete |
-| TIME-11 | Phase 5 | Complete |
+| TIME-01 | Phase 5 | Gaps Found |
+| TIME-02 | Phase 5 | Gaps Found |
+| TIME-03 | Phase 5 | Gaps Found |
+| TIME-04 | Phase 5 | Gaps Found |
+| TIME-05 | Phase 5 | Gaps Found |
+| TIME-06 | Phase 5 | Gaps Found |
+| TIME-07 | Phase 5 | Gaps Found |
+| TIME-08 | Phase 5 | Gaps Found |
+| TIME-09 | Phase 5 | Gaps Found |
+| TIME-10 | Phase 5 | Gaps Found |
+| TIME-11 | Phase 5 | Gaps Found |
 | AUDIO-01 | Phase 6 | Pending |
 | AUDIO-02 | Phase 6 | Pending |
 | AUDIO-03 | Phase 6 | Pending |
@@ -376,12 +376,12 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | DOC-01 | Phase 2 | Complete |
 | DOC-02 | Phase 2 | Complete |
 | DOC-03 | Phase 3 | Complete |
-| DOC-04 | Phase 5 | Complete |
-| PERF-01 | Phase 5 | Complete |
+| DOC-04 | Phase 5 | Gaps Found |
+| PERF-01 | Phase 5 | Gaps Found |
 | PERF-02 | Phase 7 | Pending |
-| PERF-03 | Phase 5 | Complete |
+| PERF-03 | Phase 5 | Gaps Found |
 | PERF-04 | Phase 6 | Pending |
-| PERF-05 | Phase 5 | Complete |
+| PERF-05 | Phase 5 | Gaps Found |
 
 **Coverage:**
 
