@@ -26,8 +26,7 @@ regardless of what the rate delta alone would suggest. The rate value
 itself is always published and always visible under `-v`; only the
 pass/fail verdict is gated by the dual condition.
 
-Evidence also carries `residual_max_ms`, `step_time_ms` (present only
-when `timeline.av_drift.pattern` is `step`), `comparison_basis` (the same
+Evidence also carries `residual_max_ms`, `comparison_basis` (the same
 raw-versus-adjusted basis `timeline.av_offset` chose for this side, D-10)
 and the full 32-entry `{k, t_v_ms, offset_ms}` trajectory the fit was
 computed from -- `mediadiff snapshot` stores the trajectory, so a later
