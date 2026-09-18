@@ -1,16 +1,17 @@
 # tests/golden/CORPUS_DIGEST_PROVISIONAL.txt -- names only, no hashes
 # (D-GAP-01 gap closure, 04-13-PLAN.md Task 2).
 #
-# STATUS: TWO ENTRIES (debug session test-898-ci-nonreproducible,
-# .planning/debug/). scripts/gen_corpus.sh's timeline_ts_jump.ts recipe
-# changed segment B's -output_ts_offset from 3.0 to 5.0, which changes the
-# bytes of timeline_ts_jump.ts and of timeline_ts_jump_flagged.ts (derived
-# from it). Their CORPUS_DIGEST.txt lines are therefore STALE -- they still
-# hold the designated leg's transcription for the OLD recipe (run
-# 35269755235) -- and await re-transcription from a designated-leg run of
-# the new recipe. Every other line is unaffected (verified by regenerating
-# the whole corpus in a scratch copy under `taskset -c 0-3` + TZ=UTC,
-# which reproduces the designated leg's bytes: only these two names moved).
+# STATUS: EMPTY ON PURPOSE. The two entries added by debug session
+# test-898-ci-nonreproducible (.planning/debug/) -- timeline_ts_jump.ts and
+# timeline_ts_jump_flagged.ts, whose bytes changed when scripts/gen_corpus.sh
+# moved segment B's -output_ts_offset from 3.0 to 5.0 -- were replaced in
+# tests/golden/CORPUS_DIGEST.txt by the designated x64-linux CI leg's own
+# computed hashes, transcribed from run 35347044190 (the THIRD
+# TRANSCRIBED-FROM-DESIGNATED-LEG marker below), and cleared from this
+# ledger as a result. Both transcribed values equal the hashes predicted
+# locally beforehand by regenerating under `taskset -c 0-3` / `-cpucount 4`
+# + TZ=UTC -- the designated leg's bytes are reproducible from a 4-CPU
+# environment, which is the root cause recorded in the debug session.
 #
 # Before that change: every fixture Phase 5 added (05-01-PLAN.md through
 # 05-11-PLAN.md) was replaced in tests/golden/CORPUS_DIGEST.txt by the
@@ -54,6 +55,8 @@
 #
 # TRANSCRIBED-FROM-DESIGNATED-LEG: run=35269755235 job=105365795054 commit=03dd909fac2ffde9f146be47eb7be14ab650f029 date=2026-09-17
 #
+# TRANSCRIBED-FROM-DESIGNATED-LEG: run=35347044190 job=105605976648 commit=8c343c790b1601ceea80e3b2fde44bfcaf8e8bad date=2026-09-18
+#
 # The lines above are machine-readable markers, not decoration:
 # scripts/lint_corpus_digest_provenance.sh clause 3 accepts a zero-entry
 # ledger ONLY when at least one such marker (with a run=<digits> and a
@@ -64,5 +67,3 @@
 # zero-entry branch does not apply -- clause 3 instead checks the entries
 # themselves are LC_ALL=C sorted, unique, and each names a real line in
 # CORPUS_DIGEST.txt.
-timeline_ts_jump.ts
-timeline_ts_jump_flagged.ts
