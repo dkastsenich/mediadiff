@@ -18,11 +18,13 @@ using mediadiff::DemuxSession;
 using mediadiff::Error;
 using mediadiff::ErrorKind;
 using mediadiff::ProbeDiagnostics;
+using mediadiff::StreamMediaType;
 
 namespace {
 
 std::string tracer_mp4() { return mediadiff::test::fixture_dir() + "/tracer_a.mp4"; }
 std::string probe_not_media() { return mediadiff::test::fixture_dir() + "/probe/not_media.txt"; }
+std::string timeline_start_base_mp4() { return mediadiff::test::fixture_dir() + "/timeline_start_base.mp4"; }
 
 void emit_synthetic_warning() { av_log(nullptr, AV_LOG_WARNING, "%s", "synthetic warning for test\n"); }
 
@@ -35,6 +37,31 @@ TEST_CASE("demux_session - opens a synthesized MP4 and reports format_name/strea
   REQUIRE(session.has_value());
   REQUIRE(session->format_name() == "mov");
   REQUIRE(session->stream_count() == 2);
+}
+
+// 05-14-PLAN.md Task 2 (Gap 3, TIME-06): StreamInfo::sample_rate,
+// audio-only, populated from codecpar->sample_rate -- verified against the
+// same tracer fixture 05-09/05-10's own av_sync tests already use.
+TEST_CASE("demux_session - StreamInfo::sample_rate is 44100 on the audio stream and nullopt on the video stream",
+          "[unit]") {
+  auto session = DemuxSession::open(timeline_start_base_mp4(), DemuxOptions{});
+  REQUIRE(session.has_value());
+
+  bool found_audio = false;
+  bool found_video = false;
+  for (int i = 0; i < session->stream_count(); ++i) {
+    const auto info = session->stream_info(i);
+    if (info.media_type == StreamMediaType::audio) {
+      found_audio = true;
+      REQUIRE(info.sample_rate.has_value());
+      REQUIRE(*info.sample_rate == 44100);
+    } else if (info.media_type == StreamMediaType::video) {
+      found_video = true;
+      REQUIRE_FALSE(info.sample_rate.has_value());
+    }
+  }
+  REQUIRE(found_audio);
+  REQUIRE(found_video);
 }
 
 TEST_CASE("demux_session - a nonexistent path is ErrorKind::input_open, never throws", "[unit]") {

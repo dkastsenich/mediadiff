@@ -12,15 +12,23 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "analyzers/timeline/analyzers.h"
 #include "core/model.h"
+#include "core/rational.h"
+#include "probe/packet_scan.h"
 
+using mediadiff::PacketRecord;
 using mediadiff::PrimingResult;
+using mediadiff::PtsSpan;
+using mediadiff::Rational;
 using mediadiff::resolve_priming;
 using mediadiff::Scope;
 using mediadiff::detail::primary_video_stream;
+using mediadiff::detail::priming_samples_to_ticks;
+using mediadiff::detail::sorted_pts_with_span;
 
 // --- Test 1: MP4's own case -- skip_samples present and nonzero,
 // initial_padding zero -----------------------------------------------------
@@ -82,4 +90,154 @@ TEST_CASE("av_sync - primary_video_stream returns nullopt when no stream is vide
 TEST_CASE("av_sync - primary_video_stream returns nullopt over an empty scope list", "[unit]") {
   const std::vector<std::optional<Scope>> scopes;
   REQUIRE_FALSE(primary_video_stream(scopes).has_value());
+}
+
+// --- detail::priming_samples_to_ticks (05-14-PLAN.md Task 1, Gap 3) -------
+// Every expected value below is transcribed verbatim from this task's own
+// <action> item 4 list, never captured from the implementation.
+
+TEST_CASE("av_sync - priming_samples_to_ticks(1024, 44100, {1,44100}) returns 1024 (identity timebase)", "[unit]") {
+  const std::optional<std::int64_t> result = priming_samples_to_ticks(1024, 44100, Rational{1, 44100});
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 1024);
+}
+
+TEST_CASE("av_sync - priming_samples_to_ticks(1024, 44100, {1,1000}) returns 23 (Matroska 1ms timebase)", "[unit]") {
+  const std::optional<std::int64_t> result = priming_samples_to_ticks(1024, 44100, Rational{1, 1000});
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 23);
+}
+
+TEST_CASE("av_sync - priming_samples_to_ticks(1024, 44100, {1,90000}) returns 2090 (MPEG-TS 90kHz timebase)",
+          "[unit]") {
+  const std::optional<std::int64_t> result = priming_samples_to_ticks(1024, 44100, Rational{1, 90000});
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 2090);
+}
+
+TEST_CASE("av_sync - priming_samples_to_ticks(1024, 48000, {1,1000}) returns 21 (a different sample rate)",
+          "[unit]") {
+  const std::optional<std::int64_t> result = priming_samples_to_ticks(1024, 48000, Rational{1, 1000});
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 21);
+}
+
+TEST_CASE("av_sync - priming_samples_to_ticks(1, 2, {1,1}) returns 1 (an exact tie rounds away from zero)",
+          "[unit]") {
+  const std::optional<std::int64_t> result = priming_samples_to_ticks(1, 2, Rational{1, 1});
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 1);
+}
+
+TEST_CASE("av_sync - priming_samples_to_ticks(0, 44100, {1,1000}) returns 0", "[unit]") {
+  const std::optional<std::int64_t> result = priming_samples_to_ticks(0, 44100, Rational{1, 1000});
+  REQUIRE(result.has_value());
+  REQUIRE(*result == 0);
+}
+
+TEST_CASE("av_sync - priming_samples_to_ticks returns nullopt when sample_rate is 0", "[unit]") {
+  REQUIRE_FALSE(priming_samples_to_ticks(1024, 0, Rational{1, 1000}).has_value());
+}
+
+TEST_CASE("av_sync - priming_samples_to_ticks returns nullopt when tb.num is 0", "[unit]") {
+  REQUIRE_FALSE(priming_samples_to_ticks(1024, 44100, Rational{0, 1000}).has_value());
+}
+
+TEST_CASE("av_sync - priming_samples_to_ticks returns nullopt on an overflowing product", "[unit]") {
+  REQUIRE_FALSE(priming_samples_to_ticks(INT64_MAX - 1, 1, Rational{1, 1000}).has_value());
+}
+
+// --- detail::sorted_pts_with_span (05-14-PLAN.md Task 3, Gap 6, CR-01/
+// WR-01) --------------------------------------------------------------
+// Every expected value below is transcribed verbatim from this task's own
+// <behavior> block, never captured from the implementation. The CR-01
+// heap-underflow fix is specifically what the single-entry cases below
+// prove: previously, a one-entry stream with a non-positive declared
+// duration read 16 bytes before `entries.data()`.
+
+TEST_CASE("av_sync - sorted_pts_with_span over 0 entries returns an empty, spanless result", "[unit]") {
+  const std::vector<PacketRecord> packets;
+  const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
+  REQUIRE(result.pts.empty());
+  REQUIRE(result.durations.empty());
+  REQUIRE_FALSE(result.has_span);
+  REQUIRE(result.nominal_duration_ticks == 0);
+}
+
+TEST_CASE("av_sync - sorted_pts_with_span over 1 declared entry (duration 1024) has no span", "[unit]") {
+  const std::vector<PacketRecord> packets = {PacketRecord{.pts = 0, .duration = 1024}};
+  const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
+  REQUIRE(result.pts == std::vector<std::int64_t>{0});
+  REQUIRE(result.durations == std::vector<std::int64_t>{1024});
+  REQUIRE_FALSE(result.has_span);
+  REQUIRE(result.nominal_duration_ticks == 1024);
+}
+
+TEST_CASE("av_sync - sorted_pts_with_span over 1 undeclared entry (duration 0) never reads out of bounds",
+          "[unit]") {
+  // CR-01's own regression case: exactly one valid-pts entry, non-positive
+  // declared duration -- the OLD code underflowed `std::size_t neighbor`
+  // to SIZE_MAX and read `entries[SIZE_MAX]`. The fixed code has no
+  // neighbour to fall back to, so the effective duration is 0.
+  const std::vector<PacketRecord> packets = {PacketRecord{.pts = 0, .duration = 0}};
+  const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
+  REQUIRE(result.pts == std::vector<std::int64_t>{0});
+  REQUIRE(result.durations == std::vector<std::int64_t>{0});
+  REQUIRE_FALSE(result.has_span);
+  REQUIRE(result.nominal_duration_ticks == 0);
+}
+
+TEST_CASE("av_sync - sorted_pts_with_span over 1 INT64_MIN-sentinel entry treats it as 0 valid entries",
+          "[unit]") {
+  const std::vector<PacketRecord> packets = {PacketRecord{.pts = INT64_MIN, .duration = 1024}};
+  const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
+  REQUIRE(result.pts.empty());
+  REQUIRE(result.durations.empty());
+  REQUIRE_FALSE(result.has_span);
+  REQUIRE(result.nominal_duration_ticks == 0);
+}
+
+TEST_CASE("av_sync - sorted_pts_with_span over 2 declared entries computes span 2048", "[unit]") {
+  const std::vector<PacketRecord> packets = {
+      PacketRecord{.pts = 0, .duration = 1024},
+      PacketRecord{.pts = 1024, .duration = 1024},
+  };
+  const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
+  REQUIRE(result.pts == (std::vector<std::int64_t>{0, 1024}));
+  REQUIRE(result.durations == (std::vector<std::int64_t>{1024, 1024}));
+  REQUIRE(result.has_span);
+  REQUIRE(result.span_ticks == 2048);
+}
+
+TEST_CASE("av_sync - sorted_pts_with_span with the LAST entry undeclared fills it from the preceding interval",
+          "[unit]") {
+  const std::vector<PacketRecord> packets = {
+      PacketRecord{.pts = 0, .duration = 1024},
+      PacketRecord{.pts = 1024, .duration = 0},
+  };
+  const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
+  REQUIRE(result.durations == (std::vector<std::int64_t>{1024, 1024}));
+  REQUIRE(result.has_span);
+  REQUIRE(result.span_ticks == 2048);
+}
+
+TEST_CASE("av_sync - sorted_pts_with_span with the FIRST entry undeclared fills it from the interval to next",
+          "[unit]") {
+  const std::vector<PacketRecord> packets = {
+      PacketRecord{.pts = 0, .duration = 0},
+      PacketRecord{.pts = 1024, .duration = 1024},
+  };
+  const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
+  REQUIRE(result.durations == (std::vector<std::int64_t>{1024, 1024}));
+  REQUIRE(result.has_span);
+  REQUIRE(result.span_ticks == 2048);
+}
+
+TEST_CASE("av_sync - sorted_pts_with_span sorts unsorted input into ascending pts order", "[unit]") {
+  const std::vector<PacketRecord> packets = {
+      PacketRecord{.pts = 1024, .duration = 1024},
+      PacketRecord{.pts = 0, .duration = 1024},
+  };
+  const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
+  REQUIRE(result.pts == (std::vector<std::int64_t>{0, 1024}));
 }

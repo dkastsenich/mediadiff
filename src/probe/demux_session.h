@@ -436,6 +436,20 @@ struct StreamInfo {
   // convention declared_duration_ticks above already follows for
   // AVStream::duration's AV_NOPTS_VALUE sentinel.
   std::optional<std::string> timecode_metadata;
+
+  // 05-14-PLAN.md (Gap 3, TIME-06): codecpar->sample_rate verbatim, for an
+  // audio stream only, and only when positive -- std::nullopt for every
+  // non-audio stream and for an audio stream reporting a non-positive
+  // rate (a codecpar a real demuxer never produces, but a value this
+  // struct never fabricates). This is the ONE per-stream sample rate
+  // `detail::priming_samples_to_ticks` (analyzers.h) needs to convert a
+  // priming sample COUNT into the stream's OWN native-timebase TICKS --
+  // before this field existed, `timeline.av_offset`/`timeline.av_drift`
+  // added a sample count directly to native ticks, silently correct only
+  // when a container's demuxed audio timebase happens to equal its
+  // sample rate (true for MP4-muxed AAC, false for Matroska's mandated
+  // 1ms timebase -- 05-VERIFICATION.md Gap 3).
+  std::optional<std::int64_t> sample_rate;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

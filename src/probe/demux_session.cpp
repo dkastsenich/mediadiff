@@ -509,6 +509,14 @@ StreamInfo DemuxSession::stream_info(int index) const {
     }
   }
 
+  // 05-14-PLAN.md (Gap 3, TIME-06): codecpar->sample_rate, audio streams
+  // only, and only when positive -- see StreamInfo::sample_rate's own
+  // comment for why this crosses the boundary (the priming sample-to-
+  // ticks conversion in src/analyzers/timeline/av_sync.cpp).
+  if (info.media_type == StreamMediaType::audio && codecpar->sample_rate > 0) {
+    info.sample_rate = codecpar->sample_rate;
+  }
+
   return info;
 }
 

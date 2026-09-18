@@ -32,7 +32,12 @@ raw-versus-adjusted basis `timeline.av_offset` chose for this side, D-10)
 and the full 32-entry `{k, t_v_ms, offset_ms}` trajectory the fit was
 computed from -- `mediadiff snapshot` stores the trajectory, so a later
 `compare` against that snapshot reproduces the identical rate, pattern
-and trajectory with no loss of fidelity.
+and trajectory with no loss of fidelity. The checkpoint construction's own
+priming shift is the SAME sample-rate-converted tick value
+`timeline.av_offset` computes for this side (never a second, independent
+conversion) -- so this check's own timeline is rebased by 23 ticks on a
+Matroska stream where `timeline.av_offset` converts 1024 samples to 23
+ticks, never by the raw 1024.
 
 No audio stream, no video stream, or too few usable checkpoints to fit a
 line: `skipped:insufficient_data` -- never a fabricated rate.

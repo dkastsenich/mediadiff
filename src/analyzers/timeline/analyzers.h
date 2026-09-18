@@ -496,6 +496,68 @@ namespace detail {
 // `std::nullopt` when no video-scoped stream exists at all.
 std::optional<std::size_t> primary_video_stream(std::span<const std::optional<Scope>> scopes);
 
+// 05-14-PLAN.md (Gap 3, TIME-06/TIME-09, 05-VERIFICATION.md's own SC4
+// entry): converts a priming SAMPLE count into TICK count in the stream's
+// own native timebase `tb`, via its sample rate -- `ticks = samples *
+// tb.den / (sample_rate * tb.num)`, rounded to the NEAREST integer with
+// ties away from zero (the same rounding `av_rescale_q` applies by
+// default, `AV_ROUND_NEAR_INF`). Before this function existed,
+// `run_timeline_av_sync` added a priming sample count directly to
+// native-timebase ticks, silently correct only when a container's
+// demuxed audio timebase happens to equal its sample rate (true for
+// MP4-muxed AAC, tb == {1, sample_rate}; false for Matroska's mandated 1
+// ms timebase, where 1024 samples at 44100 Hz is 23 ticks, not 1024).
+//
+// Returns std::nullopt -- never a fabricated or silently-truncated
+// adjustment -- when `samples` is negative, when `sample_rate`, `tb.num`
+// or `tb.den` is zero or below, or when any product this derivation
+// forms overflows `int64_t`; the caller (this file's own
+// `run_timeline_av_sync`) treats every std::nullopt the same way:
+// `comparison_basis` falls back to `"raw"` for that side, exactly D-10's
+// existing "priming unknown" fallback, never a softened severity (D-11).
+// 0 samples always returns 0 -- checked arithmetic only, no floating
+// point anywhere in this derivation (PROJECT.md's rational-everywhere
+// constraint).
+std::optional<std::int64_t> priming_samples_to_ticks(std::int64_t samples, std::int64_t sample_rate, Rational tb);
+
+}  // namespace detail
+
+// One stream's own sorted, valid-pts view (for the video-side binary
+// search in av_sync.cpp) PLUS its own COVERED duration -- from the first
+// packet's presentation START to the LAST packet's presentation END
+// (start + duration), never "start to start". See av_sync.cpp's own
+// `sorted_pts_with_span` doc comment for the full worked finding this
+// span-measurement convention is built on. Declared here (05-14-PLAN.md,
+// Gap 6, CR-01/WR-01) so `tests/unit/test_av_sync.cpp` can drive
+// `detail::sorted_pts_with_span` directly against hand-built
+// `PacketRecord` vectors, the same `detail::`-exposure convention every
+// sibling pure helper in this phase already follows (WR-01's own
+// observation: this was previously the one exception, anonymous-
+// namespace-only, which is almost certainly why the CR-01 single-packet
+// underflow was never caught by a unit test).
+struct PtsSpan {
+  std::vector<std::int64_t> pts;        // ascending, valid (non-sentinel) pts, presentation order.
+  std::vector<std::int64_t> durations;  // parallel to `pts` -- each entry's own EFFECTIVE duration
+                                         // (declared `PacketRecord::duration` when > 0, else the
+                                         // neighbouring interval -- see sorted_pts_with_span's own
+                                         // doc comment in av_sync.cpp for the full neighbour rule).
+  std::int64_t span_ticks = 0;          // (last pts + last's own effective duration) - first pts.
+  bool has_span = false;                // pts.size() >= 2 AND span_ticks computed overflow-free and > 0.
+  std::int64_t nominal_duration_ticks = 0;  // MEDIAN of `durations` -- see av_sync.cpp's own doc
+                                             // comment for the full containment-cap rationale.
+};
+
+namespace detail {
+
+// CR-01/WR-01 (05-REVIEW.md, 05-14-PLAN.md Gap 6): builds `PtsSpan` from a
+// stream's own raw packets, sorted by presentation time. On a single-entry
+// stream (or any entry with no reachable neighbour) with a non-positive
+// declared duration, the effective duration is 0 -- never an out-of-bounds
+// neighbour read. See av_sync.cpp's own definition for the full worked
+// derivation (including the containment-cap `nominal_duration_ticks`
+// computation and the sort/median cost bounds).
+PtsSpan sorted_pts_with_span(std::span<const PacketRecord> packets);
+
 }  // namespace detail
 
 // --- 05-10-PLAN.md (TIME-07/TIME-08), doc 04 section 3: the flagship A/V

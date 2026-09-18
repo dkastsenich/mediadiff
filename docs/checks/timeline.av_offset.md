@@ -27,9 +27,29 @@ side data is checked first, falling back to the stream's declared
 ordering matters -- some containers (MP4 is the common case) signal
 priming ONLY at the packet level, never via the stream-level field.
 
+**The priming sample count is converted into the audio stream's own
+timebase through its sample rate before it is added to `raw_offset_ms`.**
+Priming is measured in SAMPLES (e.g. AAC's typical 1024-sample encoder
+delay), while every timestamp this check compares is in the stream's own
+native TICKS -- a sample count is only directly usable as a tick count
+when the stream's timebase happens to equal its sample rate (true for
+MP4-muxed AAC, where the timebase IS the sample rate). For any other
+timebase (Matroska's mandated 1ms timebase is the common case), the
+sample count is converted: `ticks = samples * tb.den / (sample_rate *
+tb.num)`, rounded to nearest with ties away from zero -- the same
+rounding `av_rescale_q` applies by default. A priming-known stream
+whose sample rate is unavailable, or whose conversion overflows, compares
+on the **raw basis** instead of adjusting by an unconverted count --
+`priming.rescale` in evidence names which of `ok` / `no_sample_rate` /
+`overflow` occurred, and `priming.sample_rate` / `priming.priming_ticks`
+record the rate used and the converted tick count (both `null` when
+priming itself is unknown, since there is nothing to convert).
+
 **The comparison basis is chosen per pair, not per file.** When comparing
-two files, this check uses `adjusted_offset_ms` only when BOTH sides know
-their own priming; if either side's priming is `unknown`, the comparison
+two files, this check uses `adjusted_offset_ms` only when BOTH sides both
+know their own priming AND successfully converted it to ticks
+(`priming.rescale` `ok`); if either side's priming is `unknown`, or a
+priming-known side's conversion could not be performed, the comparison
 falls back to `raw_offset_ms` on BOTH sides. This is why comparing a
 known-priming file against an unknown-priming file (for example, an MP4
 against its own MPEG-TS remux, where the remux typically loses the

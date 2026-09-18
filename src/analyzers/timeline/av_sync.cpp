@@ -137,31 +137,32 @@ std::string_view drift_pattern_to_string(DriftPattern pattern) {
   return "irregular";
 }
 
-// One stream's own sorted, valid-pts view (for the video-side binary
-// search below) PLUS its own COVERED duration -- from the first packet's
-// presentation START to the LAST packet's presentation END (start +
-// duration), never "start to start". This task's own worked finding
-// (recorded in 05-10-SUMMARY.md): measuring video's span as frame-START-
-// to-frame-START, and measuring audio's span the same way, LOOKS
-// symmetric, but the two streams' own packet durations are typically
-// quite different (a video frame is commonly tens of ms; an audio
-// packet's own duration a DIFFERENT tens of ms), so "start-to-start" on
-// each side omits a DIFFERENT trailing sliver of real time. On a short
-// file that sliver is a large enough fraction of the whole span to
-// fabricate a perfectly LINEAR apparent drift with ZERO real drift
-// present -- confirmed empirically against tests/fixtures/
+// `PtsSpan` itself and its doc comment now live in analyzers.h
+// (05-14-PLAN.md, Gap 6, CR-01/WR-01) so `tests/unit/test_av_sync.cpp` can
+// reach it directly -- this file's own worked finding on span measurement
+// (first packet's presentation START to last packet's presentation END,
+// never "start to start") stays recorded there.
+//
+// This task's own worked finding (recorded in 05-10-SUMMARY.md): measuring
+// video's span as frame-START-to-frame-START, and measuring audio's span
+// the same way, LOOKS symmetric, but the two streams' own packet
+// durations are typically quite different (a video frame is commonly
+// tens of ms; an audio packet's own duration a DIFFERENT tens of ms), so
+// "start-to-start" on each side omits a DIFFERENT trailing sliver of real
+// time. On a short file that sliver is a large enough fraction of the
+// whole span to fabricate a perfectly LINEAR apparent drift with ZERO
+// real drift present -- confirmed empirically against tests/fixtures/
 // timeline_start_base.mp4, a clean fixture with no intentional A/V
 // mismatch, which produced a spurious ~57ms `end_delta_ms` before this
 // fix and a sub-epsilon one after it. Measuring both streams' spans the
 // SAME way (through to each one's own last packet's END) removes the
 // asymmetry. The last packet's own effective duration is its DECLARED
-// `PacketRecord::duration` when > 0; when undeclared (0), the
-// immediately preceding interval (that packet's own pts minus the
-// second-to-last packet's pts) stands in for it -- a local, O(1)
-// estimate, deliberately simpler than doc 04 section 1.3's full mode-
-// interval reconstruction (`detail::reconstruct_packet_durations`), since
-// this estimate only has to be roughly right to remove a systematic
-// bias, never exactly right the way `timeline.duration` itself must be.
+// `PacketRecord::duration` when > 0; when undeclared (0), the neighbour's
+// interval stands in for it -- a local, O(1) estimate, deliberately
+// simpler than doc 04 section 1.3's full mode-interval reconstruction
+// (`detail::reconstruct_packet_durations`), since this estimate only has
+// to be roughly right to remove a systematic bias, never exactly right
+// the way `timeline.duration` itself must be.
 //
 // A LOCAL sorted-value view, never a reorder of `packets` itself (mirrors
 // probe/cadence.cpp's and detail::reconstruct_packet_durations' own
@@ -169,34 +170,36 @@ std::string_view drift_pattern_to_string(DriftPattern pattern) {
 // discipline) -- bounded by `kMaxPacketsPerStream` (src/probe/
 // packet_scan.h), so this sort is O(N log N) for N <= 5,000,000, a fixed,
 // accounted cost, never unbounded.
-struct PtsSpan {
-  std::vector<std::int64_t> pts;        // ascending, valid (non-sentinel) pts, presentation order.
-  std::vector<std::int64_t> durations;  // parallel to `pts` -- each entry's own EFFECTIVE duration
-                                         // (declared `PacketRecord::duration` when > 0, else the
-                                         // immediately preceding interval, mirroring the last
-                                         // entry's own fallback below -- so EVERY entry, not just
-                                         // the last, has a usable duration for the containment test
-                                         // `clamp_into_nearest_packet` below performs).
-  std::int64_t span_ticks = 0;          // (last pts + last's own effective duration) - first pts.
-  bool has_span = false;                // pts.size() >= 2 AND span_ticks computed overflow-free and > 0.
-  std::int64_t nominal_duration_ticks = 0;  // MEDIAN of `durations` -- the stream's typical, single-
-                                             // packet extent. `clamp_into_nearest_packet` below caps
-                                             // any one entry's CONTAINMENT width at a bounded multiple
-                                             // of this value, because libavformat's own `AVPacket::
-                                             // duration` for containers/codecs without an explicit
-                                             // per-packet duration (e.g. this project's own AAC-in-MP4
-                                             // fixtures) is filled in by the DEMUXER as the interval to
-                                             // the NEXT packet -- so a genuine splice/gap on the source
-                                             // side is silently reported as one packet's own abnormally
-                                             // WIDE `duration`, not as an absence. Left uncapped, that
-                                             // single value would make `clamp_into_nearest_packet` see
-                                             // "contained" for every target across the whole gap,
-                                             // masking exactly the discontinuity doc 04 section 3's
-                                             // step-pattern detection depends on. 0 when fewer than 1
-                                             // valid duration exists (containment falls back to the
-                                             // entry's own raw duration, unchanged from Task 2).
-};
+//
+// `nominal_duration_ticks` -- the MEDIAN of `durations` -- is the
+// stream's typical, single-packet extent. `clamp_into_nearest_packet`
+// below caps any one entry's CONTAINMENT width at a bounded multiple of
+// this value, because libavformat's own `AVPacket::duration` for
+// containers/codecs without an explicit per-packet duration (e.g. this
+// project's own AAC-in-MP4 fixtures) is filled in by the DEMUXER as the
+// interval to the NEXT packet -- so a genuine splice/gap on the source
+// side is silently reported as one packet's own abnormally WIDE
+// `duration`, not as an absence. Left uncapped, that single value would
+// make `clamp_into_nearest_packet` see "contained" for every target
+// across the whole gap, masking exactly the discontinuity doc 04 section
+// 3's step-pattern detection depends on. 0 when fewer than 1 valid
+// duration exists (containment falls back to the entry's own raw
+// duration, unchanged from Task 2).
+}  // namespace
 
+namespace detail {
+
+// CR-01 (05-REVIEW.md, 05-14-PLAN.md Gap 6): the neighbour used to derive
+// an undeclared entry's effective duration is `i + 1` when it exists,
+// otherwise `i - 1` only when `i > 0`, otherwise there is NO neighbour and
+// the effective duration is 0 -- fixes a heap buffer underflow on a
+// single-entry stream (previously: `i == 0`, `i + 1 < entries.size()` is
+// `1 < 1` == false, so the OLD code fell to `neighbor = i - 1 = 0 - 1`,
+// which underflows the unsigned `std::size_t` to `SIZE_MAX` rather than
+// throwing; the old `i != neighbor` guard could then never be false, so
+// `entries[SIZE_MAX]` -- 16 bytes before `entries.data()` -- was read).
+// `std::optional<std::size_t>` makes "no neighbour exists" a real,
+// checkable state instead of a sentinel index that can wrap.
 PtsSpan sorted_pts_with_span(std::span<const PacketRecord> packets) {
   std::vector<std::pair<std::int64_t, std::int64_t>> entries;  // (pts, duration)
   entries.reserve(packets.size());
@@ -221,11 +224,16 @@ PtsSpan sorted_pts_with_span(std::span<const PacketRecord> packets) {
       // 1.3's full mode-interval reconstruction, since
       // clamp_into_nearest_packet below only needs a ROUGHLY right
       // containment interval, never an exactly right declared duration.
-      const std::size_t neighbor = (i + 1 < entries.size()) ? i + 1 : i - 1;
-      if (i != neighbor) {
+      std::optional<std::size_t> neighbor;
+      if (i + 1 < entries.size()) {
+        neighbor = i + 1;
+      } else if (i > 0) {
+        neighbor = i - 1;
+      }
+      if (neighbor.has_value()) {
         std::int64_t interval = 0;
-        const bool ok = (neighbor > i) ? detail::checked_sub(entries[neighbor].first, entries[i].first, &interval)
-                                        : detail::checked_sub(entries[i].first, entries[neighbor].first, &interval);
+        const bool ok = (*neighbor > i) ? checked_sub(entries[*neighbor].first, entries[i].first, &interval)
+                                         : checked_sub(entries[i].first, entries[*neighbor].first, &interval);
         effective_duration = (ok && interval > 0) ? interval : 0;
       } else {
         effective_duration = 0;
@@ -262,14 +270,48 @@ PtsSpan sorted_pts_with_span(std::span<const PacketRecord> packets) {
   const std::int64_t last_effective_duration = result.durations.back();
   std::int64_t last_end = 0;
   std::int64_t span = 0;
-  if (!detail::checked_add(last_pts, last_effective_duration, &last_end) ||
-      !detail::checked_sub(last_end, entries.front().first, &span) || span <= 0) {
+  if (!checked_add(last_pts, last_effective_duration, &last_end) ||
+      !checked_sub(last_end, entries.front().first, &span) || span <= 0) {
     return result;
   }
   result.span_ticks = span;
   result.has_span = true;
   return result;
 }
+
+// 05-14-PLAN.md (Gap 3): see analyzers.h's own doc comment for the full
+// rounding contract and the false-positive this fixes.
+std::optional<std::int64_t> priming_samples_to_ticks(std::int64_t samples, std::int64_t sample_rate, Rational tb) {
+  if (samples < 0 || sample_rate <= 0 || tb.num <= 0 || tb.den <= 0) {
+    return std::nullopt;
+  }
+  // `ticks = samples * tb.den / (sample_rate * tb.num)`, rounded to the
+  // nearest integer, ties away from zero -- both `numerator` and
+  // `denominator` are non-negative by construction (samples >= 0 is
+  // guaranteed above), so "round half up" (add half the denominator, then
+  // truncate) IS "round half away from zero" here; no separate sign
+  // branch is needed the way a general rounding-division helper would
+  // require.
+  std::int64_t numerator = 0;
+  std::int64_t denominator = 0;
+  if (!checked_mul(samples, tb.den, &numerator) || !checked_mul(sample_rate, tb.num, &denominator)) {
+    return std::nullopt;
+  }
+  const std::int64_t half_denominator = denominator / 2;  // denominator > 0, so this never overflows or divides by 0.
+  std::int64_t rounded_numerator = 0;
+  if (!checked_add(numerator, half_denominator, &rounded_numerator)) {
+    return std::nullopt;
+  }
+  std::int64_t ticks = 0;
+  if (!checked_div(rounded_numerator, denominator, &ticks)) {
+    return std::nullopt;
+  }
+  return ticks;
+}
+
+}  // namespace detail
+
+namespace {
 
 // Binary search (never O(K*N) linear scan -- 05-10-PLAN.md Task 2's own
 // explicit requirement) for the value in `sorted` (ascending, from
@@ -559,7 +601,7 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
   // own `count < 2` / zero-x-variance refusal would catch this too, but
   // checking it here lets every audio stream report the SAME, more
   // specific reason rather than fit_drift's generic one).
-  const PtsSpan video_pts_span = sorted_pts_with_span(std::span<const PacketRecord>(video_stream.packets));
+  const PtsSpan video_pts_span = detail::sorted_pts_with_span(std::span<const PacketRecord>(video_stream.packets));
   const std::vector<std::int64_t>& video_pts_ticks = video_pts_span.pts;
 
   // The SPAN each side's fraction is measured against prefers
@@ -607,16 +649,49 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
     // fallback -- see resolve_priming's own doc comment above.
     const PrimingResult priming =
         resolve_priming(audio_stream.first_packet_skip_samples.value_or(0), audio_stream.initial_padding);
+    const StreamInfo audio_info = demux.stream_info(static_cast<int>(audio_idx));
+    const bool priming_known = priming.source != PrimingResult::Source::unknown;
+
+    // 05-14-PLAN.md (Gap 3, TIME-06/TIME-09, 05-VERIFICATION.md SC4):
+    // convert the priming SAMPLE count into THIS stream's own
+    // native-timebase TICKS via its sample rate, once, here -- reused by
+    // both this measurement's `adjusted_audio_ticks` below and the drift
+    // path's `priming_shift` further down (same variable, never a second
+    // conversion). Before this conversion existed, `priming.samples` (a
+    // sample count) was added directly to native ticks, silently correct
+    // only when the container's demuxed audio timebase happens to equal
+    // the sample rate (MP4-muxed AAC) and wrong for any other timebase
+    // (Matroska's mandated 1 ms timebase: 1024 samples at 44100 Hz is 23
+    // ticks, not 1024 -- the exact false `timeline.av_offset fail` this
+    // plan closes). `rescale` is populated only when priming is known: an
+    // unknown-priming side already carries `samples == 0` and needs no
+    // conversion outcome of its own.
+    std::optional<std::int64_t> priming_ticks;
+    std::optional<std::string_view> rescale;
+    if (priming_known) {
+      if (!audio_info.sample_rate.has_value()) {
+        rescale = "no_sample_rate";
+      } else {
+        priming_ticks = detail::priming_samples_to_ticks(priming.samples, *audio_info.sample_rate, audio_stream.tb);
+        rescale = priming_ticks.has_value() ? "ok" : "overflow";
+      }
+    }
+    // D-10/D-11: a priming-known side whose conversion could not be
+    // performed (no sample rate, or an overflow) compares raw-to-raw for
+    // THIS side, exactly like `priming: unknown` -- never adjusted by an
+    // unconverted sample count, and severity is never softened.
+    const bool priming_adjusted = priming_ticks.has_value();
 
     // The first audible sample: the first packet's PRESENTATION time plus
-    // its resolved priming sample count, in native ticks -- composes
-    // correctly with libav's own edit-list application rather than
-    // double-subtracting it (05-RESEARCH.md Pitfall 5). When priming is
-    // `unknown`, `priming.samples == 0`, so the adjusted tick value is
-    // IDENTICAL to the raw one -- no special-casing needed for D-10's own
+    // its resolved, CONVERTED priming tick count -- composes correctly
+    // with libav's own edit-list application rather than double-
+    // subtracting it (05-RESEARCH.md Pitfall 5). When priming is not
+    // adjusted (unknown, or known but unconvertible), `priming_ticks` is
+    // absent and `.value_or(0)` makes the adjusted tick value IDENTICAL
+    // to the raw one -- no special-casing needed for D-10's own
     // "adjusted_offset_ms equal to raw_offset_ms" requirement.
     std::int64_t adjusted_audio_ticks = 0;
-    if (!detail::checked_add(*audio_first_pts_ticks, priming.samples, &adjusted_audio_ticks)) {
+    if (!detail::checked_add(*audio_first_pts_ticks, priming_ticks.value_or(0), &adjusted_audio_ticks)) {
       push_skip(CheckId::timeline_av_offset, scope, SkipReason::insufficient_data,
                  nlohmann::ordered_json{{"reason", "priming_overflow"}}, fp);
       continue;
@@ -639,13 +714,14 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
     }
 
     // D-10: THIS SIDE's own basis preference -- "adjusted" only when this
-    // side's own priming is known. The generic, evidence-shape-driven
-    // override in src/compare/tol.cpp only swaps to the adjusted
-    // magnitude when BOTH sides agree; a single side reporting "raw" here
-    // is what makes a mixed pair fall back to raw-to-raw (D-10's own
-    // TRUST-08 cross-release reasoning).
-    const bool priming_known = priming.source != PrimingResult::Source::unknown;
-    const std::string_view comparison_basis = priming_known ? "adjusted" : "raw";
+    // side's own priming was actually CONVERTED (Gap 3: a priming-known
+    // side whose conversion failed compares raw, exactly like unknown
+    // priming). The generic, evidence-shape-driven override in
+    // src/compare/tol.cpp only swaps to the adjusted magnitude when BOTH
+    // sides agree; a single side reporting "raw" here is what makes a
+    // mixed pair fall back to raw-to-raw (D-10's own TRUST-08
+    // cross-release reasoning).
+    const std::string_view comparison_basis = priming_adjusted ? "adjusted" : "raw";
     const std::string_view priming_state = priming_known ? "known" : "unknown";
 
     Measurement measurement;
@@ -657,16 +733,27 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
     // src/compare/tol.cpp) is what actually applies D-10's "adjusted when
     // both sides know it" rule.
     measurement.value = *raw_offset_ms;
+    nlohmann::ordered_json priming_evidence{
+        {"state", std::string(priming_state)},
+        {"source", std::string(priming_source_to_string(priming.source))},
+        {"samples", priming.samples},
+    };
+    if (priming_known) {
+      // 05-14-PLAN.md Task 1: emitted ONLY when priming is known -- an
+      // unknown-priming side's `samples` is already 0 and carries no
+      // conversion outcome to report.
+      priming_evidence["sample_rate"] = audio_info.sample_rate.has_value()
+                                             ? nlohmann::ordered_json(*audio_info.sample_rate)
+                                             : nlohmann::ordered_json(nullptr);
+      priming_evidence["priming_ticks"] = priming_ticks.has_value() ? nlohmann::ordered_json(*priming_ticks)
+                                                                     : nlohmann::ordered_json(nullptr);
+      priming_evidence["rescale"] = std::string(*rescale);
+    }
     measurement.evidence = nlohmann::ordered_json{
         {"raw_offset_ms", raw_offset_ms->num},
         {"adjusted_offset_ms", adjusted_offset_ms->num},
         {"comparison_basis", std::string(comparison_basis)},
-        {"priming",
-         nlohmann::ordered_json{
-             {"state", std::string(priming_state)},
-             {"source", std::string(priming_source_to_string(priming.source))},
-             {"samples", priming.samples},
-         }},
+        {"priming", priming_evidence},
         {"primary_video_stream_index", static_cast<std::int64_t>(*primary_video)},
     };
     fp.measurements.push_back(std::move(measurement));
@@ -686,7 +773,7 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
       push_skip(CheckId::timeline_av_drift_pattern, scope, SkipReason::insufficient_data,
                  nlohmann::ordered_json{{"reason", "insufficient_video_frames"}}, fp);
     } else {
-      const PtsSpan audio_pts_span = sorted_pts_with_span(std::span<const PacketRecord>(audio_stream.packets));
+      const PtsSpan audio_pts_span = detail::sorted_pts_with_span(std::span<const PacketRecord>(audio_stream.packets));
       // Prefers the declared duration for the SAME reason as the video
       // span immediately above (this file's own worked finding) -- falls
       // back to the packet-derived span only when the demuxer reports no
@@ -715,7 +802,7 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
         // Priming is a CONSTANT shift, so it cancels out of
         // `audio_span_ticks` (a difference of two positions) exactly --
         // only the anchor (`audio_start_ticks`) below needs it applied.
-        const std::int64_t audio_start_ticks = priming_known ? adjusted_audio_ticks : *audio_first_pts_ticks;
+        const std::int64_t audio_start_ticks = priming_adjusted ? adjusted_audio_ticks : *audio_first_pts_ticks;
         const std::int64_t video_start_ticks = video_pts_ticks.front();
 
         bool checkpoint_arithmetic_ok = true;
@@ -779,8 +866,10 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
           // out of the priming-ADJUSTED domain before searching, then
           // rebase the result back, so the search always compares like
           // with like (priming is a CONSTANT shift, D-10, so rebasing
-          // both directions is exact and lossless).
-          const std::int64_t priming_shift = priming_known ? priming.samples : 0;
+          // both directions is exact and lossless). 05-14-PLAN.md (Gap 3):
+          // the SAME converted-ticks variable `timeline.av_offset` used
+          // above, never a second conversion or the raw sample count.
+          const std::int64_t priming_shift = priming_adjusted ? *priming_ticks : 0;
           std::int64_t raw_target_a_ticks = 0;
           if (!detail::checked_sub(target_a_ticks, priming_shift, &raw_target_a_ticks)) {
             checkpoint_arithmetic_ok = false;
