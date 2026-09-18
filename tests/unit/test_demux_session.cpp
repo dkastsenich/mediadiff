@@ -1,32 +1,60 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
+#include <optional>
 #include <string>
+#include <vector>
 
 extern "C" {
 #include <libavutil/log.h>
 }
 
+#include "core/check_id.h"
 #include "core/error.h"
+#include "core/model.h"
 #include "core/registry.h"
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
 #include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
 #include "support/fixture_paths.h"
 
+using mediadiff::CheckId;
+using mediadiff::DeclaredDurationSource;
 using mediadiff::DemuxOptions;
 using mediadiff::DemuxSession;
 using mediadiff::Error;
 using mediadiff::ErrorKind;
+using mediadiff::Fingerprint;
+using mediadiff::Measurement;
+using mediadiff::PacketScanLimits;
 using mediadiff::ProbeDiagnostics;
+using mediadiff::Scope;
 using mediadiff::StreamMediaType;
+using mediadiff::run_packet_scan;
 
 namespace {
 
 std::string tracer_mp4() { return mediadiff::test::fixture_dir() + "/tracer_a.mp4"; }
 std::string probe_not_media() { return mediadiff::test::fixture_dir() + "/probe/not_media.txt"; }
 std::string timeline_start_base_mp4() { return mediadiff::test::fixture_dir() + "/timeline_start_base.mp4"; }
+std::string timeline_ts_wrap_ts() { return mediadiff::test::fixture_dir() + "/timeline_ts_wrap.ts"; }
+std::string timeline_ts_nowrap_ts() { return mediadiff::test::fixture_dir() + "/timeline_ts_nowrap.ts"; }
 
 void emit_synthetic_warning() { av_log(nullptr, AV_LOG_WARNING, "%s", "synthetic warning for test\n"); }
+
+// 05-17-PLAN.md Task 2 (Gap 2, TIME-02/TIME-03): finds a Measurement by
+// CheckId/Scope, mirroring tests/unit/test_size_analyzer.cpp's own `find`
+// helper verbatim (this project's per-file-copy convention).
+const Measurement* find(const Fingerprint& fp, CheckId id, Scope::Kind kind, int index) {
+  const auto want = static_cast<std::uint32_t>(id);
+  for (const Measurement& m : fp.measurements) {
+    if (m.check_index == want && m.scope.kind == kind && m.scope.index == index) {
+      return &m;
+    }
+  }
+  return nullptr;
+}
 
 }  // namespace
 
@@ -157,4 +185,171 @@ TEST_CASE("demux_session - a clean fixture's own warning_count is zero", "[unit]
   auto session = DemuxSession::open(tracer_mp4(), DemuxOptions{});
   REQUIRE(session.has_value());
   REQUIRE(session->warning_count() == 0);
+}
+
+// --- 05-17-PLAN.md Task 2 (Gap 2, TIME-02/TIME-03): reprobe_ts_declared_durations ---
+
+// Before any reprobe call, declared_duration_source() is `demuxer` and
+// this session's own primary values are the wrap-corrupted ones
+// (correct_ts_overflow=0's own effect, 05-06-PLAN.md) -- video's declared
+// duration is 180000 ticks (half of the nowrap-equivalent 360000), a
+// causal fingerprint of the wrap, not a coincidence: the video stream's
+// PES-header-carried PTS-only decode-order tie means the reprobe's own
+// primary-value corruption is largest right at the un-reprobed point.
+// Recorded here as evidence of the bug this plan fixes, per the plan's
+// own must_haves.truths table.
+TEST_CASE("demux_session - reprobe: before any reprobe call, declared_duration_source is demuxer and the primary "
+          "session's own video declared duration is the wrap-corrupted value",
+          "[unit]") {
+  auto session = DemuxSession::open(timeline_ts_wrap_ts(), DemuxOptions{});
+  REQUIRE(session.has_value());
+  REQUIRE(session->declared_duration_source() == DeclaredDurationSource::demuxer);
+
+  const auto video_info = session->stream_info(0);
+  REQUIRE(video_info.media_type == StreamMediaType::video);
+  REQUIRE(video_info.declared_duration_ticks.has_value());
+  REQUIRE(*video_info.declared_duration_ticks == 180000);
+}
+
+// After reprobe_ts_declared_durations: the source becomes
+// overflow_corrected_reprobe, and the video/audio/container durations
+// equal a FRESH session's own values on timeline_ts_nowrap.ts -- the same
+// content, the same 90kHz PES timebase, differing only by the
+// -output_ts_offset this pair's own fixture recipe applies
+// (05-06-SUMMARY.md).
+TEST_CASE("demux_session - reprobe: on a genuine wrap, the source becomes overflow_corrected_reprobe and the "
+          "durations equal the nowrap twin's own demuxer values",
+          "[unit]") {
+  auto wrap_session = DemuxSession::open(timeline_ts_wrap_ts(), DemuxOptions{});
+  REQUIRE(wrap_session.has_value());
+  wrap_session->reprobe_ts_declared_durations(timeline_ts_wrap_ts());
+  REQUIRE(wrap_session->declared_duration_source() == DeclaredDurationSource::overflow_corrected_reprobe);
+
+  auto nowrap_session = DemuxSession::open(timeline_ts_nowrap_ts(), DemuxOptions{});
+  REQUIRE(nowrap_session.has_value());
+  REQUIRE(nowrap_session->declared_duration_source() == DeclaredDurationSource::demuxer);
+
+  const auto wrap_video = wrap_session->stream_info(0);
+  const auto wrap_audio = wrap_session->stream_info(1);
+  const auto nowrap_video = nowrap_session->stream_info(0);
+  const auto nowrap_audio = nowrap_session->stream_info(1);
+
+  REQUIRE(wrap_video.declared_duration_ticks.has_value());
+  REQUIRE(nowrap_video.declared_duration_ticks.has_value());
+  REQUIRE(*wrap_video.declared_duration_ticks == *nowrap_video.declared_duration_ticks);
+  REQUIRE(*wrap_video.declared_duration_ticks == 360000);
+
+  REQUIRE(wrap_audio.declared_duration_ticks.has_value());
+  REQUIRE(nowrap_audio.declared_duration_ticks.has_value());
+  REQUIRE(*wrap_audio.declared_duration_ticks == *nowrap_audio.declared_duration_ticks);
+  REQUIRE(*wrap_audio.declared_duration_ticks == 348995);
+
+  REQUIRE(wrap_session->container_duration_ticks().has_value());
+  REQUIRE(nowrap_session->container_duration_ticks().has_value());
+  REQUIRE(*wrap_session->container_duration_ticks() == *nowrap_session->container_duration_ticks());
+}
+
+// The reprobe opens an entirely separate AVFormatContext (this method's
+// own isolation contract) -- it must never move the primary session's
+// own read position (a single av_read_frame sweep cannot be repeated on
+// one session once it has reached EOF, so this is proven by comparison
+// against a totally independent, never-reprobed control session opened
+// on the SAME bytes: if the reprobe had touched the primary session's own
+// AVFormatContext/AVIOContext in any way, its own first PacketScan sweep
+// would read a different read_frame_call_count than the control's) nor
+// warning_count() (this session's own diagnostics accumulator, captured
+// at primary-open time -- the reprobe's own diagnostics accumulator is a
+// throwaway, per this method's own doc comment).
+TEST_CASE("demux_session - reprobe: leaves the primary session's read_frame_call_count and warning_count unchanged",
+          "[unit]") {
+  auto control_session = DemuxSession::open(timeline_ts_wrap_ts(), DemuxOptions{});
+  REQUIRE(control_session.has_value());
+  auto control_scan = run_packet_scan(*control_session, PacketScanLimits{});
+  REQUIRE(control_scan.has_value());
+
+  auto session = DemuxSession::open(timeline_ts_wrap_ts(), DemuxOptions{});
+  REQUIRE(session.has_value());
+  const std::int64_t warning_count_before = session->warning_count();
+
+  session->reprobe_ts_declared_durations(timeline_ts_wrap_ts());
+  REQUIRE(session->declared_duration_source() == DeclaredDurationSource::overflow_corrected_reprobe);
+
+  REQUIRE(session->warning_count() == warning_count_before);
+
+  auto scan_after_reprobe = run_packet_scan(*session, PacketScanLimits{});
+  REQUIRE(scan_after_reprobe.has_value());
+  REQUIRE(scan_after_reprobe->read_frame_call_count == control_scan->read_frame_call_count);
+}
+
+// A nonexistent path makes the second open fail -- withheld, never
+// compared corrupt: both container_duration_ticks() and every stream's
+// declared_duration_ticks report nullopt.
+TEST_CASE("demux_session - reprobe: a nonexistent path withholds both declared members", "[unit]") {
+  auto session = DemuxSession::open(timeline_ts_wrap_ts(), DemuxOptions{});
+  REQUIRE(session.has_value());
+
+  session->reprobe_ts_declared_durations("/definitely/does/not/exist/timeline_ts_wrap.ts");
+  REQUIRE(session->declared_duration_source() == DeclaredDurationSource::withheld_wrap_uncorrectable);
+
+  REQUIRE_FALSE(session->container_duration_ticks().has_value());
+  for (int i = 0; i < session->stream_count(); ++i) {
+    REQUIRE_FALSE(session->stream_info(i).declared_duration_ticks.has_value());
+  }
+}
+
+// --- 05-17-PLAN.md Task 2: detail::stream_layouts_match ---
+
+TEST_CASE("demux_session - stream_layouts_match: identical lists give true", "[unit]") {
+  const std::vector<mediadiff::detail::StreamLayoutKey> primary{{0, 100}, {1, 101}};
+  const std::vector<mediadiff::detail::StreamLayoutKey> reprobe{{0, 100}, {1, 101}};
+  REQUIRE(mediadiff::detail::stream_layouts_match(primary, reprobe));
+}
+
+TEST_CASE("demux_session - stream_layouts_match: different lengths give false", "[unit]") {
+  const std::vector<mediadiff::detail::StreamLayoutKey> primary{{0, 100}, {1, 101}};
+  const std::vector<mediadiff::detail::StreamLayoutKey> reprobe{{0, 100}};
+  REQUIRE_FALSE(mediadiff::detail::stream_layouts_match(primary, reprobe));
+}
+
+TEST_CASE("demux_session - stream_layouts_match: the same length with a codec_type differing at index 1 gives false",
+          "[unit]") {
+  const std::vector<mediadiff::detail::StreamLayoutKey> primary{{0, 100}, {1, 101}};
+  const std::vector<mediadiff::detail::StreamLayoutKey> reprobe{{0, 100}, {2, 101}};
+  REQUIRE_FALSE(mediadiff::detail::stream_layouts_match(primary, reprobe));
+}
+
+TEST_CASE("demux_session - stream_layouts_match: a stream_id differing gives false", "[unit]") {
+  const std::vector<mediadiff::detail::StreamLayoutKey> primary{{0, 100}, {1, 101}};
+  const std::vector<mediadiff::detail::StreamLayoutKey> reprobe{{0, 100}, {1, 999}};
+  REQUIRE_FALSE(mediadiff::detail::stream_layouts_match(primary, reprobe));
+}
+
+TEST_CASE("demux_session - stream_layouts_match: two empty lists give true", "[unit]") {
+  const std::vector<mediadiff::detail::StreamLayoutKey> primary;
+  const std::vector<mediadiff::detail::StreamLayoutKey> reprobe;
+  REQUIRE(mediadiff::detail::stream_layouts_match(primary, reprobe));
+}
+
+// --- 05-17-PLAN.md Task 2: orchestrated -- the re-probe never runs on a
+// non-wrapping TS input ---
+
+// A non-wrapping TS file's own packet scan reports zero wrap events, so
+// src/probe/orchestrator.cpp's own trigger never calls
+// reprobe_ts_declared_durations at all -- declared_duration_source stays
+// `demuxer` in the real, end-to-end reported evidence, proven through the
+// SAME fingerprint_input entry point tests/unit/test_demux_session.cpp's
+// own "fingerprint_input on a valid snapshot never probes" test already
+// uses (no direct DemuxSession access here -- this is the orchestrated
+// path).
+TEST_CASE("demux_session - reprobe: orchestrated -- a non-wrapping TS file's timeline.duration evidence keeps "
+          "declared_duration_source demuxer",
+          "[unit]") {
+  const mediadiff::CheckRegistry& registry = mediadiff::builtin_registry();
+  auto fp = mediadiff::fingerprint_input(timeline_ts_nowrap_ts(), registry);
+  REQUIRE(fp.has_value());
+
+  const Measurement* video_duration = find(*fp, CheckId::timeline_duration, Scope::Kind::video, 0);
+  REQUIRE(video_duration != nullptr);
+  REQUIRE(video_duration->evidence.contains("declared_duration_source"));
+  REQUIRE(video_duration->evidence.at("declared_duration_source").get<std::string>() == "demuxer");
 }
