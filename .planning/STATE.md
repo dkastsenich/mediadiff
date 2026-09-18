@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 5
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-timeline-analysis/05-timeline-analysis-21-PLAN.md
-last_updated: "2026-09-18T19:12:39.235Z"
+stopped_at: Completed 05-timeline-analysis/05-20-PLAN.md (Gap 4 closure)
+last_updated: "2026-09-18T19:28:27.787Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 5 execution started
-state_head: 99fc1e1d412afe53aec6f2e10e4a2ce50db79b7a
+state_head: 348aa6eec2dad383b69eca1acbe67716c6adae25
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 92
-  completed_plans: 87
+  completed_plans: 88
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 5 (Timeline Analysis) — EXECUTING
-Plan: 21 of 25
+Plan: 22 of 25
 Status: Ready to execute
 Last activity: 2026-09-18 — Completed 05-19-PLAN.md (WINDOWS #28 closed)
 
@@ -138,6 +138,7 @@ Progress: [█████████░] 92%
 | Phase 05 P18 | ~25min | 3 tasks | 5 files |
 | Phase 05-timeline-analysis P19 | ~50min | 3 tasks | 9 files |
 | Phase 05-timeline-analysis P21 | multi-session | 3 tasks | 3 files |
+| Phase 05-timeline-analysis P20 | ~45min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -324,6 +325,7 @@ Recent decisions affecting current work:
 - [Phase 5]: [Phase 05]: 05-19: the NTSC MP4-to-MKV stream copy now compares clean on timeline.av_offset/jitter/vfr_profile, asserted by one whole-report expect_declared_set landing Gap 3 (05-14) and Gap 5 (this plan) together; the 90kHz-AAC TS-audio timeline.vfr_profile member dropped from test_timeline_start_duration.cpp Test 4 and its test_timeline_av_sync.cpp mirror (171/173 intervals now on_grid, 1.16% remain one_tick, under the 2% dist tolerance)
 - [Phase 05-timeline-analysis]: 05-21: Phase 5's timeline.av_drift.pattern step-vocabulary gap closed by narrow-vocabulary (not adopting D1/D2) -- neither candidate meets soundness criterion (c): D1 never reaches step, D2 reaches step at a step_time provably unrelated to the real join (a terminal-checkpoint artifact of the step-recipe construction). Decided 2026-09-18 by the human at a blocking-human checkpoint.
 - [Phase 05-timeline-analysis]: 05-21: span:declared kept as the checkpoint span source (not span:observed) -- the TS side of the MP4-to-TS pairs reports a false 39 ms linear-drift under span:observed regardless of definition; residual MP4-to-TS timeline.av_drift false finding filed as a follow-up needing a priming/padding-aware span, not closed by this plan.
+- [Phase 05-timeline-analysis]: 05-20: container-DTS post-pass substitutes 05-15's PES-header truth for every MPEG-TS DTS consumer once, in the orchestrator, before any analyzer runs -- closes Gap 4 (timeline.dts_monotonic's fabricated dts tie on the MP4-to-TS tracer pair); dts_backward's genuine splice violations unaffected; dts_monotonic skips insufficient_data when container truth is unavailable
 
 ### Pending Todos
 
@@ -363,6 +365,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T19:12:05.811Z
-Stopped at: Completed 05-timeline-analysis/05-timeline-analysis-21-PLAN.md
+Last session: 2026-09-18T19:28:27.591Z
+Stopped at: Completed 05-timeline-analysis/05-20-PLAN.md (Gap 4 closure)
 Resume file: None

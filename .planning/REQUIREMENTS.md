@@ -123,10 +123,10 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 
 ### Timeline Checks
 
-- [ ] **TIME-01**: All timeline math runs on `{int64, AVRational}` with `AV_NOPTS_VALUE` as a first-class `absent` state, never coerced
+- [x] **TIME-01**: All timeline math runs on `{int64, AVRational}` with `AV_NOPTS_VALUE` as a first-class `absent` state, never coerced
 - [x] **TIME-02**: MPEG-TS 33-bit PTS wraparound is unwrapped correctly, preserving raw values in evidence and distinguishing a wrap from a genuine backward discontinuity
 - [x] **TIME-03**: `timeline.start` and `timeline.duration` work, with the duration triple (container-declared, stream-declared, computed) cross-checked internally and disagreement raising an `info` note
-- [ ] **TIME-04**: Structural integrity checks work: `dts_monotonic`, `pts_unique`, `gaps`, `discontinuities`
+- [x] **TIME-04**: Structural integrity checks work: `dts_monotonic`, `pts_unique`, `gaps`, `discontinuities`
 - [x] **TIME-05**: `timeline.jitter` and `timeline.vfr_profile` work, with CFR classified as â‰¥ 99.5% of intervals equal to the mode interval, and jitter reporting `skipped:vfr` on VFR streams
 - [x] **TIME-06**: `timeline.av_offset` reports the signed offset between first audible sample and first visible frame, priming-adjusted
 - [ ] **TIME-07**: `timeline.av_drift` implements the normative 32-checkpoint least-squares algorithm and reports rate (ms/min), end delta, and pattern class (`constant-offset` / `linear-drift` / `step` / `irregular`)
@@ -331,10 +331,10 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | VIDEO-10 | Phase 4 | Complete |
 | VIDEO-11 | Phase 7 | Pending |
 | VIDEO-12 | Phase 4 | Complete |
-| TIME-01 | Phase 5 | Gaps Found |
+| TIME-01 | Phase 5 | Complete |
 | TIME-02 | Phase 5 | Complete |
 | TIME-03 | Phase 5 | Complete |
-| TIME-04 | Phase 5 | Gaps Found |
+| TIME-04 | Phase 5 | Complete |
 | TIME-05 | Phase 5 | Complete |
 | TIME-06 | Phase 5 | Complete |
 | TIME-07 | Phase 5 | Gaps Found |

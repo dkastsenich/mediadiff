@@ -420,7 +420,7 @@ Plans:
 
 **Wave 17** *(blocked on 05-15, 05-17, 05-18, 05-19)*
 
-- [ ] 05-20-PLAN.md — Gap 4, consumer half: container-truth DTS substituted once in the orchestrator for every MPEG-TS DTS consumer; the declared sets that enshrined the inferred tie are corrected (TIME-01/04, DOC-04)
+- [x] 05-20-PLAN.md — Gap 4, consumer half: container-truth DTS substituted once in the orchestrator for every MPEG-TS DTS consumer; the declared sets that enshrined the inferred tie are corrected (TIME-01/04, DOC-04)
 
 **Wave 18** *(blocked on 05-20, 05-21)*
 
