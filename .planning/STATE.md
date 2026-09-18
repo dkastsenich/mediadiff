@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v0.6.1
 current_phase: 5
-current_phase_name: timeline-analysis
+current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-13-PLAN.md
-last_updated: "2026-09-18T16:05:48.750Z"
-last_activity: 2026-09-16
-last_activity_desc: Phase 05 execution started
-state_head: ec852ceeee287d46ae06b3b38778ab8e1dd28080
+stopped_at: Completed 05-14-PLAN.md
+last_updated: "2026-09-18T16:29:49.782Z"
+last_activity: 2026-09-18
+last_activity_desc: Phase 5 execution started
+state_head: 9ffd897c6dbfcdf9f45ac235082d58cd01bd2614
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 92
-  completed_plans: 80
+  completed_plans: 81
 milestone_name: milestone
 ---
 
@@ -24,14 +24,14 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 05 — Timeline Analysis
+**Current focus:** Phase 5 — Timeline Analysis
 
 ## Current Position
 
-Phase: 5 (timeline-analysis) — READY TO EXECUTE
-Plan: 13 of 13
+Phase: 5 (Timeline Analysis) — EXECUTING
+Plan: 2 of 25
 Status: Ready to execute
-Last activity: 2026-09-16 — Phase 05 execution started
+Last activity: 2026-09-18 — Phase 5 execution started
 
 Progress: [█████████░] 92%
 
@@ -131,6 +131,7 @@ Progress: [█████████░] 92%
 | Phase 05 P11 | this-session | 3 tasks | 19 files |
 | Phase 05 P12 | this-session | 3 tasks | 8 files |
 | Phase 05 P13 | 40min | 3 tasks | 3 files |
+| Phase 05 P14 | 55min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -306,6 +307,8 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-12: PERF_RATCHET_TOLERANCE_PERCENT=2 chosen from real, measured local evidence (5 repeated valgrind --tool=cachegrind runs of both legs against a fixed input produced IDENTICAL instruction counts every time -- zero same-binary run-to-run jitter, confirming D-13's determinism premise empirically)
 - [Phase 05]: 05-12: tests/golden/PERF_BASELINE.txt seeded with a genuinely measured (not invented) LOCAL baseline against the real 600s/1920x1080 D-16 reference file (plain=258117675, full=345365337 instructions, 33% overhead), explicitly marked provisional pending 05-13's designated-leg CI transcription
 - [Phase 05]: 05-13: PERF_BASELINE.txt transcribed from designated leg run 35347845434 (plain=257709408, full=344956981); commit field records PR head a56dd9b, not the ephemeral refs/pull/6/merge SHA c1cbc2d (identical tree)
+- [Phase 05]: 05-14: combined all three tasks into one commit -- av_offset conversion, drift-path reuse, and CR-01 memory-safety fix all touch the same functions in av_sync.cpp/analyzers.h; splitting would leave non-buildable intermediate states (precedented by 05-04)
+- [Phase 05]: 05-14: re-verified the MP4->TS pairs via a scratch git-worktree build of the pre-fix commit (never git stash) rather than assuming the flagged assumption held -- confirmed byte-identical priming.state/av_drift/av_drift.pattern evidence before and after, because the units bug never reaches an unknown-priming side or an MP4 identity-timebase side
 
 ### Pending Todos
 
@@ -345,6 +348,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T13:27:54.507Z
-Stopped at: Completed 05-13-PLAN.md
+Last session: 2026-09-18T16:29:49.599Z
+Stopped at: Completed 05-14-PLAN.md
 Resume file: None

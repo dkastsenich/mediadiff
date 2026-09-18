@@ -132,7 +132,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [ ] **TIME-07**: `timeline.av_drift` implements the normative 32-checkpoint least-squares algorithm and reports rate (ms/min), end delta, and pattern class (`constant-offset` / `linear-drift` / `step` / `irregular`)
 - [ ] **TIME-08**: The drift trajectory (all K offsets) is stored in the fingerprint so snapshot comparison retains full fidelity
 - [ ] **TIME-09**: When audio priming is unknown, the offset is computed unadjusted and the finding carries `priming: unknown` rather than hiding the uncertainty
-- [ ] **TIME-10**: **[R]** Fixtures cover the non-zero-priming path, not only the priming-unknown degrade path, since phase 4 ships before the audio decode path that supplies priming (research: ARCHITECTURE hazard B)
+- [x] **TIME-10**: **[R]** Fixtures cover the non-zero-priming path, not only the priming-unknown degrade path, since phase 4 ships before the audio decode path that supplies priming (research: ARCHITECTURE hazard B)
 - [ ] **TIME-11**: `timeline.timecode` detects presence and start value from `tmcd` tracks and S12M/GOP timecode, rendered as a SMPTE string including the drop-frame flag
 
 ### Audio Checks
@@ -340,7 +340,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TIME-07 | Phase 5 | Gaps Found |
 | TIME-08 | Phase 5 | Gaps Found |
 | TIME-09 | Phase 5 | Gaps Found |
-| TIME-10 | Phase 5 | Gaps Found |
+| TIME-10 | Phase 5 | Complete |
 | TIME-11 | Phase 5 | Gaps Found |
 | AUDIO-01 | Phase 6 | Pending |
 | AUDIO-02 | Phase 6 | Pending |
