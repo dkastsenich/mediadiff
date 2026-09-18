@@ -228,6 +228,16 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     union_passes.set(Pass::packet_scan);
   }
 
+  // 05-20-PLAN.md (Gap 4, TIME-04): on MPEG-TS, packet_scan implies
+  // ts_scan -- the container-DTS post-pass below needs 05-15's own PES
+  // seam (PidStats::pes_timestamps) whenever packets are scanned on a TS
+  // input, even when no applicable analyzer's own scope declared
+  // Pass::ts_scan directly (mirrors the parser_scan-implies-packet_scan
+  // rule just above).
+  if (family == ContainerFamily::ts && union_passes.test(Pass::packet_scan)) {
+    union_passes.set(Pass::ts_scan);
+  }
+
   ProbeResults results;
   mediadiff::expected<void, Error> packet_scan_error;
   mediadiff::expected<void, Error> bmff_scan_error;
@@ -366,6 +376,53 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     }
     if (any_wrap) {
       session.reprobe_ts_declared_durations(utf8_path);
+    }
+  }
+
+  // 05-20-PLAN.md (Gap 4, TIME-04, UD-3): the container-DTS post-pass --
+  // on MPEG-TS, substitute the container's own PES-header DTS truth
+  // (05-15's detail::apply_container_dts) for every stream's dts, once
+  // here, ahead of every analyzer, so every DTS-axis consumer
+  // (timeline.dts_monotonic, size.stream_bitrate, size.peak_bitrate,
+  // derive_cadence's DTS fallback) reads the SAME substituted values --
+  // there is no per-analyzer patch. Never runs on a non-TS input; when
+  // results.packet_scan is unset (Pass::packet_scan not in this file's
+  // union), there is nothing to substitute.
+  if (family == ContainerFamily::ts && results.packet_scan.has_value()) {
+    for (std::size_t i = 0; i < results.packet_scan->per_stream.size(); ++i) {
+      StreamPacketScan& stream = results.packet_scan->per_stream[i];
+      const std::int64_t pid = session.stream_info(static_cast<int>(i)).stream_id;
+      if (!results.ts.has_value() || pid < 0 || pid > 8191) {
+        // No PES seam to join against at all, or a stream_id libavformat
+        // never set to a real PID -- container truth cannot be
+        // established for this stream.
+        stream.dts_source = DtsSource::container_unavailable;
+        continue;
+      }
+      const PidStats& pid_stats = results.ts->pid_stats(static_cast<int>(pid));
+      bool unavailable = pid_stats.pes_timestamps_truncated;
+      if (!unavailable && !results.ts->complete) {
+        for (const PacketRecord& pkt : stream.packets) {
+          if (pkt.pos >= results.ts->stop_offset) {
+            unavailable = true;
+            break;
+          }
+        }
+      }
+      if (unavailable) {
+        // ts_scan's own global PES-record budget was exhausted before
+        // this PID's list, or this stream carries a packet at/after a
+        // partial scan's stop_offset -- container truth is not fully
+        // known for this stream; a DTS-axis consumer skips rather than
+        // judging libavformat's own inferred values (T-05-85).
+        stream.dts_source = DtsSource::container_unavailable;
+        continue;
+      }
+      const mediadiff::detail::ContainerDtsJoin join =
+          mediadiff::detail::apply_container_dts(stream.packets, pid_stats.pes_timestamps);
+      stream.dts_container_joined = join.joined;
+      stream.dts_unjoined_with_pos = join.unjoined_with_pos;
+      stream.dts_source = DtsSource::container_pes;
     }
   }
 

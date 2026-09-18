@@ -123,6 +123,29 @@ struct PacketRecord {
 // what keeps the two from silently drifting apart.
 inline constexpr int kPacketFlagKeyframe = 0x0001;
 
+// 05-20-PLAN.md (Gap 4, TIME-04, UD-3): which source produced this
+// stream's own `packets[*].dts` values, set once by the orchestrator's
+// container-DTS post-pass (src/probe/orchestrator.cpp) -- never inferred
+// per-analyzer. `demuxer` (the default) means libavformat's own dts, as
+// PacketScan read it verbatim: every non-TS container, and any MPEG-TS
+// stream whose container truth could not be established. `container_pes`
+// means every joined packet's dts now holds the value
+// detail::apply_container_dts (src/probe/ts_scan.h) read directly from
+// the stream's own PES headers (ISO/IEC 13818-1 section 2.4.3.7), never
+// libavformat's read-back inference. `container_unavailable` means this
+// MPEG-TS stream's PES timestamps could not be trusted for a substitution
+// (ts_scan's own global PES-record budget was exhausted before this
+// stream's list, or a packet's own byte offset falls at or beyond a
+// partial scan's `stop_offset`) -- `dts` stays whatever the demuxer
+// reported, and a DTS-axis consumer on this stream skips with
+// `insufficient_data` rather than judging libavformat's own inferred
+// value (05-VERIFICATION.md Gap 4, T-05-85's mitigation).
+enum class DtsSource {
+  demuxer,
+  container_pes,
+  container_unavailable,
+};
+
 // One stream's own packet array plus its byte total and timebase. `tb` is
 // held ONCE per stream, not once per record -- every packet in a stream
 // shares its stream's timebase, and per-record duplication would
@@ -173,6 +196,24 @@ struct StreamPacketScan {
   // "declared, and it says N" (05-RESEARCH.md Pattern 3: MP4's own
   // `initial_padding` is a real, reported 0, not an absence).
   std::int64_t initial_padding = 0;
+
+  // 05-20-PLAN.md (Gap 4, TIME-04): which source this stream's own
+  // `packets[*].dts` values currently hold, set once by the
+  // orchestrator's container-DTS post-pass. `demuxer` by default --
+  // every non-TS stream, and any MPEG-TS stream for which no
+  // substitution was attempted or possible, keeps this default
+  // untouched.
+  DtsSource dts_source = DtsSource::demuxer;
+
+  // 05-20-PLAN.md: detail::apply_container_dts's own ContainerDtsJoin
+  // counters (src/probe/ts_scan.h), copied here once the orchestrator's
+  // post-pass runs -- how many of this stream's packets had their dts
+  // replaced by container truth (`dts_container_joined`), and how many
+  // carried a non-negative `pos` but did not join any recorded PES
+  // timestamp (`dts_unjoined_with_pos`). Both stay 0 when `dts_source`
+  // is not `container_pes`.
+  std::int64_t dts_container_joined = 0;
+  std::int64_t dts_unjoined_with_pos = 0;
 };
 
 // The whole scan's result: one StreamPacketScan per AVStream (doc 02
