@@ -9,6 +9,7 @@
 #include <fmt/format.h>
 
 #include "analyzers/timeline/analyzers.h"
+#include "core/exact_int.h"
 #include "core/rational.h"
 #include "core/tolerance.h"
 
@@ -52,8 +53,8 @@ std::optional<Magnitude> extract_magnitude(const Value& value) {
 // P0). 3x on pcr_interval's 100ms default yields 300ms, still well under
 // psi_interval's own 500ms bound -- a real spacing regression still fires
 // while estimation noise does not. A single named constant, never a
-// double: the multiply below always goes through
-// core/rational.h's detail::checked_mul.
+// double: the multiply below is exact integer arithmetic
+// (core/exact_int.h's detail::ExactInt).
 constexpr std::int64_t kEstimatedToleranceFactor = 3;
 
 }  // namespace
@@ -141,14 +142,16 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   // value_from_json validates TYPE, never MAGNITUDE) -- a crafted
   // near-INT64_MAX num/den previously triggered signed integer overflow
   // (UB) in a plain `*`/`-`, which can produce an arbitrary pass/warn/fail
-  // verdict depending on optimization. Every cross-multiplication and
-  // subtraction below is routed through core/rational.h's
-  // detail::checked_mul/checked_sub/checked_negate -- the SAME
-  // overflow-checked primitives compare_ticks above already uses -- and on
-  // overflow this comparator returns a real Finding carrying
-  // Status::error, mirroring compare/engine.cpp's value_kind_mismatch
-  // "never a coercion, never a fabricated verdict" contract (D-09) rather
-  // than computing a UB-tainted result.
+  // verdict depending on optimization. The D-07 gate's int64_t
+  // subtraction below goes through core/rational.h's overflow-checked
+  // detail::checked_sub/checked_negate, and on overflow this comparator
+  // returns a real Finding carrying Status::error, mirroring
+  // compare/engine.cpp's value_kind_mismatch "never a coercion, never a
+  // fabricated verdict" contract (D-09) rather than computing a UB-tainted
+  // result. The magnitude cross-multiplications further down no longer
+  // need that escape hatch: they are exact (detail::ExactInt, see the
+  // comment at the delta computation), so no int64_t input can make them
+  // wrap or overflow.
   const auto overflow_finding = [&](std::string_view what) {
     finding.status = Status::error;
     finding.skip_reason = SkipReason::none;
@@ -227,52 +230,71 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
 
   // delta = candidate - baseline, as an exact rational over
   // baseline_den*candidate_den -- cross-multiplication, never a division.
-  std::int64_t delta_den = 0;
-  if (!detail::checked_mul(baseline_mag->den, candidate_mag->den, &delta_den)) {
-    return overflow_finding("delta_den (baseline_den * candidate_den)");
+  //
+  // Every product and difference from here to the verdict is EXACT
+  // (detail::ExactInt, core/exact_int.h -- a 256-bit portable integer), not
+  // int64_t. Debug session test-898-ci-nonreproducible: the int64_t
+  // version returned `Status::error` on ordinary media -- timeline.
+  // av_drift's own reduced rates (e.g. 270183060000/47612048 vs
+  // 24030060000/36327640 ms/min on a five-second TS splice) cross-multiply
+  // to ~9.8e18, past INT64_MAX. Wherever the int64_t computation did NOT
+  // overflow, the exact one produces the identical numbers (so every such
+  // verdict and message is unchanged); where it did, the comparator now
+  // returns the real verdict. CR-03's contract (a crafted near-INT64_MAX
+  // snapshot value must never yield a UB-tainted verdict) is kept: nothing
+  // here can wrap, and the bound analysis in core/exact_int.h shows 256
+  // bits covers every int64_t input -- the range_finding paths below are
+  // defensive only and unreachable for int64_t operands.
+  const auto range_finding = [&](std::string_view what) {
+    finding.status = Status::error;
+    finding.skip_reason = SkipReason::none;
+    finding.message = fmt::format(
+        "tol comparator: {} exceeded the comparator's 256-bit exact range; cannot determine a verdict", what);
+    return finding;
+  };
+  using detail::ExactInt;
+  const ExactInt baseline_num = ExactInt::from_i64(baseline_mag->num);
+  const ExactInt baseline_den = ExactInt::from_i64(baseline_mag->den);
+  const ExactInt candidate_num = ExactInt::from_i64(candidate_mag->num);
+  const ExactInt candidate_den = ExactInt::from_i64(candidate_mag->den);
+
+  ExactInt delta_den;
+  if (!ExactInt::try_mul(baseline_den, candidate_den, &delta_den)) {
+    return range_finding("delta_den (baseline_den * candidate_den)");
   }
-  std::int64_t delta_num_lhs = 0;
-  std::int64_t delta_num_rhs = 0;
-  if (!detail::checked_mul(candidate_mag->num, baseline_mag->den, &delta_num_lhs) ||
-      !detail::checked_mul(baseline_mag->num, candidate_mag->den, &delta_num_rhs)) {
-    return overflow_finding("delta_num (num * den cross-products)");
+  ExactInt delta_num_lhs;
+  ExactInt delta_num_rhs;
+  if (!ExactInt::try_mul(candidate_num, baseline_den, &delta_num_lhs) ||
+      !ExactInt::try_mul(baseline_num, candidate_den, &delta_num_rhs)) {
+    return range_finding("delta_num (num * den cross-products)");
   }
-  std::int64_t delta_num = 0;
-  if (!detail::checked_sub(delta_num_lhs, delta_num_rhs, &delta_num)) {
-    return overflow_finding("delta_num (cross-product subtraction)");
+  ExactInt delta_num;
+  if (!ExactInt::try_sub(delta_num_lhs, delta_num_rhs, &delta_num)) {
+    return range_finding("delta_num (cross-product subtraction)");
   }
-  std::int64_t abs_delta_num = 0;
-  if (delta_num < 0) {
-    if (!detail::checked_negate(delta_num, &abs_delta_num)) {
-      return overflow_finding("abs_delta_num");
-    }
-  } else {
-    abs_delta_num = delta_num;
-  }
+  const ExactInt abs_delta_num = delta_num.abs();
 
   // D-03: either side carrying `estimated` widens the effective threshold
-  // magnitudes by kEstimatedToleranceFactor, via checked integer
-  // multiplication -- never a double conversion. An overflowing multiply
-  // routes through the same overflow_finding path the delta computation
-  // above uses, rather than silently falling back to the unwidened value
-  // (which would be a fabricated verdict just as much as a wrapped
-  // multiply would be).
+  // magnitudes by kEstimatedToleranceFactor -- exact integer
+  // multiplication, never a double conversion, and (being exact) never a
+  // silent fallback to the unwidened value either.
   const bool widened = baseline.estimated || candidate.estimated;
-  std::int64_t effective_num = tolerance->num;
-  std::optional<std::int64_t> effective_warn_num = tolerance->warn_num;
+  ExactInt effective_num = ExactInt::from_i64(tolerance->num);
+  std::optional<ExactInt> effective_warn_num;
+  if (tolerance->warn_num.has_value()) {
+    effective_warn_num = ExactInt::from_i64(*tolerance->warn_num);
+  }
   if (widened) {
-    if (!detail::checked_mul(tolerance->num, kEstimatedToleranceFactor, &effective_num)) {
-      return overflow_finding("estimated-measurement tolerance widening (fail threshold * 3)");
+    const ExactInt factor = ExactInt::from_i64(kEstimatedToleranceFactor);
+    if (!ExactInt::try_mul(effective_num, factor, &effective_num)) {
+      return range_finding("estimated-measurement tolerance widening (fail threshold * 3)");
     }
-    if (tolerance->warn_num.has_value()) {
-      std::int64_t widened_warn = 0;
-      if (!detail::checked_mul(*tolerance->warn_num, kEstimatedToleranceFactor, &widened_warn)) {
-        return overflow_finding("estimated-measurement tolerance widening (warn threshold * 3)");
-      }
-      effective_warn_num = widened_warn;
+    if (effective_warn_num.has_value() && !ExactInt::try_mul(*effective_warn_num, factor, &*effective_warn_num)) {
+      return range_finding("estimated-measurement tolerance widening (warn threshold * 3)");
     }
   }
 
+  const ExactInt tolerance_den = ExactInt::from_i64(tolerance->den);
   bool within_fail = false;
   bool within_warn = false;
   if (tolerance->is_relative) {
@@ -280,51 +302,47 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     // section 3's own formula), generalized with an extra candidate_den
     // factor so it stays exact even when the two sides' denominators
     // differ -- derivation recorded in 02-04-SUMMARY.md.
-    std::int64_t abs_baseline_num = 0;
-    if (baseline_mag->num < 0) {
-      if (!detail::checked_negate(baseline_mag->num, &abs_baseline_num)) {
-        return overflow_finding("abs_baseline_num");
-      }
-    } else {
-      abs_baseline_num = baseline_mag->num;
+    const ExactInt abs_baseline_num = baseline_num.abs();
+    ExactInt lhs;
+    if (!ExactInt::try_mul(abs_delta_num, tolerance_den, &lhs) ||
+        !ExactInt::try_mul(lhs, ExactInt::from_i64(100), &lhs)) {
+      return range_finding("relative-tolerance lhs (|delta| * tolerance_den * 100)");
     }
-
-    std::int64_t lhs = 0;
-    if (!detail::checked_mul(abs_delta_num, tolerance->den, &lhs) || !detail::checked_mul(lhs, 100, &lhs)) {
-      return overflow_finding("relative-tolerance lhs (|delta| * tolerance_den * 100)");
+    ExactInt rhs;
+    if (!ExactInt::try_mul(effective_num, abs_baseline_num, &rhs) || !ExactInt::try_mul(rhs, candidate_den, &rhs)) {
+      return range_finding("relative-tolerance rhs (tolerance_num * |baseline| * candidate_den)");
     }
-    std::int64_t rhs = 0;
-    if (!detail::checked_mul(effective_num, abs_baseline_num, &rhs) ||
-        !detail::checked_mul(rhs, candidate_mag->den, &rhs)) {
-      return overflow_finding("relative-tolerance rhs (tolerance_num * |baseline| * candidate_den)");
-    }
-    within_fail = lhs <= rhs;
+    within_fail = ExactInt::compare(lhs, rhs) <= 0;
     if (effective_warn_num.has_value()) {
-      std::int64_t rhs_warn = 0;
-      if (!detail::checked_mul(*effective_warn_num, abs_baseline_num, &rhs_warn) ||
-          !detail::checked_mul(rhs_warn, candidate_mag->den, &rhs_warn)) {
-        return overflow_finding("relative-tolerance warn rhs (warn_num * |baseline| * candidate_den)");
+      ExactInt rhs_warn;
+      if (!ExactInt::try_mul(*effective_warn_num, abs_baseline_num, &rhs_warn) ||
+          !ExactInt::try_mul(rhs_warn, candidate_den, &rhs_warn)) {
+        return range_finding("relative-tolerance warn rhs (warn_num * |baseline| * candidate_den)");
       }
-      within_warn = lhs <= rhs_warn;
+      within_warn = ExactInt::compare(lhs, rhs_warn) <= 0;
     }
   } else {
-    std::int64_t lhs = 0;
-    if (!detail::checked_mul(abs_delta_num, tolerance->den, &lhs)) {
-      return overflow_finding("absolute-tolerance lhs (|delta| * tolerance_den)");
+    ExactInt lhs;
+    if (!ExactInt::try_mul(abs_delta_num, tolerance_den, &lhs)) {
+      return range_finding("absolute-tolerance lhs (|delta| * tolerance_den)");
     }
-    std::int64_t rhs = 0;
-    if (!detail::checked_mul(effective_num, delta_den, &rhs)) {
-      return overflow_finding("absolute-tolerance rhs (tolerance_num * delta_den)");
+    ExactInt rhs;
+    if (!ExactInt::try_mul(effective_num, delta_den, &rhs)) {
+      return range_finding("absolute-tolerance rhs (tolerance_num * delta_den)");
     }
-    within_fail = lhs <= rhs;
+    within_fail = ExactInt::compare(lhs, rhs) <= 0;
     if (effective_warn_num.has_value()) {
-      std::int64_t rhs_warn = 0;
-      if (!detail::checked_mul(*effective_warn_num, delta_den, &rhs_warn)) {
-        return overflow_finding("absolute-tolerance warn rhs (warn_num * delta_den)");
+      ExactInt rhs_warn;
+      if (!ExactInt::try_mul(*effective_warn_num, delta_den, &rhs_warn)) {
+        return range_finding("absolute-tolerance warn rhs (warn_num * delta_den)");
       }
-      within_warn = lhs <= rhs_warn;
+      within_warn = ExactInt::compare(lhs, rhs_warn) <= 0;
     }
   }
+  // Rendered operands for the messages below -- decimal strings identical
+  // to the former int64_t formatting whenever the values fit int64_t.
+  const std::string abs_delta_num_text = abs_delta_num.to_decimal();
+  const std::string delta_den_text = delta_den.to_decimal();
 
   const std::string_view unit_text = unit_suffix(check.unit);
   // D-03: appended to every message below when the widened threshold was
@@ -338,16 +356,16 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     // independent of the check's own severity (doc 01 section 3).
     if (within_warn) {
       finding.status = Status::pass;
-      finding.message = fmt::format("delta {}{}/{}{} within warn threshold{}", sign, abs_delta_num, delta_den,
+      finding.message = fmt::format("delta {}{}/{}{} within warn threshold{}", sign, abs_delta_num_text, delta_den_text,
                                      tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
     } else if (within_fail) {
       finding.status = Status::warn;
-      finding.message = fmt::format("delta {}{}/{}{} between warn and fail thresholds{}", sign, abs_delta_num,
-                                     delta_den, tolerance->is_relative ? "%" : std::string(unit_text),
+      finding.message = fmt::format("delta {}{}/{}{} between warn and fail thresholds{}", sign, abs_delta_num_text,
+                                     delta_den_text, tolerance->is_relative ? "%" : std::string(unit_text),
                                      widened_suffix);
     } else {
       finding.status = Status::fail;
-      finding.message = fmt::format("delta {}{}/{}{} beyond fail threshold{}", sign, abs_delta_num, delta_den,
+      finding.message = fmt::format("delta {}{}/{}{} beyond fail threshold{}", sign, abs_delta_num_text, delta_den_text,
                                      tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
     }
     apply_end_delta_gate();
@@ -361,7 +379,7 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   }
 
   finding.status = escalate(finding.severity);
-  finding.message = fmt::format("delta {}{}/{}{} exceeds tolerance{}", sign, abs_delta_num, delta_den,
+  finding.message = fmt::format("delta {}{}/{}{} exceeds tolerance{}", sign, abs_delta_num_text, delta_den_text,
                                  tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
   apply_end_delta_gate();
   return finding;

@@ -30,6 +30,10 @@ add_executable(mediadiff_unit_tests
   # ACCUMULATOR (not merely overflow detection) for plan 05-09's av_drift
   # least-squares sums (05-02-PLAN.md Task 1, TIME-01/TIME-02).
   test_rational_wide.cpp
+  # core/exact_int.h's detail::ExactInt -- the exact 256-bit integer
+  # compare/tol.cpp cross-multiplies with (debug session
+  # test-898-ci-nonreproducible).
+  test_exact_int.cpp
   # Table-driven edge-value coverage for all seven semantics (02-04-PLAN.md
   # Task 3), distinct from test_fail_first_coverage.cpp's (semantic,
   # status) gate.

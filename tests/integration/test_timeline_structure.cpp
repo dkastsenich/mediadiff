@@ -314,9 +314,13 @@ TEST_CASE(
 // video.frame_rate.measured and size.stream_bitrate all read RAW,
 // un-unwrapped PTS/DTS axis values directly (never through the shared
 // unwrap this plan's own two checks use), producing nonsensical evidence
-// on ANY genuinely-wrapping TS file (one observed instance:
-// size.stream_bitrate's own tolerance comparator overflows int64_t and
-// reports `status: error`). That is a REAL, pre-existing correctness gap
+// on ANY genuinely-wrapping TS file (one observed instance: size.
+// stream_bitrate's corrupted rationals used to overflow the tolerance
+// comparator's int64_t cross-multiplication and report `status: error`;
+// since debug session test-898-ci-nonreproducible made that comparator
+// exact, the same corrupted inputs yield an equally meaningless `fail`
+// instead -- the defect is the un-unwrapped INPUT, WINDOWS.md #26, not
+// the comparison). That is a REAL, pre-existing correctness gap
 // this plan's own fix newly makes reachable -- not something a real user
 // would want silently folded into an "expected" declared set (FALSE
 // POSITIVES ARE P0). It is out of THIS plan's declared scope (05-06-
@@ -601,21 +605,14 @@ TEST_CASE(
           // span here never gates the merge on its own either. This pair
           // is the whole reason this check id exists.
           "timeline.discontinuities.flagged",
-          // 05-10-PLAN.md Task 3 (Rule 1 deviation, av_sync.cpp's ordinal
-          // cross-check -- 05-10-SUMMARY.md): this real splice's own K=32
-          // checkpoint trajectory now correctly reads as a genuine
-          // mid-file discontinuity (three flat groups: -23..-381ms,
-          // +371ms, +337..+13ms, verified via evidence: identical on
-          // baseline and candidate, since the one-byte edit does not
-          // touch either stream's own packet timing) rather than being
-          // smoothed into an ordinary linear-drift line -- but the
-          // resulting least-squares rate's own num/den (both sides
-          // IDENTICAL) is large enough that comparing it cross-
-          // multiplies past int64_t (CR-03's own documented overflow-
-          // safety path, src/compare/tol.cpp), so this finding is
-          // `Status::error`, not a fabricated pass/fail verdict -- `error`
-          // counts as non-pass to `expect_declared_set` (status != pass),
-          // hence its presence here.
-          "timeline.av_drift",
+          // timeline.av_drift is deliberately ABSENT: the one-byte edit
+          // does not touch either stream's packet timing, so both sides'
+          // least-squares rates are IDENTICAL and the delta is exactly
+          // zero -> `pass`. (Until debug session test-898-ci-
+          // nonreproducible this set listed timeline.av_drift, because
+          // src/compare/tol.cpp cross-multiplied those identical wide
+          // rationals in int64_t, overflowed, and reported `error` -- a
+          // declared set must never enshrine an `error`. The comparator is
+          // exact now, core/exact_int.h.)
       });
 }
