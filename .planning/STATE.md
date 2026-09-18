@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 5
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-17-PLAN.md
-last_updated: "2026-09-18T17:19:45.395Z"
+stopped_at: Completed 05-18-PLAN.md
+last_updated: "2026-09-18T17:31:51.280Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 5 execution started
-state_head: 29016fc149f2e87cab76de93afe9ff45c24e5754
+state_head: b7abbd76d3a7ffdea6c82357fef388a5905ce85e
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 92
-  completed_plans: 84
+  completed_plans: 85
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 5 (Timeline Analysis) — EXECUTING
-Plan: 5 of 25
+Plan: 6 of 25
 Status: Ready to execute
 Last activity: 2026-09-18 — Phase 5 execution started
 
@@ -135,6 +135,7 @@ Progress: [█████████░] 92%
 | Phase 05 P15 | ~50min | 3 tasks | 3 files |
 | Phase 05 P16 | ~35min | 3 tasks | 7 files |
 | Phase 05 P17 | ~15min | 3 tasks | 7 files |
+| Phase 05 P18 | ~25min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -316,6 +317,7 @@ Recent decisions affecting current work:
 - [Phase 5]: 05-15: stride join-rate measurement found a constant +4 byte offset shift on ts_192.ts and +16 on ts_204.ts between ts_scan's own PES offset and libavformat's PacketRecord::pos -- recorded, not adapted, per plan A1
 - [Phase 5]: 05-16: Per-axis unwrap in TimelinePacketView calls unwrap_ts_timestamps directly (not detail::unwrap_axis_view) to expose wrap_events, mirroring monotonic.cpp's emit_wrap_events -- still one unwrap implementation
 - [Phase 5]: 05-17: DemuxSession-level declared-duration override (never a call-site parameter) transparently corrects av_sync.cpp's own declared spans (video_span_ticks/audio_span_ticks) on a wrapping TS file with that file untouched -- av_sync.cpp's remaining raw-PTS-read gap (av_offset/av_drift) stays 05-18's scope
+- [Phase 5]: 05-18: av_sync.cpp uses the multi-stream TimelinePacketView builder (cross-stream epoch alignment), jitter_vfr.cpp uses the per-stream builder; the wrap pair's measured complete non-pass set matched flagged assumption A1 exactly (timeline.start global fail, timeline.wrap_events x2 info, timeline.duration.coherence audio info); WINDOWS #26/#27/#30 closed, new entry #31 (av_sync.cpp) recorded and closed, #29 untouched
 
 ### Pending Todos
 
@@ -355,6 +357,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T17:19:45.197Z
-Stopped at: Completed 05-17-PLAN.md
+Last session: 2026-09-18T17:31:51.089Z
+Stopped at: Completed 05-18-PLAN.md
 Resume file: None
