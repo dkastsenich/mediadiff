@@ -2,9 +2,10 @@
 # (D-GAP-01 gap closure, 04-13-PLAN.md Task 2).
 #
 # STATUS: EMPTY ON PURPOSE. The two entries added by debug session
-# test-898-ci-nonreproducible (.planning/debug/) -- timeline_ts_jump.ts and
-# timeline_ts_jump_flagged.ts, whose bytes changed when scripts/gen_corpus.sh
-# moved segment B's -output_ts_offset from 3.0 to 5.0 -- were replaced in
+# test-898-ci-nonreproducible (.planning/debug/resolved/) -- the unflagged
+# and flagged TS jump-trigger fixtures, whose bytes changed when
+# scripts/gen_corpus.sh moved segment B's -output_ts_offset from 3.0 to
+# 5.0 -- were replaced in
 # tests/golden/CORPUS_DIGEST.txt by the designated x64-linux CI leg's own
 # computed hashes, transcribed from run 35347044190 (the THIRD
 # TRANSCRIBED-FROM-DESIGNATED-LEG marker below), and cleared from this

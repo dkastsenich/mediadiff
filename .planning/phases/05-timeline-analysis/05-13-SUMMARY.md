@@ -192,7 +192,7 @@ CI history, read directly from the job logs by the orchestrator:
 - Ledger parse check: the script's own `grep -E "^leg=x64-linux metric=<m> "` plus its `sed` value extraction yields 257709408 and 344956981.
 
 Task 2's "Locally provable" acceptance criteria:
-1. `grep -c 'timeline_' tests/golden/CORPUS_DIGEST_PROVISIONAL.txt` reports **2, not 0. The literal criterion fails.** Both matches are comment lines in the STATUS header (lines 5-6). a56dd9b added them; they name `timeline_ts_jump.ts` / `timeline_ts_jump_flagged.ts` to explain what was cleared. The file has 0 non-comment lines, so it has zero entries, and lint clause 3 confirms this. At 1ec326c the count was 0. This continuation was scoped not to touch CORPUS_DIGEST*.txt, so the wording was left as-is. If the orchestrator wants the literal criterion to hold, the fix is a comment rewording that avoids the `timeline_` token.
+1. `grep -c 'timeline_' tests/golden/CORPUS_DIGEST_PROVISIONAL.txt` reports **0**. PASS, after an orchestrator follow-up. At c749c99/7bedc42 it reported 2: two STATUS-comment lines added in a56dd9b named the jump fixtures. The ledger had zero entries throughout, as lint clause 3 confirmed. The orchestrator then reworded that comment to describe the fixtures without their file names, so the literal criterion holds. The comment change is the only edit; there are no entries, markers or hashes.
 2. `grep -c 'STATUS: EMPTY'` reports 1, and the historical-context paragraph is present (line 24). PASS.
 3. `git diff tests/golden/CORPUS_DIGEST.txt | grep -c '^-'`, checked against the commits that landed (excluding the `---` header line). PASS. No non-fixture, non-summary line was removed in either commit.
    - 1ec326c: 27 removed = 26 fixture lines + 1 summary.
@@ -228,9 +228,9 @@ The first executor halted with these two items. They are kept here as history.
 
 ### Continuation deviations
 
-**3. [Literal criterion miss, out of scope to fix] `grep -c 'timeline_'` on the provisional ledger reports 2.** Both matches are comment lines from a56dd9b; the file has zero entries. Details are in Verification item 1. This continuation's scope excluded CORPUS_DIGEST*.txt.
+**3. [Literal criterion miss, since resolved] `grep -c 'timeline_'` on the provisional ledger reported 2 at this continuation's commit.** Both matches were comment lines from a56dd9b; the file had zero entries. The orchestrator's follow-up commit reworded the comment, and the check now reports 0 (Verification item 1).
 
-**Total deviations:** 0 auto-fixed. Two first-round deferrals are now resolved. One literal-criterion miss is documented (comment-only; entry count is 0).
+**Total deviations:** 0 auto-fixed. Two first-round deferrals are now resolved. One literal-criterion miss (comment-only; entry count 0) was resolved by an orchestrator comment rewording.
 
 ## Issues Encountered
 
