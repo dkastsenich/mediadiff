@@ -12,6 +12,7 @@
 #include "core/model.h"
 #include "core/rational.h"
 
+#include "analyzers/timeline/unwrap.h"
 #include "probe/cadence.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
@@ -472,15 +473,33 @@ void run_timeline_start_duration(const ProbeResults& results, Fingerprint& fp) {
     return;
   }
 
+  // 05-16-PLAN.md (TIME-01/TIME-02/TIME-03, the assumption-delta `promote`
+  // decision): every timestamp read below goes through the ONE promoted
+  // `TimelinePacketView` per stream -- never `packet_scan.per_stream[i]
+  // .packets` directly. `is_ts` matches monotonic.cpp's own established
+  // pattern exactly (container_family_from_format_name(demux.format_name())
+  // == ContainerFamily::ts). A view whose own unwrap (or the cross-stream
+  // epoch shift) overflowed (T-05-71) skips this stream's timeline.start
+  // AND timeline.duration/timeline.duration.coherence with
+  // insufficient_data -- never a wrapped or fabricated value.
+  const bool is_ts = container_family_from_format_name(demux.format_name()) == ContainerFamily::ts;
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(packet_scan, is_ts);
+
   // Step 1: this stream's own first-presented PTS, in native ticks --
   // std::nullopt when the stream carries no real PTS at all
-  // (no_timing_data).
+  // (no_timing_data), OR when its own view overflowed (insufficient_data,
+  // distinguished via `overflowed_view` below).
   std::vector<std::optional<std::int64_t>> first_pts(scopes.size());
+  std::vector<bool> overflowed_view(scopes.size(), false);
   for (std::size_t i = 0; i < scopes.size(); ++i) {
-    if (!scopes[i].has_value() || i >= packet_scan.per_stream.size()) {
+    if (!scopes[i].has_value() || i >= views.size()) {
       continue;
     }
-    first_pts[i] = detail::first_presented_pts(std::span<const PacketRecord>(packet_scan.per_stream[i].packets));
+    if (views[i].overflowed()) {
+      overflowed_view[i] = true;
+      continue;
+    }
+    first_pts[i] = detail::first_presented_pts(views[i].packets());
   }
 
   // Step 2: the file's global origin -- the minimum real-time value across
@@ -496,11 +515,20 @@ void run_timeline_start_duration(const ProbeResults& results, Fingerprint& fp) {
   }
 
   if (candidates.empty()) {
-    // No stream in the whole file carries a real presentation timestamp.
-    push_skip(CheckId::timeline_start, global_scope, SkipReason::no_timing_data, fp);
-    for (const std::optional<Scope>& scope : scopes) {
-      if (scope.has_value()) {
-        push_skip(CheckId::timeline_start, *scope, SkipReason::no_timing_data, fp);
+    // No stream in the whole file carries a real presentation timestamp --
+    // OR every candidate stream's own view overflowed. Global scope
+    // reports insufficient_data when ANY stream overflowed (the overflow
+    // is why no candidate exists, not the absence of PTS data); otherwise
+    // no_timing_data. Each per-stream scope reports its own specific
+    // reason.
+    const bool any_overflowed =
+        std::any_of(overflowed_view.begin(), overflowed_view.end(), [](bool v) { return v; });
+    push_skip(CheckId::timeline_start, global_scope,
+              any_overflowed ? SkipReason::insufficient_data : SkipReason::no_timing_data, fp);
+    for (std::size_t i = 0; i < scopes.size(); ++i) {
+      if (scopes[i].has_value()) {
+        push_skip(CheckId::timeline_start, *scopes[i],
+                  overflowed_view[i] ? SkipReason::insufficient_data : SkipReason::no_timing_data, fp);
       }
     }
     // Deliberately NOT a `return` here: the duration triple below (TIME-03)
@@ -531,7 +559,9 @@ void run_timeline_start_duration(const ProbeResults& results, Fingerprint& fp) {
           continue;
         }
         push_skip(CheckId::timeline_start, *scopes[i],
-                  first_pts[i].has_value() ? SkipReason::insufficient_data : SkipReason::no_timing_data, fp);
+                  (first_pts[i].has_value() || overflowed_view[i]) ? SkipReason::insufficient_data
+                                                                    : SkipReason::no_timing_data,
+                  fp);
       }
     } else {
       // Evidence: cite the container mechanism, never re-derive an
@@ -575,7 +605,8 @@ void run_timeline_start_duration(const ProbeResults& results, Fingerprint& fp) {
           continue;
         }
         if (!first_pts[i].has_value()) {
-          push_skip(CheckId::timeline_start, *scopes[i], SkipReason::no_timing_data, fp);
+          push_skip(CheckId::timeline_start, *scopes[i],
+                    overflowed_view[i] ? SkipReason::insufficient_data : SkipReason::no_timing_data, fp);
           continue;
         }
         const Rational stream_tb = packet_scan.per_stream[i].tb;
@@ -611,7 +642,16 @@ void run_timeline_start_duration(const ProbeResults& results, Fingerprint& fp) {
           : std::nullopt;
 
   for (std::size_t i = 0; i < scopes.size(); ++i) {
-    if (!scopes[i].has_value() || i >= packet_scan.per_stream.size()) {
+    if (!scopes[i].has_value() || i >= packet_scan.per_stream.size() || i >= views.size()) {
+      continue;
+    }
+    if (views[i].overflowed()) {
+      // T-05-71: this stream's own unwrap (or the cross-stream epoch
+      // shift) could not complete without an int64 overflow -- the
+      // computed member cannot be trusted, never a wrapped or fabricated
+      // value.
+      push_skip(CheckId::timeline_duration, *scopes[i], SkipReason::insufficient_data, fp);
+      push_skip(CheckId::timeline_duration_coherence, *scopes[i], SkipReason::insufficient_data, fp);
       continue;
     }
     const Rational stream_tb = packet_scan.per_stream[i].tb;
@@ -620,8 +660,7 @@ void run_timeline_start_duration(const ProbeResults& results, Fingerprint& fp) {
         stream_info.declared_duration_ticks.has_value()
             ? detail::ticks_to_ms(*stream_info.declared_duration_ticks, stream_tb)
             : std::nullopt;
-    emit_timeline_duration(*scopes[i], std::span<const PacketRecord>(packet_scan.per_stream[i].packets), stream_tb,
-                            container_declared_ms, stream_declared_ms, fp);
+    emit_timeline_duration(*scopes[i], views[i].packets(), stream_tb, container_declared_ms, stream_declared_ms, fp);
   }
 }
 

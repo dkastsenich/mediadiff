@@ -25,6 +25,8 @@
 #include <span>
 #include <vector>
 
+#include "probe/packet_scan.h"
+
 namespace mediadiff {
 
 // doc 04 section 1.2's own constants, transcribed as named values (never
@@ -95,5 +97,100 @@ struct WrapStepResult {
 WrapStepResult apply_wrap_step(std::int64_t offset, std::int64_t delta);
 
 }  // namespace detail
+
+// TimelinePacketView (05-16-PLAN.md, TIME-01/TIME-02/TIME-03, the
+// assumption-delta `promote` decision): the ONE promoted representation of
+// "a stream's timestamps" every timestamp-derived timeline/video/size
+// consumer reads through from this plan onward -- never
+// `StreamPacketScan::packets` directly. On a non-MPEG-TS input it borrows
+// the source stream's own packet vector (zero-copy, `unwrapped()` false):
+// the 33-bit rule is MPEG-TS-specific (doc 04 section 1.2), so a non-TS
+// input's packets are never touched, copied, or reordered. On MPEG-TS it
+// owns a COPY of the packets with both the PTS and DTS axes independently
+// unwrapped via the SAME `unwrap_ts_timestamps` this file already
+// implements -- never a second unwrap implementation -- via
+// `make_timeline_packet_view`'s own per-axis walk (`detail::build_axis_view`
+// for sentinel exclusion/`packet_index` mapping, `unwrap_ts_timestamps`
+// itself for the wrap arithmetic and its `wrap_events` count, mirroring
+// `src/analyzers/timeline/monotonic.cpp`'s own `emit_wrap_events` --
+// `detail::unwrap_axis_view` alone discards the wrap count this view's own
+// `pts_wrap_events()`/`dts_wrap_events()` need).
+//
+// `packets()` is computed FRESH from `borrowed_`/`owned_` on EVERY call,
+// never cached at construction or across a copy (T-05-72: a copied or
+// moved view must never carry a span that can dangle relative to the
+// copy's own storage) -- proven by the Task 2 copy-safety test.
+//
+// `overflowed()` is per-VIEW, not per-axis: it is set the instant EITHER
+// axis's own unwrap, or the cross-stream epoch shift below, cannot
+// complete without an int64 overflow (T-05-71) -- the axis (or record)
+// that overflowed is left at its last good (raw, un-unwrapped) value
+// rather than a wrapped or fabricated one; every consumer maps
+// `overflowed() == true` to `SkipReason::insufficient_data`.
+class TimelinePacketView {
+ public:
+  std::span<const PacketRecord> packets() const {
+    return (borrowed_ != nullptr) ? std::span<const PacketRecord>(*borrowed_) : std::span<const PacketRecord>(owned_);
+  }
+  bool unwrapped() const { return unwrapped_; }
+  bool overflowed() const { return overflowed_; }
+  std::int64_t pts_wrap_events() const { return pts_wrap_events_; }
+  std::int64_t dts_wrap_events() const { return dts_wrap_events_; }
+  std::int64_t epoch_shift() const { return epoch_shift_; }
+
+ private:
+  // Never both populated: `borrowed_` non-null means zero-copy (non-TS);
+  // `borrowed_` null means `owned_` is this view's own storage (TS). A
+  // copy of the view copies `owned_` by value (a genuine deep copy) and
+  // `borrowed_` by pointer value -- `packets()` recomputes the span from
+  // whichever is populated on the COPY's own members, never the
+  // original's.
+  const std::vector<PacketRecord>* borrowed_ = nullptr;
+  std::vector<PacketRecord> owned_;
+  bool unwrapped_ = false;
+  bool overflowed_ = false;
+  std::int64_t pts_wrap_events_ = 0;
+  std::int64_t dts_wrap_events_ = 0;
+  std::int64_t epoch_shift_ = 0;
+
+  friend TimelinePacketView make_timeline_packet_view(const StreamPacketScan& stream, bool is_ts);
+  friend std::vector<TimelinePacketView> make_timeline_packet_views(const PacketScanResult& scan, bool is_ts);
+};
+
+// Builds ONE stream's own `TimelinePacketView`. `is_ts` false: borrows
+// `stream.packets` verbatim, zero-copy, `unwrapped()` false -- the 33-bit
+// rule never touches a non-MPEG-TS input (doc 04 section 1.2 is
+// MPEG-TS-specific). `is_ts` true: copies `stream.packets` into the view's
+// own storage and unwraps the PTS axis, then the DTS axis, independently
+// (each axis's own wrap events are counted separately -- a stream can wrap
+// on one axis without wrapping on the other). `AV_NOPTS_VALUE`-sentinel
+// entries are excluded from each axis's own walk (via
+// `detail::build_axis_view`) and therefore never written back --
+// `owned_`'s sentinel entries are left exactly as copied. An axis whose
+// unwrap overflows (`UnwrapResult::overflowed`) marks the WHOLE view
+// `overflowed()` and leaves that axis's values at their raw, un-unwrapped
+// copies -- never a wrapped or fabricated value (T-05-71).
+TimelinePacketView make_timeline_packet_view(const StreamPacketScan& stream, bool is_ts);
+
+// Builds one `TimelinePacketView` per `scan.per_stream` entry (index-
+// aligned, mirroring `PacketScanResult::per_stream`'s own "per_stream[i]
+// IS AVStream i" contract every timeline consumer already relies on), then
+// -- only when `is_ts` is true -- applies doc 04 section 1.2's cross-stream
+// epoch rule: takes each stream's own FIRST RAW (pre-unwrap) PTS in read
+// order (the first non-`AV_NOPTS_VALUE` value; a stream with no real PTS
+// at all contributes no candidate). When the spread between the largest
+// and smallest such candidate exceeds `kTsPtsWrapHalfRange` (2^32), every
+// stream whose own first raw PTS sits BELOW `kTsPtsWrapHalfRange` is
+// placed one `kTsPtsWrapModulus` (2^33) epoch later -- every non-sentinel
+// PTS and DTS value in that stream's own (already per-stream-unwrapped)
+// view is shifted by `kTsPtsWrapModulus` via `detail::checked_add`, and
+// `epoch_shift()` on that view becomes `kTsPtsWrapModulus`. A stream whose
+// spread does not exceed the half-range, or whose own first raw PTS is
+// already at or above the half-range, is left unshifted
+// (`epoch_shift() == 0`). On `is_ts` false the epoch rule is a no-op
+// (non-TS views are already zero-copy and untouched). A checked-add
+// overflow while applying the shift marks that stream's own view
+// `overflowed()` rather than a wrapped or fabricated value.
+std::vector<TimelinePacketView> make_timeline_packet_views(const PacketScanResult& scan, bool is_ts);
 
 }  // namespace mediadiff
