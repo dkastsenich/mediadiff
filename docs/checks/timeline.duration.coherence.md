@@ -30,6 +30,28 @@ at all (every member but one is absent), both emit the unflagged value,
 `coherent`. The state is always visible as this check's own value in
 `inspect`, whether or not a comparison ever runs.
 
+### Declared durations on a wrapping MPEG-TS file
+
+This project reads MPEG-TS with libavformat's own overflow correction
+turned off, so this project's own doc 04 section 1.2 unwrap sees a real
+33-bit PTS/DTS wrap. On a genuinely-wrapping file, the container-declared
+and stream-declared members this check tests come from a second,
+overflow-corrected re-probe rather than the primary session's own
+(wrap-corrupted) values -- evidence carries
+`declared_duration_source: overflow_corrected_reprobe`. If that re-probe
+fails, times out, or disagrees with the primary session's own stream
+layout, both declared members are withheld
+(`declared_duration_source: withheld_wrap_uncorrectable`) rather than
+compared corrupt -- the withheld case needs no special handling in this
+check's own logic beyond that: with both members already `nullopt`, no
+pair naming either one is testable, so the pair falls through to the
+unflagged `coherent` value exactly as any other "member absent" case
+does. Every other file reports `declared_duration_source: demuxer`.
+
+**Contract note:** `declared_duration_source` is a new evidence key on
+this check (and on `timeline.duration` above), one of these three exact
+string values on every file.
+
 ## Why it matters
 
 A file whose container-declared duration, stream-declared duration and

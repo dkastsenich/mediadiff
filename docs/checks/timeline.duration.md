@@ -34,6 +34,38 @@ frame-end arithmetic both go through checked add/subtract; an overflow
 anywhere degrades the measurement to `insufficient_data` rather than
 reporting a wrapped or fabricated duration.
 
+### Declared durations on a wrapping MPEG-TS file
+
+This project reads MPEG-TS with libavformat's own overflow correction
+turned off (`AVFormatContext::correct_ts_overflow = 0`), so this project's
+own doc 04 section 1.2 unwrap sees a real 33-bit PTS/DTS wrap rather than
+having it silently pre-corrected upstream. That choice has a side effect:
+libavformat's own duration estimation -- exactly the **container-declared**
+and **stream-declared** members above, never the **computed** member --
+is corrupted on a genuinely-wrapping file with correction turned off.
+
+When a file genuinely wraps, this project recovers the two declared
+members from a SECOND, overflow-corrected open of the same bytes (never a
+second read of the primary session's own packets, and never that second
+open's own `start_time`, which sits on libavformat's own shifted epoch).
+Evidence carries `declared_duration_source: overflow_corrected_reprobe`
+in that case.
+
+If that second open fails, times out, or disagrees with the primary
+session's own stream layout, both declared members are **withheld**
+(reported in `absent_members`, never compared as corrupt values) with
+`declared_duration_source: withheld_wrap_uncorrectable` -- a withheld
+member is always preferable to a compared-corrupt one.
+
+Every other file -- every non-wrapping file, and every non-MPEG-TS file --
+reports `declared_duration_source: demuxer`, its own primary session's
+values, completely unmodified.
+
+**Contract note:** `declared_duration_source` is a new evidence key on
+this check (and on `timeline.duration.coherence` below). `--json` and
+snapshot consumers see it on every file, with one of these three exact
+string values.
+
 ## Why it matters
 
 A duration that silently shrinks or grows -- independent of what the
