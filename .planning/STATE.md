@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 5
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-16-PLAN.md
-last_updated: "2026-09-18T17:03:14.728Z"
+stopped_at: Completed 05-17-PLAN.md
+last_updated: "2026-09-18T17:19:45.395Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 5 execution started
-state_head: ae81c22c1b78fb83106d934e2ad535c76d5466cc
+state_head: 29016fc149f2e87cab76de93afe9ff45c24e5754
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 92
-  completed_plans: 83
+  completed_plans: 84
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 5 (Timeline Analysis) — EXECUTING
-Plan: 4 of 25
+Plan: 5 of 25
 Status: Ready to execute
 Last activity: 2026-09-18 — Phase 5 execution started
 
@@ -134,6 +134,7 @@ Progress: [█████████░] 92%
 | Phase 05 P14 | 55min | 3 tasks | 8 files |
 | Phase 05 P15 | ~50min | 3 tasks | 3 files |
 | Phase 05 P16 | ~35min | 3 tasks | 7 files |
+| Phase 05 P17 | ~15min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -314,6 +315,7 @@ Recent decisions affecting current work:
 - [Phase 5]: 05-15: PES-parse PID range (0x0010..0x1FFE excluding known PMT PIDs) needed no new exclusion logic beyond the existing pmt_owner_by_pid table
 - [Phase 5]: 05-15: stride join-rate measurement found a constant +4 byte offset shift on ts_192.ts and +16 on ts_204.ts between ts_scan's own PES offset and libavformat's PacketRecord::pos -- recorded, not adapted, per plan A1
 - [Phase 5]: 05-16: Per-axis unwrap in TimelinePacketView calls unwrap_ts_timestamps directly (not detail::unwrap_axis_view) to expose wrap_events, mirroring monotonic.cpp's emit_wrap_events -- still one unwrap implementation
+- [Phase 5]: 05-17: DemuxSession-level declared-duration override (never a call-site parameter) transparently corrects av_sync.cpp's own declared spans (video_span_ticks/audio_span_ticks) on a wrapping TS file with that file untouched -- av_sync.cpp's remaining raw-PTS-read gap (av_offset/av_drift) stays 05-18's scope
 
 ### Pending Todos
 
@@ -353,6 +355,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T17:03:14.531Z
-Stopped at: Completed 05-16-PLAN.md
+Last session: 2026-09-18T17:19:45.197Z
+Stopped at: Completed 05-17-PLAN.md
 Resume file: None
