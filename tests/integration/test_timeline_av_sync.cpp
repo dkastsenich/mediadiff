@@ -159,11 +159,17 @@ TEST_CASE("timeline_av_sync - the MPEG-TS remux (unknown-priming) pair declares 
                                    // by more than the fixed coherence threshold -- a real
                                    // property of this exact container pairing.
                                    "timeline.duration.coherence",
-                                   // The mpegts muxer/demuxer round-trip for a
-                                   // B-frame-less video stream produces exactly one
-                                   // `dts[1] <= dts[0]` tie at the very start of the
-                                   // stream.
-                                   "timeline.dts_monotonic",
+                                   // 05-20-PLAN.md (Gap 4, UD-3) NOTE, not a declared member:
+                                   // `timeline.dts_monotonic` used to fire here (the same
+                                   // `-c copy` MPEG-TS remux recipe as
+                                   // test_timeline_start_duration.cpp Test 4), but that tie
+                                   // never existed in the file -- container truth (PES
+                                   // headers carrying PTS only) now substitutes for
+                                   // libavformat's own read-back inference, and this check
+                                   // reports pass on both sides. See Test 4's own comment for
+                                   // the full explanation and re-measured evidence; this pair
+                                   // shares its exact recipe, so the same reasoning applies
+                                   // verbatim.
                                    // 05-19-PLAN.md (UD-2, WINDOWS #28) NOTE, not a declared
                                    // member: the AAC audio stream's native 1024-sample frame
                                    // period has no exact representation on MPEG-TS's 90kHz

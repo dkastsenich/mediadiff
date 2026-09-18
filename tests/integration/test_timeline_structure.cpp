@@ -646,3 +646,52 @@ TEST_CASE(
           // exact now, core/exact_int.h.)
       });
 }
+
+// --- Test 10 (05-20-PLAN.md, Gap 4, UD-3): the PTS-only MPEG-TS regression
+// guard -- container-truth DTS makes dts_monotonic pass on exactly the
+// fixture 05-VERIFICATION.md's Gap 4 named, compared against itself so the
+// candidate's own PES-only-PTS decode timeline is judged against its own
+// container truth, never libavformat's read-back inference.
+TEST_CASE(
+    "timeline_structure - an MPEG-TS stream copy whose PES headers carry PTS only reports dts_monotonic pass "
+    "from container-truth DTS",
+    "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_start_shift.ts"), fixture("timeline_start_shift.ts"), "remux");
+
+  bool saw_video_dts_monotonic = false;
+  for (const auto& finding : report.at("findings")) {
+    if (finding.at("id").get<std::string>() != "timeline.dts_monotonic") {
+      continue;
+    }
+    if (finding.at("scope").at("kind").get<std::string>() != "video") {
+      continue;
+    }
+    saw_video_dts_monotonic = true;
+    INFO("timeline.dts_monotonic (video) finding: " << finding.dump(2));
+    REQUIRE(finding.at("status").get<std::string>() == "pass");
+    REQUIRE(finding.at("candidate").get<int>() == 0);
+    // Evidence nests per side (verified against a real `mediadiff compare
+    // --json` run) -- asserted on the candidate side, per this plan's own
+    // instruction.
+    const nlohmann::ordered_json& candidate_evidence = finding.at("evidence").at("candidate");
+    REQUIRE(candidate_evidence.at("dts_source").at("source").get<std::string>() == "container_pes");
+    REQUIRE(candidate_evidence.at("dts_source").at("container_joined").get<int>() == 100);
+  }
+  REQUIRE(saw_video_dts_monotonic);
+
+  // Regression guard for the dts_backward pair's own genuine violations
+  // (Test 1 above): the `<=` rule's real case must still fail with its
+  // two timeline.dts_monotonic members, unaffected by this plan's
+  // substitution.
+  const nlohmann::ordered_json dts_backward_report =
+      compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_dts_backward.ts"), "remux");
+  int dts_backward_dts_monotonic_count = 0;
+  for (const auto& finding : dts_backward_report.at("findings")) {
+    if (finding.at("id").get<std::string>() == "timeline.dts_monotonic" &&
+        finding.at("status").get<std::string>() != "pass" && finding.at("status").get<std::string>() != "skipped") {
+      ++dts_backward_dts_monotonic_count;
+    }
+  }
+  REQUIRE(dts_backward_dts_monotonic_count == 2);
+}

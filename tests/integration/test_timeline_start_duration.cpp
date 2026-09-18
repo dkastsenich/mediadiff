@@ -167,18 +167,31 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // coherent on both sides, so only the audio-scoped finding
                                    // fires.
                                    "timeline.duration.coherence",
-                                   // 05-05-PLAN.md (TIME-01/TIME-04): the SAME remux, one more
-                                   // legitimate effect -- ffmpeg's own mpegts muxer/demuxer
-                                   // round-trip for a B-frame-less (`-bf 0`, no reordering) video
-                                   // stream reports the SECOND packet's own DTS equal to the FIRST
-                                   // packet's PTS (a one-packet lag, verified empirically via
-                                   // `ffprobe -show_entries packet=pts,dts` on the real committed
-                                   // fixture), producing exactly ONE `dts[1] <= dts[0]` tie at the
-                                   // very start of the stream -- a genuine, structural property of
-                                   // this MP4-to-TS remux pairing, not a defect this analyzer
-                                   // introduces. The MP4 baseline's own video dts_monotonic count
-                                   // stays `0`; only the candidate's video-scoped finding fires.
-                                   "timeline.dts_monotonic",
+                                   // 05-20-PLAN.md (Gap 4, UD-3) NOTE, not a declared member:
+                                   // `timeline.dts_monotonic` used to fire here on the candidate's
+                                   // video stream (a `dts[1] <= dts[0]` tie at the very start),
+                                   // but that tie never existed in the file -- the candidate's PES
+                                   // headers carry PTS only (strictly increasing), so under
+                                   // ISO/IEC 13818-1 its DTS equals its PTS. The tie was
+                                   // libavformat's own read-back inference, triggered by the MPEG-4
+                                   // VOL header this `-c copy` remux dropped. Since 05-20-PLAN.md's
+                                   // container-DTS post-pass substitutes the PES header's own DTS
+                                   // truth for every joined packet, `timeline.dts_monotonic` now
+                                   // measures 0 violations on both sides and reports pass -- no
+                                   // longer declared here. Re-measured directly against the real
+                                   // binary (--profile remux --json): candidate video-scope
+                                   // dts_monotonic status=pass, evidence
+                                   // dts_source={"source":"container_pes","container_joined":100,
+                                   // "unjoined_with_pos":0}. Every other member of this declared
+                                   // set is unaffected: `size.stream_bitrate` (video scope)'s own
+                                   // candidate value changed from 382306122.44ms to
+                                   // 378444444.44ms -- now an EXACT match with the baseline's own
+                                   // 378444444.44ms (the TS video's DTS span is now exactly 99
+                                   // frames, like the MP4's, per this plan's own flagged
+                                   // assumption A1) -- but its status stays `pass` on both sides of
+                                   // this change, so no declared-set member is added or dropped
+                                   // over it. `video.frame_rate.measured` is unchanged entirely
+                                   // (it does not consume the DTS axis on this pairing).
                                    // 05-19-PLAN.md (UD-2, WINDOWS #28) NOTE, not a declared member:
                                    // the AAC audio stream's own native 1024-sample frame period
                                    // (1024/44100s ~= 23.2199ms) has no exact representation on
