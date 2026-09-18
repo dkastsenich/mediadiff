@@ -134,4 +134,17 @@ Because the recommendation is `narrow-vocabulary`, no `## Implementation spec` s
 
 ## Decision
 
-PENDING — awaiting blocking-human checkpoint (05-21 Task 3)
+Decided 2026-09-18 by the human at the blocking-human checkpoint. The orchestrator presented the evidence above through AskUserQuestion; the human selected "Narrow vocabulary (Recommended)" for the step question and "span:declared (Recommended)" for the span question.
+
+```
+narrow-vocabulary
+span:declared — observed MPEG-TS packet extents include AAC priming/padding (no edit list), so span:observed only swaps the MP4-to-TS pairs' `irregular` reading for a false 39 ms linear-drift; the residual needs a priming/padding-aware span (follow-up).
+```
+
+### Orchestrator note (2026-09-18)
+
+Two review findings verified before this decision was presented to the human, recorded here as the correction of record rather than by rewriting the research sections above.
+
+1. **The `span:observed` MP4 regression cited under "Residual MP4-to-TS drift" is an artifact of the harness's variant, not of the plan's actual `span:observed` definition.** `_resolve_span` in `harness.py` always prefers the observed packet extent whenever the `span:observed` variant runs. But the plan (Task 2, and this Task 3's decision text) defines `span:observed` narrowly: observed extents used only "where the container declares no per-stream duration." Under that definition, MP4/MKV files — which do carry a declared per-stream duration — keep their declared spans regardless of which span-source variant is selected, so the false `constant-offset` -> `linear-drift` flip reported above on `timeline_start_base.mp4` and its MP4 siblings would not occur under the plan's own definition; it is a property of how the harness variant was implemented, not evidence against `span:observed` as scoped by the plan.
+   The `span:declared` recommendation still stands, but for a narrower reason: on the MPEG-TS side of the MP4-to-TS pairs, using observed extents produces a false `linear-drift` (`end_delta_ms=39`, `residual_max_ms=0`) against the MP4 baseline's correct `constant-offset` (`end_delta_ms=0`). Neither span source removes the MP4-to-TS residual — `span:declared` reports `irregular`/`residual_max_ms=42` (today's known-bad reading), `span:observed` reports a different but still-wrong `linear-drift`/`39 ms`. The pattern traces to the TS side's declared duration being libavformat's *estimate*, not a bitstream-carried value; the residual audio content genuinely includes AAC priming/padding samples with no edit list to exclude them, so neither span-source choice by itself is sound. The lossless MP4-to-TS remux pairs currently report false `timeline.av_drift` and fail `timeline.av_drift.pattern`; closing this needs a priming/padding-aware span, filed as a follow-up (05-22 records the waived residual entry with this reason).
+2. **D1's failure on soundness criterion (c) traces to one point: `k=31`, the file's absolute declared-end checkpoint, falling past the post-splice segment's real audio content.** A variant that simply excludes checkpoints with no corresponding real audio content in their segment was not evaluated in this research. It is recorded here as the lead for whenever `step` is revisited once Phase 6's audio decode path exists to disambiguate A1's dropout-vs-step ambiguity. A1 applies to any such variant exactly as it applies to D1/D2 today: it would still report `step` for a dropout-style trim that keeps timestamps, since the packet timeline alone cannot distinguish the two readings.

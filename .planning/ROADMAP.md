@@ -416,7 +416,7 @@ Plans:
 **Wave 16** *(blocked on 05-18)*
 
 - [x] 05-19-PLAN.md — Gap 5 (WINDOWS #28): sub-tick-quantization-aware vfr_profile bins and jitter sigma (UD-2), plus the NTSC MP4/MKV whole-report assertion (TIME-05/06/09, DOC-04)
-- [ ] 05-21-PLAN.md — Gap 1, research: a calibrated scratch harness evaluating piecewise checkpoint mappings, then a blocking-human decision to adopt a design or narrow the vocabulary (UD-1) (TIME-07)
+- [x] 05-21-PLAN.md — Gap 1, research: a calibrated scratch harness evaluating piecewise checkpoint mappings, then a blocking-human decision to adopt a design or narrow the vocabulary (UD-1) (TIME-07)
 
 **Wave 17** *(blocked on 05-15, 05-17, 05-18, 05-19)*
 
