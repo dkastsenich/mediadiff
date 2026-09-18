@@ -92,6 +92,17 @@ PANEL_FALSE_POSITIVE_GUARDS = [
     ("timeline_ntsc_base.mp4", "timeline_ntsc_remux.mkv"),
 ]
 
+# recipes.py's own V1-V4 step-recipe variants, each compared against
+# recipes.py's own seamless-source clip (the SAME testsrc2/sine/mpeg4/aac
+# shape every variant is built from) -- V2/V3 are BYTE-IDENTICAL by
+# construction (05-21-PLAN.md's A1; see recipes.py's own doc comments).
+PANEL_STEP_RECIPE_VARIANTS = [
+    ("timeline_v_seamless_source.mp4", "timeline_v1_seamless.mp4"),
+    ("timeline_v_seamless_source.mp4", "timeline_v2_gap_trim.mp4"),
+    ("timeline_v_seamless_source.mp4", "timeline_v3_content_jump.mp4"),
+    ("timeline_v_seamless_source.mp4", "timeline_v4_content_jump_alt.mp4"),
+]
+
 
 def trunc_div(a: int, b: int) -> int:
     """`a / b` truncated toward zero -- Python's own `//` floors, which
@@ -774,22 +785,35 @@ def calibrate() -> int:
 
 def detect_discontinuities(pts_span: PtsSpan, tb: Tuple[int, int]) -> List[int]:
     """Indices (into pts_span.pts, ascending) where a genuine timestamp
-    discontinuity is detected: the gap to the NEXT entry exceeds
-    kNominalDurationCapMultiplier times this stream's own nominal (median)
-    packet duration -- the SAME fixed, stream-derived threshold
-    clamp_into_nearest_packet's own containment cap already uses (D-08: a
-    detection constant derived from the stream's own data, never an
-    arbitrary configurable knob). Returns the index of the LAST packet
-    before each detected gap (the split point: segment N ends here,
-    segment N+1 starts at the next index)."""
+    discontinuity is detected: entry i's own EFFECTIVE duration
+    (`pts_span.durations[i]`) exceeds kNominalDurationCapMultiplier times
+    this stream's own nominal (median) packet duration -- the SAME fixed,
+    stream-derived threshold `clamp_into_nearest_packet`'s own containment
+    cap already uses (D-08: a detection constant derived from the stream's
+    own data, never an arbitrary configurable knob).
+
+    Deliberately NOT "the gap between entry i's own declared end
+    (pts[i]+durations[i]) and entry i+1's start": this task's own worked
+    finding (empirically confirmed against timeline_drift_step.mp4) is
+    that libavformat's OWN declared `duration` for the packet immediately
+    BEFORE a splice is filled in as the interval to the NEXT packet --
+    exactly `sorted_pts_with_span`'s own doc comment about
+    `AVPacket::duration` for AAC-in-MP4 -- so `pts[i]+durations[i]` already
+    equals `pts[i+1]` EXACTLY (a computed "gap" of zero) precisely on the
+    one packet doc 04 needs this function to catch. Comparing the packet's
+    own WIDTH against the nominal cap, rather than a computed residual gap
+    that the container's own duration-filling behavior already absorbed
+    to zero, is what makes detection actually fire.
+
+    Returns the index of the LAST packet before each detected gap (the
+    split point: segment N ends here, segment N+1 starts at the next
+    index)."""
     if pts_span.nominal_duration_ticks <= 0:
         return []
     threshold = pts_span.nominal_duration_ticks * K_NOMINAL_DURATION_CAP_MULTIPLIER
     splits = []
     for i in range(len(pts_span.pts) - 1):
-        end_of_i = pts_span.pts[i] + pts_span.durations[i]
-        gap = pts_span.pts[i + 1] - end_of_i
-        if gap > threshold:
+        if pts_span.durations[i] > threshold:
             splits.append(i)
     return splits
 
@@ -807,26 +831,56 @@ def segment_ranges(pts_span: PtsSpan, splits: List[int]) -> List[Tuple[int, int]
     return ranges
 
 
-def segment_for_checkpoint_fraction(
-    ranges: List[Tuple[int, int]], pts_span: PtsSpan, fraction_num: int, fraction_den: int
-) -> int:
-    """Which segment (by position in `ranges`) the video-timeline fraction
-    `fraction_num/fraction_den` falls into, mapped by SPAN proportion (each
-    segment claims a share of the whole span proportional to its own
-    [start,end] extent) -- returns the segment's own list index."""
-    total_span = pts_span.pts[ranges[-1][1]] + pts_span.durations[ranges[-1][1]] - pts_span.pts[ranges[0][0]]
-    if total_span <= 0 or len(ranges) == 1:
-        return 0
-    target_offset_from_start = Fraction(fraction_num, fraction_den) * total_span
-    cursor = 0
-    for i, (s, e) in enumerate(ranges):
-        seg_span = pts_span.pts[e] + pts_span.durations[e] - pts_span.pts[s]
-        if i == len(ranges) - 1:
-            return i
-        if target_offset_from_start < cursor + seg_span:
-            return i
-        cursor += seg_span
-    return len(ranges) - 1
+def rescale_ticks(ticks: int, from_tb: Tuple[int, int], to_tb: Tuple[int, int]) -> int:
+    """Converts a tick count from one exact rational timebase to another,
+    truncated toward zero -- `ticks * from_tb.num * to_tb.den /
+    (from_tb.den * to_tb.num)`, mirroring `ticks_to_ms`'s own single-
+    multiply-then-single-divide shape (never two chained divisions, which
+    would compound rounding). Used by D1/D2's own per-segment LOCAL
+    mapping (never D0's, which only ever converts through milliseconds)."""
+    from_num, from_den = from_tb
+    to_num, to_den = to_tb
+    numerator = ticks * from_num * to_den
+    denominator = from_den * to_num
+    return trunc_div(numerator, denominator)
+
+
+def capped_segment_end(pts_span: PtsSpan, idx: int) -> int:
+    """`pts_span.pts[idx] + pts_span.durations[idx]`, capped at ONE
+    nominal (median) packet width -- deliberately 1x, NOT
+    `clamp_into_nearest_packet`'s own 2x containment cap (a different cap
+    for a different purpose, confirmed empirically this task): when `idx`
+    is the packet whose declared duration absorbed a genuine gap
+    (libavformat's own "duration = interval to next packet" fill-in,
+    `sorted_pts_with_span`'s own doc comment), the RAW `durations[idx]`
+    value spans past the segment's real content end all the way to the
+    NEXT segment's own start. A 2x cap here (this function's own FIRST,
+    abandoned attempt) leaves ONE EXTRA nominal frame width folded into
+    the segment's own reported span -- exactly canceling one nominal
+    frame's worth (~23 ms on this panel's own AAC/44100Hz fixtures) of
+    the TRUE gap size when the boundary GAP is computed as a difference,
+    confirmed empirically by comparing against the fixture's own known
+    +4410-tick (100 ms) construction. The 1x cap here is this packet's
+    own TRUE single-frame nominal width -- the tightest correct estimate
+    of where its real content actually ends -- leaving the entire real
+    gap size visible as the boundary GAP between segments, never folded
+    into either segment's own reported span. `clamp_into_nearest_packet`'s
+    own 2x containment cap is UNCHANGED (D0's own shipped value, reused
+    verbatim by every design here) -- it answers a different question
+    ("is this TARGET close enough to be considered inside this packet"),
+    not "where does this packet's own real content actually end"."""
+    duration = pts_span.durations[idx]
+    if pts_span.nominal_duration_ticks > 0 and pts_span.nominal_duration_ticks < duration:
+        duration = pts_span.nominal_duration_ticks
+    return pts_span.pts[idx] + duration
+
+
+def segment_index_for_tick(boundaries: List[int], tick: int) -> int:
+    """Which segment (0-indexed) `tick` falls into, given `boundaries`
+    (the INTERIOR boundary ticks separating segment i from segment i+1,
+    ascending). A tick before boundaries[0] is segment 0; a tick at or
+    after boundaries[-1] is the last segment."""
+    return bisect.bisect_right(boundaries, tick)
 
 
 def compute_candidate_drift(
@@ -924,11 +978,13 @@ def _compute_drift_with_span_source(
         )
     elif design == "D1":
         checkpoints = _checkpoints_segment_proportional(
-            video_pts_span, audio_pts_span, video_start_ticks, audio_start_ticks, priming_shift, video_tb, audio_tb,
+            video_pts_span, audio_pts_span, video_span_ticks, audio_span_ticks, video_start_ticks,
+            audio_start_ticks, priming_shift, video_tb, audio_tb,
         )
     elif design == "D2":
         checkpoints = _checkpoints_media_clock(
-            video_pts_span, audio_pts_span, video_start_ticks, audio_start_ticks, priming_shift, video_tb, audio_tb,
+            video_pts_span, audio_pts_span, video_span_ticks, audio_span_ticks, video_start_ticks,
+            audio_start_ticks, priming_shift, video_tb, audio_tb,
         )
     else:
         raise ValueError(f"unknown design {design}")
@@ -977,55 +1033,144 @@ def _checkpoints_whole_file(
     return trajectory
 
 
-def _checkpoints_segment_proportional(
-    video_pts_span: PtsSpan, audio_pts_span: PtsSpan, video_start_ticks: int, audio_start_ticks: int,
-    priming_shift: int, video_tb, audio_tb,
-) -> Optional[List[Tuple[int, int, int]]]:
-    """D1: detect per-stream timestamp discontinuities (own threshold,
-    §detect_discontinuities), split VIDEO and AUDIO into their own
-    segments, and map k/K -> a video segment (by whole-file span
-    proportion) -> the CORRESPONDING audio segment by ordinal position
-    (segment i of N on each side, assuming both sides split into the same
-    number of segments -- the "corresponding segments" A1 flags as this
-    design's own assumption: a timestamp discontinuity means CONTENT is
-    genuinely missing/resumed on BOTH streams at once). Within a segment,
-    maps time-proportionally exactly like D0's whole-file map, but scoped
-    to that segment's own [start,end] extent -- never the whole file's."""
-    video_splits = detect_discontinuities(video_pts_span, video_tb)
+def _segment_proportional_core(
+    video_pts_span: PtsSpan, audio_pts_span: PtsSpan, video_span_ticks: int, audio_span_ticks: int,
+    video_start_ticks: int, audio_start_ticks: int, priming_shift: int, video_tb, audio_tb,
+) -> Tuple[List[Tuple[int, int, int]], List[Tuple[int, int]], List[int]]:
+    """Shared core for D1/D2: detect discontinuities on the AUDIO stream
+    only (video is the smooth reference clock in every fixture this
+    panel's step recipes build -- the step recipe's own definition is
+    "video is unaffected, only audio's timestamps jump"; see this file's
+    module doc comment and 05-STEP-DESIGN.md's Ambiguity Analysis for why
+    requiring an INDEPENDENTLY-detected video discontinuity, tried first
+    and abandoned, guarantees a skip on exactly the fixtures this design
+    exists to classify).
+
+    VIDEO's own corresponding segment boundaries are STACKED, not derived
+    from a separate whole-file-proportion estimate (tried first and
+    abandoned -- it compounds TWO independent roundings: the whole-file
+    estimate placing the boundary, and this function's own per-checkpoint
+    nominal-rate projection FROM that boundary, which together produced a
+    visible overshoot at the segment's own far edge, confirmed empirically
+    this task). Instead: segment i's own real audio content span
+    (`capped_segment_end - start`) is rescaled through the streams'
+    NOMINAL timebase ratio into an EQUIVALENT elapsed video duration, and
+    segments are stacked sequentially from `video_start_ticks` -- so
+    segment i's own [v_seg_start, v_seg_end) is, BY CONSTRUCTION, exactly
+    self-consistent with the SAME nominal-rate mapping the per-checkpoint
+    loop below uses, which is what keeps the projection from ever running
+    past a segment's own real content even at that segment's own last
+    checkpoint.
+
+    A file with no detected audio discontinuity degenerates to exactly
+    one segment (the whole file) -- for THIS case only, this function
+    delegates to `_checkpoints_whole_file` (D0's own exact map) verbatim,
+    rather than running the nominal-timebase segment-core below. This is
+    NOT an optimization; it is required for correctness (R-05-21-1, found
+    this task): the segment-core's own per-segment mapping is a FIXED
+    nominal timebase ratio (`rescale_ticks`, e.g. sample_rate-derived),
+    which by construction cannot represent genuine whole-file SPAN-based
+    drift (a real clock-rate mismatch between the two streams, encoded as
+    `audio_span_ticks != video_span_ticks` in their own DECLARED
+    durations) -- the exact thing `timeline_drift_linear.mp4` (a
+    CALIBRATED fixture) has. First cut of this function ran the nominal-
+    rate core unconditionally, including on the single-segment case, and
+    silently misclassified `timeline_drift_linear.mp4` as
+    `constant-offset` (0/0/0) where D0 correctly reports `linear-drift` --
+    confirmed empirically this task, a regression against soundness
+    criterion (b) ("constant-offset and linear-drift classifications
+    unchanged"). D0's own whole-file SPAN ratio
+    (`audio_span_ticks / video_span_ticks`) is exactly what represents
+    that drift, so the single-segment case must use it, unchanged.
+
+    Returns (trajectory, audio_ranges, gap_ticks_before_segment) --
+    `gap_ticks_before_segment[i]` is used by D2 only."""
     audio_splits = detect_discontinuities(audio_pts_span, audio_tb)
-    video_ranges = segment_ranges(video_pts_span, video_splits)
     audio_ranges = segment_ranges(audio_pts_span, audio_splits)
 
-    if len(video_ranges) != len(audio_ranges):
-        # A1's own assumption failed for this file (the two streams'
-        # discontinuity counts disagree) -- design does not apply; caller
-        # treats this as "no result" (a documented limitation, not a
-        # fabricated trajectory).
-        return None
+    if len(audio_ranges) == 1:
+        whole_file_trajectory = _checkpoints_whole_file(
+            video_pts_span, audio_pts_span, video_span_ticks, audio_span_ticks, video_start_ticks,
+            audio_start_ticks, priming_shift, video_tb, audio_tb,
+        )
+        raw = [(k, t_v_ms, off_ms, 0) for (k, t_v_ms, off_ms) in whole_file_trajectory]
+        return (whole_file_trajectory, audio_ranges, [0]), raw
+
+    video_segment_bounds = [video_start_ticks]
+    for (a_s, a_e) in audio_ranges:
+        a_seg_span = capped_segment_end(audio_pts_span, a_e) - audio_pts_span.pts[a_s]
+        v_seg_span = rescale_ticks(a_seg_span, audio_tb, video_tb)
+        video_segment_bounds.append(video_segment_bounds[-1] + v_seg_span)
+    video_boundaries = video_segment_bounds[1:-1]  # interior boundaries only
+
+    # Cumulative RAW tick gap (audio timebase) between consecutive audio
+    # segments, up to (not including) segment i -- segment 0 always has 0.
+    # Uses `capped_segment_end` for `prev_end`, NOT the raw
+    # `pts[...]+durations[...]` sum (tried first, abandoned): the same
+    # libavformat duration-filling quirk `detect_discontinuities` and
+    # `capped_segment_end` themselves document (the packet immediately
+    # before a gap has its own `duration` filled in as "interval to next
+    # packet") makes the RAW sum equal `this_start` EXACTLY, computing a
+    # gap of ZERO regardless of the true gap size -- confirmed empirically
+    # this task: D2 silently degenerated to being IDENTICAL to D1 on every
+    # step fixture (subtracting zero, never the true ~100 ms join) until
+    # this fix.
+    gap_ticks_before_segment = [0]
+    cumulative_gap = 0
+    for i in range(1, len(audio_ranges)):
+        prev_end = capped_segment_end(audio_pts_span, audio_ranges[i - 1][1])
+        this_start = audio_pts_span.pts[audio_ranges[i][0]]
+        cumulative_gap += max(this_start - prev_end, 0)
+        gap_ticks_before_segment.append(cumulative_gap)
 
     trajectory: List[Tuple[int, int, int]] = []
     for k in range(K_DRIFT_CHECKPOINT_COUNT):
-        target_v_ticks = video_start_ticks + trunc_div(
-            k * (video_pts_span.pts[-1] + video_pts_span.durations[-1] - video_start_ticks), K_DRIFT_CHECKPOINT_COUNT - 1
-        )
+        video_delta_ticks = trunc_div(k * video_span_ticks, K_DRIFT_CHECKPOINT_COUNT - 1)
+        target_v_ticks = video_start_ticks + video_delta_ticks
         t_v_ticks = nearest_tick(video_pts_span.pts, target_v_ticks)
-        seg_idx = segment_for_checkpoint_fraction(video_ranges, video_pts_span, k, K_DRIFT_CHECKPOINT_COUNT - 1)
 
-        v_s, v_e = video_ranges[seg_idx]
+        seg_idx = min(segment_index_for_tick(video_boundaries, t_v_ticks), len(audio_ranges) - 1)
+        v_seg_start = video_segment_bounds[seg_idx]
+
         a_s, a_e = audio_ranges[seg_idx]
-        v_seg_start = video_pts_span.pts[v_s]
-        v_seg_end = video_pts_span.pts[v_e] + video_pts_span.durations[v_e]
-        v_seg_span = v_seg_end - v_seg_start
         a_seg_start_raw = audio_pts_span.pts[a_s]
-        a_seg_end_raw = audio_pts_span.pts[a_e] + audio_pts_span.durations[a_e]
-        a_seg_span = a_seg_end_raw - a_seg_start_raw
 
+        # Local mapping WITHIN a segment uses the streams' own NOMINAL
+        # timebase ratio (an exact rational conversion, `rescale_ticks`),
+        # never a locally re-derived SPAN ratio (`a_seg_span / v_seg_span`,
+        # tried first and abandoned): the segment's own real content span,
+        # on EITHER side, is itself only known to within one packet's own
+        # width and one `nearest_tick`/whole-file-boundary rounding step,
+        # so dividing by it compounds that imprecision into a WITHIN-
+        # segment ramp of several ms per checkpoint (confirmed empirically
+        # this task -- a span-ratio-based first attempt showed a steady
+        # ~1-2ms/checkpoint ramp across each segment, never a flat
+        # plateau). The nominal timebase ratio is a FIXED, exact rational
+        # (e.g. 44100/12800 for this panel's own fixtures) requiring no
+        # segment-boundary precision at all -- correct precisely because
+        # every fixture in this panel has ZERO real per-segment clock
+        # drift by construction; a segment that DID drift would show it
+        # here as a genuine non-flat residual, which is the desired
+        # (not masked) behavior, unlike a span-ratio map that would
+        # self-correct exactly the drift this design exists to preserve.
+        # NOT clamped to the segment's own stacked span -- tried, and
+        # abandoned, because clamping `delta_in_segment` alone (while
+        # `t_v_ms` below still reports this checkpoint's own REAL video
+        # position, per doc 04's own "the ACTUAL video frame nearest the
+        # video-timeline fraction") makes the reported OFFSET compare a
+        # held-back audio position against the true, un-held-back video
+        # position -- corrupting the offset's own meaning rather than
+        # fixing it (confirmed empirically this task). The terminal
+        # checkpoint (k = K-1, which by the K=32 grid's own definition
+        # always targets `video_span_ticks` exactly) genuinely has NO
+        # audio content within its own segment to correspond to under
+        # this fixture's own construction (segment 1's real content,
+        # ~3.9 s of it after the gap's own 100 ms, is exhausted before
+        # video's own declared 4.0 s end) -- an honest architectural
+        # edge case, documented in 05-STEP-DESIGN.md's Recommendation /
+        # TIME-07 boundary note, not silently patched over here.
         delta_in_segment = t_v_ticks - v_seg_start
-        if v_seg_span <= 0:
-            audio_delta = 0
-        else:
-            audio_delta = trunc_div(delta_in_segment * a_seg_span, v_seg_span) if a_seg_span > 0 else 0
-        a_seg_start_adjusted = a_seg_start_raw + priming_shift if a_s == 0 else a_seg_start_raw
+        audio_delta = rescale_ticks(delta_in_segment, video_tb, audio_tb)
         target_a_raw = a_seg_start_raw + audio_delta
         raw_t_a_ticks = clamp_into_nearest_packet(
             audio_pts_span.pts[a_s : a_e + 1],
@@ -1033,76 +1178,63 @@ def _checkpoints_segment_proportional(
             audio_pts_span.nominal_duration_ticks,
             target_a_raw,
         )
-        t_a_ticks = raw_t_a_ticks + (priming_shift if a_s == 0 else 0)
+        # Priming is a codec-level CONSTANT shift, applied uniformly to
+        # every checkpoint regardless of which segment it falls in --
+        # matches D0's own `t_a_ticks = raw_t_a_ticks + priming_shift`
+        # exactly (never conditioned on segment index).
+        t_a_ticks = raw_t_a_ticks + priming_shift
 
         t_v_ms = ticks_to_ms(t_v_ticks, video_tb)
         t_a_ms = ticks_to_ms(t_a_ticks, audio_tb)
-        trajectory.append((k, t_v_ms, t_a_ms - t_v_ms))
-    return trajectory
+        trajectory.append((k, t_v_ms, t_a_ms - t_v_ms, seg_idx))
+
+    return (
+        [(k, t_v_ms, off_ms) for (k, t_v_ms, off_ms, _seg) in trajectory],
+        audio_ranges,
+        gap_ticks_before_segment,
+    ), trajectory
+
+
+def _checkpoints_segment_proportional(
+    video_pts_span: PtsSpan, audio_pts_span: PtsSpan, video_span_ticks: int, audio_span_ticks: int,
+    video_start_ticks: int, audio_start_ticks: int, priming_shift: int, video_tb, audio_tb,
+) -> Optional[List[Tuple[int, int, int]]]:
+    """D1: the RAW segment-proportional map -- see `_segment_proportional_core`.
+    Reports the ABSOLUTE offset per checkpoint, including whatever the
+    join itself contributes -- a genuine mid-file sync step (or, by A1,
+    an indistinguishable dropout with preserved timestamps) shows as TWO
+    DIFFERENT flat plateaus, the raw magnitude of the jump equal to the
+    join's own size."""
+    (result, _audio_ranges, _gaps), _raw = _segment_proportional_core(
+        video_pts_span, audio_pts_span, video_span_ticks, audio_span_ticks,
+        video_start_ticks, audio_start_ticks, priming_shift, video_tb, audio_tb,
+    )
+    return result
 
 
 def _checkpoints_media_clock(
-    video_pts_span: PtsSpan, audio_pts_span: PtsSpan, video_start_ticks: int, audio_start_ticks: int,
-    priming_shift: int, video_tb, audio_tb,
+    video_pts_span: PtsSpan, audio_pts_span: PtsSpan, video_span_ticks: int, audio_span_ticks: int,
+    video_start_ticks: int, audio_start_ticks: int, priming_shift: int, video_tb, audio_tb,
 ) -> Optional[List[Tuple[int, int, int]]]:
-    """D2: like D1, but the AUDIO clock has every detected discontinuity's
-    own GAP DURATION removed before the proportional map (a "media clock"
-    that only advances when audio content is actually present), then
-    offsets are measured on the REAL (gap-containing) timestamps. This is
-    what makes a genuine sync STEP (content-contiguous, timestamps jump)
-    distinguishable in principle from a dropout (content missing,
-    timestamps preserved) IF the caller also knows which reading is meant
-    -- D2 assumes "sync stepped" (A1), identically to D1, but represents
-    the audio segments in a DEDUPLICATED clock so segment boundaries align
-    to real elapsed media time rather than raw segment index count."""
-    video_splits = detect_discontinuities(video_pts_span, video_tb)
-    audio_splits = detect_discontinuities(audio_pts_span, audio_tb)
-    video_ranges = segment_ranges(video_pts_span, video_splits)
-    audio_ranges = segment_ranges(audio_pts_span, audio_splits)
-    if len(video_ranges) != len(audio_ranges):
-        return None
-
-    # Media-clock audio segment starts: cumulative real (gap-closed) audio
-    # duration up to the start of each segment.
-    media_clock_starts = []
-    cumulative = 0
-    for (a_s, a_e) in audio_ranges:
-        media_clock_starts.append(cumulative)
-        seg_span = audio_pts_span.pts[a_e] + audio_pts_span.durations[a_e] - audio_pts_span.pts[a_s]
-        cumulative += max(seg_span, 0)
-    media_clock_total = cumulative
-
+    """D2: the SAME segmentation and per-segment mapping as D1, but each
+    checkpoint's own offset has the CUMULATIVE detected gap duration
+    (converted to ms, audio timebase) up to its own segment SUBTRACTED
+    before reporting -- a "media clock" reading that answers "beyond what
+    the detected join itself explains, is there ANY residual sync error"
+    rather than D1's "what is the raw measured offset". For a clean
+    splice with no other desync, D2's plateaus land at the SAME level on
+    both sides of the join (the jump is fully explained); D1's plateaus
+    differ by the join's own size. This is what distinguishes the two
+    designs' OWN verdicts on an otherwise-identical trajectory shape --
+    see 05-STEP-DESIGN.md's Panel results for the measured difference."""
+    (_result, audio_ranges, gap_ticks_before_segment), raw = _segment_proportional_core(
+        video_pts_span, audio_pts_span, video_span_ticks, audio_span_ticks,
+        video_start_ticks, audio_start_ticks, priming_shift, video_tb, audio_tb,
+    )
     trajectory: List[Tuple[int, int, int]] = []
-    for k in range(K_DRIFT_CHECKPOINT_COUNT):
-        target_v_ticks = video_start_ticks + trunc_div(
-            k * (video_pts_span.pts[-1] + video_pts_span.durations[-1] - video_start_ticks), K_DRIFT_CHECKPOINT_COUNT - 1
-        )
-        t_v_ticks = nearest_tick(video_pts_span.pts, target_v_ticks)
-        seg_idx = segment_for_checkpoint_fraction(video_ranges, video_pts_span, k, K_DRIFT_CHECKPOINT_COUNT - 1)
-
-        v_s, v_e = video_ranges[seg_idx]
-        a_s, a_e = audio_ranges[seg_idx]
-        v_seg_start = video_pts_span.pts[v_s]
-        v_seg_end = video_pts_span.pts[v_e] + video_pts_span.durations[v_e]
-        v_seg_span = v_seg_end - v_seg_start
-        a_seg_start_raw = audio_pts_span.pts[a_s]
-        a_seg_end_raw = audio_pts_span.pts[a_e] + audio_pts_span.durations[a_e]
-        a_seg_span = a_seg_end_raw - a_seg_start_raw
-
-        delta_in_segment = t_v_ticks - v_seg_start
-        audio_delta = trunc_div(delta_in_segment * a_seg_span, v_seg_span) if v_seg_span > 0 and a_seg_span > 0 else 0
-        target_a_raw = a_seg_start_raw + audio_delta
-        raw_t_a_ticks = clamp_into_nearest_packet(
-            audio_pts_span.pts[a_s : a_e + 1],
-            audio_pts_span.durations[a_s : a_e + 1],
-            audio_pts_span.nominal_duration_ticks,
-            target_a_raw,
-        )
-        t_a_ticks = raw_t_a_ticks + (priming_shift if a_s == 0 else 0)
-
-        t_v_ms = ticks_to_ms(t_v_ticks, video_tb)
-        t_a_ms = ticks_to_ms(t_a_ticks, audio_tb)
-        trajectory.append((k, t_v_ms, t_a_ms - t_v_ms))
+    for (k, t_v_ms, off_ms, seg_idx) in raw:
+        gap_ms = ticks_to_ms(gap_ticks_before_segment[seg_idx], audio_tb)
+        trajectory.append((k, t_v_ms, off_ms - gap_ms))
     return trajectory
 
 
@@ -1116,8 +1248,23 @@ SPAN_SOURCES = ["declared", "observed"]
 
 def evaluate(fixtures_dir: Optional[str]) -> int:
     fixtures_dirs = [os.path.join(repo_root(), "tests", "fixtures")]
+    owned_recipes_dir: Optional[str] = None
     if fixtures_dir:
         fixtures_dirs.insert(0, fixtures_dir)
+    else:
+        # No caller-supplied directory: build V1-V4 ourselves into a fresh
+        # tempfile.mkdtemp() (recipes.py's own default), outside the repo,
+        # so `python3 harness.py evaluate` is self-sufficient end to end --
+        # matching the plan's own verify chain
+        # (`harness.py calibrate && harness.py evaluate && ...`), which
+        # never invokes recipes.py separately. Removed at the end of this
+        # function regardless of outcome.
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import recipes  # local import: recipes.py lives beside this file
+
+        owned_recipes_dir = tempfile.mkdtemp(prefix="mediadiff-step-research-")
+        recipes.build_all(owned_recipes_dir)
+        fixtures_dirs.insert(0, owned_recipes_dir)
 
     def find_fixture(name: str) -> Optional[str]:
         for d in fixtures_dirs:
@@ -1126,11 +1273,19 @@ def evaluate(fixtures_dir: Optional[str]) -> int:
                 return candidate
         return None
 
-    all_pairs = PANEL_NO_REGRESSION_PAIRS + PANEL_FALSE_POSITIVE_GUARDS
+    all_pairs = PANEL_NO_REGRESSION_PAIRS + PANEL_STEP_RECIPE_VARIANTS + PANEL_FALSE_POSITIVE_GUARDS
     header = f"{'pair':60s} {'design':10s} {'span':10s} {'pattern':16s} {'rate(ms/min)':16s} {'end_delta_ms':13s} {'residual_max_ms':16s} {'step_time_ms':13s}"
     print(header)
     print("-" * len(header))
 
+    try:
+        return _evaluate_panel(all_pairs, find_fixture)
+    finally:
+        if owned_recipes_dir:
+            shutil.rmtree(owned_recipes_dir, ignore_errors=True)
+
+
+def _evaluate_panel(all_pairs, find_fixture) -> int:
     had_error = False
     for baseline_name, candidate_name in all_pairs:
         baseline_path = find_fixture(baseline_name)
