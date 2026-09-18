@@ -34,7 +34,7 @@ rather than reporting a count derived from an incomplete sweep -- a count
 from a truncated scan understates the real count, which is worse than no
 answer at all.
 
-## MPEG-TS decode timestamps (UD-3)
+### MPEG-TS decode timestamps (UD-3)
 
 The rule above is unchanged: `dts[i] <= dts[i-1]` still counts, including a
 genuine tie. What changes on MPEG-TS is *where the DTS sequence under test
