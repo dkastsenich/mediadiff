@@ -6,6 +6,19 @@
 // a run. `tb = Rational{1, 1000}` is used throughout except Test 6, so that
 // one "tick" is exactly one millisecond and every hand-computed millisecond
 // value is the tick value itself, unless stated otherwise.
+//
+// 05-22-PLAN.md Task 2 (narrow-vocabulary branch, 05-STEP-DESIGN.md's
+// recorded Decision): `DriftFit::step_time_ms` no longer exists and
+// `DriftPattern::step` no longer exists -- every `CHECK_FALSE(fit->
+// step_time_ms.has_value())` / `CHECK(... == ...->step_time_ms)` assertion
+// below is removed (the type itself no longer has the member, so leaving
+// them would not compile). Test 3 (formerly named for the "step"
+// classification it used to assert at that checkpoint's own t_v) is
+// renamed and its assertion rewritten to state the decided outcome,
+// `irregular` -- its residual_max_ms hand-computation is unchanged, since
+// fit_drift's residual/epsilon math was not touched, only the
+// plateau-detection branch that used to route a residual_max_ms=37
+// trajectory to the now-removed pattern value.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -23,7 +36,6 @@ using mediadiff::Rational;
 using mediadiff::fit_drift;
 using mediadiff::kDriftCheckpointCount;
 using mediadiff::kDriftEpsilonMs;
-using mediadiff::kDriftStepResidualMultiple;
 
 namespace {
 constexpr Rational kMs{1, 1000};
@@ -43,7 +55,6 @@ TEST_CASE("av_drift - fit_drift on a constant 50ms offset classifies constant-of
   CHECK(fit->rate_ms_per_min_num == 0);
   CHECK(fit->end_delta_ms == 0);
   CHECK(fit->residual_max_ms == 0);
-  CHECK_FALSE(fit->step_time_ms.has_value());
 }
 
 // --- Test 2: exact linear ramp -> linear-drift, exact rational rate --------
@@ -66,17 +77,24 @@ TEST_CASE("av_drift - fit_drift on a perfect 1ms/checkpoint ramp one minute apar
   CHECK(fit->residual_max_ms == 0);
 }
 
-// --- Test 3: a single mid-sequence jump > 3 epsilons with flat plateaus on
-// both sides -> step, at the correct checkpoint time -------------------------
+// --- Test 3 (narrow-vocabulary, 05-22-PLAN.md): a single mid-sequence jump
+// with flat RAW-offset plateaus on both sides -- previously classified
+// `step`, now classifies `irregular` ------------------------------------
 // Hand-derived: K=6, offset {0,0,0,100,100,100} at t_v {0,1000,...,5000}ms.
 // The least-squares FIT residuals are [14,-11,-37,37,11,-14] (NOT flat --
-// this task's own worked derivation, recorded in 05-10-SUMMARY.md, of why
-// "stable plateaus" must be tested against the RAW offset trajectory, not
-// the fit's own residuals), so residual_max=37 correctly routes past the
-// first branch; the RAW offsets are two clean, flat groups of three either
-// side of the jump at t_v=3000ms.
-TEST_CASE("av_drift - fit_drift on a clean 100ms step at the fourth of six checkpoints classifies step at that "
-          "checkpoint's own t_v",
+// this task's own worked derivation, recorded in 05-10-SUMMARY.md), so
+// residual_max=37 correctly routes past the first branch (constant-offset/
+// linear-drift, on residual_max < epsilon). Under 05-STEP-DESIGN.md's
+// recorded narrow-vocabulary decision, fit_drift's former plateau-detection
+// second branch (which would have recognized this trajectory's two clean,
+// flat RAW-offset groups of three either side of t_v=3000ms and classified
+// `step`) no longer exists -- there is no candidate design that reaches a
+// correctly-located step on doc 04 section 5's own step recipe (05-21's
+// research), so this trajectory, like every other trajectory that fails
+// the first branch, now classifies `irregular`, exactly as this file's own
+// Test 4/5 always have.
+TEST_CASE("av_drift - fit_drift on a clean 100ms step at the fourth of six checkpoints classifies irregular "
+          "(step removed by narrow-vocabulary)",
           "[unit]") {
   const std::vector<DriftCheckpoint> checkpoints = {
       {0, 0}, {1000, 0}, {2000, 0}, {3000, 100}, {4000, 100}, {5000, 100},
@@ -84,18 +102,17 @@ TEST_CASE("av_drift - fit_drift on a clean 100ms step at the fourth of six check
   const std::optional<DriftFit> fit = fit_drift(checkpoints, kMs);
   REQUIRE(fit.has_value());
   CHECK(fit->residual_max_ms == 37);
-  CHECK(fit->pattern == DriftPattern::step);
-  REQUIRE(fit->step_time_ms.has_value());
-  CHECK(*fit->step_time_ms == 3000);
+  CHECK(fit->pattern == DriftPattern::irregular);
 }
 
-// --- Test 4: a jump > 3 epsilons WITHOUT stable plateaus -> irregular, never
-// step -- the plateau condition asserted load-bearing ------------------------
-// K=4, offset {0,10,0,10}: every consecutive jump is 10ms (> 3*2ms=6ms
-// threshold), but the "after" group [10,0,10] (mean 6ms, truncated) is NOT
-// within epsilon of its own mean (|10-6|=4ms > 2ms) -- the plateau
-// stability check must be the thing that turns this into irregular, not
-// merely the absence of a jump.
+// --- Test 4: a 10ms zig-zag with no stable plateau either side -> irregular
+// (05-22-PLAN.md: the former "load-bearing plateau condition" this test
+// title cited no longer exists in the implementation -- every trajectory
+// that fails the first branch is irregular unconditionally now, so this
+// case is retained unchanged as an existing zig-zag regression case, per
+// this plan's "existing ... zig-zag ... cases pass unchanged" behavior) --
+// K=4, offset {0,10,0,10}: residual_max=6ms (>= kDriftEpsilonMs=2), so it
+// routes past the first branch and classifies irregular.
 TEST_CASE("av_drift - fit_drift on a 10ms zig-zag with no stable plateau either side classifies irregular, not "
           "step, despite a jump exceeding three epsilons",
           "[unit]") {
@@ -106,15 +123,13 @@ TEST_CASE("av_drift - fit_drift on a 10ms zig-zag with no stable plateau either 
   REQUIRE(fit.has_value());
   CHECK(fit->residual_max_ms == 6);
   CHECK(fit->pattern == DriftPattern::irregular);
-  CHECK_FALSE(fit->step_time_ms.has_value());
 }
 
-// --- Test 5: scattered residuals above epsilon, no single dominant step ->
-// irregular, reports the residual max ----------------------------------------
-// K=5, offset {0,3,-3,3,-3}: the largest consecutive raw-offset jump is
-// exactly 6ms (== 3*epsilon), which does NOT exceed the threshold (strict
-// `>`), so no single jump dominates -- irregular, with residual_max=3
-// reported from the least-squares fit.
+// --- Test 5: scattered residuals above epsilon -> irregular, reports the
+// residual max (unchanged by 05-22-PLAN.md; retained as an existing
+// zig-zag regression case) ---------------------------------------------
+// K=5, offset {0,3,-3,3,-3}: residual_max=3ms (>= kDriftEpsilonMs=2), so it
+// routes past the first branch and classifies irregular.
 TEST_CASE("av_drift - fit_drift on a scattered 3ms zig-zag with no jump exceeding three epsilons classifies "
           "irregular and reports the residual max",
           "[unit]") {
@@ -125,7 +140,6 @@ TEST_CASE("av_drift - fit_drift on a scattered 3ms zig-zag with no jump exceedin
   REQUIRE(fit.has_value());
   CHECK(fit->pattern == DriftPattern::irregular);
   CHECK(fit->residual_max_ms == 3);
-  CHECK_FALSE(fit->step_time_ms.has_value());
 }
 
 // --- Test 6: a two-hour-90kHz-magnitude trajectory produces a real rate --
@@ -195,7 +209,6 @@ TEST_CASE("av_drift - fit_drift produces identical output when every checkpoint'
   CHECK(fit_unshifted->end_delta_ms == fit_shifted->end_delta_ms);
   CHECK(fit_unshifted->residual_max_ms == fit_shifted->residual_max_ms);
   CHECK(fit_unshifted->pattern == fit_shifted->pattern);
-  CHECK(fit_unshifted->step_time_ms == fit_shifted->step_time_ms);
 }
 
 // --- Test 8: a fit that cannot be narrowed back to the compared
@@ -257,12 +270,15 @@ TEST_CASE("av_drift - fit_drift called twice on identical input produces byte-id
   CHECK(first->end_delta_ms == second->end_delta_ms);
   CHECK(first->residual_max_ms == second->residual_max_ms);
   CHECK(first->pattern == second->pattern);
-  CHECK(first->step_time_ms == second->step_time_ms);
 }
 
-// kDriftStepResidualMultiple and kDriftEpsilonMs are exercised only via
-// fit_drift's own behavior above (Test 3/4/5's step-threshold boundaries);
-// referenced here too so a reader grepping this file finds every named
-// constant this task's acceptance criteria cite.
-static_assert(kDriftStepResidualMultiple == 3);
+// kDriftEpsilonMs is exercised via fit_drift's own behavior above (every
+// test's own residual_max_ms-vs-epsilon routing between the
+// constant-offset/linear-drift branch and the irregular branch);
+// referenced here too so a reader grepping this file finds the named
+// constant this task's acceptance criteria cite. kDriftStepResidualMultiple
+// is REMOVED (05-22-PLAN.md, narrow-vocabulary): it parameterized only
+// fit_drift's former plateau-detection second branch, which no longer
+// exists, so the constant has no remaining consumer anywhere in the
+// repository.
 static_assert(kDriftEpsilonMs == 2);

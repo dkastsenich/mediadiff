@@ -618,9 +618,6 @@ inline constexpr int kDriftCheckpointCount = 32;
 // numbers.
 inline constexpr std::int64_t kDriftEpsilonMs = 2;
 
-// "any single residual step > 3x epsilon" -- doc 04 section 3.4, verbatim.
-inline constexpr std::int64_t kDriftStepResidualMultiple = 3;
-
 // The fixed rate threshold doc 04 section 3.4's own "|slope| below
 // tolerance" clause tests against, expressed as an exact rational (0.2 =
 // 1/5) rather than a decimal -- the SAME magnitude 05-CHECK-ROSTER.md
