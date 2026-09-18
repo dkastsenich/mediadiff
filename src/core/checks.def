@@ -1413,9 +1413,9 @@ tolerance = "5ms,20ms"
 # file is exactly 2 ms -- WITHOUT the dual condition, ordinary timebase
 # rounding on a short clip would false-positive on a rate that is not a
 # real drift (P0: false positives are worse than a missed one). Evidence
-# also carries `residual_max_ms`, `step_time_ms` (when the pattern is
-# `step`), `comparison_basis` (the SAME raw-versus-adjusted basis
-# `timeline.av_offset` chose for this side, D-10) and the full K=32
+# also carries `residual_max_ms`, `comparison_basis` (the SAME
+# raw-versus-adjusted basis `timeline.av_offset` chose for this side,
+# D-10) and the full K=32
 # `{k, t_v_ms, offset_ms}` trajectory (TIME-08) -- `05-RESEARCH.md`
 # confirmed `Measurement::evidence` already round-trips through
 # `src/core/snapshot.cpp` (read ~line 297, write ~line 356), so `compare`
@@ -1435,8 +1435,8 @@ tolerance = "0.2ms/min"
 
 # 05-10-PLAN.md (TIME-07/TIME-08), the SAME `fit_drift` call as
 # `timeline.av_drift` immediately above -- this id is the CLASSIFIED
-# PATTERN, doc 04 section 3.4's four spellings exactly:
-# `constant-offset` / `linear-drift` / `step` / `irregular`
+# PATTERN, three spellings exactly:
+# `constant-offset` / `linear-drift` / `irregular`
 # (`DriftPattern`, analyzers.h). D-04, locked and one-way at the 05-01
 # roster checkpoint: exists so a step small enough to leave the fitted
 # RATE under `timeline.av_drift`'s own 0.2 ms/min tolerance (a brief,
@@ -1447,6 +1447,13 @@ tolerance = "0.2ms/min"
 # history (04-08-PLAN.md) -- no tolerance, any change of class gates.
 # Same skip-reason priority as `timeline.av_drift`: both ids skip
 # together, from the same `fit_drift` call, never independently.
+# AMENDED 2026-09-18, UD-1 (05-23-PLAN.md, narrow-vocabulary per
+# 05-STEP-DESIGN.md's `## Decision`): doc 04 section 3.4's fourth
+# spelling, `step`, is withdrawn -- neither evaluated checkpoint-mapping
+# design (05-21-SUMMARY.md D1/D2) reports a step at a location tied to
+# the real splice, so a spliced trim now classifies `irregular` with its
+# residual max instead. See docs/checks/timeline.av_drift.pattern.md and
+# 05-CHECK-ROSTER.md's `## Amendments` for the full record.
 [[check]]
 id = "timeline.av_drift.pattern"
 group = "timeline"

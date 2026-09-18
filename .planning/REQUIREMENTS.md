@@ -129,7 +129,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [x] **TIME-04**: Structural integrity checks work: `dts_monotonic`, `pts_unique`, `gaps`, `discontinuities`
 - [x] **TIME-05**: `timeline.jitter` and `timeline.vfr_profile` work, with CFR classified as â‰¥ 99.5% of intervals equal to the mode interval, and jitter reporting `skipped:vfr` on VFR streams
 - [x] **TIME-06**: `timeline.av_offset` reports the signed offset between first audible sample and first visible frame, priming-adjusted
-- [ ] **TIME-07**: `timeline.av_drift` implements the normative 32-checkpoint least-squares algorithm and reports rate (ms/min), end delta, and pattern class (`constant-offset` / `linear-drift` / `step` / `irregular`)
+- [ ] **TIME-07**: `timeline.av_drift` implements the normative 32-checkpoint least-squares algorithm and reports rate (ms/min), end delta, and pattern class (`constant-offset` / `linear-drift` / `irregular`) (amended 2026-09-18, UD-1: `step` withdrawn until audio decode)
 - [x] **TIME-08**: The drift trajectory (all K offsets) is stored in the fingerprint so snapshot comparison retains full fidelity
 - [x] **TIME-09**: When audio priming is unknown, the offset is computed unadjusted and the finding carries `priming: unknown` rather than hiding the uncertainty
 - [x] **TIME-10**: **[R]** Fixtures cover the non-zero-priming path, not only the priming-unknown degrade path, since phase 4 ships before the audio decode path that supplies priming (research: ARCHITECTURE hazard B)

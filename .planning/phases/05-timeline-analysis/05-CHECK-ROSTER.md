@@ -36,7 +36,7 @@ proposed, all in the `timeline` group.
 | `timeline.vfr_profile` | timeline | dist | percent | histogram | warn | `"2%"` | 05-08 | D-06: bins keyed on deviation from the stream's own grid (on-grid, one tick, one percent, 2x, 3x, longer), not raw ticks. |
 | `timeline.av_offset` | timeline | tol | ms | rational | fail | `"5ms,20ms"` | 05-09 | Priming-adjusted per D-09/D-10/D-11. Primary-stream selection: first video stream that is not an attached picture, one measurement per audio stream; no audio or no video → `skipped:insufficient_data`. |
 | `timeline.av_drift` | timeline | tol | ms_per_min | rational | fail | `"0.2ms/min"` | 05-10 | D-04: rate only. Gates on rate AND end-delta clearing the 2 ms epsilon (D-07). K=32 trajectory stored in evidence (TIME-08). |
-| `timeline.av_drift.pattern` | timeline | exact | none | string | fail | — | 05-10 | **D-04, locked, one-way.** Pattern class exactly: `constant-offset` / `linear-drift` / `step` / `irregular`. |
+| `timeline.av_drift.pattern` | timeline | exact | none | string | fail | — | 05-10 | **D-04, locked, one-way.** Pattern class exactly: `constant-offset` / `linear-drift` / `irregular` (amended 2026-09-18, UD-1: `step` withdrawn — see the Amendments section below). |
 | `timeline.timecode` | timeline | presence | none | string | info | — | 05-11 | `tmcd` reachable from `Pass::demux_header` (no decode). S12M and MPEG-2 GOP timecode report `skipped:requires_decode` — no S12M-specific id (05-RESEARCH.md Pitfall 6: `AV_PKT_DATA_S12M_TIMECODE` has no file-demuxer producer in the linked FFmpeg 8.1, so a separately-triggerable id could never have a DOC-03 trigger fixture). |
 | `timeline.timecode.value` | timeline | exact | none | string | info | — | 05-11 | **Addition.** Split from doc 04's `timeline.timecode` row (presence + start value under one `presence` semantic). Mirrors Phase 4's `video.hdr.mdcv`/`video.hdr.mdcv.luminance` split. Compares the rendered SMPTE string exactly, drop-frame punctuation included. |
 
@@ -54,7 +54,8 @@ Every one is forced by the same one-semantic-per-id constraint Phases 3 and 4 al
 4. `timeline.timecode.value` — split from `timeline.timecode` (presence vs. exact rendered value),
    mirroring Phase 4's `video.hdr.mdcv`/`video.hdr.mdcv.luminance` split.
 5. `timeline.av_drift.pattern` — **D-04, locked and one-way.** Listed here for spelling
-   confirmation only, not for re-litigation.
+   confirmation only, not for re-litigation. (Amended 2026-09-18, UD-1: `step` withdrawn —
+   see the Amendments section below.)
 
 ## Tolerance spellings that differ from doc 04's literal wording
 
@@ -79,6 +80,38 @@ Every one is forced by the same one-semantic-per-id constraint Phases 3 and 4 al
 - **No S12M-specific id.** Verified against the linked FFmpeg 8.1 that `AV_PKT_DATA_S12M_TIMECODE`
   is set only by `libavdevice/decklink_dec.cpp`, which this build does not link. `timeline.timecode`
   covers `tmcd` and reports `skipped:requires_decode` for the other two sources.
+
+## Amendments
+
+**2026-09-18, UD-1 (05-23-PLAN.md, Gap 1 documentation closure).** Cites 05-21 (the
+piecewise checkpoint mapping research) and 05-STEP-DESIGN.md's `## Decision` (the
+human's recorded narrow-vocabulary choice, decided 2026-09-18 at a
+`gate="blocking-human"` checkpoint).
+
+- **Removed value: `step`, from `timeline.av_drift.pattern`'s published vocabulary.**
+  05-21's calibrated research evaluated two candidate piecewise checkpoint-mapping
+  designs (D1 segment-proportional, D2 media-clock) against the doc 04 section 5 step
+  recipe and found neither meets the soundness bar: D1 never reaches `pattern="step"`
+  on any step fixture (a terminal-checkpoint boundary artifact keeps it at
+  `irregular`); D2 reaches `step` but at a `step_time_ms` provably unrelated to the
+  real splice (V3 and V4's real joins sit ~1160ms apart yet both report the identical
+  `step_time_ms=3960`). The cause is a genuine timestamp-only ambiguity, not an
+  implementation gap: a 100ms audio timestamp gap is produced identically by a
+  dropout-style trim (content missing, sync preserved) and a sync-stepped edit
+  (content contiguous, timestamps jumped) — the two edits can produce byte-identical
+  files, so no design operating on packet timestamps alone can report a
+  correctly-located step for both readings at once (05-STEP-DESIGN.md `## Ambiguity
+  analysis`, A1).
+- **The check id and its `exact`/fail semantics are unchanged.** `timeline.av_drift.pattern`
+  still reports exactly one of a closed set of strings, still `fail`-severity, still
+  produced by the same `fit_drift` call as `timeline.av_drift`, and still skips together
+  with it under identical conditions. Only the published vocabulary narrowed from four
+  spellings to three; no check id was renamed, removed, or re-attributed.
+- **doc 04 divergence.** `claude_docs/04-timeline-analysis.md` section 3 point 4 and
+  section 5's "Step" recipe are superseded for Phase 5 until Phase 6's audio decode path
+  can disambiguate the dropout-vs-sync-step reading above — recorded here rather than by
+  editing the normative spec (05-23-PLAN.md flagged assumption A1). A spliced trim
+  reports `irregular` with its own `residual_max_ms` in the meantime.
 
 ## Status
 
