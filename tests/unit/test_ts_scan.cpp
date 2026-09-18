@@ -11,6 +11,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -502,4 +503,38 @@ TEST_CASE("ts_scan - a section_length larger than the available bytes is discard
 TEST_CASE("ts_scan - a missing file returns Error::input_open, never a crash", "[unit]") {
   const auto result = run_ts_scan("/nonexistent/path/does/not/exist.ts");
   REQUIRE_FALSE(result.has_value());
+}
+
+// --- 05-15-PLAN.md Task 1: PES header timestamps on the real Gap 4 fixture
+
+TEST_CASE("ts_scan - PES timestamps on timeline_start_shift.ts", "[unit]") {
+  const auto result = run_ts_scan(fixture("timeline_start_shift.ts"));
+  REQUIRE(result.has_value());
+  REQUIRE(result->complete);
+
+  const auto& video = result->pid_stats(256);
+  REQUIRE(video.pes_timestamps.size() == 100);
+  REQUIRE(video.pes_headers_pts_only == 100);
+  REQUIRE(video.pes_headers_pts_dts == 0);
+  REQUIRE(video.pes_headers_unparsed == 0);
+  REQUIRE_FALSE(video.pes_timestamps_truncated);
+
+  // The exact Gap 4 values (05-VERIFICATION.md): the file's own PES
+  // headers carry PTS only, strictly increasing.
+  REQUIRE(video.pes_timestamps[0].pts == 128090);
+  const std::array<std::int64_t, 5> expected_first_five{128090, 131690, 135290, 138890, 142490};
+  for (std::size_t i = 0; i < expected_first_five.size(); ++i) {
+    REQUIRE(video.pes_timestamps[i].pts == expected_first_five[i]);
+  }
+  for (std::size_t i = 0; i < video.pes_timestamps.size(); ++i) {
+    REQUIRE_FALSE(video.pes_timestamps[i].dts_present);
+    REQUIRE(video.pes_timestamps[i].dts == video.pes_timestamps[i].pts);
+    if (i > 0) {
+      REQUIRE(video.pes_timestamps[i].pts > video.pes_timestamps[i - 1].pts);
+    }
+  }
+
+  const auto& audio = result->pid_stats(257);
+  REQUIRE(audio.pes_timestamps.size() == 13);
+  REQUIRE_FALSE(audio.pes_timestamps_truncated);
 }

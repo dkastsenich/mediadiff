@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,34 @@ inline constexpr int kNullPid = 0x1FFF;
 // worst-case footprint per PID (kPidCount x this bound x 8 bytes).
 inline constexpr std::int64_t kMaxDiscontinuityOffsetsPerPid = 256;
 
+// 05-15-PLAN.md (TIME-04, Gap 4, ISO/IEC 13818-1 section 2.4.3.7): one
+// PES header's own decode-timestamp truth, read directly from the PES
+// header bytes -- never inferred by libavformat's own read-back
+// heuristics (05-VERIFICATION.md's Gap 4: a `-c copy` MP4->TS remux
+// dropping the MPEG-4 VOL header makes libavformat's `compute_pkt_fields`
+// fabricate a DTS tie that does not exist in the container). `pts` is
+// always present in a record; a PES header without a PTS
+// (`PTS_DTS_flags` '00', or a header this scanner could not parse) never
+// produces a record at all. `dts` equals `pts` when the header carries
+// PTS only (`dts_present` false) -- ISO/IEC 13818-1's own rule that an
+// absent DTS equals the PTS (UD-3), decided once here rather than left
+// for every consumer to re-derive.
+struct PesTimestampRecord {
+  std::int64_t offset = 0;
+  std::int64_t pts = 0;
+  std::int64_t dts = 0;
+  bool dts_present = false;
+};
+
+// 05-15-PLAN.md (T-05-68): the GLOBAL (not per-PID) cap on how many
+// PesTimestampRecord entries this scanner will ever accumulate across
+// every PID combined -- matching kMaxPacketsPerStream's own magnitude
+// (probe/packet_scan.h). A crafted TS that signals a PES start on every
+// single packet could otherwise grow this list without bound; reaching
+// the cap sets `PidStats::pes_timestamps_truncated` on the PID that hit
+// it rather than dropping a record silently.
+inline constexpr std::int64_t kMaxPesTimestampRecordsTotal = 5'000'000;
+
 // One PID's accumulated state across the whole scan. `first_cc_error_offset`
 // is std::optional specifically so "no error yet" is distinguishable from
 // "an error at byte offset 0" (mirrors EbmlTrack::codec_delay_ns's own
@@ -102,6 +131,27 @@ struct PidStats {
   // silently.
   std::vector<std::int64_t> discontinuity_indicator_offsets;
   bool discontinuity_offsets_truncated = false;
+
+  // 05-15-PLAN.md (TIME-04, Gap 4): container-truth PES header timestamps
+  // for every PES that starts on this PID, in ASCENDING offset order
+  // (matching scan order) -- the seam `detail::apply_container_dts`
+  // (below) joins demuxed packets against, the same "bounded seam, never
+  // dropped silently" contract as `discontinuity_indicator_offsets`
+  // above. Bounded GLOBALLY (across every PID) by
+  // `kMaxPesTimestampRecordsTotal`; `pes_timestamps_truncated` is set,
+  // never cleared, once the shared budget is exhausted.
+  std::vector<PesTimestampRecord> pes_timestamps;
+  // Exactly one of these four counters is incremented per unit-start
+  // packet on this PID whose payload begins a parseable PES packet
+  // (`detail::PesParseStatus::no_pes`/`excluded_stream_id` increment
+  // nothing, since those are not PES headers this scanner failed to
+  // parse -- they are bytes that were never a PES header to begin with,
+  // or a PES header this scanner is not required to time-stamp).
+  std::int64_t pes_headers_pts_only = 0;
+  std::int64_t pes_headers_pts_dts = 0;
+  std::int64_t pes_headers_no_pts = 0;
+  std::int64_t pes_headers_unparsed = 0;
+  bool pes_timestamps_truncated = false;
 };
 
 // One PCR sample, recorded at the moment `adaptation_field()`'s PCR_flag
@@ -291,6 +341,54 @@ ContinuityStepResult step_continuity(const PidContinuityState& prev, int continu
 // above) so `tests/unit/test_ts_continuity.cpp` can drive a table of
 // offsets directly, without constructing a whole TS file.
 void record_discontinuity_offset(PidStats& stats, std::int64_t offset);
+
+// 05-15-PLAN.md (TIME-04, Gap 4, ISO/IEC 13818-1 section 2.4.3.7): the
+// only possible outcomes of parsing one unit-start packet's payload as a
+// PES header. `no_pes`/`excluded_stream_id` are not parse failures --
+// they mean "these bytes were never a PES header this scanner needed to
+// time-stamp" (a payload that does not start `00 00 01`, or a stream_id
+// ISO 13818-1 defines as carrying no optional PES header at all, e.g.
+// padding_stream). `malformed`/`truncated_in_packet` ARE parse failures
+// (an out-of-spec header, or one whose declared length runs past the
+// bytes this one TS packet actually carries) -- `parse_pes_timestamps`
+// never fabricates a timestamp in either case.
+enum class PesParseStatus {
+  no_pes,
+  no_timestamps,
+  pts_only,
+  pts_dts,
+  excluded_stream_id,
+  malformed,
+  truncated_in_packet,
+};
+
+struct PesParseResult {
+  PesParseStatus status = PesParseStatus::no_pes;
+  std::int64_t pts = 0;
+  std::int64_t dts = 0;
+};
+
+// Parses `payload` (the bytes of a unit-start packet, from the payload
+// start index to the end of the 188-byte TS packet) as a PES header,
+// reading ONLY the fields needed to establish PTS/DTS presence and value
+// (ISO/IEC 13818-1 section 2.4.3.7). Every index is checked against
+// `payload.size()` before the read -- `payload` is the only data source,
+// and the 4-bit prefix ahead of each PTS/DTS field is never validated
+// (05-15-PLAN.md's own A2: only the three marker bits make the bit
+// layout unambiguous). Exposed here, mirroring `step_continuity`'s own
+// exposure convention, so `tests/unit/test_ts_scan.cpp` can drive a table
+// of hand-built byte buffers directly, without constructing a whole TS
+// packet.
+PesParseResult parse_pes_timestamps(std::span<const std::uint8_t> payload);
+
+// 05-15-PLAN.md (T-05-68): appends `record` to `stats.pes_timestamps`
+// when `remaining_budget` is above 0 (decrementing it); otherwise sets
+// `stats.pes_timestamps_truncated` and appends nothing. `remaining_budget`
+// is threaded through `run_ts_scan` from a single counter initialized to
+// `kMaxPesTimestampRecordsTotal`, shared across every PID -- mirrors
+// `record_discontinuity_offset`'s own bounded-seam shape, except the
+// budget here is global rather than per-PID.
+void record_pes_timestamp(PidStats& stats, const PesTimestampRecord& record, std::int64_t& remaining_budget);
 
 }  // namespace detail
 

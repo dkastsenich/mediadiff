@@ -1,9 +1,11 @@
 #include "probe/ts_scan.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -526,7 +528,8 @@ void process_psi_pmt(const std::string& buf, std::int64_t payload_start, bool pa
 }
 
 void process_packet(const std::string& buf, std::int64_t offset, TsScanResult& result,
-                     std::vector<detail::PidContinuityState>& cc_states, std::vector<int>& pmt_owner_by_pid) {
+                     std::vector<detail::PidContinuityState>& cc_states, std::vector<int>& pmt_owner_by_pid,
+                     std::int64_t& pes_budget) {
   const HeaderFields hf = parse_header(buf);
   ++result.total_packets;
 
@@ -588,13 +591,52 @@ void process_packet(const std::string& buf, std::int64_t offset, TsScanResult& r
     return;
   }
 
+  const bool is_pmt_pid = hf.pid >= 0 && hf.pid < static_cast<int>(pmt_owner_by_pid.size()) &&
+                          pmt_owner_by_pid[static_cast<std::size_t>(hf.pid)] >= 0;
+
   if (hf.pid == 0x0000) {
     process_psi_pat(buf, af.payload_start_index, hf.payload_start, offset, result, pmt_owner_by_pid);
-  } else if (hf.pid >= 0 && hf.pid < static_cast<int>(pmt_owner_by_pid.size()) &&
-             pmt_owner_by_pid[static_cast<std::size_t>(hf.pid)] >= 0) {
+  } else if (is_pmt_pid) {
     const std::size_t idx = static_cast<std::size_t>(pmt_owner_by_pid[static_cast<std::size_t>(hf.pid)]);
     process_psi_pmt(buf, af.payload_start_index, hf.payload_start, offset, result.programs[idx],
                      result.discarded_sections);
+  }
+
+  // 05-15-PLAN.md (TIME-04, Gap 4): PES header timestamp parse, at the
+  // EXISTING site where `af.payload_start_index`/`hf.payload_start` are
+  // already known -- never a second adaptation-field parse. Only
+  // elementary-stream PIDs (0x0010..0x1FFE, excluding whichever PIDs are
+  // known PMT PIDs; PID 0x0000/PAT is already excluded by the range
+  // floor, and the null PID 0x1FFF by the range ceiling) are considered:
+  // PSI sections are never PES packets, so parsing them as one would only
+  // ever legitimately return `no_pes`.
+  if (hf.payload_start && hf.pid >= 0x0010 && hf.pid <= 0x1FFE && !is_pmt_pid) {
+    const std::int64_t payload_start = af.payload_start_index;
+    const std::int64_t clamped_start = payload_start < 188 ? payload_start : 188;
+    const auto* base = reinterpret_cast<const std::uint8_t*>(buf.data());
+    const std::span<const std::uint8_t> payload_span(base + clamped_start,
+                                                       static_cast<std::size_t>(188 - clamped_start));
+    const detail::PesParseResult parse = detail::parse_pes_timestamps(payload_span);
+    switch (parse.status) {
+      case detail::PesParseStatus::no_pes:
+      case detail::PesParseStatus::excluded_stream_id:
+        break;
+      case detail::PesParseStatus::no_timestamps:
+        ++stats.pes_headers_no_pts;
+        break;
+      case detail::PesParseStatus::malformed:
+      case detail::PesParseStatus::truncated_in_packet:
+        ++stats.pes_headers_unparsed;
+        break;
+      case detail::PesParseStatus::pts_only:
+        ++stats.pes_headers_pts_only;
+        detail::record_pes_timestamp(stats, PesTimestampRecord{offset, parse.pts, parse.pts, false}, pes_budget);
+        break;
+      case detail::PesParseStatus::pts_dts:
+        ++stats.pes_headers_pts_dts;
+        detail::record_pes_timestamp(stats, PesTimestampRecord{offset, parse.pts, parse.dts, true}, pes_budget);
+        break;
+    }
   }
 }
 
@@ -733,6 +775,124 @@ void record_discontinuity_offset(PidStats& stats, std::int64_t offset) {
   stats.discontinuity_indicator_offsets.push_back(offset);
 }
 
+namespace {
+
+// ISO/IEC 13818-1 section 2.4.3.7: stream_id values that carry NO
+// optional PES header at all -- program_stream_map, padding_stream,
+// private_stream_2, ECM, EMM, DSMCC_stream, ITU-T Rec H.222.1 type E
+// stream, program_stream_directory.
+constexpr std::array<std::uint8_t, 8> kExcludedPesStreamIds{0xBC, 0xBE, 0xBF, 0xF0, 0xF1, 0xF2, 0xF8, 0xFF};
+
+bool is_excluded_pes_stream_id(std::uint8_t stream_id) {
+  for (const std::uint8_t id : kExcludedPesStreamIds) {
+    if (id == stream_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Decodes one 5-byte PTS or DTS field (ISO/IEC 13818-1 section 2.4.3.7):
+// bits [32:30] from byte 0 (the 4-bit prefix ahead of them is never
+// validated, per 05-15-PLAN.md's A2), bits [29:15] from bytes 1-2, bits
+// [14:0] from bytes 3-4 -- each assembled via unsigned shifts into
+// std::uint64_t, never a signed shift of a negative value, with a single
+// cast to std::int64_t at the very end. Returns std::nullopt when any of
+// the three marker bits (byte 0 bit 0, byte 2 bit 0, byte 4 bit 0) is
+// clear -- `b` is always exactly 5 bytes, guaranteed by every caller
+// below via the header_data_length/truncation checks already performed.
+std::optional<std::int64_t> decode_pts_or_dts_field(std::span<const std::uint8_t> b) {
+  if ((b[0] & 0x01) == 0 || (b[2] & 0x01) == 0 || (b[4] & 0x01) == 0) {
+    return std::nullopt;
+  }
+  const std::uint64_t high = (static_cast<std::uint64_t>(b[0]) >> 1) & 0x07;
+  const std::uint64_t mid = (static_cast<std::uint64_t>(b[1]) << 7) | (static_cast<std::uint64_t>(b[2]) >> 1);
+  const std::uint64_t low = (static_cast<std::uint64_t>(b[3]) << 7) | (static_cast<std::uint64_t>(b[4]) >> 1);
+  const std::uint64_t value = (high << 30) | (mid << 15) | low;
+  return static_cast<std::int64_t>(value);
+}
+
+}  // namespace
+
+PesParseResult parse_pes_timestamps(std::span<const std::uint8_t> payload) {
+  // no_pes: the first three bytes are not present and equal to
+  // 00 00 01 -- checked first (and short-circuits on a too-short span,
+  // never indexing an empty/undersized payload).
+  if (payload.size() < 3 || payload[0] != 0x00 || payload[1] != 0x00 || payload[2] != 0x01) {
+    return PesParseResult{PesParseStatus::no_pes, 0, 0};
+  }
+  // Fewer than 9 header bytes present (including the stream_id byte at
+  // index 3, needed before excluded_stream_id can even be decided) is
+  // truncated_in_packet, per this function's own contract.
+  if (payload.size() < 4) {
+    return PesParseResult{PesParseStatus::truncated_in_packet, 0, 0};
+  }
+  const std::uint8_t stream_id = payload[3];
+  if (is_excluded_pes_stream_id(stream_id)) {
+    // These stream_id values carry no optional PES header at all -- ISO
+    // 13818-1's own rule, checked before the 9-byte fixed-header
+    // requirement below since there is nothing further to read.
+    return PesParseResult{PesParseStatus::excluded_stream_id, 0, 0};
+  }
+  if (payload.size() < 9) {
+    return PesParseResult{PesParseStatus::truncated_in_packet, 0, 0};
+  }
+  const std::uint8_t header_data_length = payload[8];
+  const std::int64_t total_needed = 9 + static_cast<std::int64_t>(header_data_length);
+  if (static_cast<std::int64_t>(payload.size()) < total_needed) {
+    // Header bytes past the packet -- truncated_in_packet, decided ahead
+    // of every malformed-flags check below (this function's own priority
+    // order: no_pes, excluded_stream_id, truncated_in_packet, malformed,
+    // no_timestamps, pts_only/pts_dts).
+    return PesParseResult{PesParseStatus::truncated_in_packet, 0, 0};
+  }
+
+  const std::uint8_t byte6 = payload[6];
+  if ((byte6 >> 6) != 0x2) {
+    return PesParseResult{PesParseStatus::malformed, 0, 0};
+  }
+  const std::uint8_t byte7 = payload[7];
+  const std::uint8_t pts_dts_flags = static_cast<std::uint8_t>((byte7 >> 6) & 0x3);
+
+  if (pts_dts_flags == 0x1) {
+    // '01' is reserved/forbidden by ISO 13818-1.
+    return PesParseResult{PesParseStatus::malformed, 0, 0};
+  }
+  if (pts_dts_flags == 0x0) {
+    return PesParseResult{PesParseStatus::no_timestamps, 0, 0};
+  }
+  if (pts_dts_flags == 0x2) {
+    if (header_data_length < 5) {
+      return PesParseResult{PesParseStatus::malformed, 0, 0};
+    }
+    const std::optional<std::int64_t> pts = decode_pts_or_dts_field(payload.subspan(9, 5));
+    if (!pts.has_value()) {
+      return PesParseResult{PesParseStatus::malformed, 0, 0};
+    }
+    return PesParseResult{PesParseStatus::pts_only, *pts, *pts};
+  }
+
+  // pts_dts_flags == 0x3 (PTS+DTS).
+  if (header_data_length < 10) {
+    return PesParseResult{PesParseStatus::malformed, 0, 0};
+  }
+  const std::optional<std::int64_t> pts = decode_pts_or_dts_field(payload.subspan(9, 5));
+  const std::optional<std::int64_t> dts = decode_pts_or_dts_field(payload.subspan(14, 5));
+  if (!pts.has_value() || !dts.has_value()) {
+    return PesParseResult{PesParseStatus::malformed, 0, 0};
+  }
+  return PesParseResult{PesParseStatus::pts_dts, *pts, *dts};
+}
+
+void record_pes_timestamp(PidStats& stats, const PesTimestampRecord& record, std::int64_t& remaining_budget) {
+  if (remaining_budget <= 0) {
+    stats.pes_timestamps_truncated = true;
+    return;
+  }
+  stats.pes_timestamps.push_back(record);
+  --remaining_budget;
+}
+
 }  // namespace detail
 
 mediadiff::expected<TsScanResult, Error> run_ts_scan(const std::string& utf8_path) {
@@ -763,6 +923,11 @@ mediadiff::expected<TsScanResult, Error> run_ts_scan(const std::string& utf8_pat
   // TsScanResult::pids's unique_ptr indirection.
   std::vector<detail::PidContinuityState> cc_states(kPidCount);
   std::vector<int> pmt_owner_by_pid(kPidCount, -1);
+  // 05-15-PLAN.md (T-05-68): the ONE global PES-timestamp-record budget
+  // for this whole scan, threaded through process_packet exactly like
+  // cc_states/pmt_owner_by_pid above -- shared across every PID, never
+  // reset mid-scan.
+  std::int64_t pes_budget = kMaxPesTimestampRecordsTotal;
 
   const std::int64_t length = reader.length();
   std::int64_t offset = detected->start_offset;
@@ -803,7 +968,7 @@ mediadiff::expected<TsScanResult, Error> run_ts_scan(const std::string& utf8_pat
       return result;
     }
 
-    process_packet(packet, offset, result, cc_states, pmt_owner_by_pid);
+    process_packet(packet, offset, result, cc_states, pmt_owner_by_pid, pes_budget);
 
     offset += result.stride;
   }
