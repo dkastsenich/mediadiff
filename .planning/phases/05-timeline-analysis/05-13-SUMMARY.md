@@ -71,7 +71,7 @@ coverage:
         ref: "grep -ci provisional tests/golden/PERF_BASELINE.txt = 0; the script's own grep+sed ledger extraction parses both metrics"
         status: pass
     human_judgment: true
-    rationale: "Achieved. One open item: the ratchet has not yet run on CI against this transcribed baseline, because c749c99 is unpushed (see Open Items)."
+    rationale: "Achieved, and confirmed on CI: run 35353739056 measured exactly the transcribed values (change=0% on both metrics; see Open Items)."
   - id: D4
     description: "Designated leg confirmed green, with every leg-only gate and the perf ratchet confirmed to have actually run (Task 3)"
     verification:
@@ -170,7 +170,15 @@ CI history, read directly from the job logs by the orchestrator:
 
 ## Open Items
 
-- **The ratchet has not yet run on CI against the TRANSCRIBED baseline.** Run 35347845434 compared against the 05-12 workstation seed (258117675 / 345365337), and both metrics came out within tolerance. For the ratchet to compare against the new lines, c749c99 (and this docs commit) must be pushed. The orchestrator will request separate user authorization for that push. Cachegrind counts are deterministic for a fixed binary and input, and PERF_BASELINE.txt is not compiled. The next designated-leg run is therefore **expected** to reproduce 257709408 / 344956981 exactly (change=0%). This is an expectation, not an observation.
+None. The one item left open at completion is now closed by observation:
+
+- **Ratchet confirmed against the TRANSCRIBED baseline.** The user authorized the push `a56dd9b..78a023f`, which carried c749c99 and this SUMMARY. The designated leg then re-ran as run 35353739056 (https://github.com/dkastsenich/mediadiff/actions/runs/35353739056), job 105627864945, head 78a023f, checked out as merge ref 194f2fc. Run conclusion: success. Every designated-leg step passed: 923/923 tests, with the five byte-exact goldens #213, #605, #606, #607 and #867 run by name and passed. Step 27 printed, verbatim:
+  ```
+  measure_timeline_perf: instruction counts (valgrind --tool=cachegrind, D-13) -- plain=257709408 full=344956981 overhead_percent=33% (absolute PERF-03 ratio, reported every run per D-14) input=.mediadiff-bench/timeline_overhead_input_600s_1920x1080_30fps.mp4 (120194289 bytes)
+  measure_timeline_perf: metric 'plain_instructions' within tolerance -- baseline=257709408, measured=257709408, change=0% (tolerance +/-2%). Pasteable line (informational, no change needed):
+  measure_timeline_perf: metric 'full_instructions' within tolerance -- baseline=344956981, measured=344956981, change=0% (tolerance +/-2%). Pasteable line (informational, no change needed):
+  ```
+- **First CI cross-run observation (D-14 / A5).** Two independent designated-leg runs, 35347845434 and 35353739056, produced IDENTICAL retired-instruction counts on both metrics, from a byte-identical generated reference input (120194289 bytes both times). That is zero measured run-to-run jitter on CI, matching the local five-repetition evidence recorded in `scripts/measure_timeline_perf.sh`'s tolerance comment. That comment asks for a change only "if those ever point to a different value". They do not, so `PERF_RATCHET_TOLERANCE_PERCENT=2` stays as is.
 
 ## Task Commits
 
