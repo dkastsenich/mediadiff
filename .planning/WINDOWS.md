@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 16
 waived_count: 1
 fixed_count: 13
-total_count: 28
-last_updated: 2026-09-16T23:27:42.021Z
+total_count: 30
+last_updated: 2026-09-18T12:14:35.643Z
 ---
 
 # Broken Windows Ledger
@@ -43,6 +43,8 @@ last_updated: 2026-09-16T23:27:42.021Z
 | 26 | 05 | deviation | src/analyzers/timeline/start_duration.cpp,src/analyzers/video/stream_params.cpp,src/analyzers/size/size.cpp |  | 05-06-PLAN.md's correct_ts_overflow=0 fix (needed so unwrap_ts_timestamps ever sees a genuine 33-bit wrap) exposes that timeline.start/timeline.duration/timeline.duration.coherence (start_duration.cpp), video.frame_rate.measured (stream_params.cpp) and size.stream_bitrate (size.cpp) all read raw un-unwrapped PTS/DTS axis values directly on any genuinely-wrapping TS file, producing corrupted evidence (one instance: int64_t overflow in size.stream_bitrate's tolerance comparator, status=error). A follow-up plan must extend the shared doc-04-section-1.2 unwrap to these consumers. | open |  | 2026-09-16T21:49:42.037Z |  |
 | 27 | 05 | deviation | src/analyzers/timeline/jitter_vfr.cpp |  | Inherits WINDOWS.md #26's open TS-unwrap gap: timeline_jitter_vfr_analyzer() calls derive_cadence(stream_packets, stream_scan.tb) directly on the raw, un-unwrapped packet array on every container including MPEG-TS, the same pattern #26 already documents for start_duration.cpp/stream_params.cpp/size.cpp -- on a genuinely-wrapping TS file this produces corrupted timeline.jitter/timeline.vfr_profile evidence (unwrapped PTS deltas straddling the wrap boundary). Not fixed by 05-08-PLAN.md (out of declared scope, matching #26's own precedent); no fixture in this plan's own corpus exercises a genuinely-wrapping TS file through this analyzer, so it is undetected by the current test suite. A follow-up plan extending #26's fix (the shared doc-04-section-1.2 unwrap) to jitter_vfr.cpp closes this too. | open |  | 2026-09-16T23:27:33.089Z |  |
 | 28 | 05 | deviation | docs/checks/timeline.vfr_profile.md |  | 05-08-PLAN.md Task 2's own acceptance criterion ('mediadiff compare tests/fixtures/timeline_ntsc_base.mp4 tests/fixtures/timeline_ntsc_remux.mkv --profile remux --json shows timeline.vfr_profile at pass -- identical bins across two timebases') does not hold empirically: NTSC's 1001/30000s period (~33.3667ms) has no exact millisecond representation, so MP4's native 1/30000 timebase lands every interval on_grid (ideal_interval_num/den=119119/119, an exact integer) while Matroska's mandated 1ms timebase can only reach one_tick (ideal=3971/119, non-integer) -- a real difference in what each container can represent at its own tick resolution, not a defect in the check's D-06 grid-relative design (verified via mediadiff compare --json evidence before writing any test assertion, per this task's own PROVE-before-asserting discipline). The check itself is correct per D-06's literal design (deviation from the stream's own ideal_interval_num/den, the six-bucket vocabulary exactly as 05-CHECK-ROSTER.md approves); the plan's own illustrative claim was an untested assumption for this specific non-exactly-representable frame rate. Documented in docs/checks/timeline.vfr_profile.md's own Accept/Tune sections and asserted as the real, honest outcome in tests/integration/test_timeline_jitter.cpp's own NTSC test rather than asserting the false pass. | open |  | 2026-09-16T23:27:42.021Z |  |
+| 29 | 05 | deviation | src/compare/tol.cpp | 359 | The tol comparator's human-readable delta (Finding.message, shown in the default tty output, --json, markdown and junit) does not show the number the verdict was decided on. (1) For RELATIVE (percent) tolerances it renders the ABSOLUTE delta in the value's own unit, unreduced, with a '%' suffix: size.stream_bitrate video on timeline_ts_nowrap.ts vs timeline_ts_jump.ts printed 'delta +1915435756800000/158352084000%' (= 12096 bps absolute) while the verdict compared +3.18%; size.file prints 'delta +54332/1%' for a 54332-byte change. (2) The sign comes from compare_ticks on the two sides' num only (tb-scaled), ignoring each RationalValue's den, so it is wrong whenever the dens differ: the audio stream_bitrate of the same pair fell 18.8% but printed '+'; it is also empty whenever that num-only comparison overflows (e.g. the wrap pair's size.stream_bitrate). (3) Fractions are never reduced. The verdicts themselves are correct -- only the text misleads (it misled the first diagnosis of debug session test-898-ci-nonreproducible). Not fixed there because message text is serialized into every report format and may be pinned by golden files; a fix should render the relative percentage for is_relative tolerances, derive the sign from the exact delta_num (core/exact_int.h already computes it), reduce the fraction, and first check tests/golden/* and the designated-leg goldens for pinned message text. | open |  | 2026-09-18T12:14:27.240Z |  |
+| 30 | 05 | deviation | src/analyzers/size/size.cpp |  | Follow-up to WINDOWS.md #26 (still open): #26 cites 'int64_t overflow in size.stream_bitrate's tolerance comparator, status=error' as its observable instance. Debug session test-898-ci-nonreproducible made src/compare/tol.cpp exact (core/exact_int.h), so that comparator can no longer overflow: on timeline_ts_nowrap.ts vs timeline_ts_wrap.ts the same corrupted, un-unwrapped size.stream_bitrate (and timeline.av_drift) inputs now produce status=fail with meaningless magnitudes (e.g. video 'delta 1164020667413667840000/3061451405548800%') instead of error. The defect is unchanged and still #26's (analyzers reading raw wrapped PTS/DTS); only its symptom moved from error to a false fail, so anyone searching reports for #26's error signature will no longer find it. tests/integration/test_timeline_structure.cpp's Test 4 still asserts only timeline.wrap_events on that pair, by design. Close together with #26. | open |  | 2026-09-18T12:14:35.643Z |  |
 
 ````json
 [
@@ -380,6 +382,30 @@ last_updated: 2026-09-16T23:27:42.021Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-16T23:27:42.021Z",
+    "resolved_at": null
+  },
+  {
+    "id": 29,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "src/compare/tol.cpp",
+    "line": 359,
+    "description": "The tol comparator's human-readable delta (Finding.message, shown in the default tty output, --json, markdown and junit) does not show the number the verdict was decided on. (1) For RELATIVE (percent) tolerances it renders the ABSOLUTE delta in the value's own unit, unreduced, with a '%' suffix: size.stream_bitrate video on timeline_ts_nowrap.ts vs timeline_ts_jump.ts printed 'delta +1915435756800000/158352084000%' (= 12096 bps absolute) while the verdict compared +3.18%; size.file prints 'delta +54332/1%' for a 54332-byte change. (2) The sign comes from compare_ticks on the two sides' num only (tb-scaled), ignoring each RationalValue's den, so it is wrong whenever the dens differ: the audio stream_bitrate of the same pair fell 18.8% but printed '+'; it is also empty whenever that num-only comparison overflows (e.g. the wrap pair's size.stream_bitrate). (3) Fractions are never reduced. The verdicts themselves are correct -- only the text misleads (it misled the first diagnosis of debug session test-898-ci-nonreproducible). Not fixed there because message text is serialized into every report format and may be pinned by golden files; a fix should render the relative percentage for is_relative tolerances, derive the sign from the exact delta_num (core/exact_int.h already computes it), reduce the fraction, and first check tests/golden/* and the designated-leg goldens for pinned message text.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T12:14:27.240Z",
+    "resolved_at": null
+  },
+  {
+    "id": 30,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "src/analyzers/size/size.cpp",
+    "line": null,
+    "description": "Follow-up to WINDOWS.md #26 (still open): #26 cites 'int64_t overflow in size.stream_bitrate's tolerance comparator, status=error' as its observable instance. Debug session test-898-ci-nonreproducible made src/compare/tol.cpp exact (core/exact_int.h), so that comparator can no longer overflow: on timeline_ts_nowrap.ts vs timeline_ts_wrap.ts the same corrupted, un-unwrapped size.stream_bitrate (and timeline.av_drift) inputs now produce status=fail with meaningless magnitudes (e.g. video 'delta 1164020667413667840000/3061451405548800%') instead of error. The defect is unchanged and still #26's (analyzers reading raw wrapped PTS/DTS); only its symptom moved from error to a false fail, so anyone searching reports for #26's error signature will no longer find it. tests/integration/test_timeline_structure.cpp's Test 4 still asserts only timeline.wrap_events on that pair, by design. Close together with #26.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T12:14:35.643Z",
     "resolved_at": null
   }
 ]
