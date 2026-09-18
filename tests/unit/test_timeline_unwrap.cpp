@@ -10,13 +10,23 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "analyzers/timeline/unwrap.h"
+#include "core/rational.h"
+#include "probe/packet_scan.h"
 
 using mediadiff::kTsPtsWrapHalfRange;
 using mediadiff::kTsPtsWrapModulus;
+using mediadiff::PacketRecord;
+using mediadiff::PacketScanResult;
+using mediadiff::Rational;
+using mediadiff::StreamPacketScan;
+using mediadiff::TimelinePacketView;
 using mediadiff::UnwrapResult;
+using mediadiff::make_timeline_packet_view;
+using mediadiff::make_timeline_packet_views;
 using mediadiff::unwrap_ts_timestamps;
 using mediadiff::detail::apply_wrap_step;
 using mediadiff::detail::WrapStepResult;
@@ -208,4 +218,281 @@ TEST_CASE("timeline_unwrap - the input span is unchanged after the call", "[unit
   const UnwrapResult result = unwrap_ts_timestamps(raw);
   (void)result;
   CHECK(raw == raw_copy);
+}
+
+// =========================================================================
+// TimelinePacketView (05-16-PLAN.md Task 2): zero-copy, wrap, epoch,
+// overflow and copy-safety contracts. Every expected value below is
+// hand-computed against unwrap_ts_timestamps' own documented rule (section
+// 1.2 above), never captured from what the implementation currently
+// produces.
+// =========================================================================
+
+TEST_CASE("timeline_unwrap - view: a non-TS view borrows the source packets zero-copy and reports unwrapped() false",
+          "[unit]") {
+  StreamPacketScan stream;
+  stream.tb = Rational{1, 90000};
+  stream.packets = {
+      PacketRecord{.pts = 0, .dts = 0},
+      PacketRecord{.pts = 90000, .dts = 90000},
+  };
+  const TimelinePacketView view = make_timeline_packet_view(stream, /*is_ts=*/false);
+  REQUIRE(view.packets().size() == 2);
+  CHECK(view.packets().data() == stream.packets.data());
+  CHECK_FALSE(view.unwrapped());
+  CHECK_FALSE(view.overflowed());
+  CHECK(view.pts_wrap_events() == 0);
+  CHECK(view.dts_wrap_events() == 0);
+  CHECK(view.epoch_shift() == 0);
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: a TS view without a wrap matches the source values exactly, wrap_events 0, and owns "
+    "a copy rather than borrowing",
+    "[unit]") {
+  StreamPacketScan stream;
+  stream.tb = Rational{1, 90000};
+  stream.packets = {
+      PacketRecord{.pts = 0, .dts = 0},
+      PacketRecord{.pts = 90000, .dts = 90000},
+      PacketRecord{.pts = 180000, .dts = 180000},
+  };
+  const TimelinePacketView view = make_timeline_packet_view(stream, /*is_ts=*/true);
+  REQUIRE(view.packets().size() == 3);
+  CHECK(view.packets().data() != stream.packets.data());
+  CHECK(view.unwrapped());
+  CHECK_FALSE(view.overflowed());
+  CHECK(view.pts_wrap_events() == 0);
+  CHECK(view.dts_wrap_events() == 0);
+  for (std::size_t i = 0; i < stream.packets.size(); ++i) {
+    CHECK(view.packets()[i].pts == stream.packets[i].pts);
+    CHECK(view.packets()[i].dts == stream.packets[i].dts);
+  }
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: a TS view with one PTS wrap unwraps to 8589934000/8589934500/8589934992/8589935492, "
+    "pts_wrap_events 1, dts (a separate, non-wrapping sequence) untouched",
+    "[unit]") {
+  // Hand-computed exactly as unwrap_ts_timestamps' own Behavior 2/3 above:
+  // delta(0->1)=500 (no wrap); delta(1->2)=400-8589934500=-8589934100,
+  // strictly below -kTsPtsWrapHalfRange -- a wrap, offset becomes
+  // kTsPtsWrapModulus (8589934592); unwrapped[2]=400+8589934592=8589934992.
+  // delta(2->3)=500 (no new wrap); unwrapped[3]=900+8589934592=8589935492.
+  StreamPacketScan stream;
+  stream.tb = Rational{1, 90000};
+  stream.packets = {
+      PacketRecord{.pts = 8589934000, .dts = 0},
+      PacketRecord{.pts = 8589934500, .dts = 1},
+      PacketRecord{.pts = 400, .dts = 2},
+      PacketRecord{.pts = 900, .dts = 3},
+  };
+  const TimelinePacketView view = make_timeline_packet_view(stream, /*is_ts=*/true);
+  REQUIRE_FALSE(view.overflowed());
+  REQUIRE(view.pts_wrap_events() == 1);
+  CHECK(view.dts_wrap_events() == 0);
+  REQUIRE(view.packets().size() == 4);
+  CHECK(view.packets()[0].pts == 8589934000);
+  CHECK(view.packets()[1].pts == 8589934500);
+  CHECK(view.packets()[2].pts == 8589934992);
+  CHECK(view.packets()[3].pts == 8589935492);
+  // The DTS axis is a plain increasing sequence -- untouched by the PTS
+  // axis's own wrap.
+  CHECK(view.packets()[0].dts == 0);
+  CHECK(view.packets()[1].dts == 1);
+  CHECK(view.packets()[2].dts == 2);
+  CHECK(view.packets()[3].dts == 3);
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: the identical wrap sequence on the DTS axis only unwraps DTS and leaves PTS "
+    "untouched, dts_wrap_events 1",
+    "[unit]") {
+  StreamPacketScan stream;
+  stream.tb = Rational{1, 90000};
+  stream.packets = {
+      PacketRecord{.pts = 0, .dts = 8589934000},
+      PacketRecord{.pts = 1, .dts = 8589934500},
+      PacketRecord{.pts = 2, .dts = 400},
+      PacketRecord{.pts = 3, .dts = 900},
+  };
+  const TimelinePacketView view = make_timeline_packet_view(stream, /*is_ts=*/true);
+  REQUIRE_FALSE(view.overflowed());
+  CHECK(view.pts_wrap_events() == 0);
+  REQUIRE(view.dts_wrap_events() == 1);
+  REQUIRE(view.packets().size() == 4);
+  CHECK(view.packets()[0].pts == 0);
+  CHECK(view.packets()[1].pts == 1);
+  CHECK(view.packets()[2].pts == 2);
+  CHECK(view.packets()[3].pts == 3);
+  CHECK(view.packets()[0].dts == 8589934000);
+  CHECK(view.packets()[1].dts == 8589934500);
+  CHECK(view.packets()[2].dts == 8589934992);
+  CHECK(view.packets()[3].dts == 8589935492);
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: AV_NOPTS_VALUE (INT64_MIN) PTS entries between wrapped values stay INT64_MIN at the "
+    "same array indices, and the wrap is still detected across the surviving (non-sentinel) sequence",
+    "[unit]") {
+  // Real PTS sequence (sentinels excluded, packet_index preserved):
+  // index0=8589934000, index2=8589934500, index4=400 -- the exact same
+  // delta pattern as the pure-wrap test above, just with two sentinels
+  // interleaved at index1/index3.
+  StreamPacketScan stream;
+  stream.tb = Rational{1, 90000};
+  stream.packets = {
+      PacketRecord{.pts = 8589934000, .dts = 0},
+      PacketRecord{.pts = INT64_MIN, .dts = 1},
+      PacketRecord{.pts = 8589934500, .dts = 2},
+      PacketRecord{.pts = INT64_MIN, .dts = 3},
+      PacketRecord{.pts = 400, .dts = 4},
+  };
+  const TimelinePacketView view = make_timeline_packet_view(stream, /*is_ts=*/true);
+  REQUIRE_FALSE(view.overflowed());
+  REQUIRE(view.pts_wrap_events() == 1);
+  REQUIRE(view.packets().size() == 5);
+  CHECK(view.packets()[0].pts == 8589934000);
+  CHECK(view.packets()[1].pts == INT64_MIN);
+  CHECK(view.packets()[2].pts == 8589934500);
+  CHECK(view.packets()[3].pts == INT64_MIN);
+  CHECK(view.packets()[4].pts == 8589934992);
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: the epoch rule moves a stream whose first raw PTS sits below the half-range one "
+    "kTsPtsWrapModulus epoch later when the cross-stream spread exceeds the half-range; the high stream is "
+    "unchanged",
+    "[unit]") {
+  // Hand-computed: spread = 8589933592 - 500 = 8589933092, which exceeds
+  // kTsPtsWrapHalfRange (4294967296) -- the epoch rule fires. Stream 1's
+  // own first raw PTS (500) sits below kTsPtsWrapHalfRange, so every
+  // non-sentinel PTS/DTS of stream 1 is shifted by kTsPtsWrapModulus
+  // (8589934592); stream 0's own first raw PTS (8589933592) is already at
+  // or above the half-range, so stream 0 is unchanged.
+  PacketScanResult scan;
+  scan.per_stream.resize(2);
+  scan.per_stream[0].tb = Rational{1, 90000};
+  scan.per_stream[0].packets = {PacketRecord{.pts = 8589933592, .dts = 8589933592}};
+  scan.per_stream[1].tb = Rational{1, 90000};
+  scan.per_stream[1].packets = {PacketRecord{.pts = 500, .dts = 500}};
+
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(scan, /*is_ts=*/true);
+  REQUIRE(views.size() == 2);
+  REQUIRE_FALSE(views[0].overflowed());
+  REQUIRE_FALSE(views[1].overflowed());
+  CHECK(views[0].epoch_shift() == 0);
+  CHECK(views[1].epoch_shift() == kTsPtsWrapModulus);
+  REQUIRE(views[0].packets().size() == 1);
+  REQUIRE(views[1].packets().size() == 1);
+  CHECK(views[0].packets()[0].pts == 8589933592);
+  CHECK(views[0].packets()[0].dts == 8589933592);
+  CHECK(views[1].packets()[0].pts == 500 + kTsPtsWrapModulus);
+  CHECK(views[1].packets()[0].dts == 500 + kTsPtsWrapModulus);
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: the epoch rule is a no-op when the cross-stream spread does not exceed the "
+    "half-range",
+    "[unit]") {
+  PacketScanResult scan;
+  scan.per_stream.resize(2);
+  scan.per_stream[0].tb = Rational{1, 90000};
+  scan.per_stream[0].packets = {PacketRecord{.pts = 1000, .dts = 1000}};
+  scan.per_stream[1].tb = Rational{1, 90000};
+  scan.per_stream[1].packets = {PacketRecord{.pts = 900000, .dts = 900000}};
+
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(scan, /*is_ts=*/true);
+  REQUIRE(views.size() == 2);
+  CHECK(views[0].epoch_shift() == 0);
+  CHECK(views[1].epoch_shift() == 0);
+  CHECK(views[0].packets()[0].pts == 1000);
+  CHECK(views[1].packets()[0].pts == 900000);
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: the epoch rule never applies on a non-TS input -- the same large-spread values stay "
+    "unshifted and zero-copy",
+    "[unit]") {
+  PacketScanResult scan;
+  scan.per_stream.resize(2);
+  scan.per_stream[0].tb = Rational{1, 90000};
+  scan.per_stream[0].packets = {PacketRecord{.pts = 8589933592, .dts = 8589933592}};
+  scan.per_stream[1].tb = Rational{1, 90000};
+  scan.per_stream[1].packets = {PacketRecord{.pts = 500, .dts = 500}};
+
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(scan, /*is_ts=*/false);
+  REQUIRE(views.size() == 2);
+  CHECK(views[0].epoch_shift() == 0);
+  CHECK(views[1].epoch_shift() == 0);
+  CHECK_FALSE(views[0].unwrapped());
+  CHECK_FALSE(views[1].unwrapped());
+  CHECK(views[0].packets().data() == scan.per_stream[0].packets.data());
+  CHECK(views[1].packets().data() == scan.per_stream[1].packets.data());
+  CHECK(views[1].packets()[0].pts == 500);
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: a wrap followed by a raw value within kTsPtsWrapModulus of INT64_MAX marks the view "
+    "overflowed, matching unwrap_ts_timestamps' own overflow behavior on the identical raw sequence",
+    "[unit]") {
+  // Hand-computed (T-05-05's sibling case): delta(0->1)=400-8589934000=
+  // -8589933600, a wrap -- offset becomes kTsPtsWrapModulus (8589934592),
+  // which does not itself overflow. delta(1->2)=(INT64_MAX-100)-400, far
+  // above +kTsPtsWrapHalfRange -- the forward guard, offset unchanged.
+  // Applying the offset to raw[2]=(INT64_MAX-100) overflows int64_t:
+  // (INT64_MAX-100)+8589934592 > INT64_MAX.
+  const std::vector<std::int64_t> raw = {8589934000, 400, INT64_MAX - 100};
+  const UnwrapResult direct = unwrap_ts_timestamps(raw);
+  REQUIRE(direct.overflowed);
+
+  StreamPacketScan stream;
+  stream.tb = Rational{1, 90000};
+  stream.packets = {
+      PacketRecord{.pts = raw[0], .dts = 0},
+      PacketRecord{.pts = raw[1], .dts = 1},
+      PacketRecord{.pts = raw[2], .dts = 2},
+  };
+  const TimelinePacketView view = make_timeline_packet_view(stream, /*is_ts=*/true);
+  CHECK(view.overflowed());
+}
+
+TEST_CASE(
+    "timeline_unwrap - view: copying a TS view and destroying the original leaves the copy's own packets() "
+    "reading the correct, already-unwrapped values",
+    "[unit]") {
+  std::optional<TimelinePacketView> copy;
+  {
+    StreamPacketScan stream;
+    stream.tb = Rational{1, 90000};
+    stream.packets = {
+        PacketRecord{.pts = 8589934591, .dts = 8589934591},
+        PacketRecord{.pts = 1000, .dts = 1000},
+    };
+    const TimelinePacketView original = make_timeline_packet_view(stream, /*is_ts=*/true);
+    copy = original;
+    // `stream` and `original` both go out of scope at the end of this
+    // block -- `copy` must own its own storage, never a span into either.
+  }
+  REQUIRE(copy.has_value());
+  REQUIRE_FALSE(copy->overflowed());
+  REQUIRE(copy->packets().size() == 2);
+  CHECK(copy->packets()[0].pts == 8589934591);
+  CHECK(copy->packets()[1].pts == 8589935592);  // 1000 + kTsPtsWrapModulus, per Behavior 2 above
+}
+
+TEST_CASE("timeline_unwrap - view: an empty stream's view has an empty packets() span and does not crash",
+          "[unit]") {
+  StreamPacketScan stream;
+  stream.tb = Rational{1, 90000};
+
+  const TimelinePacketView ts_view = make_timeline_packet_view(stream, /*is_ts=*/true);
+  CHECK(ts_view.packets().empty());
+  CHECK_FALSE(ts_view.overflowed());
+  CHECK(ts_view.pts_wrap_events() == 0);
+  CHECK(ts_view.dts_wrap_events() == 0);
+
+  const TimelinePacketView non_ts_view = make_timeline_packet_view(stream, /*is_ts=*/false);
+  CHECK(non_ts_view.packets().empty());
+  CHECK_FALSE(non_ts_view.unwrapped());
 }
