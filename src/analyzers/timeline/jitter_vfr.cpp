@@ -183,9 +183,6 @@ std::optional<std::string> classify_vfr_bin(std::int64_t interval, std::int64_t 
   if (!checked_mul(interval, ideal_den, &interval_den)) {
     return std::nullopt;
   }
-  if (interval_den == ideal_num) {
-    return std::string(kBinOnGrid);
-  }
 
   std::int64_t diff = 0;
   if (!checked_sub(interval_den, ideal_num, &diff)) {
@@ -198,14 +195,29 @@ std::optional<std::string> classify_vfr_bin(std::int64_t interval, std::int64_t 
     }
   }
 
-  // "within one tick": |interval - ideal| <= kVfrOneTickToleranceTicks,
-  // cross-multiplied by ideal_den: |interval*den - num| <=
-  // kVfrOneTickToleranceTicks * den.
-  std::int64_t one_tick_bound = 0;
-  if (!checked_mul(kVfrOneTickToleranceTicks, ideal_den, &one_tick_bound)) {
+  // UD-2 (05-19-PLAN.md, WINDOWS #28): a deviation STRICTLY BELOW one
+  // tick of the stream's own timebase (`ideal_den`) is representational
+  // rounding -- a non-exactly-representable ideal interval (e.g. NTSC's
+  // 1001/30000s period at Matroska's 1ms timebase) can never land exactly
+  // on its own grid point, and that residual is not real jitter. Strict
+  // "<", not "<=": a deviation of EXACTLY one tick is real and lands in
+  // one_tick below (TIME-05/adjacency). For an integer-ideal stream
+  // (`ideal_num` an exact multiple of `ideal_den`), `abs_diff` is itself
+  // always a multiple of `ideal_den`, so this reduces to the
+  // pre-quantization `abs_diff == 0` test exactly -- every such stream
+  // bins identically to before this rule.
+  if (abs_diff < ideal_den) {
+    return std::string(kBinOnGrid);
+  }
+
+  // "at least one tick, below two ticks": ideal_den <= |diff| <
+  // 2*ideal_den -- the cross-multiplied form of `kVfrOneTickToleranceTicks
+  // <= |interval - ideal| < 2*kVfrOneTickToleranceTicks`.
+  std::int64_t two_tick_bound = 0;
+  if (!checked_mul(std::int64_t{2} * kVfrOneTickToleranceTicks, ideal_den, &two_tick_bound)) {
     return std::nullopt;
   }
-  if (abs_diff <= one_tick_bound) {
+  if (abs_diff < two_tick_bound) {
     return std::string(kBinOneTick);
   }
 
@@ -252,39 +264,93 @@ std::optional<std::string> classify_vfr_bin(std::int64_t interval, std::int64_t 
   return std::string(kBinLonger);
 }
 
-std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t mode_interval_ticks,
+std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t ideal_num, std::int64_t ideal_den,
                                                           const std::vector<std::int64_t>& intervals) {
   if (intervals.empty()) {
     return std::nullopt;
   }
 
+  constexpr std::int64_t kScale = std::int64_t{1} << kJitterSigmaFixedShift;
+
   Int128Accum sum_sq;
-  std::int64_t max_abs_deviation = 0;
+  std::int64_t max_abs_deviation_fixed = 0;
+  std::int64_t sub_tick_intervals = 0;
+
   for (const std::int64_t interval : intervals) {
-    std::int64_t deviation = 0;
-    if (!checked_sub(interval, mode_interval_ticks, &deviation)) {
+    // Q = interval*ideal_den - ideal_num, the SAME cross-multiplied
+    // deviation classify_vfr_bin above computes -- both this function and
+    // that one measure deviation against the identical unreduced ideal
+    // (05-19-PLAN.md's own key_links).
+    std::int64_t interval_den = 0;
+    if (!checked_mul(interval, ideal_den, &interval_den)) {
       return std::nullopt;
     }
-    std::int64_t abs_deviation = deviation;
-    if (deviation < 0) {
-      if (!checked_negate(deviation, &abs_deviation)) {
+    std::int64_t diff = 0;
+    if (!checked_sub(interval_den, ideal_num, &diff)) {
+      return std::nullopt;
+    }
+    std::int64_t abs_diff = diff;
+    if (diff < 0) {
+      if (!checked_negate(diff, &abs_diff)) {
         return std::nullopt;
       }
     }
-    if (abs_deviation > max_abs_deviation) {
-      max_abs_deviation = abs_deviation;
+
+    std::int64_t d_fixed = 0;
+    if (abs_diff < ideal_den) {
+      // UD-2/A1: sub-tick deviation contributes EXACTLY ZERO to sigma --
+      // representational rounding, never real jitter.
+      ++sub_tick_intervals;
+    } else {
+      // d_fixed = (|Q| / ideal_den) * scale + round_half_even((|Q| %
+      // ideal_den) * scale / ideal_den) -- an EXACT integer division for
+      // the whole-tick part, and a round-half-to-even integer division
+      // for the sub-tick remainder's own fixed-point fraction. A1: the
+      // deviation's FULL magnitude enters here (never zeroed or
+      // truncated once at or past one tick).
+      const std::int64_t whole_ticks = abs_diff / ideal_den;
+      const std::int64_t remainder = abs_diff % ideal_den;
+
+      std::int64_t whole_scaled = 0;
+      if (!checked_mul(whole_ticks, kScale, &whole_scaled)) {
+        return std::nullopt;
+      }
+
+      std::int64_t remainder_scaled = 0;
+      if (!checked_mul(remainder, kScale, &remainder_scaled)) {
+        return std::nullopt;
+      }
+      const std::int64_t frac_floor = remainder_scaled / ideal_den;
+      const std::int64_t frac_remainder = remainder_scaled % ideal_den;
+      std::int64_t twice_frac_remainder = 0;
+      if (!checked_mul(std::int64_t{2}, frac_remainder, &twice_frac_remainder)) {
+        return std::nullopt;
+      }
+      // Round-half-to-even: strictly past the halfway point rounds up;
+      // exactly at the halfway point rounds to the EVEN candidate (never
+      // always-up, which would bias sigma high across many boundary-
+      // sitting deviations).
+      std::int64_t frac_rounded = frac_floor;
+      if (twice_frac_remainder > ideal_den ||
+          (twice_frac_remainder == ideal_den && (frac_floor % 2) != 0)) {
+        if (!checked_add(frac_floor, 1, &frac_rounded)) {
+          return std::nullopt;
+        }
+      }
+
+      if (!checked_add(whole_scaled, frac_rounded, &d_fixed)) {
+        return std::nullopt;
+      }
     }
 
-    // Scaling BEFORE squaring (never a separate wide-times-scalar step
-    // afterwards): accumulating (deviation * scale)^2 directly is
-    // algebraically scale^2 * deviation^2, exactly the scaled term the
-    // fixed-point sigma's own numerator needs -- see this function's own
-    // declaration comment in analyzers.h.
-    std::int64_t deviation_scaled = 0;
-    if (!checked_mul(deviation, std::int64_t{1} << kJitterSigmaFixedShift, &deviation_scaled)) {
-      return std::nullopt;
+    if (d_fixed > max_abs_deviation_fixed) {
+      max_abs_deviation_fixed = d_fixed;
     }
-    sum_sq.add_product(deviation_scaled, deviation_scaled);
+
+    // (deviation * scale)^2 accumulated directly -- see this function's
+    // own declaration comment in analyzers.h for why scaling happens
+    // before squaring.
+    sum_sq.add_product(d_fixed, d_fixed);
   }
 
   std::int64_t sum_sq_i64 = 0;
@@ -306,7 +372,7 @@ std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t mode_interval
     return std::nullopt;
   }
 
-  return JitterSigmaResult{sigma_fixed, max_abs_deviation, n};
+  return JitterSigmaResult{sigma_fixed, max_abs_deviation_fixed, n, sub_tick_intervals};
 }
 
 }  // namespace detail
@@ -346,15 +412,19 @@ std::optional<RationalValue> exact_ticks_to_ms(std::int64_t ticks_num, std::int6
 }
 
 // timeline.jitter for ONE stream, CFR-only (VFR skips before this is ever
-// called). `cadence`'s own mode_interval_ticks is the deviation
-// reference (D-07's field, kept populated by D-05); `intervals` is this
+// called). 05-19-PLAN.md (UD-2, WINDOWS #28): the deviation reference is
+// now `cadence`'s own EXACT ideal interval
+// (`ideal_interval_num`/`ideal_interval_den`, D-05's unreduced span/count
+// rational) rather than the timebase-bound `mode_interval_ticks` -- the
+// same reference `timeline.vfr_profile` below already binned against, so
+// both checks now agree on what "on grid" means. `intervals` is this
 // file's own axis-sorted interval list (compute_sorted_axis_intervals
 // above), the SAME list timeline.vfr_profile below also consumes -- ONE
 // walk, two statistics, never two tallies.
 void emit_jitter(const Cadence& cadence, const std::vector<std::int64_t>& intervals, Rational tb, Scope scope,
                   Fingerprint& fp) {
   const std::optional<detail::JitterSigmaResult> sigma_result =
-      detail::compute_jitter_sigma(cadence.mode_interval_ticks, intervals);
+      detail::compute_jitter_sigma(cadence.ideal_interval_num, cadence.ideal_interval_den, intervals);
   if (!sigma_result.has_value()) {
     push_skip(CheckId::timeline_jitter, scope, SkipReason::insufficient_data, fp);
     return;
@@ -366,10 +436,13 @@ void emit_jitter(const Cadence& cadence, const std::vector<std::int64_t>& interv
     push_skip(CheckId::timeline_jitter, scope, SkipReason::insufficient_data, fp);
     return;
   }
-  // max_abs_deviation_ms: evidence-only, so start_duration.cpp's own
-  // TRUNCATING detail::ticks_to_ms (den==1, whole ms) is the right
-  // convention here -- this is display, not the compared value.
-  const std::optional<RationalValue> max_abs_deviation_ms = detail::ticks_to_ms(sigma_result->max_abs_deviation_ticks, tb);
+  // max_abs_deviation_ms: evidence-only, but `max_abs_deviation_fixed` is
+  // now a FIXED-POINT magnitude (scale `2^kJitterSigmaFixedShift`), not a
+  // bare tick count -- exact_ticks_to_ms (the SAME helper sigma_ms uses
+  // above), never start_duration.cpp's whole-tick-truncating
+  // detail::ticks_to_ms, or this sub-tick precision would be destroyed.
+  const std::optional<RationalValue> max_abs_deviation_ms =
+      exact_ticks_to_ms(sigma_result->max_abs_deviation_fixed, scale, tb);
 
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::timeline_jitter);
@@ -380,6 +453,10 @@ void emit_jitter(const Cadence& cadence, const std::vector<std::int64_t>& interv
       {"cadence_class", "cfr"},
       {"considered_intervals", sigma_result->considered_intervals},
       {"sigma_scale", scale},
+      {"deviation_reference", "ideal"},
+      {"ideal_interval_num", cadence.ideal_interval_num},
+      {"ideal_interval_den", cadence.ideal_interval_den},
+      {"sub_tick_intervals", sigma_result->sub_tick_intervals},
   };
   if (max_abs_deviation_ms.has_value()) {
     evidence["max_abs_deviation_ms"] = nlohmann::ordered_json{{"num", max_abs_deviation_ms->num},
@@ -419,6 +496,14 @@ void emit_vfr_profile(const Cadence& cadence, const std::vector<std::int64_t>& i
     histogram.bins.emplace_back(name, count);
   }
 
+  // sub_tick_intervals (05-19-PLAN.md, UD-2): the on_grid bucket's own
+  // count -- on_grid now MEANS "deviation strictly below one tick"
+  // (classify_vfr_bin's own new rule), so this is a duplicate read of
+  // that same count, surfaced as its own named key for visibility
+  // (T-05-82) rather than requiring a reader to infer it from the
+  // histogram's on_grid bin.
+  const std::int64_t sub_tick_intervals = counts.at(kBinOnGrid);
+
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::timeline_vfr_profile);
   measurement.scope = scope;
@@ -429,6 +514,7 @@ void emit_vfr_profile(const Cadence& cadence, const std::vector<std::int64_t>& i
       {"ideal_interval_den", cadence.ideal_interval_den},
       {"cadence_class", cadence.klass == CadenceClass::cfr ? "cfr" : "vfr"},
       {"considered_intervals", static_cast<std::int64_t>(intervals.size())},
+      {"sub_tick_intervals", sub_tick_intervals},
   };
   fp.measurements.push_back(std::move(measurement));
 }

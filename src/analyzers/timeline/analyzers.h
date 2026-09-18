@@ -368,9 +368,7 @@ std::optional<std::vector<std::int64_t>> compute_sorted_axis_intervals(std::span
 // `one_percent`, `two_x`, `three_x`, `longer`): `interval`'s deviation
 // from the stream's own ideal grid interval (`ideal_num`/`ideal_den`,
 // `Cadence::ideal_interval_num/den`) decides EXACTLY one of the six
-// labels, evaluated tightest-first so a value sitting EXACTLY on a
-// boundary lands in the LOWER (tighter) bucket and one tick past it
-// lands in the next (Test 8). An interval shorter than the ideal by more
+// labels. An interval shorter than the ideal by more
 // than one percent falls through every named tier (`two_x`/`three_x` are
 // evaluated only when the interval is genuinely LONGER than the ideal)
 // and lands in the `longer` catch-all -- the fixed six-label vocabulary
@@ -378,36 +376,83 @@ std::optional<std::vector<std::int64_t>> compute_sorted_axis_intervals(std::span
 // std::nullopt on any checked-arithmetic overflow (a crafted ideal/
 // interval pair) -- the caller degrades to `insufficient_data`, never a
 // fabricated bucket.
+//
+// UD-2 quantization rule (05-19-PLAN.md, WINDOWS #28): with
+// `Q = interval*ideal_den - ideal_num` (the cross-multiplied deviation,
+// in the same unreduced denominator `ideal_den` as `ideal_num`),
+// `on_grid` now means `|Q| < ideal_den` (STRICTLY below one tick of the
+// stream's own timebase -- representational rounding a non-exactly-
+// representable ideal interval cannot avoid, never real jitter) and
+// `one_tick` means `ideal_den <= |Q| < 2*ideal_den`. The boundary is
+// STRICT BELOW on the on_grid side, INCLUSIVE at exactly one tick on the
+// one_tick side (TIME-05/adjacency: a deviation of exactly one tick is
+// NOT sub-tick and never counts as on_grid). Every bucket at or past
+// `one_percent` is UNCHANGED. For a stream whose ideal interval is an
+// EXACT INTEGER number of ticks (`ideal_num` an exact multiple of
+// `ideal_den`), `|Q|` is itself always a multiple of `ideal_den`, so
+// `on_grid` reduces to the pre-quantization `|Q| == 0` test and
+// `one_tick` reduces to the pre-quantization `|Q| == ideal_den` test --
+// every such stream bins EXACTLY as it did before this rule (04-17/05-08
+// precedent's own "amendment recorded, not silently replacing" style
+// applies here too: the old exact-equality rule is superseded for
+// non-integer ideals, unchanged for integer ones).
 std::optional<std::string> classify_vfr_bin(std::int64_t interval, std::int64_t ideal_num, std::int64_t ideal_den);
 
-// timeline.jitter's own sigma computation (05-08-PLAN.md Task 2, A1):
-// given the stream's own mode interval (`Cadence::mode_interval_ticks`,
-// D-07's field, kept populated by D-05's amendment for exactly this kind
-// of same-timebase consumer) and the raw tick-domain interval list
+// timeline.jitter's own sigma computation (05-08-PLAN.md Task 2, A1;
+// re-referenced from the exact ideal interval rather than the mode by
+// 05-19-PLAN.md, UD-2, WINDOWS #28): given the stream's own EXACT ideal
+// interval (`ideal_num`/`ideal_den`, `Cadence::ideal_interval_num/den`,
+// D-05's unreduced span/count rational -- never `mode_interval_ticks`,
+// which is timebase-bound and is exactly what produced the NTSC false
+// positive) and the raw tick-domain interval list
 // `compute_sorted_axis_intervals` above produces, returns the exact
 // fixed-point sigma NUMERATOR (denominator is the fixed
 // `2^kJitterSigmaFixedShift` scale, `core/rational.h`) and the maximum
-// absolute deviation in ticks -- both computed with ONLY checked-integer
-// and `detail::Int128Accum`-wide arithmetic, no floating point, no
-// standard-library square root anywhere. Deviations are scaled BEFORE
-// being squared (never a separate wide-times-scalar step): accumulating
-// `(deviation * scale)^2` directly is algebraically `scale^2 * sum of
-// squared deviations`, exactly the scaled-variance numerator sigma's own
-// fixed-point root needs, without ever narrowing the raw (unscaled) sum
-// first. Returns std::nullopt when `intervals` is empty (no interval to
-// measure a sigma over), on any checked-arithmetic overflow forming the
-// scaled deviations, or when the WIDE accumulated sum of squares itself
-// cannot narrow to `int64_t` (T-05-34: a crafted interval distribution
-// inflating the sum past what any real file could produce) -- the caller
-// degrades to `insufficient_data`, never a wrapped or fabricated sigma.
+// absolute deviation in the SAME fixed-point scale (`max_abs_deviation_fixed`,
+// no longer a bare tick count -- a deviation can now be a genuine
+// fraction of one tick) -- both computed with ONLY checked-integer and
+// `detail::Int128Accum`-wide arithmetic, no floating point, no
+// standard-library square root anywhere. Per interval, with
+// `Q = interval*ideal_den - ideal_num`: a deviation STRICTLY BELOW one
+// tick (`|Q| < ideal_den`) contributes a `d_fixed` term of EXACTLY ZERO
+// (UD-2: representational rounding is not jitter) and is tallied in
+// `sub_tick_intervals`; every other deviation forms its fixed-point
+// magnitude as `(|Q| / ideal_den) * 2^kJitterSigmaFixedShift +
+// round_half_even((|Q| % ideal_den) * 2^kJitterSigmaFixedShift /
+// ideal_den)` -- an EXACT integer division for the whole-tick part, and a
+// round-half-to-even (ties resolve to the even candidate) integer
+// division for the sub-tick remainder's own fixed-point fraction, formed
+// entirely from `checked_mul`/an integer remainder comparison, never a
+// floating-point divide (A1: zeroing applies ONLY strictly below one
+// tick -- a deviation of 1.4 ticks contributes its full 1.4 ticks, never
+// 0.4). Deviations are scaled to fixed-point BEFORE being squared (never
+// a separate wide-times-scalar step): accumulating `d_fixed^2` directly
+// is algebraically the scaled-variance term sigma's own fixed-point root
+// needs, without ever narrowing the raw (unscaled) sum first. Returns
+// std::nullopt when `intervals` is empty (no interval to measure a sigma
+// over), on any checked-arithmetic overflow forming a scaled deviation,
+// or when the WIDE accumulated sum of squares itself cannot narrow to
+// `int64_t` (T-05-34: a crafted interval distribution inflating the sum
+// past what any real file could produce) -- the caller degrades to
+// `insufficient_data`, never a wrapped or fabricated sigma.
 struct JitterSigmaResult {
   // sigma_true_ticks * 2^kJitterSigmaFixedShift, FLOORED (truncated
   // toward zero, never rounded -- A1's own fixed-point contract).
   std::int64_t sigma_fixed_numerator = 0;
-  std::int64_t max_abs_deviation_ticks = 0;
+  // The largest single interval's own fixed-point deviation magnitude
+  // (`d_fixed` above, scale `2^kJitterSigmaFixedShift`) -- replaces the
+  // pre-05-19 bare `max_abs_deviation_ticks` tick count, since a
+  // deviation can now genuinely be a fraction of one tick.
+  std::int64_t max_abs_deviation_fixed = 0;
   std::int64_t considered_intervals = 0;
+  // The count of intervals whose deviation was STRICTLY below one tick
+  // (`|Q| < ideal_den`) and therefore contributed zero to sigma -- UD-2's
+  // own visibility mitigation (T-05-82): a reader can see how much of a
+  // reported sigma is "real" jitter versus how many intervals were zeroed
+  // as representational rounding.
+  std::int64_t sub_tick_intervals = 0;
 };
-std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t mode_interval_ticks,
+std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t ideal_num, std::int64_t ideal_den,
                                                           const std::vector<std::int64_t>& intervals);
 
 }  // namespace detail
