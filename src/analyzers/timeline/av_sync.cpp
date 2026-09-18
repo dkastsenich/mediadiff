@@ -14,6 +14,7 @@
 #include "core/model.h"
 #include "core/rational.h"
 
+#include "analyzers/timeline/unwrap.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
 #include "probe/pass.h"
@@ -578,9 +579,36 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
     return;
   }
 
+  // 05-18-PLAN.md (Gap 2, TIME-02): every timestamp read below goes through
+  // the ONE promoted `TimelinePacketView` per stream (05-16's
+  // assumption-delta `promote` decision) -- never `StreamPacketScan::
+  // packets` directly. The MULTI-stream builder, not the per-stream one:
+  // av_offset compares first PTS ACROSS streams, so both the primary video
+  // and every compared audio stream must be on the SAME cross-stream
+  // 2^33 epoch (05-16's own epoch rule). `is_ts` matches every sibling
+  // timeline analyzer's own established pattern exactly.
+  const bool is_ts = container_family_from_format_name(demux.format_name()) == ContainerFamily::ts;
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(packet_scan, is_ts);
+
   const StreamPacketScan& video_stream = packet_scan.per_stream[*primary_video];
-  const std::optional<std::int64_t> video_first_pts_ticks =
-      detail::first_presented_pts(std::span<const PacketRecord>(video_stream.packets));
+  const bool video_view_overflowed = *primary_video >= views.size() || views[*primary_video].overflowed();
+  if (video_view_overflowed) {
+    // T-05-71: the primary video stream's own unwrap (or the cross-stream
+    // epoch shift) could not complete without an int64 overflow -- nothing
+    // downstream (offset OR drift, for every audio stream compared against
+    // it) can be computed from a wrapped or fabricated value.
+    for (std::size_t idx : audio_indices) {
+      push_skip(CheckId::timeline_av_offset, *scopes[idx], SkipReason::insufficient_data,
+                 nlohmann::ordered_json{{"reason", "video_view_overflowed"}}, fp);
+      push_skip(CheckId::timeline_av_drift, *scopes[idx], SkipReason::insufficient_data,
+                 nlohmann::ordered_json{{"reason", "video_view_overflowed"}}, fp);
+      push_skip(CheckId::timeline_av_drift_pattern, *scopes[idx], SkipReason::insufficient_data,
+                 nlohmann::ordered_json{{"reason", "video_view_overflowed"}}, fp);
+    }
+    return;
+  }
+  const std::span<const PacketRecord> video_packets = views[*primary_video].packets();
+  const std::optional<std::int64_t> video_first_pts_ticks = detail::first_presented_pts(video_packets);
   const std::optional<RationalValue> video_first_pts_ms =
       video_first_pts_ticks.has_value() ? detail::ticks_to_ms(*video_first_pts_ticks, video_stream.tb) : std::nullopt;
 
@@ -601,7 +629,7 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
   // own `count < 2` / zero-x-variance refusal would catch this too, but
   // checking it here lets every audio stream report the SAME, more
   // specific reason rather than fit_drift's generic one).
-  const PtsSpan video_pts_span = detail::sorted_pts_with_span(std::span<const PacketRecord>(video_stream.packets));
+  const PtsSpan video_pts_span = detail::sorted_pts_with_span(video_packets);
   const std::vector<std::int64_t>& video_pts_ticks = video_pts_span.pts;
 
   // The SPAN each side's fraction is measured against prefers
@@ -637,8 +665,23 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
     const Scope scope = *scopes[audio_idx];
     const StreamPacketScan& audio_stream = packet_scan.per_stream[audio_idx];
 
-    const std::optional<std::int64_t> audio_first_pts_ticks =
-        detail::first_presented_pts(std::span<const PacketRecord>(audio_stream.packets));
+    const bool audio_view_overflowed = audio_idx >= views.size() || views[audio_idx].overflowed();
+    if (audio_view_overflowed) {
+      // T-05-71: this audio stream's own unwrap (or the cross-stream epoch
+      // shift) could not complete without an int64 overflow -- offset AND
+      // drift both skip for THIS audio stream, mirroring the video-side
+      // overflow branch above.
+      push_skip(CheckId::timeline_av_offset, scope, SkipReason::insufficient_data,
+                 nlohmann::ordered_json{{"reason", "audio_view_overflowed"}}, fp);
+      push_skip(CheckId::timeline_av_drift, scope, SkipReason::insufficient_data,
+                 nlohmann::ordered_json{{"reason", "audio_view_overflowed"}}, fp);
+      push_skip(CheckId::timeline_av_drift_pattern, scope, SkipReason::insufficient_data,
+                 nlohmann::ordered_json{{"reason", "audio_view_overflowed"}}, fp);
+      continue;
+    }
+    const std::span<const PacketRecord> audio_packets = views[audio_idx].packets();
+
+    const std::optional<std::int64_t> audio_first_pts_ticks = detail::first_presented_pts(audio_packets);
     if (!audio_first_pts_ticks.has_value()) {
       push_skip(CheckId::timeline_av_offset, scope, SkipReason::insufficient_data,
                  nlohmann::ordered_json{{"reason", "no_audio_timing_data"}}, fp);
@@ -773,7 +816,7 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
       push_skip(CheckId::timeline_av_drift_pattern, scope, SkipReason::insufficient_data,
                  nlohmann::ordered_json{{"reason", "insufficient_video_frames"}}, fp);
     } else {
-      const PtsSpan audio_pts_span = detail::sorted_pts_with_span(std::span<const PacketRecord>(audio_stream.packets));
+      const PtsSpan audio_pts_span = detail::sorted_pts_with_span(audio_packets);
       // Prefers the declared duration for the SAME reason as the video
       // span immediately above (this file's own worked finding) -- falls
       // back to the packet-derived span only when the demuxer reports no
