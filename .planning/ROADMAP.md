@@ -436,7 +436,7 @@ Plans:
 
 **Wave 21** *(blocked on 05-24)*
 
-- [ ] 05-25-PLAN.md — A blocking-human second push (keep or drop any perf-baseline commit) and the confirmed-green designated leg (DOC-04, PERF-05)
+- [x] 05-25-PLAN.md — A blocking-human second push (keep or drop any perf-baseline commit) and the confirmed-green designated leg (DOC-04, PERF-05)
 
 **Source doc**: `claude_docs/04-timeline-analysis.md` (design-doc phase 4)
 
