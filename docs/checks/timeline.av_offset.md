@@ -61,6 +61,20 @@ a reader can see exactly which basis was used and why.
 A file with no audio stream, or no video stream, reports
 `skipped:insufficient_data` -- never silence.
 
+### MPEG-TS wraparound
+
+On MPEG-TS, both streams' first presented timestamps are taken over
+33-bit-unwrapped, epoch-aligned timestamps (doc 04 section 1.2's unwrap
+rule, `TimelinePacketView`) before this check ever reads them -- a raw
+90kHz PTS wraps every ~26.5 hours, and comparing un-unwrapped values
+across a wrap would fabricate a spurious multi-hour offset with no real
+sync change present. A file whose 33-bit wrap falls between its streams'
+first packets therefore reports its true offset, unaffected by where the
+wrap happened to land. A view that cannot be unwrapped without an int64
+overflow reports `skipped:insufficient_data` for that stream's
+`timeline.av_offset`/`timeline.av_drift`/`timeline.av_drift.pattern` --
+never a wrapped or fabricated value.
+
 ## Why it matters
 
 A/V sync drift or offset is one of the most user-visible defects a media
