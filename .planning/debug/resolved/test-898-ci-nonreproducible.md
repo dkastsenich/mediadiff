@@ -1,17 +1,18 @@
 ---
-status: verifying
+status: resolved
 trigger: "Test 898 (integration.timeline_structure, \"the unflagged jump trigger pair declares its complete expected finding set under --profile remux\") passes locally but fails on CI x64-linux AND x64-windows-static-md with \"declared id(s) occurring FEWER times than declared among the report's non-pass findings: size.stream_bitrate\". Locally the pair timeline_ts_nowrap.ts vs timeline_ts_jump.ts yields size.stream_bitrate warn (video, delta +1915435756800000/158352084000%) and fail (audio, +2200542672960000/162589793548%), plus timeline.av_drift status=error \"tol comparator: delta_num (num * den cross-products) overflowed\". Suspected int64 overflow in src/compare/tol.cpp cross-multiplication; fixture bytes differ workstation vs CI (WINDOWS.md #12), so whether the overflowing finding materialises is byte-dependent. Blocks PR #6."
 created: 2026-09-18T11:45:44Z
-updated: 2026-09-18T12:55:00Z
+updated: 2026-09-18T13:19:34Z
 ---
 
 ## Current Focus
 <!-- OVERWRITE on each update - reflects NOW -->
 
-hypothesis: CONFIRMED and fixed locally (see reasoning_checkpoint and Resolution).
-test: Designated-leg CI verification, round 1 of 2 (D1=A transcribe pattern). Fix commits 9ce943d, e55c829, fb84c7b pushed to origin gsd/phase-05-timeline-analysis (PR #6 head) together with the docs(debug) commit that carries this file.
-expecting: Round 1 -- x64-linux fails "Assert the corpus digest matches the committed pin" on exactly timeline_ts_jump.ts and timeline_ts_jump_flagged.ts (its tests do not run); x64-windows-static-md and arm64-osx pass test "the unflagged jump trigger pair" and Test 9; arm64-linux and x64-osx fail for pre-existing infra reasons (WINDOWS #11/#14). Round 2 (after transcription) -- x64-linux passes the digest assert and 923/923 including the five byte-exact goldens.
-next_action: Orchestrator watches the CI run for 8c343c790b1601ceea80e3b2fde44bfcaf8e8bad. Expected: x64-linux fails 'Assert the corpus digest matches the committed pin' on exactly timeline_ts_jump.ts and timeline_ts_jump_flagged.ts (tests do not run there on this run); x64-windows-static-md and arm64-osx pass test 'the unflagged jump trigger pair' and Test 9; arm64-linux and x64-osx fail for pre-existing infra reasons (WINDOWS #11/#14). Then the orchestrator transcribes the two hashes and pushes again; the second run is the final verification.
+hypothesis: RESOLVED. The root cause was confirmed, fixed, and verified on the designated CI leg in two rounds (D1=A). See Resolution.verification.designated_leg_ci.
+test: None pending. Round 1 (run 35347044190, head 8c343c7) behaved exactly as predicted, and CI's computed hashes equalled the locally predicted ones. Round 2 (run 35347845434, head a56dd9b) concluded success: designated leg 923/923, the five byte-exact goldens ran by name and passed, and windows and arm64-osx were 918/918.
+expecting: n/a (session closed).
+next_action: None in this session. The archive commit is local only; pushing needs separate user authorization. Open follow-ups are outside this session: the D2 global generator determinism change (`-cpucount 4` + `TZ=UTC`), including the wording correction for WINDOWS #12/#25, filed separately by the orchestrator; WINDOWS #29 (tol message rendering defect) and #30 (#26 symptom change); and pre-existing infra failures WINDOWS #11 (arm64-linux) and #14 (x64-osx).
+reasoning_checkpoint_outcome: "blind_spots closed on CI: the PREDICTED designated-leg hashes d2ba0765... / cce78b1a... were observed byte-for-byte in round 1; arm64-osx (NEON bytes) passed test 'the unflagged jump trigger pair' and Test 9 in both rounds; x64-windows-static-md passed both tests in both rounds."
 bug_class: Bohrbug (deterministic per machine configuration; environment-dependent input bytes)
 reasoning_checkpoint:
   hypothesis: "Test 898 fails on CI because its declared set requires size.stream_bitrate(video) to be non-pass, but that finding's relative delta is 2.77% on 4-vCPU x86 runners (auto 5 encoder slice threads) and 3.18% on the 8-CPU workstation (auto 9 threads); 3% is the warn line. Independently, tol.cpp's int64 cross-multiplication overflows on timeline.av_drift's legitimate rationals (270183060000 x 36327640 > INT64_MAX) and returns status=error."
@@ -177,25 +178,51 @@ started: Never passed on CI. The designated leg first got past the corpus-digest
   found: Build up to date. 923/923 (6 designated-leg-only tests skipped). With MEDIADIFF_DESIGNATED_LEG=1: 923/923, only unit.console_vt skipped, i.e. all five byte-exact goldens ran and passed. Provenance lint: all 4 clauses pass (PROVISIONAL has 2 sorted entries; 80 pre-existing lines from 8caf1f1 present verbatim).
   implication: Local gate green on CI-equivalent bytes. Committed in four atomic commits (see Resolution.commits); tests/fixtures/ and tests/golden/CORPUS_DIGEST.txt untouched.
 
+- timestamp: 2026-09-18T13:19:34Z
+  checked: Designated-leg CI verification, both rounds (D1=A). The orchestrator read the job logs directly, not summaries. Relayed as the human-verify checkpoint response.
+  found: Round 1 (run 35347044190, head 8c343c7) failed x64-linux's digest assert on exactly the two predicted lines. Its computed hashes EQUAL the locally predicted d2ba0765.../cce78b1a.... Round 2 (run 35347845434, head a56dd9b, merge-ref tree identical) concluded success: x64-linux 923/923 with the five byte-exact goldens run by name, and x64-windows-static-md and arm64-osx 918/918 each. Test 'the unflagged jump trigger pair' and Test 9 passed on all three in-scope legs.
+  implication: The thread-count root cause predicted CI's fixture bytes before CI produced them. The fix holds on x86 and on arm64 NEON bytes. Full detail is in Resolution.verification.designated_leg_ci.
+
 ## Resolution
 <!-- OVERWRITE as understanding evolves -->
 
 root_cause: "Test 898 (AND-gate): (1) the mpeg4 fixture bytes of timeline_ts_nowrap.ts/timeline_ts_jump.ts depend on libavcodec's AUTO slice-thread count (nb_cpus+1: 9 on the 8-CPU workstation, 5 on 4-vCPU GitHub runners) and, secondarily, on the host DSP path (x86 SIMD vs C/NEON); (2) the pair's video size.stream_bitrate delta sat at +2.4%..+3.2%, straddling the 3% warn line, so that one finding was warn on the workstation and arm64-osx but pass on x64-linux/x64-windows. Separate code bug: src/compare/tol.cpp cross-multiplied in int64_t and returned status=error on legitimate timeline.av_drift rationals (270183060000 x 36327640 > INT64_MAX); tests 898 and 9 had enshrined that error in their declared sets. Also found: WINDOWS.md #12's workstation-vs-runner drift is thread count + TZ, not SIMD (162/164 fixtures reproduce with -cpucount 4 + TZ=UTC; only libopus differs)."
-fix: "Goal 1: scripts/gen_corpus.sh jump recipe, segment B -output_ts_offset 3.0 -> 5.0 (video delta -27%, audio -42% on every host config; declared set of test 898 unchanged); test comments updated; timeline_ts_jump.ts + timeline_ts_jump_flagged.ts listed in CORPUS_DIGEST_PROVISIONAL.txt (their CORPUS_DIGEST.txt lines are stale until re-transcribed). Goal 2: new src/core/exact_int.h (portable exact 256-bit integer); tol.cpp computes delta/tolerance comparisons exactly (strict extension of the int64 path; messages byte-identical whenever values fit int64); tests updated (CR-03, widening, Test 9) and added (test_exact_int.cpp, av_drift regression). Goal 3: WINDOWS.md #29 (rendering defect) and #30 (#26 symptom change)."
+fix: "Goal 1: scripts/gen_corpus.sh jump recipe, segment B -output_ts_offset 3.0 -> 5.0 (video delta -27%, audio -42% on every host config; declared set of test 898 unchanged); test comments updated; timeline_ts_jump.ts + timeline_ts_jump_flagged.ts were listed in CORPUS_DIGEST_PROVISIONAL.txt until re-transcribed. They were re-transcribed from designated-leg run 35347044190 / job 105605976648 in a56dd9b: CORPUS_DIGEST.txt lines updated and summary recomputed, both names cleared from PROVISIONAL, marker at CORPUS_DIGEST_PROVISIONAL.txt:58. Goal 2: new src/core/exact_int.h (portable exact 256-bit integer); tol.cpp computes delta/tolerance comparisons exactly (strict extension of the int64 path; messages byte-identical whenever values fit int64); tests updated (CR-03, widening, Test 9) and added (test_exact_int.cpp, av_drift regression). Goal 3: WINDOWS.md #29 (rendering defect) and #30 (#26 symptom change)."
 verification:
   target_test: { result: pass, note: "test 898 fails on CI-equivalent bytes with the old recipe (exact CI message), passes with the new recipe; passes on workstation bytes and arm64-like bytes" }
   mutation_check: { result: pass, reason_if_skipped: "Stryker n/a for C++; manual mutants", mutant_killed: "2/2 (compare <= -> <: 46 failures; zero-sign normalization removed: test_exact_int fails)" }
   no_op_deletion: { result: pass, deletion_justified_by_rca: true, note: "removed int64 overflow_finding branches are superseded by exact arithmetic; test expectation changes replace pinned `error` with exact verdicts + boundary neighbours (stronger)" }
   adjacent_tests: { result: pass, suites_run: ["main build 923/923 (workstation fixtures)", "scratch 923/923 CI-equivalent fixtures", "scratch 923/923 workstation-default fixtures", "5 designated-leg goldens with MEDIADIFF_DESIGNATED_LEG=1 on CI-equivalent fixtures", "timeline_structure+doc03 on 3 extra byte variants", "lint_corpus_digest_provenance.sh", "lint_bash4_builtins.sh"] }
   revert_and_reconfirm: { result: pass, bug_returned_on_revert: true, fixed_on_reapply: true }
-  guardrail_verdict: accepted
-  pending: "designated-leg CI, two rounds (D1=A): round 1 on the pushed head -> transcribe the two timeline_ts_jump*.ts hashes (orchestrator) -> round 2 is the final verification; also x64-windows-static-md + arm64-osx must pass test 'the unflagged jump trigger pair' and Test 9"
+  designated_leg_ci:
+    result: pass
+    method: "D1=A transcribe pattern, two CI rounds on PR #6. The orchestrator read the job logs directly, not summaries."
+    round_1:
+      run: 35347044190
+      head: 8c343c790b1601ceea80e3b2fde44bfcaf8e8bad
+      x64-linux: "job 105605976648. Failed 'Assert the corpus digest matches the committed pin (D-GAP-01)' on exactly two lines, timeline_ts_jump.ts and timeline_ts_jump_flagged.ts, as predicted. Tests did not run there, which is expected under D1=A."
+      predicted_hashes_matched: "EXACT. The designated leg computed d2ba07654cd8cb2648abd73136a0609d3c86260336f2be982b6c6936d9496927 (timeline_ts_jump.ts) and cce78b1a5fa886d18f7c9ea22bf2f08d31b89cc19c92cd687003bc787d889c63 (timeline_ts_jump_flagged.ts), identical to the -cpucount 4 / taskset -c 0-3 predictions. The thread-count root cause predicted the CI bytes before CI produced them."
+      x64-windows-static-md: "green, including 'the unflagged jump trigger pair' and Test 9"
+      arm64-osx: "green"
+      transcription: "a56dd9b: both lines into tests/golden/CORPUS_DIGEST.txt (summary recomputed), both names cleared from tests/golden/CORPUS_DIGEST_PROVISIONAL.txt, marker 'TRANSCRIBED-FROM-DESIGNATED-LEG: run=35347044190 job=105605976648 commit=8c343c790b1601ceea80e3b2fde44bfcaf8e8bad date=2026-09-18'. Pushed 8c343c7..a56dd9b with user authorization."
+    round_2_final:
+      run: 35347845434
+      head: a56dd9bcf3eba5ab8ebae1267761a1a2b531085d
+      merge_ref: "CI checked out the pull_request merge ref c1cbc2d. Its tree is byte-identical to a56dd9b's (both c0be71d30c4aa100b9704e0e438ac91f81905414), so the verified tree is exactly the committed one."
+      conclusion: success
+      x64-linux_designated: "job 105608545973. All steps succeeded. Step 12 (digest assert) passed. 100% tests passed, 0 failed out of 923. The only skip was unit.console_vt (Windows-only, pre-existing). #904 'the unflagged jump trigger pair ...' passed, and all 9 integration.timeline_structure tests passed, including Test 9 (flagged/unflagged split). The five byte-exact goldens ran by name under MEDIADIFF_DESIGNATED_LEG=1 and PASSED rather than skipping: #213 inspect_container golden; #605/#606/#607 ts_scan_golden (ts_204, ts_multiprogram, ts_single); #867 size_checks read-only golden. Perf ratchet steps 25-27 passed."
+      x64-windows-static-md: "job 105608545920. 918/918 passed. #899 'the unflagged jump trigger pair ...' passed, and all 9 timeline_structure tests passed."
+      arm64-osx: "job 105608545859. 918/918 passed. #899 passed, and all 9 timeline_structure tests passed."
+      lint: "success (ENG-16 boundary)"
+    out_of_scope_failures: "In both rounds, x64-osx failed at Build (WINDOWS #14, Apple Silicon cross-link) and arm64-linux failed at 'Register vcpkg NuGet feed' (WINDOWS #11). Both are pre-existing and outside this session's scope."
+  pending: "RESOLVED 2026-09-18. Both designated-leg CI rounds are complete and passed; see designated_leg_ci above."
 commits:
   - 9ce943d fix(compare): exact tol comparator instead of int64 cross-multiplication (exact_int.h, tol.cpp, test_exact_int.cpp, unit CMakeLists.txt, test_compare_semantics.cpp, test_tolerance.cpp, test_timeline_structure.cpp wrap-comment + Test 9 hunks)
   - e55c829 fix(corpus): move timeline_ts_jump pair off the 3% bitrate warn line (gen_corpus.sh, CORPUS_DIGEST_PROVISIONAL.txt, test_doc03_coverage.cpp, test_timeline_structure.cpp remaining hunks)
   - fb84c7b docs(windows): record tol message rendering defect and #26 symptom change (.planning/WINDOWS.md #29, #30)
   - 8c343c7 docs(debug): checkpoint test-898-ci-nonreproducible session (this file)
-pushed: "origin gsd/phase-05-timeline-analysis b39cec1..8c343c7 at 2026-09-18T12:56Z; head 8c343c790b1601ceea80e3b2fde44bfcaf8e8bad (PR #6 head; PR not otherwise modified). This SHA-recording edit is uncommitted -- push authorization covered one push only."
+  - a56dd9b fix(corpus): transcribe designated-leg hashes for the timeline_ts_jump pair (tests/golden/CORPUS_DIGEST.txt, tests/golden/CORPUS_DIGEST_PROVISIONAL.txt, this file's SHA-recording edit)
+pushed: "Push 1: origin gsd/phase-05-timeline-analysis b39cec1..8c343c7 at 2026-09-18T12:56Z, head 8c343c790b1601ceea80e3b2fde44bfcaf8e8bad, authorized under D3. Push 2: 8c343c7..a56dd9b, head a56dd9bcf3eba5ab8ebae1267761a1a2b531085d, authorized by the user under the transcription decision (D1=A). a56dd9b included this file's SHA-recording edit. PR #6 was not otherwise modified. The archive commit (status resolved, move to resolved/, KB updates) is LOCAL ONLY. Pushing it needs a separate user authorization."
 oracle_type: "specified (tol zone contract 3ms/5ms and 0.2 boundaries; DOC-04 declared-set contract) + derived (Python arbitrary-precision fractions/integers for exact deltas and ExactInt renderings)"
 files_changed:
   - src/core/exact_int.h (new)
@@ -208,7 +235,25 @@ files_changed:
   - tests/integration/test_doc03_coverage.cpp (comment only)
   - scripts/gen_corpus.sh
   - tests/golden/CORPUS_DIGEST_PROVISIONAL.txt
+  - tests/golden/CORPUS_DIGEST.txt (a56dd9b only: two lines transcribed from the designated leg, summary recomputed; never regenerated on a workstation)
   - .planning/WINDOWS.md (entries #29, #30 via gsd-tools windows append)
+
+## Prevention
+<!-- Blameless postmortem, written at archive. Its branches come from reasoning_checkpoint.candidate_causes. -->
+
+five_whys:
+  environment_and_data_branch: "Test 898 failed only on CI x86 because video size.stream_bitrate sat at +2.8% there and +3.2% on the workstation, either side of the 3% warn line. -> Why so close? The pair was calibrated against one machine's bytes, the workstation's 9-thread encode, and landed 0.18pp above the line. Nobody measured how far the delta moves across generator configurations. -> Why was that spread not anticipated? The only documented explanation of workstation-vs-runner byte drift (KB corpus-fixture-byte-drift, WINDOWS #12) blamed x86 SIMD dispatch, and no one could control that. The real input, libavcodec's AUTO slice-thread count (nb_cpus+1), was never varied. -> Why did it survive locally? Local ctest only ever sees workstation bytes. The designated leg first ran the test after 05-13's transcription (run 35277145363)."
+  code_branch: "timeline.av_drift returned status=error. -> Why? src/compare/tol.cpp cross-multiplied rationals in int64_t, and 270183060000 x 36327640 > INT64_MAX. -> Why was that not fixed when 05-10 added detail::Int128Accum? That change targeted the least-squares fit, and no one swept the sibling comparator arithmetic. -> Why did no test object? Four tests pinned status=error as the expected outcome: unit CR-03 tol, unit tolerance widening, integration Test 9, and test 898. The test gate enshrined the defect."
+why_not_caught: "Near-threshold fixture: no gate existed for this class. Local ctest runs only on workstation bytes, and nothing measures a declared set's margin from tolerance lines across generator configurations. The designated-leg CI gate did catch it, which is why it blocked PR #6. int64 overflow: the test gate masked it, because four tests asserted status=error as expected behaviour instead of rejecting it."
+recurrence_guard:
+  - "tests/unit/test_exact_int.cpp -- 5 [exact_int] cases (exact products at int64 extremes, 256-bit refusal never wraps, zero normalization, signed compare past int64)"
+  - "tests/unit/test_tolerance.cpp -- 'tolerance: timeline.av_drift's real splice rates, whose cross-products exceed int64, get the exact verdict' (real rationals + 0.2 boundary neighbours) and 'tolerance widening: a tolerance magnitude whose 3x widening exceeds int64 is widened exactly ...'"
+  - "tests/unit/test_compare_semantics.cpp -- 'semantics: CR-03 tol comparator returns the exact verdict when num*den cross-products exceed int64_t, ...' (replaces the pinned status=error)"
+  - "tests/integration/test_timeline_structure.cpp -- 'the unflagged jump trigger pair ...' and 'the flagged/unflagged split pair ...' declared sets no longer contain an error-status finding"
+  - "scripts/gen_corpus.sh:1863 -- seg_b -output_ts_offset 5.0 gives a ~16.6pp margin from the 3%/10% lines vs a measured ~0.6pp host spread (10 generation configs)"
+  - "existing: CI designated-leg digest assert + tests/golden/CORPUS_DIGEST_PROVISIONAL.txt transcription + scripts/lint_corpus_digest_provenance.sh (worked as designed: round 1 failed on exactly the two changed lines)"
+  - "knowledge base: entry test-898-ci-nonreproducible, plus a correction note on corpus-fixture-byte-drift"
+known_gaps: "Not built here. (a) No automated gate checks a declared set's margin against tolerance lines across generator configurations. (b) No lint forbids status=error ids in a declared set. (c) The D2 follow-up (global `-cpucount 4` + `TZ=UTC` in gen_corpus.sh, 0 designated-leg hashes change) would make an x86 workstation's corpus equal the designated leg's and close most of the 'local green is not CI green' gap. It was filed separately by the orchestrator."
 
 ## Fix goals and constraints (orchestrator notes for the session)
 
