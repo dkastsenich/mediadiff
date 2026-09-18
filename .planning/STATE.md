@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 5
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-timeline-analysis/05-20-PLAN.md (Gap 4 closure)
-last_updated: "2026-09-18T19:28:27.787Z"
+stopped_at: Completed 05-timeline-analysis/05-22-PLAN.md (Gap 1 closure, narrow-vocabulary)
+last_updated: "2026-09-18T19:44:12.917Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 5 execution started
-state_head: 348aa6eec2dad383b69eca1acbe67716c6adae25
+state_head: 94d4b02e2adc8d924917fc02eaef186b376e5c86
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 92
-  completed_plans: 88
+  completed_plans: 89
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 5 (Timeline Analysis) — EXECUTING
-Plan: 22 of 25
+Plan: 23 of 25
 Status: Ready to execute
 Last activity: 2026-09-18 — Completed 05-19-PLAN.md (WINDOWS #28 closed)
 
@@ -139,6 +139,7 @@ Progress: [█████████░] 92%
 | Phase 05-timeline-analysis P19 | ~50min | 3 tasks | 9 files |
 | Phase 05-timeline-analysis P21 | multi-session | 3 tasks | 3 files |
 | Phase 05-timeline-analysis P20 | ~45min | 3 tasks | 8 files |
+| Phase 05-timeline-analysis P22 | ~35min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -326,6 +327,7 @@ Recent decisions affecting current work:
 - [Phase 05-timeline-analysis]: 05-21: Phase 5's timeline.av_drift.pattern step-vocabulary gap closed by narrow-vocabulary (not adopting D1/D2) -- neither candidate meets soundness criterion (c): D1 never reaches step, D2 reaches step at a step_time provably unrelated to the real join (a terminal-checkpoint artifact of the step-recipe construction). Decided 2026-09-18 by the human at a blocking-human checkpoint.
 - [Phase 05-timeline-analysis]: 05-21: span:declared kept as the checkpoint span source (not span:observed) -- the TS side of the MP4-to-TS pairs reports a false 39 ms linear-drift under span:observed regardless of definition; residual MP4-to-TS timeline.av_drift false finding filed as a follow-up needing a priming/padding-aware span, not closed by this plan.
 - [Phase 05-timeline-analysis]: 05-20: container-DTS post-pass substitutes 05-15's PES-header truth for every MPEG-TS DTS consumer once, in the orchestrator, before any analyzer runs -- closes Gap 4 (timeline.dts_monotonic's fabricated dts tie on the MP4-to-TS tracer pair); dts_backward's genuine splice violations unaffected; dts_monotonic skips insufficient_data when container truth is unavailable
+- [Phase 05-timeline-analysis]: 05-22: narrow-vocabulary implemented -- DriftPattern loses `step`, DriftFit loses `step_time_ms`, fit_drift's plateau-detection branch removed; span:declared unchanged (already shipped). kDriftStepResidualMultiple removed as dead-code cleanup (Rule 1). Proven equivalent to pre-plan binary on 24 fixture pairs except for step_time_ms's absence (scratch git-worktree build of 448361e).
 
 ### Pending Todos
 
@@ -365,6 +367,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T19:28:27.591Z
-Stopped at: Completed 05-timeline-analysis/05-20-PLAN.md (Gap 4 closure)
+Last session: 2026-09-18T19:44:12.731Z
+Stopped at: Completed 05-timeline-analysis/05-22-PLAN.md (Gap 1 closure, narrow-vocabulary)
 Resume file: None
