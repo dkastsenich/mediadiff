@@ -39,6 +39,21 @@ origin. A truncated packet scan (`partial_scan`) skips every scope,
 including `global`, since a partial sweep can no longer prove which
 stream's PTS is genuinely earliest.
 
+### MPEG-TS: 33-bit unwrap and the cross-stream epoch rule
+
+On MPEG-TS, both the per-stream starts and the `global` origin are taken
+over 33-bit-unwrapped timestamps (doc 04 section 1.2), never the raw,
+possibly-wrapped PTS a genuinely long-running or offset-shifted transport
+stream can carry. A stream whose own first raw PTS sits more than 2^32
+ticks below another stream's first raw PTS is placed one 2^33 epoch later
+before the file's `global` origin is computed, so a wrap that falls
+between two streams' own first packets still yields the correct origin
+instead of a spurious multi-hour offset. An absolute origin genuinely moved
+by a muxer offset (for example `-output_ts_offset`) is a real `global`-scope
+finding, exactly as the whole-file-shift case above describes -- while the
+per-stream *relative* starts stay comparable, because the unwrap and epoch
+rule apply identically to both files being compared.
+
 ## Why it matters
 
 An unexpected change in where a file's content actually starts --

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <numeric>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "core/model.h"
 #include "core/rational.h"
 
+#include "analyzers/timeline/unwrap.h"
 #include "probe/cadence.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
@@ -359,14 +361,30 @@ bool declared_measured_agree(std::int64_t declared_num, std::int64_t declared_de
 // second sweep, never a statistic this file re-derives on its own. D-02: a
 // truncated packet scan skips ahead of the derivation itself, since a rate
 // from an incomplete sweep is a confidently wrong number.
-void emit_frame_rate_measured(const StreamInfo& info, const StreamPacketScan& stream, bool packet_scan_partial,
-                               Scope scope, Fingerprint& fp) {
+// 05-16-PLAN.md (TIME-01/TIME-02, the assumption-delta `promote` decision):
+// `packets`/`tb` come from the caller's own `TimelinePacketView` (never
+// `StreamPacketScan::packets` directly) -- on MPEG-TS this is the
+// per-stream-unwrapped-and-epoch-aligned axis, on every other container
+// it is the exact same zero-copy span this check always read. `overflowed`
+// is that view's own `overflowed()` -- checked ahead of the partial-scan
+// gate is unnecessary (both degrade to a skip either way), but it is
+// checked before ever calling `derive_cadence` so a wrap that could not be
+// unwrapped never reaches the cadence derivation as a raw, wrapped value.
+void emit_frame_rate_measured(const StreamInfo& info, std::span<const PacketRecord> packets, Rational tb,
+                               bool packet_scan_partial, bool overflowed, Scope scope, Fingerprint& fp) {
   if (packet_scan_partial) {
     push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::partial_scan, fp);
     return;
   }
+  if (overflowed) {
+    // T-05-71: this stream's own TS unwrap (or the cross-stream epoch
+    // shift) could not complete without an int64 overflow -- never a
+    // wrapped or fabricated rate.
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
 
-  const Cadence cadence = derive_cadence(stream.packets, stream.tb);
+  const Cadence cadence = derive_cadence(packets, tb);
   if (cadence.status == CadenceStatus::no_timing_data) {
     push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::no_timing_data, fp);
     return;
@@ -457,6 +475,13 @@ void run_video_stream_params(const ProbeResults& results, Fingerprint& fp) {
 
   const bool frame_count_partial = packet_scan.partial || (parser_scan != nullptr && parser_scan->partial);
 
+  // 05-16-PLAN.md: video.frame_rate.measured reads through the SAME
+  // promoted TimelinePacketView start_duration.cpp already builds --
+  // never a second unwrap implementation, and never a raw wrapped read on
+  // MPEG-TS.
+  const bool is_ts = container_family_from_format_name(demux.format_name()) == ContainerFamily::ts;
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(packet_scan, is_ts);
+
   const std::vector<std::optional<Scope>> scopes = compute_stream_scopes(demux, packet_scan.per_stream.size());
 
   for (std::size_t i = 0; i < scopes.size(); ++i) {
@@ -475,18 +500,20 @@ void run_video_stream_params(const ProbeResults& results, Fingerprint& fp) {
     emit_sar_conflict(info, scope, fp);
     emit_frame_rate_declared(info, scope, fp);
 
-    if (i >= packet_scan.per_stream.size()) {
+    if (i >= packet_scan.per_stream.size() || i >= views.size()) {
       // Defensive only -- packet_scan.per_stream is sized from
-      // demux.stream_count() by construction (probe/packet_scan.cpp).
+      // demux.stream_count() by construction (probe/packet_scan.cpp), and
+      // views is index-aligned with it by construction above.
       continue;
     }
 
     // video.frame_rate.measured depends ONLY on the packet scan (D-05's
-    // shared derivation reads StreamPacketScan::packets directly, never
+    // shared derivation reads the view's own packets, never
     // ParserScanResult) -- gated on packet_scan.partial alone, independent
     // of frame_count_partial below (which also folds in the parser scan's
     // own completeness, a dependency this check does not have).
-    emit_frame_rate_measured(info, packet_scan.per_stream[i], packet_scan.partial, scope, fp);
+    emit_frame_rate_measured(info, views[i].packets(), packet_scan.per_stream[i].tb, packet_scan.partial,
+                              views[i].overflowed(), scope, fp);
 
     if (frame_count_partial) {
       // Inline rather than push_skip (which leaves evidence unset): the
