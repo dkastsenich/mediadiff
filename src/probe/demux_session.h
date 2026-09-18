@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -155,7 +156,57 @@ struct InterruptState {
   std::int64_t budget_ms;
 };
 
+// 05-17-PLAN.md (Gap 2, TIME-02/TIME-03): one probed stream's identity for
+// DemuxSession::reprobe_ts_declared_durations' own layout-match guard
+// (T-05-75, the plan's own A2 flagged assumption) -- (nb_streams,
+// per-index codec_type, per-index AVStream::id) is what "stream layout
+// identity" names. On MPEG-TS specifically AVStream::id is the elementary
+// stream's own PID (StreamInfo::stream_id's own precedent comment,
+// below).
+struct StreamLayoutKey {
+  int codec_type = 0;
+  int stream_id = 0;
+};
+
+// A mismatch -- a different length, or any index disagreeing on either
+// field -- means the second open saw a genuinely different program map,
+// so the reprobed durations cannot be attributed to the primary session's
+// own streams by index; reprobe_ts_declared_durations reports
+// DeclaredDurationSource::withheld_wrap_uncorrectable rather than
+// comparing (or silently misattributing) a value. Two empty spans compare
+// equal (a primary session with zero streams reprobes trivially, never a
+// false mismatch).
+bool stream_layouts_match(std::span<const StreamLayoutKey> primary, std::span<const StreamLayoutKey> reprobe);
+
 }  // namespace detail
+
+// 05-17-PLAN.md (Gap 2, TIME-02/TIME-03): where a DemuxSession's own
+// declared-duration members (container_duration_ticks() and
+// StreamInfo::declared_duration_ticks) came from.
+//
+// `demuxer`: this session's own primary AVFormatContext/AVStream values,
+// completely unmodified -- every non-wrapping file, every non-TS file,
+// and the default before reprobe_ts_declared_durations is ever called.
+//
+// `overflow_corrected_reprobe`: reprobe_ts_declared_durations() found a
+// genuine 33-bit MPEG-TS wrap (this session's own primary
+// correct_ts_overflow=0 leaves the declared members wrap-corrupted on
+// exactly that case -- see this file's own header comment above) and
+// successfully recovered them from a second, overflow-corrected open of
+// the same bytes -- see reprobe_ts_declared_durations' own doc comment
+// for precisely what is, and is not, taken from that second open.
+//
+// `withheld_wrap_uncorrectable`: the second open failed, timed out, or
+// disagreed with the primary session's own stream layout
+// (detail::stream_layouts_match) -- both declared members are withheld
+// (std::nullopt) rather than compared corrupt. A withheld member is
+// always preferable to a compared-corrupt one (FALSE POSITIVES ARE P0,
+// PROJECT.md).
+enum class DeclaredDurationSource : std::uint8_t {
+  demuxer,
+  overflow_corrected_reprobe,
+  withheld_wrap_uncorrectable,
+};
 
 // 03-04-PLAN.md Task 1: the five per-stream media kinds doc 02 section 2's
 // container.track_count histogram fixes bin order over, plus `other` for
@@ -537,6 +588,45 @@ class DemuxSession {
   // same convention StreamInfo::declared_duration_ticks above follows.
   std::optional<std::int64_t> container_duration_ticks() const;
 
+  // 05-17-PLAN.md (Gap 2, TIME-02/TIME-03): re-opens `utf8_path` a SECOND
+  // time with libavformat's DEFAULT correct_ts_overflow (1) -- this
+  // session's own primary AVFormatContext, any PacketScan already run
+  // against it, and its own read_frame_call_count/warning_count are never
+  // touched by this call (T-05-75's own isolation requirement: the second
+  // open runs through the same context-open helper DemuxSession::open
+  // itself uses, entirely independent state, a throwaway
+  // ProbeDiagnostics accumulator so this session's own warning_count()
+  // never moves). Compares the two contexts' own stream layouts via
+  // detail::stream_layouts_match; on a match, stores the second context's
+  // own container_duration_ticks()-equivalent and per-stream
+  // declared_duration_ticks-equivalent values and sets
+  // declared_duration_source() to overflow_corrected_reprobe. Every other
+  // outcome -- the second open failing, timing out under the same
+  // interrupt-budget mechanism as a fresh DemuxOptions{}, or the two
+  // contexts' stream layouts disagreeing (T-05-75) -- sets
+  // declared_duration_source() to withheld_wrap_uncorrectable instead and
+  // stores nothing. The second context is closed before this call
+  // returns, on every path.
+  //
+  // MUST NOT be used for its start_time or any timestamp other than the
+  // two declared-duration members: the second open's own start_time sits
+  // on libavformat's own shifted epoch (the wrap correction moves it),
+  // which would directly contradict this project's own
+  // doc-04-section-1.2 unwrap (this plan's own prohibition). Intended
+  // caller: src/probe/orchestrator.cpp, once per file, only when a
+  // packet-scan-observed wrap on an MPEG-TS input (05-16-PLAN.md's
+  // TimelinePacketView::pts_wrap_events()/dts_wrap_events(), never a
+  // second wrap detector) makes the second libav open worth paying for at
+  // all.
+  void reprobe_ts_declared_durations(const std::string& utf8_path);
+
+  // Where this session's own container_duration_ticks()/
+  // StreamInfo::declared_duration_ticks values came from right now --
+  // `demuxer` (the default) until/unless reprobe_ts_declared_durations is
+  // called and finds this file genuinely wrapping. See
+  // DeclaredDurationSource's own doc comment.
+  DeclaredDurationSource declared_duration_source() const;
+
   // Internal borrow of the raw AVFormatContext* for other src/probe/
   // translation units that need to call libav directly against the SAME
   // already-open session -- src/probe/packet_scan.cpp's av_read_frame
@@ -562,6 +652,19 @@ class DemuxSession {
   // own doc comment for why this cannot be a stack-local temporary scoped
   // to open() alone.
   std::unique_ptr<detail::InterruptState> interrupt_state_;
+
+  // 05-17-PLAN.md (Gap 2): see DeclaredDurationSource's own doc comment
+  // and reprobe_ts_declared_durations' own doc comment above. Untouched
+  // (demuxer / nullopt / empty) unless reprobe_ts_declared_durations has
+  // been called on this session.
+  DeclaredDurationSource declared_duration_source_ = DeclaredDurationSource::demuxer;
+  std::optional<std::int64_t> reprobed_container_duration_ticks_;
+  // Index-aligned with ctx_->streams (proven by detail::stream_layouts_match
+  // before this is ever populated): reprobed_stream_duration_ticks_[i] is
+  // stream i's own AVStream::duration-equivalent from the
+  // overflow-corrected reprobe, std::nullopt for that stream's own
+  // AV_NOPTS_VALUE.
+  std::vector<std::optional<std::int64_t>> reprobed_stream_duration_ticks_;
 };
 
 }  // namespace mediadiff

@@ -8,6 +8,7 @@
 #include "analyzers/container/analyzers.h"
 #include "analyzers/size/analyzers.h"
 #include "analyzers/timeline/analyzers.h"
+#include "analyzers/timeline/unwrap.h"
 #include "analyzers/video/analyzers.h"
 #include "core/snapshot.h"
 #include "probe/bmff_scan.h"
@@ -340,6 +341,32 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     // Same reservation as bmff_scan_error/ebml_scan_error above, mirrored
     // for ts_scan.h's own complete/stop_offset contract.
     return mediadiff::unexpected(ts_scan_error.error());
+  }
+
+  // 05-17-PLAN.md (Gap 2, TIME-02/TIME-03, WINDOWS.md #26): on a
+  // genuinely-wrapping MPEG-TS input, DemuxSession's own primary session
+  // (opened with correct_ts_overflow=0, demux_session.h's own header
+  // comment) reports wrap-corrupted container/per-stream declared
+  // durations. session.reprobe_ts_declared_durations() recovers them from
+  // a second, overflow-corrected open -- run ONLY when the packet scan
+  // itself observed at least one wrap, via 05-16-PLAN.md's own
+  // TimelinePacketView::pts_wrap_events()/dts_wrap_events() (the SAME
+  // wrap-detecting primitive timeline.wrap_events already uses, never a
+  // second wrap detector), so every non-wrapping file -- the common case,
+  // and every non-TS file -- pays nothing for this step. Must run before
+  // any analyzer below reads a declared duration.
+  if (family == ContainerFamily::ts && results.packet_scan.has_value()) {
+    bool any_wrap = false;
+    for (const StreamPacketScan& stream : results.packet_scan->per_stream) {
+      const TimelinePacketView view = make_timeline_packet_view(stream, /*is_ts=*/true);
+      if (view.pts_wrap_events() > 0 || view.dts_wrap_events() > 0) {
+        any_wrap = true;
+        break;
+      }
+    }
+    if (any_wrap) {
+      session.reprobe_ts_declared_durations(utf8_path);
+    }
   }
 
   Fingerprint fp;

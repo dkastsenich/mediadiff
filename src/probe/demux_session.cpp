@@ -107,6 +107,115 @@ Error map_probe_error(const std::string& path, int rc) {
   return Error{ErrorKind::input_unsupported, "could not probe input '" + path + "': " + averror_text(rc)};
 }
 
+// 05-17-PLAN.md Task 1: the second-open half of DemuxSession::open's own
+// context-open sequence, factored out so
+// DemuxSession::reprobe_ts_declared_durations (Gap 2, TIME-02/TIME-03) can
+// reuse it with `correct_ts_overflow` flipped, rather than duplicating
+// alloc/interrupt-budget/diagnostics-accumulator/open/find_stream_info
+// wiring a second time. `diagnostics` is attached exactly the way
+// DemuxSession::open's own local `diagnostics` was attached before this
+// refactor -- the caller decides whether that accumulator is the session's
+// own (open()) or a throwaway one (reprobe_ts_declared_durations()), this
+// helper does not care which.
+struct OpenedContext {
+  AVFormatContext* ctx = nullptr;
+  std::unique_ptr<detail::InterruptState> interrupt_state;
+};
+
+mediadiff::expected<OpenedContext, Error> open_context(const std::string& utf8_path, const DemuxOptions& options,
+                                                          bool correct_ts_overflow, ProbeDiagnostics& diagnostics) {
+  AVFormatContext* ctx = avformat_alloc_context();
+  if (ctx == nullptr) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::internal, "could not allocate AVFormatContext for '" + utf8_path + "'"});
+  }
+
+  // Attaches this call's own diagnostics accumulator to the thread_local
+  // slot probe_log_callback reads (Task 2) -- cleared unconditionally on
+  // every exit path via this RAII guard, so the next open_context call on
+  // the same thread always starts from a null pointer, never a stale one
+  // left behind by a prior call's early return.
+  set_current_probe_diagnostics(&diagnostics);
+  struct DiagnosticsGuard {
+    ~DiagnosticsGuard() { set_current_probe_diagnostics(nullptr); }
+  } diagnostics_guard;
+
+  // Installed BEFORE avformat_open_input (doc 02 section 1.1: the field
+  // is documented "set by the user before avformat_open_input"; setting
+  // it any later would leave the open call itself unbounded). Heap-owned
+  // (not a stack-local temporary) -- see detail::InterruptState's own doc
+  // comment in demux_session.h for why: ffmpeg's avio layer captures this
+  // AVIOInterruptCB into its own URLContext at avio_open2() time,
+  // independent of AVFormatContext::interrupt_callback from that point
+  // forward, so the state it points at must remain valid for as long as
+  // reads can happen on this session, not just for the duration of this
+  // open() call.
+  auto interrupt_state = std::make_unique<detail::InterruptState>(
+      detail::InterruptState{std::chrono::steady_clock::now(), options.wall_clock_budget_ms});
+  ctx->interrupt_callback.callback = &check_interrupt;
+  ctx->interrupt_callback.opaque = interrupt_state.get();
+
+  // avformat_open_input takes a narrow, UTF-8 path directly on every
+  // platform mediadiff targets -- src/util/fs.h's own header comment
+  // records that libavformat's file:// protocol already converts UTF-8 to
+  // UTF-16 internally on Windows (file_open -> avpriv_open -> win32_open
+  // -> get_extended_win32_path -> MultiByteToWideChar(CP_UTF8, ...) ->
+  // _wsopen), so no wide-path shim is needed at this call site -- only
+  // fopen_utf8's OWN file opens (util/fs.h) need one.
+  //
+  // Never touch ctx->flags -- AVFMT_FLAG_GENPTS stays unset, always (see
+  // this file's own header comment for the full reasoning).
+  //
+  // 05-06-PLAN.md (TIME-02, Rule 1/2 gap closure): correct_ts_overflow is
+  // a plain AVFormatContext int field (not part of ::flags) -- see
+  // demux_session.h's own header comment for why DemuxSession::open
+  // always clears it (correct_ts_overflow=false). 05-17-PLAN.md (Gap 2)
+  // is the one and only caller that ever passes true: it deliberately
+  // wants libavformat's OWN default wrap correction, on a second,
+  // isolated context, precisely to recover the declared-duration values
+  // the primary session's own correct_ts_overflow=0 leaves corrupted on a
+  // genuinely-wrapping MPEG-TS file.
+  ctx->correct_ts_overflow = correct_ts_overflow ? 1 : 0;
+  int rc = avformat_open_input(&ctx, utf8_path.c_str(), nullptr, nullptr);
+  if (rc < 0) {
+    avformat_close_input(&ctx);
+    return mediadiff::unexpected(map_probe_error(utf8_path, rc));
+  }
+
+  rc = avformat_find_stream_info(ctx, nullptr);
+  if (rc < 0) {
+    avformat_close_input(&ctx);
+    return mediadiff::unexpected(map_probe_error(utf8_path, rc));
+  }
+
+  // Rule 1 fix (03-03-PLAN.md Task 1, discovered via AddressSanitizer
+  // stack-use-after-return): this budget was only ever documented to
+  // bound avformat_open_input + avformat_find_stream_info (this file's
+  // own header comment) -- disarm it here so a LATER libav call on this
+  // same AVFormatContext (av_read_frame's own internal
+  // ff_check_interrupt calls, among others -- PacketScan, 03-03-PLAN.md
+  // Task 1, is the first caller that ever makes one) never aborts a
+  // mid-sweep read on a stale "budget already exceeded" reading. Earlier
+  // attempt (nulling ctx->interrupt_callback itself) was INSUFFICIENT and
+  // is exactly what ASan caught: ffmpeg's avio layer copies the
+  // AVIOInterruptCB into its own URLContext back at avio_open2() time
+  // (inside avformat_open_input), independent of
+  // AVFormatContext::interrupt_callback from that point on -- so clearing
+  // ctx's own field here never reaches the io layer's already-captured
+  // copy. The correct disarm mutates the SAME InterruptState object that
+  // copy still points at, so it keeps pointing at valid memory for the
+  // rest of this session's lifetime; setting budget_ms to the largest
+  // representable value makes every future `elapsed_ms >= budget_ms`
+  // check false forever, i.e. "never interrupt again" without ever
+  // reading freed/dangling memory.
+  interrupt_state->budget_ms = std::numeric_limits<std::int64_t>::max();
+
+  OpenedContext result;
+  result.ctx = ctx;
+  result.interrupt_state = std::move(interrupt_state);
+  return result;
+}
+
 }  // namespace
 
 std::int64_t default_wall_clock_budget_ms() { return g_default_wall_clock_budget_ms.load(std::memory_order_relaxed); }
@@ -201,7 +310,10 @@ DemuxSession::DemuxSession(DemuxSession&& other) noexcept
     : ctx_(other.ctx_),
       format_name_(std::move(other.format_name_)),
       diagnostics_(other.diagnostics_),
-      interrupt_state_(std::move(other.interrupt_state_)) {
+      interrupt_state_(std::move(other.interrupt_state_)),
+      declared_duration_source_(other.declared_duration_source_),
+      reprobed_container_duration_ticks_(other.reprobed_container_duration_ticks_),
+      reprobed_stream_duration_ticks_(std::move(other.reprobed_stream_duration_ticks_)) {
   other.ctx_ = nullptr;
 }
 
@@ -214,6 +326,9 @@ DemuxSession& DemuxSession::operator=(DemuxSession&& other) noexcept {
     format_name_ = std::move(other.format_name_);
     diagnostics_ = other.diagnostics_;
     interrupt_state_ = std::move(other.interrupt_state_);
+    declared_duration_source_ = other.declared_duration_source_;
+    reprobed_container_duration_ticks_ = other.reprobed_container_duration_ticks_;
+    reprobed_stream_duration_ticks_ = std::move(other.reprobed_stream_duration_ticks_);
     other.ctx_ = nullptr;
   }
   return *this;
@@ -227,95 +342,88 @@ DemuxSession::~DemuxSession() {
 
 mediadiff::expected<DemuxSession, Error> DemuxSession::open(const std::string& utf8_path,
                                                               const DemuxOptions& options) {
-  AVFormatContext* ctx = avformat_alloc_context();
-  if (ctx == nullptr) {
-    return mediadiff::unexpected(Error{ErrorKind::internal, "could not allocate AVFormatContext for '" + utf8_path + "'"});
-  }
-
-  // Attaches this call's own diagnostics accumulator to the thread_local
-  // slot probe_log_callback reads (Task 2) -- cleared unconditionally on
-  // every exit path via this RAII guard, so a fresh DemuxSession::open on
-  // the same thread always starts from a null pointer, never a stale one
-  // left behind by a prior call's early return.
+  // 05-17-PLAN.md Task 1: the alloc/interrupt-budget/diagnostics-
+  // accumulator/open/find_stream_info sequence itself now lives in
+  // open_context (this file's own anonymous namespace, above) --
+  // `correct_ts_overflow=false` here is byte-for-byte the same behavior
+  // this function had before the refactor (05-06-PLAN.md's own
+  // correct_ts_overflow=0 fix, still the ONLY value the primary session
+  // ever opens with).
   ProbeDiagnostics diagnostics;
-  set_current_probe_diagnostics(&diagnostics);
-  struct DiagnosticsGuard {
-    ~DiagnosticsGuard() { set_current_probe_diagnostics(nullptr); }
-  } diagnostics_guard;
-
-  // Installed BEFORE avformat_open_input (doc 02 section 1.1: the field
-  // is documented "set by the user before avformat_open_input"; setting
-  // it any later would leave the open call itself unbounded). Heap-owned
-  // (not a stack-local temporary) -- see detail::InterruptState's own doc
-  // comment in demux_session.h for why: ffmpeg's avio layer captures this
-  // AVIOInterruptCB into its own URLContext at avio_open2() time,
-  // independent of AVFormatContext::interrupt_callback from that point
-  // forward, so the state it points at must remain valid for as long as
-  // reads can happen on this session, not just for the duration of this
-  // open() call.
-  auto interrupt_state = std::make_unique<detail::InterruptState>(
-      detail::InterruptState{std::chrono::steady_clock::now(), options.wall_clock_budget_ms});
-  ctx->interrupt_callback.callback = &check_interrupt;
-  ctx->interrupt_callback.opaque = interrupt_state.get();
-
-  // avformat_open_input takes a narrow, UTF-8 path directly on every
-  // platform mediadiff targets -- src/util/fs.h's own header comment
-  // records that libavformat's file:// protocol already converts UTF-8 to
-  // UTF-16 internally on Windows (file_open -> avpriv_open -> win32_open
-  // -> get_extended_win32_path -> MultiByteToWideChar(CP_UTF8, ...) ->
-  // _wsopen), so no wide-path shim is needed at this call site -- only
-  // fopen_utf8's OWN file opens (util/fs.h) need one.
-  //
-  // Never touch ctx->flags -- AVFMT_FLAG_GENPTS stays unset, always (see
-  // this file's own header comment for the full reasoning).
-  //
-  // 05-06-PLAN.md (TIME-02, Rule 1/2 gap closure): correct_ts_overflow is
-  // a plain AVFormatContext int field (not part of ::flags), left at its
-  // libav default of 1 until now -- see demux_session.h's own header
-  // comment for why that silently defeated TIME-02's own
-  // unwrap_ts_timestamps on every real MPEG-TS wrap. Cleared here, before
-  // avformat_open_input, so this project's own asymmetric unwrap rule is
-  // what runs on a genuine 33-bit wrap, never libav's generic heuristic.
-  ctx->correct_ts_overflow = 0;
-  int rc = avformat_open_input(&ctx, utf8_path.c_str(), nullptr, nullptr);
-  if (rc < 0) {
-    avformat_close_input(&ctx);
-    return mediadiff::unexpected(map_probe_error(utf8_path, rc));
+  auto opened = open_context(utf8_path, options, /*correct_ts_overflow=*/false, diagnostics);
+  if (!opened) {
+    return mediadiff::unexpected(opened.error());
   }
 
-  rc = avformat_find_stream_info(ctx, nullptr);
-  if (rc < 0) {
-    avformat_close_input(&ctx);
-    return mediadiff::unexpected(map_probe_error(utf8_path, rc));
-  }
-
-  // Rule 1 fix (03-03-PLAN.md Task 1, discovered via AddressSanitizer
-  // stack-use-after-return): this budget was only ever documented to
-  // bound avformat_open_input + avformat_find_stream_info (this file's
-  // own header comment) -- disarm it here so a LATER libav call on this
-  // same AVFormatContext (av_read_frame's own internal
-  // ff_check_interrupt calls, among others -- PacketScan, 03-03-PLAN.md
-  // Task 1, is the first caller that ever makes one) never aborts a
-  // mid-sweep read on a stale "budget already exceeded" reading. Earlier
-  // attempt (nulling ctx->interrupt_callback itself) was INSUFFICIENT and
-  // is exactly what ASan caught: ffmpeg's avio layer copies the
-  // AVIOInterruptCB into its own URLContext back at avio_open2() time
-  // (inside avformat_open_input), independent of
-  // AVFormatContext::interrupt_callback from that point on -- so clearing
-  // ctx's own field here never reaches the io layer's already-captured
-  // copy. The correct disarm mutates the SAME InterruptState object that
-  // copy still points at, so it keeps pointing at valid memory for the
-  // rest of this session's lifetime; setting budget_ms to the largest
-  // representable value makes every future `elapsed_ms >= budget_ms`
-  // check false forever, i.e. "never interrupt again" without ever
-  // reading freed/dangling memory.
-  interrupt_state->budget_ms = std::numeric_limits<std::int64_t>::max();
-
-  std::string fmt_name = first_token(ctx->iformat != nullptr ? ctx->iformat->name : nullptr);
-  DemuxSession session(ctx, std::move(fmt_name), std::move(interrupt_state));
+  std::string fmt_name = first_token(opened->ctx->iformat != nullptr ? opened->ctx->iformat->name : nullptr);
+  DemuxSession session(opened->ctx, std::move(fmt_name), std::move(opened->interrupt_state));
   session.diagnostics_ = diagnostics;
   return session;
 }
+
+// 05-17-PLAN.md Task 1 (Gap 2, TIME-02/TIME-03): see this method's own doc
+// comment in demux_session.h.
+void DemuxSession::reprobe_ts_declared_durations(const std::string& utf8_path) {
+  std::vector<detail::StreamLayoutKey> primary_layout;
+  if (ctx_ != nullptr) {
+    primary_layout.reserve(ctx_->nb_streams);
+    for (unsigned i = 0; i < ctx_->nb_streams; ++i) {
+      const AVStream* stream = ctx_->streams[i];
+      primary_layout.push_back(detail::StreamLayoutKey{static_cast<int>(stream->codecpar->codec_type), stream->id});
+    }
+  }
+
+  // A throwaway accumulator -- this session's OWN warning_count() (already
+  // captured at primary-open time) must never move because of this second,
+  // isolated open.
+  ProbeDiagnostics throwaway_diagnostics;
+  auto opened = open_context(utf8_path, DemuxOptions{}, /*correct_ts_overflow=*/true, throwaway_diagnostics);
+  if (!opened) {
+    declared_duration_source_ = DeclaredDurationSource::withheld_wrap_uncorrectable;
+    reprobed_container_duration_ticks_.reset();
+    reprobed_stream_duration_ticks_.clear();
+    return;
+  }
+
+  AVFormatContext* reprobe_ctx = opened->ctx;
+
+  std::vector<detail::StreamLayoutKey> reprobe_layout;
+  reprobe_layout.reserve(reprobe_ctx->nb_streams);
+  for (unsigned i = 0; i < reprobe_ctx->nb_streams; ++i) {
+    const AVStream* stream = reprobe_ctx->streams[i];
+    reprobe_layout.push_back(detail::StreamLayoutKey{static_cast<int>(stream->codecpar->codec_type), stream->id});
+  }
+
+  if (!detail::stream_layouts_match(primary_layout, reprobe_layout)) {
+    // T-05-75: the second open saw a different program map -- the
+    // reprobed durations cannot be attributed to the primary session's
+    // own streams by index. Withheld, never compared corrupt.
+    avformat_close_input(&reprobe_ctx);
+    declared_duration_source_ = DeclaredDurationSource::withheld_wrap_uncorrectable;
+    reprobed_container_duration_ticks_.reset();
+    reprobed_stream_duration_ticks_.clear();
+    return;
+  }
+
+  // Duration fields only (this method's own prohibition) -- never
+  // start_time, which sits on libavformat's own shifted epoch once its
+  // default wrap correction has run.
+  reprobed_container_duration_ticks_ =
+      reprobe_ctx->duration != AV_NOPTS_VALUE ? std::optional<std::int64_t>(reprobe_ctx->duration) : std::nullopt;
+
+  reprobed_stream_duration_ticks_.clear();
+  reprobed_stream_duration_ticks_.reserve(reprobe_ctx->nb_streams);
+  for (unsigned i = 0; i < reprobe_ctx->nb_streams; ++i) {
+    const AVStream* stream = reprobe_ctx->streams[i];
+    reprobed_stream_duration_ticks_.push_back(
+        stream->duration != AV_NOPTS_VALUE ? std::optional<std::int64_t>(stream->duration) : std::nullopt);
+  }
+
+  avformat_close_input(&reprobe_ctx);
+  declared_duration_source_ = DeclaredDurationSource::overflow_corrected_reprobe;
+}
+
+DeclaredDurationSource DemuxSession::declared_duration_source() const { return declared_duration_source_; }
 
 std::string_view DemuxSession::format_name() const { return format_name_; }
 
@@ -367,8 +475,19 @@ StreamInfo DemuxSession::stream_info(int index) const {
 
   // 05-04-PLAN.md (TIME-01/TIME-03): the stream-declared member of
   // timeline.duration's triple -- AV_NOPTS_VALUE (never coerced to 0)
-  // stays std::nullopt.
-  if (stream->duration != AV_NOPTS_VALUE) {
+  // stays std::nullopt. 05-17-PLAN.md (Gap 2, TIME-02/TIME-03): overridden
+  // by reprobe_ts_declared_durations()'s own stored value whenever this
+  // session's declared_duration_source() is overflow_corrected_reprobe
+  // (the primary session's own value is wrap-corrupted on a
+  // genuinely-wrapping TS file, correct_ts_overflow=0 -- this file's own
+  // header comment), or withheld entirely (stays nullopt) when
+  // withheld_wrap_uncorrectable. `demuxer` (the default) reads
+  // stream->duration verbatim, exactly as before this plan.
+  if (declared_duration_source_ == DeclaredDurationSource::overflow_corrected_reprobe) {
+    if (static_cast<std::size_t>(index) < reprobed_stream_duration_ticks_.size()) {
+      info.declared_duration_ticks = reprobed_stream_duration_ticks_[static_cast<std::size_t>(index)];
+    }
+  } else if (declared_duration_source_ == DeclaredDurationSource::demuxer && stream->duration != AV_NOPTS_VALUE) {
     info.declared_duration_ticks = stream->duration;
   }
 
@@ -575,12 +694,37 @@ std::optional<std::int64_t> DemuxSession::file_size_bytes() const {
 // 05-04-PLAN.md (TIME-01/TIME-03): the container-declared member of
 // timeline.duration's triple -- AV_NOPTS_VALUE (never coerced to 0) stays
 // std::nullopt, mirroring StreamInfo::declared_duration_ticks' identical
-// convention above.
+// convention above. 05-17-PLAN.md (Gap 2, TIME-02/TIME-03): overridden by
+// reprobe_ts_declared_durations()'s own stored value the same way
+// stream_info()'s declared_duration_ticks is, above -- see that override's
+// own comment for the full reasoning.
 std::optional<std::int64_t> DemuxSession::container_duration_ticks() const {
+  if (declared_duration_source_ == DeclaredDurationSource::overflow_corrected_reprobe) {
+    return reprobed_container_duration_ticks_;
+  }
+  if (declared_duration_source_ == DeclaredDurationSource::withheld_wrap_uncorrectable) {
+    return std::nullopt;
+  }
   if (ctx_ == nullptr || ctx_->duration == AV_NOPTS_VALUE) {
     return std::nullopt;
   }
   return ctx_->duration;
 }
+
+namespace detail {
+
+bool stream_layouts_match(std::span<const StreamLayoutKey> primary, std::span<const StreamLayoutKey> reprobe) {
+  if (primary.size() != reprobe.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < primary.size(); ++i) {
+    if (primary[i].codec_type != reprobe[i].codec_type || primary[i].stream_id != reprobe[i].stream_id) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace detail
 
 }  // namespace mediadiff

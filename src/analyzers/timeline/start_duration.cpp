@@ -280,9 +280,26 @@ namespace {
 // mirrors timeline.start's own (`no_timing_data` when the stream carries no
 // real PTS at all; `insufficient_data` for any overflow anywhere in the
 // reconstruction/rescale/pairwise-delta arithmetic, T-05-13/T-05-14).
+// 05-17-PLAN.md (Gap 2, TIME-02/TIME-03): DeclaredDurationSource's own
+// evidence spelling, exactly the three values this plan's own Artifacts
+// table names -- `demuxer` / `overflow_corrected_reprobe` /
+// `withheld_wrap_uncorrectable`.
+const char* declared_duration_source_name(DeclaredDurationSource source) {
+  switch (source) {
+    case DeclaredDurationSource::demuxer:
+      return "demuxer";
+    case DeclaredDurationSource::overflow_corrected_reprobe:
+      return "overflow_corrected_reprobe";
+    case DeclaredDurationSource::withheld_wrap_uncorrectable:
+      return "withheld_wrap_uncorrectable";
+  }
+  return "demuxer";
+}
+
 void emit_timeline_duration(Scope scope, std::span<const PacketRecord> packets, Rational tb,
                              const std::optional<RationalValue>& container_declared_ms,
-                             const std::optional<RationalValue>& stream_declared_ms, Fingerprint& fp) {
+                             const std::optional<RationalValue>& stream_declared_ms,
+                             DeclaredDurationSource declared_duration_source, Fingerprint& fp) {
   const std::optional<std::int64_t> first_pts = detail::first_presented_pts(packets);
   if (!first_pts.has_value()) {
     push_skip(CheckId::timeline_duration, scope, SkipReason::no_timing_data, fp);
@@ -347,6 +364,7 @@ void emit_timeline_duration(Scope scope, std::span<const PacketRecord> packets, 
       {"computed_ms", computed_ms->num},
       {"duration_source", any_reconstructed ? "reconstructed" : "declared"},
       {"absent_members", absent_members},
+      {"declared_duration_source", declared_duration_source_name(declared_duration_source)},
   };
   if (container_declared_ms.has_value()) {
     duration_evidence["container_declared_ms"] = container_declared_ms->num;
@@ -411,6 +429,7 @@ void emit_timeline_duration(Scope scope, std::span<const PacketRecord> packets, 
       {"tested_pairs", tested_pairs},
       {"disagreeing_pairs", disagreeing_pairs},
       {"computed_ms", computed_ms->num},
+      {"declared_duration_source", declared_duration_source_name(declared_duration_source)},
   };
   if (container_declared_ms.has_value()) {
     coherence_evidence["container_declared_ms"] = container_declared_ms->num;
@@ -660,7 +679,8 @@ void run_timeline_start_duration(const ProbeResults& results, Fingerprint& fp) {
         stream_info.declared_duration_ticks.has_value()
             ? detail::ticks_to_ms(*stream_info.declared_duration_ticks, stream_tb)
             : std::nullopt;
-    emit_timeline_duration(*scopes[i], views[i].packets(), stream_tb, container_declared_ms, stream_declared_ms, fp);
+    emit_timeline_duration(*scopes[i], views[i].packets(), stream_tb, container_declared_ms, stream_declared_ms,
+                            demux.declared_duration_source(), fp);
   }
 }
 
