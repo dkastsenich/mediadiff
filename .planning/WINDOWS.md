@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 open_count: 12
-waived_count: 1
+waived_count: 2
 fixed_count: 18
-total_count: 31
-last_updated: 2026-09-18T18:31:10.190Z
+total_count: 32
+last_updated: 2026-09-18T19:55:09.810Z
 ---
 
 # Broken Windows Ledger
@@ -46,6 +46,7 @@ last_updated: 2026-09-18T18:31:10.190Z
 | 29 | 05 | deviation | src/compare/tol.cpp | 359 | The tol comparator's human-readable delta (Finding.message, shown in the default tty output, --json, markdown and junit) does not show the number the verdict was decided on. (1) For RELATIVE (percent) tolerances it renders the ABSOLUTE delta in the value's own unit, unreduced, with a '%' suffix: size.stream_bitrate video on timeline_ts_nowrap.ts vs timeline_ts_jump.ts printed 'delta +1915435756800000/158352084000%' (= 12096 bps absolute) while the verdict compared +3.18%; size.file prints 'delta +54332/1%' for a 54332-byte change. (2) The sign comes from compare_ticks on the two sides' num only (tb-scaled), ignoring each RationalValue's den, so it is wrong whenever the dens differ: the audio stream_bitrate of the same pair fell 18.8% but printed '+'; it is also empty whenever that num-only comparison overflows (e.g. the wrap pair's size.stream_bitrate). (3) Fractions are never reduced. The verdicts themselves are correct -- only the text misleads (it misled the first diagnosis of debug session test-898-ci-nonreproducible). Not fixed there because message text is serialized into every report format and may be pinned by golden files; a fix should render the relative percentage for is_relative tolerances, derive the sign from the exact delta_num (core/exact_int.h already computes it), reduce the fraction, and first check tests/golden/* and the designated-leg goldens for pinned message text. | open |  | 2026-09-18T12:14:27.240Z |  |
 | 30 | 05 | deviation | src/analyzers/size/size.cpp |  | Follow-up to WINDOWS.md #26 (still open): #26 cites 'int64_t overflow in size.stream_bitrate's tolerance comparator, status=error' as its observable instance. Debug session test-898-ci-nonreproducible made src/compare/tol.cpp exact (core/exact_int.h), so that comparator can no longer overflow: on timeline_ts_nowrap.ts vs timeline_ts_wrap.ts the same corrupted, un-unwrapped size.stream_bitrate (and timeline.av_drift) inputs now produce status=fail with meaningless magnitudes (e.g. video 'delta 1164020667413667840000/3061451405548800%') instead of error. The defect is unchanged and still #26's (analyzers reading raw wrapped PTS/DTS); only its symptom moved from error to a false fail, so anyone searching reports for #26's error signature will no longer find it. tests/integration/test_timeline_structure.cpp's Test 4 still asserts only timeline.wrap_events on that pair, by design. Close together with #26. | fixed |  | 2026-09-18T12:14:35.643Z | 2026-09-18T17:28:56.479Z |
 | 31 | 05 | deviation | src/analyzers/timeline/av_sync.cpp |  | timeline.av_offset/timeline.av_drift/timeline.av_drift.pattern read raw, un-unwrapped PTS on MPEG-TS, the same root cause as WINDOWS.md #26, found by 05-VERIFICATION.md Gap 2 and not previously filed. libavformat's declared durations were also corrupted under correct_ts_overflow=0 on a wrapping file, fixed by 05-17's overflow-corrected re-probe. Both are fixed by 05-16/05-17/05-18, and the whole-report wrap assertion (tests/integration/test_timeline_structure.cpp) guards them. | fixed |  | 2026-09-18T17:29:06.380Z | 2026-09-18T17:29:10.070Z |
+| 32 | 05 | deviation | src/analyzers/timeline/av_sync.cpp |  | On the lossless MP4-to-TS remux pairs (timeline_start_base.mp4 vs timeline_start_shift.ts, and vs timeline_avoffset_unknown.ts), timeline.av_drift reports fail and timeline.av_drift.pattern reports fail (pattern=irregular, residual_max_ms=42). Cause: the checkpoint span uses libavformat's ESTIMATED TS audio stream duration -- MPEG-TS does not declare a per-stream duration the way MP4 does. Observed TS packet extents include AAC priming/padding samples with no edit list to exclude them, so neither span source removes the residual by itself: span:observed only swaps this reading for a different, still-wrong 39ms false linear-drift on the TS side (05-STEP-DESIGN.md Orchestrator note, 2026-09-18 -- the earlier span:observed MP4-side regression this research first reported was a harness-variant artifact, not evidence against span:observed as the plan actually scoped it). The human kept span:declared, today's shipped checkpoint span source, at the 05-21 blocking-human checkpoint. Closing this residual needs a priming/padding-aware span, filed as a follow-up. | waived | span:declared -- observed MPEG-TS packet extents include AAC priming/padding (no edit list), so span:observed only swaps the MP4-to-TS pairs' `irregular` reading for a false 39 ms linear-drift; the residual needs a priming/padding-aware span (follow-up). | 2026-09-18T19:55:05.254Z | 2026-09-18T19:55:09.810Z |
 
 ````json
 [
@@ -420,6 +421,18 @@ last_updated: 2026-09-18T18:31:10.190Z
     "reason": "",
     "recorded_at": "2026-09-18T17:29:06.380Z",
     "resolved_at": "2026-09-18T17:29:10.070Z"
+  },
+  {
+    "id": 32,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "src/analyzers/timeline/av_sync.cpp",
+    "line": null,
+    "description": "On the lossless MP4-to-TS remux pairs (timeline_start_base.mp4 vs timeline_start_shift.ts, and vs timeline_avoffset_unknown.ts), timeline.av_drift reports fail and timeline.av_drift.pattern reports fail (pattern=irregular, residual_max_ms=42). Cause: the checkpoint span uses libavformat's ESTIMATED TS audio stream duration -- MPEG-TS does not declare a per-stream duration the way MP4 does. Observed TS packet extents include AAC priming/padding samples with no edit list to exclude them, so neither span source removes the residual by itself: span:observed only swaps this reading for a different, still-wrong 39ms false linear-drift on the TS side (05-STEP-DESIGN.md Orchestrator note, 2026-09-18 -- the earlier span:observed MP4-side regression this research first reported was a harness-variant artifact, not evidence against span:observed as the plan actually scoped it). The human kept span:declared, today's shipped checkpoint span source, at the 05-21 blocking-human checkpoint. Closing this residual needs a priming/padding-aware span, filed as a follow-up.",
+    "status": "waived",
+    "reason": "span:declared -- observed MPEG-TS packet extents include AAC priming/padding (no edit list), so span:observed only swaps the MP4-to-TS pairs' `irregular` reading for a false 39 ms linear-drift; the residual needs a priming/padding-aware span (follow-up).",
+    "recorded_at": "2026-09-18T19:55:05.254Z",
+    "resolved_at": "2026-09-18T19:55:09.810Z"
   }
 ]
 ````
