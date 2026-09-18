@@ -317,9 +317,23 @@ TEST_CASE("timeline_av_sync - ROADMAP SC4: comparing an unknown-priming file aga
 // collateral consequence of the real ~100ms packet-timing anomaly this
 // fixture's own `setts` bitstream filter introduces (verified via evidence:
 // candidate carries a non-zero `longer` bin count the baseline does not).
-TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and irregular (step-intended) "
-          "fixtures each declare their complete expected finding set, and the linear/irregular candidates carry "
-          "the correct timeline.av_drift.pattern value",
+// 05-22-PLAN.md (narrow-vocabulary, 05-STEP-DESIGN.md's recorded Decision):
+// this case's third sub-block used to describe `timeline_drift_step.mp4`
+// by the outcome its RECIPE was originally built to intend (a two-plateau
+// "step" jump), even though 05-10-SUMMARY.md's own Known Limitation
+// already proved that outcome unreachable under the shipped checkpoint-
+// construction architecture -- the fixture always classified `irregular`
+// in practice. 05-21's research then evaluated two candidate designs to
+// try to make `step` reachable and found neither meets soundness
+// criterion (c) (a `step_time` within one checkpoint spacing of the real
+// join); the human decided to narrow `timeline.av_drift.pattern`'s
+// vocabulary instead, so `DriftPattern::step` no longer exists at all
+// (05-22-PLAN.md Task 1). This TEST_CASE's own name and sub-block below
+// are rewritten to state that decided, measured outcome -- irregular --
+// rather than the fixture's original, unrealized intent.
+TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and spliced-trim fixtures each "
+          "declare their complete expected finding set, and the linear/spliced-trim candidates carry the "
+          "correct timeline.av_drift.pattern value, classified irregular",
           "[integration]") {
   {
     INFO("constant-offset pair");
@@ -359,7 +373,7 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
     }
   }
   {
-    INFO("step (irregular) pair");
+    INFO("spliced-trim pair, classified irregular");
     const nlohmann::ordered_json report =
         compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_drift_step.mp4"), "sw-encoder");
     expect_declared_set(report, {
@@ -371,6 +385,11 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
         continue;
       }
       REQUIRE(f.at("candidate").get<std::string>() == "irregular");
+      // 05-22-PLAN.md Task 1: `step_time_ms` no longer exists on
+      // DriftFit/in evidence at all (DriftPattern::step is removed) --
+      // this evidence key is absent on EVERY pattern finding now, not
+      // conditionally present only for a non-step candidate.
+      REQUIRE_FALSE(f.at("evidence").at("candidate").contains("step_time_ms"));
     }
   }
 }
