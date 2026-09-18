@@ -164,11 +164,18 @@ TEST_CASE("timeline_av_sync - the MPEG-TS remux (unknown-priming) pair declares 
                                    // `dts[1] <= dts[0]` tie at the very start of the
                                    // stream.
                                    "timeline.dts_monotonic",
-                                   // The AAC audio stream's native 1024-sample frame
-                                   // period has no exact representation on MPEG-TS's
-                                   // 90kHz PTS grid, pushing the worst histogram bin past
-                                   // the 2% dist tolerance.
-                                   "timeline.vfr_profile",
+                                   // 05-19-PLAN.md (UD-2, WINDOWS #28) NOTE, not a declared
+                                   // member: the AAC audio stream's native 1024-sample frame
+                                   // period has no exact representation on MPEG-TS's 90kHz
+                                   // PTS grid, but under UD-2's quantization-aware binning
+                                   // the resulting sub-tick residual lands `on_grid` on
+                                   // 171/173 intervals, with only 2/173 (1.16%) landing a
+                                   // real full tick away -- comfortably under the 2% dist
+                                   // tolerance. `timeline.vfr_profile` stays `pass` on this
+                                   // pair post-05-19-PLAN.md (mirrors
+                                   // test_timeline_start_duration.cpp Test 4's identical
+                                   // recipe and identical evidence), deliberately NOT
+                                   // declared here.
                                    // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the
                                    // SAME MPEG-TS audio-duration disagreement
                                    // `timeline.duration.coherence` above already documents

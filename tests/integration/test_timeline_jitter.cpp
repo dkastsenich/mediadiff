@@ -243,79 +243,99 @@ TEST_CASE("timeline_jitter - on the VFR fixture, timeline.jitter is skipped with
   REQUIRE(saw_audio_vfr_profile_all_on_grid);
 }
 
-// --- Test 5: the NTSC remux pair's timeline.vfr_profile comparison ---------
+// --- Test 5: the NTSC MP4-to-MKV stream copy's whole-report declared set ---
 //
-// D-06's own prose states "both sides of a stream-copy remux show a single
-// on-grid bin" -- true whenever the true frame period is exactly
-// representable at BOTH containers' own tick resolution (e.g. 25fps, 40ms
-// exactly at any timebase). NTSC (30000/1001, ~33.3667ms) is the
-// documented counter-example this task's own empirical verification
-// against the real binary found: MP4's native 1/30000 timebase represents
-// the period EXACTLY (1001 ticks, integer), so every interval lands
-// `on_grid`; Matroska's mandated 1ms timebase CANNOT represent
-// 33.3667ms exactly (no integer number of milliseconds equals it), so
-// every interval instead lands one tick away, in `one_tick` -- a REAL
-// difference in what each container can represent at its own resolution,
-// not a defect in this check or a false positive (`--tol` is how a
-// pipeline that routinely remuxes this class of content absorbs it, per
-// this check's own docs/checks/timeline.vfr_profile.md). This test
-// documents the ACTUAL, empirically-verified comparison rather than
-// asserting the identical-bins outcome that holds for an exactly-
-// representable frame rate -- Task 3's own instruction is to PROVE before
-// asserting (A2's spirit, extended here).
-TEST_CASE("timeline_jitter - the NTSC remux pair's timeline.vfr_profile comparison: MP4's exactly-representable "
-          "1001-tick period lands on_grid while Matroska's 1ms timebase (which cannot represent 33.3667ms "
-          "exactly) lands one_tick, a real cross-container difference for this specific non-exactly-"
-          "representable frame rate, not a defect",
+// 05-19-PLAN.md (UD-2, WINDOWS #28): this REPLACES the prior
+// bins-differ-by-design TEST_CASE. D-06's own prose states "both sides of a
+// stream-copy remux show a single on-grid bin" -- previously false for NTSC
+// (30000/1001, ~33.3667ms), the documented counter-example: MP4's native
+// 1/30000 timebase represents the period EXACTLY (1001 ticks, integer), but
+// Matroska's mandated 1ms timebase could not (no integer number of
+// milliseconds equals 33.3667ms), so every candidate interval used to land
+// one tick away from a mode-referenced ideal, inflating both
+// timeline.vfr_profile bins and timeline.jitter's sigma. UD-2's
+// quantization-aware bin/sigma rule (jitter_vfr.cpp's own classify_vfr_bin/
+// compute_jitter_sigma) fixes this: a sub-tick residual against the
+// stream's own EXACT ideal is representational rounding, not jitter, so
+// both sides now report clean. This is also 05-14's own priming-fix pair
+// (Gap 3's computation half, WINDOWS #26/#27/#30's unwrap migration,
+// 05-18) -- so this test asserts the pair's COMPLETE non-timeline non-pass
+// set, pinning timeline.av_offset/timeline.jitter/timeline.vfr_profile as
+// pass together with Gap 3 and Gap 5 in one place (D-01/D-02).
+//
+// Measured directly against the real binary before being written here
+// (`mediadiff compare --profile remux --json`): no `timeline.*` id appears
+// in the non-pass set at all.
+TEST_CASE("timeline_jitter - the NTSC MP4-to-MKV stream copy declares its complete expected finding set under "
+          "--profile remux, and count_non_pass equals that set's size exactly",
           "[integration]") {
   const nlohmann::ordered_json report =
       compare_json(fixture("timeline_ntsc_base.mp4"), fixture("timeline_ntsc_remux.mkv"), "remux");
 
-  bool saw_video = false;
-  bool saw_audio = false;
+  // One cause (the container remux) legitimately moves several facts
+  // (D-02), each verified empirically against the real binary before
+  // being written here -- no `timeline.*` id declared, since #28's fix
+  // is exactly what this test exists to pin as a regression guard.
+  expect_declared_set(report, {
+                                   // The container format itself genuinely changed
+                                   // (mov -> matroska).
+                                   "container.format",
+                                   // Matroska's own container overhead (EBML/Segment/
+                                   // Cluster structure) genuinely differs from MP4's --
+                                   // a real byte-size difference for a lossless stream
+                                   // copy, not a defect this analyzer introduces.
+                                   "size.file",
+                                   "size.overhead",
+                                   // MP4's ftyp/handler tags (major_brand,
+                                   // compatible_brands, minor_version, per-stream
+                                   // handler-name) have no Matroska equivalent the
+                                   // demuxer surfaces the same way -- ONE cause (the
+                                   // remux) fires meta.tags THREE times: once at
+                                   // `global` scope, once at `video` scope, once at
+                                   // `audio` scope. The cross-container volatile-tag
+                                   // question itself is deferred per 05-CONTEXT.md's
+                                   // own Deferred Ideas (not this plan's scope to
+                                   // resolve).
+                                   "meta.tags",
+                                   "meta.tags",
+                                   "meta.tags",
+                               });
+
+  // The #28 regression guard: both timeline.vfr_profile findings pass, and
+  // every interval on both streams lands on_grid -- proving the fix is not
+  // merely "the whole-report count happens to match" but that the sub-tick
+  // NTSC residual genuinely classifies on_grid now, on both containers.
+  bool saw_video_vfr_profile = false;
+  bool saw_audio_vfr_profile = false;
   for (const auto& f : report.at("findings")) {
     if (f.at("id").get<std::string>() != "timeline.vfr_profile") {
       continue;
     }
-    const std::string kind = f.at("scope").at("kind").get<std::string>();
     INFO("timeline.vfr_profile finding: " << f.dump(2));
-    // Both sides individually report their OWN histogram entirely
-    // concentrated in a single bucket (each container is internally
-    // perfectly consistent with itself -- the MP4 side is 100% on_grid,
-    // the Matroska side is 100% one_tick); the buckets simply differ from
-    // EACH OTHER, which is what makes the whole-file comparison non-pass.
-    const auto& baseline_bins = f.at("baseline");
-    const auto& candidate_bins = f.at("candidate");
-    std::int64_t baseline_on_grid = 0;
-    std::int64_t baseline_total = 0;
-    for (const auto& bin : baseline_bins) {
-      const std::int64_t count = bin.at("count").get<std::int64_t>();
-      baseline_total += count;
-      if (bin.at("bin").get<std::string>() == "on_grid") {
-        baseline_on_grid = count;
+    REQUIRE(f.at("status").get<std::string>() == "pass");
+
+    const std::string kind = f.at("scope").at("kind").get<std::string>();
+    for (const std::string& side : {std::string("baseline"), std::string("candidate")}) {
+      const auto& bins = f.at(side);
+      std::int64_t on_grid = 0;
+      std::int64_t total = 0;
+      for (const auto& bin : bins) {
+        const std::int64_t count = bin.at("count").get<std::int64_t>();
+        total += count;
+        if (bin.at("bin").get<std::string>() == "on_grid") {
+          on_grid = count;
+        }
       }
+      REQUIRE(total > 0);
+      REQUIRE(on_grid == total);
     }
-    std::int64_t candidate_one_tick = 0;
-    std::int64_t candidate_total = 0;
-    for (const auto& bin : candidate_bins) {
-      const std::int64_t count = bin.at("count").get<std::int64_t>();
-      candidate_total += count;
-      if (bin.at("bin").get<std::string>() == "one_tick") {
-        candidate_one_tick = count;
-      }
-    }
-    REQUIRE(baseline_total > 0);
-    REQUIRE(baseline_on_grid == baseline_total);
-    REQUIRE(candidate_total > 0);
-    REQUIRE(candidate_one_tick == candidate_total);
-    REQUIRE(f.at("status").get<std::string>() == "warn");
 
     if (kind == "video") {
-      saw_video = true;
+      saw_video_vfr_profile = true;
     } else if (kind == "audio") {
-      saw_audio = true;
+      saw_audio_vfr_profile = true;
     }
   }
-  REQUIRE(saw_video);
-  REQUIRE(saw_audio);
+  REQUIRE(saw_video_vfr_profile);
+  REQUIRE(saw_audio_vfr_profile);
 }

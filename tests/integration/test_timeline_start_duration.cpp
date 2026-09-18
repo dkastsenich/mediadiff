@@ -179,21 +179,21 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // introduces. The MP4 baseline's own video dts_monotonic count
                                    // stays `0`; only the candidate's video-scoped finding fires.
                                    "timeline.dts_monotonic",
-                                   // 05-08-PLAN.md (TIME-05): the SAME remux, one more legitimate
-                                   // effect -- the AAC audio stream's own native 1024-sample frame
-                                   // period (1024/44100s ~= 23.2199ms) has no exact representation
-                                   // on MPEG-TS's 90kHz PTS grid, so re-deriving the stream's own
-                                   // ideal interval from ITS OWN span/count on the TS side rounds
-                                   // enough intervals off that own grid to push the worst bin
-                                   // (on_grid) past the 2% dist tolerance (verified via `mediadiff
-                                   // compare --json`) -- a real, observed consequence of this exact
-                                   // container/timebase pairing (the same class of effect
-                                   // timeline_ntsc_remux.mkv's own D-05 fixture demonstrates for
-                                   // video), never a defect this analyzer introduces. The VIDEO
-                                   // stream's own native timebase survives the remux cleanly
-                                   // (mpeg4's own tbn divides evenly into MPEG-TS's 90kHz grid), so
-                                   // only the audio-scoped finding fires.
-                                   "timeline.vfr_profile",
+                                   // 05-19-PLAN.md (UD-2, WINDOWS #28) NOTE, not a declared member:
+                                   // the AAC audio stream's own native 1024-sample frame period
+                                   // (1024/44100s ~= 23.2199ms) has no exact representation on
+                                   // MPEG-TS's 90kHz PTS grid, so re-deriving the stream's own ideal
+                                   // interval from ITS OWN span/count on the TS side leaves most
+                                   // intervals a genuine sub-tick residual off that own grid -- under
+                                   // UD-2's quantization-aware binning that residual now lands
+                                   // `on_grid` (171/173 intervals), with only 2/173 (1.16%) landing a
+                                   // real full tick away in `one_tick`, comfortably under the 2% dist
+                                   // tolerance (verified via `mediadiff compare --json` evidence:
+                                   // candidate `sub_tick_intervals`=171 of 173). `timeline.vfr_profile`
+                                   // therefore stays `pass` on this pair post-05-19-PLAN.md and is
+                                   // deliberately NOT declared here (it was declared pre-05-19-PLAN.md,
+                                   // when the mode-referenced rule classified every off-grid interval
+                                   // as a full `one_tick` regardless of magnitude).
                                    // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the SAME
                                    // MPEG-TS audio-duration disagreement `timeline.
                                    // duration.coherence` above already documents (3877ms vs
