@@ -1,7 +1,18 @@
 # tests/golden/CORPUS_DIGEST_PROVISIONAL.txt -- names only, no hashes
 # (D-GAP-01 gap closure, 04-13-PLAN.md Task 2).
 #
-# STATUS: EMPTY. Every fixture Phase 5 added (05-01-PLAN.md through
+# STATUS: TWO ENTRIES (debug session test-898-ci-nonreproducible,
+# .planning/debug/). scripts/gen_corpus.sh's timeline_ts_jump.ts recipe
+# changed segment B's -output_ts_offset from 3.0 to 5.0, which changes the
+# bytes of timeline_ts_jump.ts and of timeline_ts_jump_flagged.ts (derived
+# from it). Their CORPUS_DIGEST.txt lines are therefore STALE -- they still
+# hold the designated leg's transcription for the OLD recipe (run
+# 35269755235) -- and await re-transcription from a designated-leg run of
+# the new recipe. Every other line is unaffected (verified by regenerating
+# the whole corpus in a scratch copy under `taskset -c 0-3` + TZ=UTC,
+# which reproduces the designated leg's bytes: only these two names moved).
+#
+# Before that change: every fixture Phase 5 added (05-01-PLAN.md through
 # 05-11-PLAN.md) was replaced in tests/golden/CORPUS_DIGEST.txt by the
 # designated x64-linux CI leg's own computed hash (05-13-PLAN.md Task 2,
 # transcribing run 35269755235's captured listing) and cleared from this
@@ -53,3 +64,5 @@
 # zero-entry branch does not apply -- clause 3 instead checks the entries
 # themselves are LC_ALL=C sorted, unique, and each names a real line in
 # CORPUS_DIGEST.txt.
+timeline_ts_jump.ts
+timeline_ts_jump_flagged.ts

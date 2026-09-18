@@ -453,11 +453,15 @@ TEST_CASE("timeline_structure - the byte-identical clean pair declares the empty
 // timeline_ts_jump.ts is built by the SAME two-independently-muxed-TS-
 // segments-concatenated-via-`cat` technique as Test 1's timeline_dts_
 // backward.ts (each segment its own fresh mpeg4/aac re-encode), except
-// segment B carries a global `-output_ts_offset 3.0` instead of dts_
+// segment B carries a global `-output_ts_offset 5.0` instead of dts_
 // backward.ts's own `-itsoffset` on its inputs -- a genuine FORWARD
 // presentation-time jump (verified via `ffprobe -show_packets`: video PTS
-// jumps from 3.383222s to 4.400000s at the splice, ~1.02s, comfortably past
-// the 250ms threshold) rather than a backward DTS violation. One root
+// jumps from 3.383222s to 6.400000s at the splice, ~3.02s, comfortably past
+// the 250ms threshold) rather than a backward DTS violation. (The offset
+// was 3.0 -- a ~1.02s jump -- until debug session test-898-ci-
+// nonreproducible: that left this pair's video size.stream_bitrate delta
+// straddling the 3% warn line across hosts; see the size.* entries
+// below and scripts/gen_corpus.sh's own recipe comment.) One root
 // cause (D-02, the same "independently re-encoded, spliced segments" cause
 // Test 1 already documents at length), several legitimately moved facts:
 TEST_CASE(
@@ -498,7 +502,7 @@ TEST_CASE(
           // genuine hole in BOTH streams' own presentation timelines this
           // time (unlike Test 1's dts_backward pair, where only audio
           // crossed the gap threshold) -- the jump is large enough
-          // (~1.02s) to cross timeline.gaps' own declared-duration-based
+          // (~3.02s) to cross timeline.gaps' own declared-duration-based
           // threshold on video too, not just timeline.discontinuities'
           // fixed 250ms detection threshold below.
           "timeline.gaps",
@@ -508,7 +512,7 @@ TEST_CASE(
           // streams (verified via evidence: jump_count 0 -> 1 on each).
           "timeline.discontinuities",
           "timeline.discontinuities",
-          // 05-08-PLAN.md's own timeline.vfr_profile check: the ~1.02s
+          // 05-08-PLAN.md's own timeline.vfr_profile check: the ~3.02s
           // splice jump pushes BOTH streams' own worst bin (longer) past
           // the 2% dist tolerance (verified via `mediadiff compare
           // --json`). timeline.jitter itself SKIPS on both streams
@@ -524,15 +528,23 @@ TEST_CASE(
           // different byte size, stream bitrate and overhead ratio than
           // the original single-segment TS encode -- expected for any
           // independent re-encode, the same effect Test 1 documents.
+          // size.stream_bitrate fires on BOTH streams, and on every host:
+          // the ~3.02s gap lengthens the candidate's measured span, so the
+          // video delta is -26.6% .. -27.1% and the audio delta ~-42%
+          // across encoder thread counts 1/3/5/9 with SIMD on or off
+          // (debug session test-898-ci-nonreproducible) -- far past the
+          // 10% fail line. With the former ~1.02s gap the video delta sat
+          // at +2.4% .. +3.2%, straddling the 3% warn line, so this entry
+          // held on some hosts and not others.
           "size.file",
           "size.stream_bitrate",
           "size.stream_bitrate",
           "size.overhead",
-          // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the ~1.02s
+          // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the ~3.02s
           // splice jump this fixture exists to prove is exactly the
           // "single large step" doc 04 section 3 fits a rate against --
-          // the candidate's own accumulated end delta (evidence:
-          // -122ms) clears D-07's 2ms epsilon by a wide margin, so
+          // the accumulated end delta CHANGE (evidence: end_delta_ms
+          // 10 -> 36) clears D-07's 2ms epsilon by a wide margin, so
           // (unlike Test 1's dts_backward pair, where the effect stays
           // sub-epsilon on the RATE) the dual gate does NOT suppress
           // this one: `timeline.av_drift` genuinely fails. Both sides

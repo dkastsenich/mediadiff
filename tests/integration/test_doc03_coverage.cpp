@@ -473,7 +473,7 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       // --- timeline.discontinuities / timeline.discontinuities.flagged
       // (05-07-PLAN.md, TIME-02/TIME-04) --- timeline.discontinuities'
       // trigger pair is timeline_ts_nowrap.ts against timeline_ts_jump.ts
-      // (a genuine, UNFLAGGED ~1.02s forward presentation jump from two
+      // (a genuine, UNFLAGGED ~3.02s forward presentation jump from two
       // independently-muxed, spliced TS segments) -- verified empirically
       // against the real binary: both video and audio report `fail`, each
       // with jump_count 0 -> 1. Its clean pair reuses timeline_ts_nowrap.ts/

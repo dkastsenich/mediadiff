@@ -1797,19 +1797,35 @@ cp "$OUT_DIR/timeline_ts_nowrap.ts" "$OUT_DIR/timeline_ts_nowrap_copy.ts"
 # as timeline_dts_backward.ts above (each segment its own fresh ffmpeg
 # process, concatenated via `cat`), but with a genuine FORWARD gap instead
 # of a backward DTS violation: segment B carries a global
-# `-output_ts_offset 3.0` (the same output-level primitive
+# `-output_ts_offset 5.0` (the same output-level primitive
 # timeline_ts_wrap.ts above already uses to relocate an entire segment's
 # timestamps, applied here to both video and audio together so A/V sync
 # within segment B is preserved) rather than dts_backward.ts's own
 # `-itsoffset` (an INPUT-level, pre-encode primitive that only de-aligns two
 # segments' tick grids without relocating them past each other). Read back
 # via `ffprobe -show_packets`: the video presentation timeline jumps from
-# pts_time=3.383222 to pts_time=4.400000 at the splice -- a genuine ~1.02s
+# pts_time=3.383222 to pts_time=6.400000 at the splice -- a genuine ~3.02s
 # gap, comfortably past the 250ms threshold, forward only (no
 # dts_backward.ts-style backward-DTS side effect, since `-output_ts_offset`
 # shifts every packet's PTS AND DTS by the identical amount, so ordering
 # within each segment is unaffected and segment B's shifted DTS values land
 # safely after segment A's).
+#
+# Why 5.0 and not the original 3.0 (debug session
+# test-898-ci-nonreproducible, .planning/debug/): with a ~1.02s gap, the
+# nowrap-vs-jump pair's VIDEO size.stream_bitrate delta landed at +2.4% to
+# +3.2% depending on the generating host -- straddling that check's 3% warn
+# line -- because the mpeg4 encoder's output depends on libavcodec's AUTO
+# slice-thread count (nb_cpus + 1: 9 on an 8-CPU workstation, 5 on a
+# 4-vCPU GitHub runner) and on the host's DSP code path (x86 SIMD vs C /
+# arm64 NEON). The same test then passed on the workstation and arm64-osx
+# and failed on x64-linux/x64-windows. The gap only lengthens the
+# candidate's measured span, so a ~3.02s gap moves the video delta to
+# -26.6% .. -27.1% and the audio delta to -42% on every thread count
+# (1/3/5/9) with SIMD on or off -- ~16.6 points past the 10% fail line
+# against a ~0.5-point spread, so no host can flip it. Segment A is
+# untouched, so the splice byte offset gen_ts_discontinuity.py receives
+# below (segment A's own length) is unchanged.
 #
 # `timeline_ts_jump_flagged.ts`: BYTE-IDENTICAL to timeline_ts_jump.ts
 # except for the one transport packet the splice actually lands on --
@@ -1844,7 +1860,7 @@ TIMELINE_JUMP_TMP="$(mktemp -d)"
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
   -f lavfi -i "sine=frequency=440:duration=2" \
   -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
-  -output_ts_offset 3.0 -y -f mpegts "$TIMELINE_JUMP_TMP/seg_b.ts"
+  -output_ts_offset 5.0 -y -f mpegts "$TIMELINE_JUMP_TMP/seg_b.ts"
 
 cat "$TIMELINE_JUMP_TMP/seg_a.ts" "$TIMELINE_JUMP_TMP/seg_b.ts" > "$OUT_DIR/timeline_ts_jump.ts"
 
