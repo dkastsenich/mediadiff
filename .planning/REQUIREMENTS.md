@@ -188,7 +188,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [ ] **PERF-02**: A full content pass runs at ≥ 4× realtime with software decode
 - [x] **PERF-03**: The parser pass adds < 10% over plain PacketScan, and full timeline analysis adds < 15% (amended, 05-12-PLAN.md, 2026-09-17: Phase 4 measured 43-53% parser overhead against the <10% target, at an absolute cost near 1.5 ms — the ratio is high because the baseline PacketScan-alone pass is very cheap, not because the parser is slow. Phase 5's own measurement of the full timeline analyzer set found the identical shape: 33% overhead against the <15% target, at an absolute wall-clock cost of 32-50 ms on the 10-minute 1080p reference file — comfortably inside PERF-01's 3 s budget. Both absolute-percentage targets are superseded by D-13/D-14's ratchet: the gate is a regression check against a committed retired-instruction-count baseline (`tests/golden/PERF_BASELINE.txt`, `scripts/measure_timeline_perf.sh --check-baseline`), not the absolute ratio; the absolute ratios above are measured and printed on every run rather than asserted. Optimising either pass to meet its original absolute target is recorded here as deferred, unowned work, not a target that quietly disappeared.)
 - [ ] **PERF-04**: An audio sweep of the 10-minute reference stereo AAC completes in < 4 s
-- [ ] **PERF-05**: Performance targets are measured in CI on the reference file with regression tracking over time
+- [x] **PERF-05**: Performance targets are measured in CI on the reference file with regression tracking over time
 
 ## v2 Requirements
 
@@ -381,7 +381,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | PERF-02 | Phase 7 | Pending |
 | PERF-03 | Phase 5 | Complete |
 | PERF-04 | Phase 6 | Pending |
-| PERF-05 | Phase 5 | Pending |
+| PERF-05 | Phase 5 | Complete |
 
 **Coverage:**
 
