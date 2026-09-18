@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 5
 current_phase_name: Timeline Analysis
 status: executing
-stopped_at: Completed 05-timeline-analysis/05-23-PLAN.md (Gap 1 closure, documentation half)
-last_updated: "2026-09-18T19:56:53.820Z"
+stopped_at: Completed 05-timeline-analysis/05-24-PLAN.md (gap-closure evidence capture; no transcription or perf commit needed)
+last_updated: "2026-09-18T20:18:18.776Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 5 execution started
-state_head: 403de58f19576d7ea064386241043486ed9c99da
+state_head: 8ad53f12acfaa7260d55e6e5dffe174f67b23669
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 92
-  completed_plans: 89
+  completed_plans: 91
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 5 (Timeline Analysis) — EXECUTING
-Plan: 24 of 25
+Plan: 25 of 25
 Status: Ready to execute
 Last activity: 2026-09-18 — Completed 05-19-PLAN.md (WINDOWS #28 closed)
 
@@ -141,6 +141,7 @@ Progress: [█████████░] 92%
 | Phase 05-timeline-analysis P20 | ~45min | 3 tasks | 8 files |
 | Phase 05-timeline-analysis P22 | ~35min | 3 tasks | 4 files |
 | Phase 05 P23 | ~12min | 3 tasks | 6 files |
+| Phase 05-timeline-analysis P24 | 20min | 3 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -331,6 +332,7 @@ Recent decisions affecting current work:
 - [Phase 05-timeline-analysis]: 05-22: narrow-vocabulary implemented -- DriftPattern loses `step`, DriftFit loses `step_time_ms`, fit_drift's plateau-detection branch removed; span:declared unchanged (already shipped). kDriftStepResidualMultiple removed as dead-code cleanup (Rule 1). Proven equivalent to pre-plan binary on 24 fixture pairs except for step_time_ms's absence (scratch git-worktree build of 448361e).
 - [Phase 5]: [Phase 05-timeline-analysis]: 05-23: narrow-vocabulary documentation half of Gap 1 closed -- docs/checks/timeline.av_drift.pattern.md narrowed to three spellings with a new Limits of timestamp-only detection subsection (seamless-trim undetectable until Phase 6, A1's dropout-vs-sync-step ambiguity, which reading the shipped mapping assumes); 05-CHECK-ROSTER.md/ROADMAP SC1/REQUIREMENTS TIME-07 amended in place citing UD-1; checks.def's timeline.av_drift.pattern comment and the sibling timeline.av_drift comment's stale step_time_ms reference both corrected (comment-only diff, verified).
 - [Phase 5]: [Phase 05-timeline-analysis]: 05-23: WINDOWS #32 records the residual MP4-to-TS timeline.av_drift/pattern false finding (libavformat's estimated TS audio duration as checkpoint span, AAC priming/padding with no edit list that neither span source removes) and waives it with the human's 05-21 recorded reason (span:declared kept, priming/padding-aware span filed as follow-up); #26/#27/#28/#30 confirmed fixed, #29 untouched.
+- [Phase 5]: 05-24: no digest transcription and no perf-baseline commit needed — the provisional ledger was already empty and the perf ratchet passed both metrics (plain -0.033%, full +0.254%) well within +/-2% tolerance on the designated leg (run 35389474602, job 105744204442); this is the second CI cross-run confirmation of the 05-13 baseline, with zero commits beyond planning metadata
 
 ### Pending Todos
 
@@ -370,6 +372,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T19:56:53.615Z
-Stopped at: Completed 05-timeline-analysis/05-23-PLAN.md (Gap 1 closure, documentation half)
+Last session: 2026-09-18T20:18:18.597Z
+Stopped at: Completed 05-timeline-analysis/05-24-PLAN.md (gap-closure evidence capture; no transcription or perf commit needed)
 Resume file: None

@@ -432,7 +432,7 @@ Plans:
 
 **Wave 20** *(blocked on 05-23)*
 
-- [ ] 05-24-PLAN.md — Designated-leg confirmation: local pre-flight, a blocking-human push, and log capture with any required transcription (DOC-04, PERF-05)
+- [x] 05-24-PLAN.md — Designated-leg confirmation: local pre-flight, a blocking-human push, and log capture with any required transcription (DOC-04, PERF-05)
 
 **Wave 21** *(blocked on 05-24)*
 
