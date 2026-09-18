@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -25,8 +26,14 @@
 
 using mediadiff::kNullPid;
 using mediadiff::kPidCount;
+using mediadiff::PesTimestampRecord;
+using mediadiff::PidStats;
 using mediadiff::run_ts_scan;
 using mediadiff::TsScanResult;
+using mediadiff::detail::parse_pes_timestamps;
+using mediadiff::detail::PesParseResult;
+using mediadiff::detail::PesParseStatus;
+using mediadiff::detail::record_pes_timestamp;
 
 namespace {
 
@@ -537,4 +544,151 @@ TEST_CASE("ts_scan - PES timestamps on timeline_start_shift.ts", "[unit]") {
   const auto& audio = result->pid_stats(257);
   REQUIRE(audio.pes_timestamps.size() == 13);
   REQUIRE_FALSE(audio.pes_timestamps_truncated);
+}
+
+// --- 05-15-PLAN.md Task 2: parse_pes_timestamps's reject paths and the
+//     record budget, from hand-built byte buffers --------------------------
+
+namespace {
+
+// Encodes one 5-byte PTS/DTS field (ISO/IEC 13818-1 section 2.4.3.7):
+// `prefix4` occupies the top 4 bits of byte 0 (never validated by the
+// parser under test, per 05-15-PLAN.md's own A2) and all three marker
+// bits are set.
+std::vector<std::uint8_t> encode_ts_field(std::uint8_t prefix4, std::uint64_t value33) {
+  std::vector<std::uint8_t> f(5);
+  f[0] = static_cast<std::uint8_t>((prefix4 << 4) | (((value33 >> 30) & 0x7) << 1) | 0x1);
+  f[1] = static_cast<std::uint8_t>((value33 >> 22) & 0xFF);
+  f[2] = static_cast<std::uint8_t>((((value33 >> 15) & 0x7F) << 1) | 0x1);
+  f[3] = static_cast<std::uint8_t>((value33 >> 7) & 0xFF);
+  f[4] = static_cast<std::uint8_t>(((value33 & 0x7F) << 1) | 0x1);
+  return f;
+}
+
+// Builds the fixed 9-byte PES header prefix (start code, stream_id,
+// PES_packet_length -- unused by the parser under test -- byte 6,
+// PTS_DTS_flags in byte 7's top two bits, PES_header_data_length) plus
+// whatever `optional_fields` bytes follow.
+std::vector<std::uint8_t> build_pes_header(std::uint8_t stream_id, std::uint8_t byte6, std::uint8_t pts_dts_flags,
+                                            std::uint8_t header_data_length,
+                                            const std::vector<std::uint8_t>& optional_fields) {
+  std::vector<std::uint8_t> b{0x00, 0x00, 0x01, stream_id, 0x00, 0x00, byte6,
+                              static_cast<std::uint8_t>(pts_dts_flags << 6), header_data_length};
+  b.insert(b.end(), optional_fields.begin(), optional_fields.end());
+  return b;
+}
+
+std::span<const std::uint8_t> as_span(const std::vector<std::uint8_t>& v) {
+  return std::span<const std::uint8_t>(v.data(), v.size());
+}
+
+}  // namespace
+
+TEST_CASE("ts_scan - PES parse: PTS-only header decodes PTS 128090, status pts_only", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x80, 0b10, 5, encode_ts_field(0b0010, 128090));
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::pts_only);
+  REQUIRE(result.pts == 128090);
+  REQUIRE(result.dts == 128090);
+}
+
+TEST_CASE("ts_scan - PES parse: PTS+DTS header decodes PTS 7200 DTS 3600, status pts_dts", "[unit]") {
+  std::vector<std::uint8_t> optional = encode_ts_field(0b0011, 7200);
+  const std::vector<std::uint8_t> dts_field = encode_ts_field(0b0001, 3600);
+  optional.insert(optional.end(), dts_field.begin(), dts_field.end());
+  const auto buf = build_pes_header(0xE0, 0x80, 0b11, 10, optional);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::pts_dts);
+  REQUIRE(result.pts == 7200);
+  REQUIRE(result.dts == 3600);
+}
+
+TEST_CASE("ts_scan - PES parse: the 33-bit maximum PTS decodes exactly as 8589934591", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x80, 0b10, 5, encode_ts_field(0b0010, 0x1FFFFFFFFULL));
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::pts_only);
+  REQUIRE(result.pts == 8589934591LL);
+}
+
+TEST_CASE("ts_scan - PES parse: PTS_DTS_flags 00 is status no_timestamps", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x80, 0b00, 0, {});
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::no_timestamps);
+}
+
+TEST_CASE("ts_scan - PES parse: PTS_DTS_flags 01 (forbidden) is status malformed", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x80, 0b01, 0, {});
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::malformed);
+}
+
+TEST_CASE("ts_scan - PES parse: byte 6 top two bits not '10' is status malformed", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x00, 0b10, 5, encode_ts_field(0b0010, 128090));
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::malformed);
+}
+
+TEST_CASE("ts_scan - PES parse: PTS_DTS_flags 10 with PES_header_data_length 4 is status malformed", "[unit]") {
+  const std::vector<std::uint8_t> filler(4, 0x00);
+  const auto buf = build_pes_header(0xE0, 0x80, 0b10, 4, filler);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::malformed);
+}
+
+TEST_CASE("ts_scan - PES parse: a cleared PTS marker bit is status malformed", "[unit]") {
+  std::vector<std::uint8_t> optional = encode_ts_field(0b0010, 128090);
+  optional[0] = static_cast<std::uint8_t>(optional[0] & ~0x01);  // clear byte-0's own marker bit
+  const auto buf = build_pes_header(0xE0, 0x80, 0b10, 5, optional);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::malformed);
+}
+
+TEST_CASE("ts_scan - PES parse: stream_id 0xBE (padding) is status excluded_stream_id", "[unit]") {
+  const std::vector<std::uint8_t> buf{0x00, 0x00, 0x01, 0xBE};
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::excluded_stream_id);
+}
+
+TEST_CASE("ts_scan - PES parse: a payload of 8 bytes is status truncated_in_packet", "[unit]") {
+  const std::vector<std::uint8_t> buf{0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80};
+  REQUIRE(buf.size() == 8);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::truncated_in_packet);
+}
+
+TEST_CASE(
+    "ts_scan - PES parse: PTS_DTS_flags 11 with only 14 of 19 declared bytes present is status truncated_in_packet",
+    "[unit]") {
+  std::vector<std::uint8_t> optional = encode_ts_field(0b0011, 7200);
+  const std::vector<std::uint8_t> dts_field = encode_ts_field(0b0001, 3600);
+  optional.insert(optional.end(), dts_field.begin(), dts_field.end());
+  auto buf = build_pes_header(0xE0, 0x80, 0b11, 10, optional);
+  REQUIRE(buf.size() == 19);
+  buf.resize(14);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::truncated_in_packet);
+}
+
+TEST_CASE("ts_scan - PES parse: a start code of 00 00 02 is status no_pes", "[unit]") {
+  const std::vector<std::uint8_t> buf{0x00, 0x00, 0x02, 0xE0};
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::no_pes);
+}
+
+TEST_CASE("ts_scan - PES parse: an empty span is status no_pes", "[unit]") {
+  const std::vector<std::uint8_t> buf;
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::no_pes);
+}
+
+TEST_CASE("ts_scan - PES record budget: a budget of 2 truncates after two records, budget reaches 0", "[unit]") {
+  PidStats stats;
+  std::int64_t budget = 2;
+  const PesTimestampRecord record{0, 1000, 1000, false};
+  record_pes_timestamp(stats, record, budget);
+  record_pes_timestamp(stats, record, budget);
+  record_pes_timestamp(stats, record, budget);
+  REQUIRE(stats.pes_timestamps.size() == 2);
+  REQUIRE(stats.pes_timestamps_truncated);
+  REQUIRE(budget == 0);
 }
