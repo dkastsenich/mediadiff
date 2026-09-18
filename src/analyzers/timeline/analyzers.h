@@ -660,12 +660,21 @@ struct DriftCheckpoint {
   std::int64_t offset_ticks = 0;
 };
 
-// The classified pattern (doc 04 section 3.4), exactly the four spellings
-// 05-CHECK-ROSTER.md registers for `timeline.av_drift.pattern`.
+// The classified pattern (doc 04 section 3.4), narrowed to the three
+// spellings `timeline.av_drift.pattern` can reach after 05-STEP-DESIGN.md's
+// recorded `narrow-vocabulary` decision (05-22-PLAN.md, Gap 1): `step` is
+// removed. Neither piecewise checkpoint-mapping candidate evaluated in
+// 05-21's research (D1 segment-proportional, D2 media-clock) met soundness
+// criterion (c) -- a `step_time` within one checkpoint spacing of the real
+// join -- on doc 04 section 5's own step recipe, so no design was adopted.
+// A trajectory that used to classify `step` under the former
+// plateau-detection logic now falls through to `irregular`, with its
+// residual max reported exactly as before. doc 04 section 3.4's own
+// four-spelling text is amended separately (05-23-PLAN.md), not by this
+// comment.
 enum class DriftPattern : std::uint8_t {
   constant_offset,
   linear_drift,
-  step,
   irregular,
 };
 
@@ -674,16 +683,16 @@ enum class DriftPattern : std::uint8_t {
 // pre-divided value) -- `rate_ms_per_min_den` is always strictly positive.
 // `end_delta_ms`/`residual_max_ms` are already converted to milliseconds
 // (the SAME `detail::ticks_to_ms`-style checked_mul/checked_div truncation
-// every other ms-unit check in this project already uses); `step_time_ms`
-// is populated only when `pattern == step` (the checkpoint's own `t_v`, in
-// ms, at which the step was detected).
+// every other ms-unit check in this project already uses). `step_time_ms`
+// (the checkpoint's own `t_v`, in ms, at which a step was detected) is
+// REMOVED as of 05-22-PLAN.md's narrow-vocabulary decision -- `pattern` can
+// no longer be `step`, so there is no longer a step time to carry.
 struct DriftFit {
   std::int64_t rate_ms_per_min_num = 0;
   std::int64_t rate_ms_per_min_den = 1;
   std::int64_t end_delta_ms = 0;
   std::int64_t residual_max_ms = 0;
   DriftPattern pattern = DriftPattern::constant_offset;
-  std::optional<std::int64_t> step_time_ms;
 };
 
 // fit_drift (05-10-PLAN.md Task 1): doc 04 section 3's algorithm, steps 3-4
@@ -698,9 +707,13 @@ struct DriftFit {
 // comment for the worked magnitude bound: `K*Sum(x^2)` alone reaches
 // roughly 46x INT64_MAX for this ordinary case), and narrowed to an EXACT
 // rational slope via `Int128Accum::try_reduce_ratio`'s GCD-based
-// reduction. Classification exactly per doc 04 section 3.4, with "stable
-// plateaus" made concrete per this plan's own A3 (see av_sync.cpp's own
-// implementation comment for the transcription).
+// reduction. Classification per doc 04 section 3.4's first branch
+// (constant-offset/linear-drift, on residual max clearing epsilon); doc
+// 04's own second branch (`step`, "stable plateaus" made concrete per this
+// plan's own A3) is NO LONGER reachable as of 05-22-PLAN.md's
+// narrow-vocabulary decision -- everything that does not clear the first
+// branch's epsilon test now classifies `irregular` (see av_sync.cpp's own
+// implementation comment for the removed plateau-detection logic and why).
 //
 // Requires at least 2 checkpoints (a line needs two distinct points);
 // fewer is an explicit failure, never a degenerate fit. Returns

@@ -122,16 +122,16 @@ std::string_view priming_source_to_string(PrimingResult::Source source) {
   return "unknown";
 }
 
-// DriftPattern -> 05-CHECK-ROSTER.md's own four spellings for
-// `timeline.av_drift.pattern`'s exact-string value, verbatim.
+// DriftPattern -> `timeline.av_drift.pattern`'s exact-string value,
+// verbatim. Narrowed to three spellings (`step` removed) by
+// 05-22-PLAN.md's narrow-vocabulary decision -- see DriftPattern's own doc
+// comment in analyzers.h.
 std::string_view drift_pattern_to_string(DriftPattern pattern) {
   switch (pattern) {
     case DriftPattern::constant_offset:
       return "constant-offset";
     case DriftPattern::linear_drift:
       return "linear-drift";
-    case DriftPattern::step:
-      return "step";
     case DriftPattern::irregular:
       return "irregular";
   }
@@ -1007,9 +1007,6 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
               {"checkpoint_count", static_cast<std::int64_t>(checkpoints.size())},
               {"trajectory", trajectory},
           };
-          if (fit->step_time_ms.has_value()) {
-            drift_evidence["step_time_ms"] = *fit->step_time_ms;
-          }
 
           Measurement drift_measurement;
           drift_measurement.check_index = static_cast<std::uint32_t>(CheckId::timeline_av_drift);
@@ -1283,83 +1280,20 @@ std::optional<DriftFit> fit_drift(std::span<const DriftCheckpoint> checkpoints, 
   }
 
   // Second branch (residual_max >= kDriftEpsilonMs, having failed the first
-  // branch's own `<` test above): A3's own concretisation of "any single
-  // residual step > kDriftStepResidualMultiple epsilons ... with stable
-  // plateaus". Deliberately evaluated over the RAW offset
-  // trajectory (each checkpoint's own offset, in ms), never the
-  // least-squares FIT's own residuals: a genuine mid-file step, fit by ONE
-  // straight line through both plateaus, pulls that line's own slope away
-  // from zero (this task's own worked derivation, recorded in
-  // 05-10-SUMMARY.md -- a symmetric 3-checkpoints-flat / jump /
-  // 3-checkpoints-flat trajectory produces FIT residuals of
-  // [+14.3,-11.4,-37.1,+37.1,+11.4,-14.3] ms, NOT two flat groups), so
-  // "stable plateaus" tested against FIT residuals would reject every
-  // genuine step. The raw offset trajectory itself is what actually forms
-  // two flat groups either side of a real step, and is what a reader means
-  // by "plateau" in the first place.
-  std::vector<std::int64_t> offset_ms(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    const std::optional<RationalValue> value = detail::ticks_to_ms(checkpoints[i].offset_ticks, tb);
-    if (!value.has_value()) {
-      return std::nullopt;
-    }
-    offset_ms[i] = value->num;
-  }
-
-  std::size_t step_index = 0;
-  std::int64_t largest_jump = -1;
-  for (std::size_t i = 1; i < count; ++i) {
-    const std::int64_t jump = abs_i64(offset_ms[i] - offset_ms[i - 1]);
-    if (jump > largest_jump) {
-      largest_jump = jump;
-      step_index = i;
-    }
-  }
-
-  const std::int64_t step_threshold = kDriftStepResidualMultiple * kDriftEpsilonMs;
-  bool is_step = largest_jump > step_threshold;
-  if (is_step) {
-    std::int64_t sum_before = 0;
-    for (std::size_t i = 0; i < step_index; ++i) {
-      if (!detail::checked_add(sum_before, offset_ms[i], &sum_before)) {
-        return std::nullopt;
-      }
-    }
-    std::int64_t sum_after = 0;
-    for (std::size_t i = step_index; i < count; ++i) {
-      if (!detail::checked_add(sum_after, offset_ms[i], &sum_after)) {
-        return std::nullopt;
-      }
-    }
-    std::int64_t mean_before = 0;
-    std::int64_t mean_after = 0;
-    if (!detail::checked_div(sum_before, static_cast<std::int64_t>(step_index), &mean_before) ||
-        !detail::checked_div(sum_after, static_cast<std::int64_t>(count - step_index), &mean_after)) {
-      return std::nullopt;
-    }
-    for (std::size_t i = 0; i < step_index && is_step; ++i) {
-      if (abs_i64(offset_ms[i] - mean_before) > kDriftEpsilonMs) {
-        is_step = false;
-      }
-    }
-    for (std::size_t i = step_index; i < count && is_step; ++i) {
-      if (abs_i64(offset_ms[i] - mean_after) > kDriftEpsilonMs) {
-        is_step = false;
-      }
-    }
-  }
-
-  if (is_step) {
-    fit.pattern = DriftPattern::step;
-    const std::optional<RationalValue> step_time_ms_value =
-        detail::ticks_to_ms(checkpoints[step_index].t_v_ticks, tb);
-    if (!step_time_ms_value.has_value()) {
-      return std::nullopt;
-    }
-    fit.step_time_ms = step_time_ms_value->num;
-  } else {
-    fit.pattern = DriftPattern::irregular;
-  }
+  // branch's own `<` test above): 05-22-PLAN.md's narrow-vocabulary
+  // decision (05-STEP-DESIGN.md's recorded Decision, from 05-21's
+  // research) removes `step` from what this function can classify --
+  // neither evaluated piecewise checkpoint-mapping candidate (D1
+  // segment-proportional, D2 media-clock) met soundness criterion (c), a
+  // `step_time` within one checkpoint spacing of the real join, on doc 04
+  // section 5's own step recipe, so no design was adopted. Everything that
+  // reaches this branch -- including a trajectory that would have formed
+  // two stable plateaus under the former plateau-detection logic (largest
+  // raw-offset jump, before/after means, flatness check against each
+  // mean -- now removed, since nothing downstream can reach it) --
+  // classifies `irregular`, with its residual max already computed and
+  // reported by the first branch's own loop above.
+  fit.pattern = DriftPattern::irregular;
   return fit;
 }
 
