@@ -345,7 +345,7 @@ Plans:
   4. `timeline.av_offset` reports a signed, priming-adjusted offset, and on a fixture with **non-zero encoder priming** — the common case before the audio decode path exists — the finding visibly carries `priming: unknown` with an unadjusted value rather than a confidently wrong number.
   5. `timeline.timecode` reports presence and SMPTE start value including the drop-frame flag; metadata-plus-timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s (recorded, never asserted, D-13) and is measured in CI with regression tracking over time via a committed instruction-count baseline ratchet (`tests/golden/PERF_BASELINE.txt`), not an asserted under-15% ratio (amended, 05-12-PLAN.md, 2026-09-17: measured overhead was 33% against the original <15% target, an absolute cost of 32-50 ms wall-clock — see the amended `PERF-03` text in REQUIREMENTS.md for the full evidence and measurement basis).
 
-**Plans**: 13/13 plans executed
+**Plans**: 13/25 plans executed (12 gap-closure plans added 2026-09-18 from 05-VERIFICATION.md)
 
 Plans:
 **Wave 1**
@@ -396,6 +396,47 @@ Plans:
 **Wave 12** *(blocked on Wave 11 completion)*
 
 - [x] 05-13-PLAN.md — Wave 12: capture the designated `x64-linux` leg's digest listing and first real perf baseline, transcribe both, and confirm every leg-only gate actually ran (DOC-04, PERF-05)
+
+**Gap closure** *(from 05-VERIFICATION.md, 2026-09-18; sequential on one branch)*
+
+**Wave 13**
+
+- [ ] 05-14-PLAN.md — Gap 3 and Gap 6: priming samples converted through the sample rate at both av_sync call sites, and the one-entry `sorted_pts_with_span` out-of-bounds read fixed and unit-tested via `detail::` (TIME-06/07/09/10)
+- [ ] 05-15-PLAN.md — Gap 4, data half: a bounded PES-header PTS/DTS seam in `ts_scan`, and the pure `apply_container_dts` join (TIME-04)
+- [ ] 05-16-PLAN.md — Gap 2, part 1: the promoted `TimelinePacketView` (33-bit unwrap plus cross-stream epoch), consumed by timeline.start/duration, frame_rate.measured and size bitrate (TIME-01/02/03)
+
+**Wave 14** *(blocked on 05-14, 05-16)*
+
+- [ ] 05-17-PLAN.md — Gap 2, part 2: correct declared durations on a wrapping TS via an overflow-corrected re-probe, or withhold them (TIME-02/03)
+
+**Wave 15** *(blocked on 05-14, 05-16, 05-17)*
+
+- [ ] 05-18-PLAN.md — Gap 2, part 3: av_sync and jitter_vfr on the views, the wrap pair asserted whole-report, and WINDOWS #26/#27/#30 closed (TIME-02/05/06/07, DOC-04)
+
+**Wave 16** *(blocked on 05-18)*
+
+- [ ] 05-19-PLAN.md — Gap 5 (WINDOWS #28): sub-tick-quantization-aware vfr_profile bins and jitter sigma (UD-2), plus the NTSC MP4/MKV whole-report assertion (TIME-05/06/09, DOC-04)
+- [ ] 05-21-PLAN.md — Gap 1, research: a calibrated scratch harness evaluating piecewise checkpoint mappings, then a blocking-human decision to adopt a design or narrow the vocabulary (UD-1) (TIME-07)
+
+**Wave 17** *(blocked on 05-15, 05-17, 05-18, 05-19)*
+
+- [ ] 05-20-PLAN.md — Gap 4, consumer half: container-truth DTS substituted once in the orchestrator for every MPEG-TS DTS consumer; the declared sets that enshrined the inferred tie are corrected (TIME-01/04, DOC-04)
+
+**Wave 18** *(blocked on 05-20, 05-21)*
+
+- [ ] 05-22-PLAN.md — Gap 1, code: implement the decided SC1 branch and span source in av_sync, with unit and whole-report SC1 coverage (TIME-07/08, DOC-04)
+
+**Wave 19** *(blocked on 05-22)*
+
+- [ ] 05-23-PLAN.md — Gap 1, contract: compiled-in docs for timestamp-only limits, the vocabulary amendments where decided, and the residual MP4-to-TS drift ledger record (TIME-07, DOC-04)
+
+**Wave 20** *(blocked on 05-23)*
+
+- [ ] 05-24-PLAN.md — Designated-leg confirmation: local pre-flight, a blocking-human push, and log capture with any required transcription (DOC-04, PERF-05)
+
+**Wave 21** *(blocked on 05-24)*
+
+- [ ] 05-25-PLAN.md — A blocking-human second push (keep or drop any perf-baseline commit) and the confirmed-green designated leg (DOC-04, PERF-05)
 
 **Source doc**: `claude_docs/04-timeline-analysis.md` (design-doc phase 4)
 
