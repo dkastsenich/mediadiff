@@ -2,243 +2,85 @@
 phase: 05-timeline-analysis
 reviewed: 2026-09-18T00:00:00Z
 depth: standard
-files_reviewed: 68
+files_reviewed: 26
 files_reviewed_list:
-  - CMakeLists.txt
-  - docs/checks/timeline.av_drift.md
-  - docs/checks/timeline.av_drift.pattern.md
-  - docs/checks/timeline.av_offset.md
-  - docs/checks/timeline.discontinuities.flagged.md
-  - docs/checks/timeline.discontinuities.md
-  - docs/checks/timeline.dts_monotonic.md
-  - docs/checks/timeline.duration.coherence.md
-  - docs/checks/timeline.duration.md
-  - docs/checks/timeline.gaps.md
-  - docs/checks/timeline.jitter.md
-  - docs/checks/timeline.pts_unique.md
-  - docs/checks/timeline.start.md
-  - docs/checks/timeline.timecode.md
-  - docs/checks/timeline.timecode.value.md
-  - docs/checks/timeline.vfr_profile.md
-  - docs/checks/timeline.wrap_events.md
-  - docs/checks/video.frame_rate.measured.md
-  - .github/workflows/ci.yml
-  - scripts/gen_corpus.sh
-  - scripts/measure_timeline_perf.sh
+  - src/analyzers/size/size.cpp
   - src/analyzers/timeline/analyzers.h
   - src/analyzers/timeline/av_sync.cpp
-  - src/analyzers/timeline/discontinuities.cpp
   - src/analyzers/timeline/jitter_vfr.cpp
   - src/analyzers/timeline/monotonic.cpp
   - src/analyzers/timeline/start_duration.cpp
-  - src/analyzers/timeline/timecode.cpp
   - src/analyzers/timeline/unwrap.cpp
   - src/analyzers/timeline/unwrap.h
   - src/analyzers/video/stream_params.cpp
-  - src/compare/tol.cpp
   - src/core/checks.def
-  - src/core/exact_int.h
-  - src/core/rational.h
-  - src/probe/cadence.cpp
-  - src/probe/cadence.h
   - src/probe/demux_session.cpp
   - src/probe/demux_session.h
   - src/probe/orchestrator.cpp
-  - src/probe/packet_scan.cpp
   - src/probe/packet_scan.h
   - src/probe/ts_scan.cpp
   - src/probe/ts_scan.h
-  - tests/fixtures/GENERATOR_MANIFEST.json
-  - tests/golden/CORPUS_DIGEST_PROVISIONAL.txt
-  - tests/golden/CORPUS_DIGEST.txt
-  - tests/golden/list_checks_effective.txt
-  - tests/golden/PERF_BASELINE.txt
-  - tests/integration/CMakeLists.txt
-  - tests/integration/test_doc03_coverage.cpp
   - tests/integration/test_timeline_av_sync.cpp
   - tests/integration/test_timeline_jitter.cpp
   - tests/integration/test_timeline_start_duration.cpp
   - tests/integration/test_timeline_structure.cpp
-  - tests/integration/test_timeline_timecode.cpp
-  - tests/integration/test_video_yuvj.cpp
-  - tests/integration/timeline_findings.h
-  - tests/unit/CMakeLists.txt
   - tests/unit/test_av_drift.cpp
   - tests/unit/test_av_sync.cpp
-  - tests/unit/test_cadence.cpp
-  - tests/unit/test_compare_semantics.cpp
-  - tests/unit/test_exact_int.cpp
+  - tests/unit/test_demux_session.cpp
   - tests/unit/test_jitter_vfr.cpp
-  - tests/unit/test_packet_scan.cpp
-  - tests/unit/test_rational_wide.cpp
-  - tests/unit/test_timecode.cpp
-  - tests/unit/test_timeline_start_duration.cpp
+  - tests/unit/test_pass_union.cpp
   - tests/unit/test_timeline_unwrap.cpp
-  - tests/unit/test_tolerance.cpp
-  - tests/unit/test_ts_continuity.cpp
-  - tests/unit/test_video_stream_params.cpp
-  - tools/bench/timeline_overhead.cpp
-  - tools/gen_ts_discontinuity.py
+  - tests/unit/test_ts_scan.cpp
 findings:
-  critical: 1
+  critical: 0
   warning: 1
-  info: 0
+  info: 1
   total: 2
 status: issues_found
 ---
 
-# Phase 05: Code Review Report
+# Phase 5: Code Review Report (Gap-Closure, plans 05-14 through 05-25)
 
-**Reviewed:** 2026-09-18T00:00:00Z
+**Reviewed:** 2026-09-18
 **Depth:** standard
-**Files Reviewed:** 68
+**Files Reviewed:** 26
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the full timeline-analysis phase: the seven `timeline.*` analyzer
-translation units, their shared header, the probe-layer primitives they
-depend on (`cadence`, `demux_session`, `packet_scan`, `ts_scan`,
-`orchestrator`), the two core numeric primitives the whole comparator chain
-leans on (`core/rational.h`, `core/exact_int.h`), `compare/tol.cpp`,
-`checks.def`, build wiring, and the unit/integration test suites for this
-phase.
+This review covers the gap-closure changes (05-14 through 05-25) layered on top of the code already reviewed at commit `381c243`. The diff is large but disciplined: it (1) fixes the two prior-review findings, (2) promotes `TimelinePacketView` as the single unwrap path for every timestamp-derived consumer (av_sync, jitter_vfr, monotonic, start_duration, stream_params, size), (3) adds an overflow-corrected second-open re-probe for MPEG-TS declared durations, (4) adds a bounds-checked PES-header parser and a container-DTS join that substitutes libavformat's own DTS read-back inference with PES-header truth on MPEG-TS, and (5) narrows `timeline.av_drift.pattern`'s vocabulary by removing the unreachable `step` classification.
 
-The codebase is unusually disciplined about checked arithmetic, bounded
-parsers, and honest degrade-to-`insufficient_data` behavior almost
-everywhere — that discipline is what makes the one real defect found here
-stand out: `av_sync.cpp`'s `sorted_pts_with_span` helper (feeding
-`timeline.av_offset` / `timeline.av_drift` / `timeline.av_drift.pattern`)
-contains an unchecked array-index underflow that is reachable from ordinary,
-non-malicious media (any video or audio stream whose packet scan captures
-exactly one packet with a valid PTS and an undeclared duration). This is a
-memory-safety bug (heap buffer underflow / potential crash) in code that
-processes untrusted media files as a CI gate, and it directly contradicts
-the bounds-checking discipline the rest of this phase follows rigorously
-(e.g. `ts_scan.cpp`'s explicit "attacker-controlled length, validated before
-any read" comments, `demux_session.cpp`'s `T-4-48` short-payload guards).
+I traced every changed arithmetic path (unwrap, epoch shift, priming-to-ticks conversion, PES timestamp decode, container-DTS join, least-squares drift fit) for overflow safety, bounds safety on untrusted container bytes, and determinism (no floating point, no iteration-order-dependent state). All checked-arithmetic guards are present and consistent with the project's `expected<T,Error>`/rational-everywhere conventions. Every new code path I could find is covered by a corresponding unit or integration test, several of which are pinned against real fixture measurements rather than implementation-derived expectations, which is the right discipline for a project whose stated P0 is false positives.
 
-**Already tracked** (per review instructions, not re-reported below):
-`.planning/WINDOWS.md` #26/#27/#30 (`correct_ts_overflow = 0` raw-axis
-reads), #28 (`vfr_profile`/`jitter` NTSC MP4→MKV remux), #29 (tol message
-renders the absolute delta labelled `%`), the `dts_monotonic` tie-counting
-false positive on an MP4→TS remux (spec-faithful to doc 04), and
-`av_drift.pattern`'s unreachable `step` classification.
+I found no BLOCKER-class defects. Two items are worth recording: a WARNING about a latent false-positive risk in the new container-DTS join when a stream's PES timestamps only partially join (mixed-source DTS axis), and an INFO item about `reprobe_ts_declared_durations`'s use of `DemuxOptions{}` (default wall-clock budget) rather than the caller's own configured budget, which could surprise a caller running with a very small `--timeout`.
 
-## Critical Issues
+## Prior Review Findings
 
-### CR-01: Heap buffer underflow in `sorted_pts_with_span` on a single-packet stream
-
-**File:** `src/analyzers/timeline/av_sync.cpp:200-235` (specifically lines 224-229)
-**Issue:**
-
-```cpp
-for (std::size_t i = 0; i < entries.size(); ++i) {
-  result.pts.push_back(entries[i].first);
-  std::int64_t effective_duration = entries[i].second;
-  if (effective_duration <= 0) {
-    const std::size_t neighbor = (i + 1 < entries.size()) ? i + 1 : i - 1;
-    if (i != neighbor) {
-      std::int64_t interval = 0;
-      const bool ok = (neighbor > i) ? detail::checked_sub(entries[neighbor].first, entries[i].first, &interval)
-                                      : detail::checked_sub(entries[i].first, entries[neighbor].first, &interval);
-      effective_duration = (ok && interval > 0) ? interval : 0;
-    } else {
-      effective_duration = 0;
-    }
-  }
-  result.durations.push_back(effective_duration);
-}
-```
-
-When `entries.size() == 1` (a stream whose packet scan captured exactly one
-packet carrying a valid, non-sentinel PTS — a short/truncated clip, a
-single-frame image-sequence stream, or simply a stream whose only packet
-happens to sit past a truncated `PacketScan` cap), the only iteration is
-`i == 0`. `i + 1 < entries.size()` is `1 < 1` → false, so the code falls to
-`neighbor = i - 1 = 0 - 1`. `std::size_t` is unsigned, so this underflows to
-`SIZE_MAX` rather than throwing or asserting. `i != neighbor` (`0 !=
-SIZE_MAX`) is then true, `neighbor > i` is true, and the code calls
-`entries[neighbor].first` — i.e. `entries[SIZE_MAX]`. Because
-`sizeof(std::pair<int64_t,int64_t>) == 16`, `SIZE_MAX * 16 mod 2^64` wraps
-to `-16`, so this indexes 16 bytes *before* `entries.data()` — a genuine
-out-of-bounds heap read (CWE-125), not merely a huge, obviously-invalid
-address. In a release build this most likely reads adjacent heap
-metadata/allocator data as if it were a `PacketRecord`'s PTS, silently
-poisoning `effective_duration` (and, downstream, the `timeline.av_offset` /
-`timeline.av_drift` / `timeline.av_drift.pattern` measurements) with garbage
-rather than crashing — exactly the "confidently wrong number" class of
-defect this project's own `checked_*` arithmetic discipline elsewhere exists
-to prevent. Under ASan, a hardened allocator, or a debug STL, it is instead
-a reliable crash (denial of service against the CI gate on an ordinary,
-non-adversarial input).
-
-This function is called unconditionally and unguarded in
-`run_timeline_av_sync` for **both** the video stream
-(`sorted_pts_with_span(video_stream.packets)`, right after confirming the
-video stream has at least one valid PTS but before any `size() >= 2` check)
-and the audio stream (`sorted_pts_with_span(audio_stream.packets)`), so
-either side of an `timeline.av_offset`/`timeline.av_drift` comparison can
-trigger it — this is not a narrow, decode-path-only edge case.
-
-**Fix:**
-
-```cpp
-if (effective_duration <= 0) {
-  std::optional<std::size_t> neighbor;
-  if (i + 1 < entries.size()) {
-    neighbor = i + 1;
-  } else if (i > 0) {
-    neighbor = i - 1;
-  }
-  if (neighbor.has_value()) {
-    std::int64_t interval = 0;
-    const bool ok = (*neighbor > i) ? detail::checked_sub(entries[*neighbor].first, entries[i].first, &interval)
-                                     : detail::checked_sub(entries[i].first, entries[*neighbor].first, &interval);
-    effective_duration = (ok && interval > 0) ? interval : 0;
-  } else {
-    effective_duration = 0;
-  }
-}
-```
-
-Add a unit-testable regression case (see WR-01 below) with `entries.size()
-== 1` and `duration <= 0` to lock this in.
+- **CR-01** (critical: `sorted_pts_with_span` computed `neighbor = i - 1` on a one-entry stream, underflowing `std::size_t` to `SIZE_MAX` and reading 16 bytes before `entries.data()`): **RESOLVED.** `src/analyzers/timeline/av_sync.cpp` (`detail::sorted_pts_with_span`, ~line 204) now uses `std::optional<std::size_t> neighbor`, populated only when `i + 1 < entries.size()` or `i > 0`, and falls back to `effective_duration = 0` when no neighbour exists. Verified by reading the current implementation directly; the unsigned-underflow path no longer exists in the source.
+- **WR-01** (warning: `sorted_pts_with_span` was anonymous-namespace-only and unreachable from unit tests): **RESOLVED.** `PtsSpan` and `detail::sorted_pts_with_span` were moved to `src/analyzers/timeline/analyzers.h`'s `detail` namespace (05-14-PLAN.md Gap 6), and `tests/unit/test_av_sync.cpp` now drives it directly, including the exact CR-01 regression case ("sorted_pts_with_span over 1 undeclared entry (duration 0) never reads out of bounds") plus 0-entry, 1-declared-entry, and 1-sentinel-entry edge cases.
 
 ## Warnings
 
-### WR-01: `sorted_pts_with_span` is unreachable from unit tests, unlike every sibling pure helper in this phase
+### WR-01: Mixed joined/unjoined container-DTS substitution on one stream is not modeled as a distinct evidence/skip state
 
-**File:** `src/analyzers/timeline/av_sync.cpp:172-272`
-**Issue:** Every other non-trivial pure helper in this phase
-(`detail::first_presented_pts`, `detail::global_origin_ticks`,
-`detail::reconstruct_packet_durations` in `start_duration.cpp`,
-`detail::build_axis_view`/`count_dts_violations`/`count_pts_duplicates` in
-`monotonic.cpp`, `detail::compute_sorted_axis_intervals`/`classify_vfr_bin`
-in `jitter_vfr.cpp`) is deliberately exposed via the `detail::` namespace in
-`analyzers.h` specifically so `tests/unit/` can drive it directly against
-hand-built inputs without needing a real fixture on disk — this is stated
-explicitly, repeatedly, in this file's own doc comments as the established
-convention. `sorted_pts_with_span`, `clamp_into_nearest_packet`,
-`nearest_tick`, and `index_proportional_raw_ticks` in `av_sync.cpp` are the
-one exception: they live in an anonymous namespace with no `detail::`
-exposure, so `tests/unit/test_av_sync.cpp` can only test `resolve_priming`
-and `primary_video_stream` from this file, never the checkpoint-construction
-math that CR-01 lives in. This gap in the project's own established
-testability convention is almost certainly why the single-packet underflow
-in CR-01 was never caught — `tests/integration/test_timeline_av_sync.cpp`'s
-fixtures are all multi-packet, multi-second clips, so this class of edge
-case was structurally unreachable from the test suite regardless of intent.
-**Fix:** Move `sorted_pts_with_span` (and, if useful, `clamp_into_nearest_packet`/
-`index_proportional_raw_ticks`) into `namespace detail` in `analyzers.h`
-(mirroring the existing declarations), and add
-`tests/unit/test_av_sync.cpp` cases for a single-entry span, an all-zero-duration
-span, and a two-entry span with a zero duration on the last entry — the same
-class of hand-built-input coverage this project already gives every sibling
-helper.
+**File:** `src/probe/ts_scan.cpp:373-396` (`detail::apply_container_dts`), `src/probe/orchestrator.cpp:353-405` (container-DTS post-pass), `src/analyzers/timeline/monotonic.cpp:265-269` (`emit_dts_monotonic`)
+
+**Issue:** The container-DTS post-pass substitutes a packet's `dts` with the PES-header-derived value only when `packet.pos == record.offset && packet.pts == record.pts` (the join predicate in `apply_container_dts`). Any packet on the same stream that does not find a matching record (e.g. a frame the demuxer split out of a multi-frame PES with `pos < 0`, or a PES header this scanner reported `malformed`/`no_timestamps`/`truncated_in_packet` for) keeps its own, unmodified, libavformat-inferred `dts` — while `dts_source` for the whole stream is still reported as `container_pes` (not `container_unavailable`), and `timeline.dts_monotonic` proceeds to compute violations over this **mixed-provenance** DTS axis (part PES-header truth, part libavformat's own read-back inference). The two sources are not guaranteed to agree at the *boundary* between a joined run and an unjoined run — exactly the class of tie the whole feature exists to eliminate (per `05-VERIFICATION.md`'s Gap 4: "a `-c copy` MP4->TS remux ... makes libavformat's `compute_pkt_fields` fabricate a DTS tie that does not exist in the container"). A partially-unjoined stream could reintroduce a spurious `dts[i] <= dts[i-1]` violation at exactly such a boundary, which is a false positive on a `severity = "fail"` check — the class of defect this project's own CLAUDE.md calls P0. `dts_unjoined_with_pos` is surfaced in evidence (so a human reading the JSON can diagnose it after the fact), but nothing in `run()` widens the skip/insufficient_data gate to cover "some but not all packets joined," so the check still reports a hard pass/fail verdict from mixed-provenance data.
+
+**Fix:** Either (a) treat any non-zero `dts_unjoined_with_pos` on a stream as `SkipReason::insufficient_data` for `timeline.dts_monotonic` on that stream (mirroring the existing `container_unavailable` gate, just widened to "fully joined or skip" rather than "attempted or skip"), or (at minimum) add an integration-test fixture that exercises a stream with a genuine mixed join (some PES headers unparsed/excluded, e.g. an audio stream muxed with private-stream framing) to prove no spurious violation is introduced at the joined/unjoined boundary before this ships as unconditionally trusted.
+
+## Info
+
+### IN-01: `reprobe_ts_declared_durations` always uses the default wall-clock budget, not the caller's configured one
+
+**File:** `src/probe/demux_session.cpp:227-238` (`DemuxSession::reprobe_ts_declared_durations`)
+
+**Issue:** The second, overflow-corrected open is opened with `DemuxOptions{}` (default `wall_clock_budget_ms`) rather than the `DemuxOptions` the primary session itself was opened with. This is called out explicitly in the header doc comment as deliberate ("timing out under the same interrupt-budget mechanism as a fresh `DemuxOptions{}`"), so it is not a silent gap, but it does mean a caller who deliberately configures a very small `--timeout`/wall-clock budget to bound worst-case probe latency will still pay up to the *default* budget for this second open on any genuinely-wrapping MPEG-TS file, which could exceed the caller's own latency expectations for the whole `run_probe` call.
+
+**Fix:** Consider threading the primary session's own `wall_clock_budget_ms` (or a fraction of the remaining budget) into `reprobe_ts_declared_durations`, or at minimum note this in the CLI's own `--timeout` documentation so operators aren't surprised by an MPEG-TS-specific latency floor that non-TS or non-wrapping inputs don't pay.
 
 ---
 
-_Reviewed: 2026-09-18T00:00:00Z_
+_Reviewed: 2026-09-18_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
