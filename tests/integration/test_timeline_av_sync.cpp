@@ -450,3 +450,55 @@ TEST_CASE("timeline_av_sync - TIME-08: the K=32 checkpoint trajectory survives a
   REQUIRE(checked_drift);
   REQUIRE(checked_pattern);
 }
+
+// --- Test 7 (TIME-06): known priming is converted and applied end to end --
+//
+// Test 1 proves the recoverable pair gates and Test 4 the unknown arm's raw
+// fallback, but neither would notice the adjustment silently no longer being
+// applied: Test 1's pair still differs by 40ms raw-to-raw, and the MP4-to-MKV
+// stream copy below reads -23ms raw on both sides. Both pairs here carry
+// known priming on both sides, so every side must report the adjusted basis,
+// an adjusted offset that differs from its raw one, and the 1024-sample
+// priming converted into its own container's timebase: 1024 ticks in MP4's
+// 1/44100, 23 in Matroska's mandated 1/1000 (05-14-PLAN.md, Gap 3). Only
+// these recipe invariants are asserted, never the millisecond offsets.
+TEST_CASE("timeline_av_sync - TIME-06: known priming is converted into each container's own timebase and applied "
+          "on both sides of the recoverable pair and of the MP4-to-MKV stream copy",
+          "[integration]") {
+  struct KnownPrimingPair {
+    const char* baseline;
+    const char* candidate;
+    const char* profile;
+    std::int64_t baseline_priming_ticks;
+    std::int64_t candidate_priming_ticks;
+  };
+  const KnownPrimingPair pairs[] = {
+      {"timeline_start_base.mp4", "timeline_avoffset_video_shift.mp4", "sw-encoder", 1024, 1024},
+      {"timeline_ntsc_base.mp4", "timeline_ntsc_remux.mkv", "remux", 1024, 23},
+  };
+
+  const auto expect_adjusted = [](const nlohmann::ordered_json& side, std::int64_t priming_ticks) {
+    REQUIRE(side.at("comparison_basis").get<std::string>() == "adjusted");
+    REQUIRE(side.at("priming").at("state").get<std::string>() == "known");
+    REQUIRE(side.at("priming").at("rescale").get<std::string>() == "ok");
+    REQUIRE(side.at("priming").at("priming_ticks").get<std::int64_t>() == priming_ticks);
+    REQUIRE(side.at("adjusted_offset_ms").get<std::int64_t>() != side.at("raw_offset_ms").get<std::int64_t>());
+  };
+
+  for (const KnownPrimingPair& pair : pairs) {
+    const nlohmann::ordered_json report =
+        compare_json(fixture(pair.baseline), fixture(pair.candidate), pair.profile);
+    int av_offset_findings = 0;
+    for (const auto& finding : report.at("findings")) {
+      if (finding.at("id").get<std::string>() != "timeline.av_offset") {
+        continue;
+      }
+      INFO(pair.baseline << " vs " << pair.candidate << ": " << finding.dump(2));
+      ++av_offset_findings;
+      expect_adjusted(finding.at("evidence").at("baseline"), pair.baseline_priming_ticks);
+      expect_adjusted(finding.at("evidence").at("candidate"), pair.candidate_priming_ticks);
+    }
+    INFO(pair.baseline << " vs " << pair.candidate);
+    REQUIRE(av_offset_findings == 1);
+  }
+}

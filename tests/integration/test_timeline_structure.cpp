@@ -27,6 +27,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -758,4 +759,47 @@ TEST_CASE(
     }
     REQUIRE(joined_by_scope == reference_joined_by_scope);
   }
+}
+
+// --- Test 12 (TIME-02): the wrap pair's raw values survive in evidence -----
+//
+// TIME-02 requires the unwrap to preserve the raw values in evidence, not
+// only to classify the wrap (Test 4). timeline.wrap_events carries the first
+// wrapped packet's raw and unwrapped PTS; asserted here as invariants of the
+// recipe (exactly one 33-bit modulus apart, the raw value inside the 33-bit
+// range), never as the raw values themselves, which depend on the fixture's
+// own bytes.
+TEST_CASE("timeline_structure - TIME-02: timeline.wrap_events evidence preserves the first wrapped packet's raw "
+          "and unwrapped PTS, exactly one 33-bit modulus apart, on both streams",
+          "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_wrap.ts"), "remux");
+
+  constexpr std::int64_t kModulus = std::int64_t{1} << 33;
+  int wrap_events_findings = 0;
+  for (const auto& finding : report.at("findings")) {
+    if (finding.at("id").get<std::string>() != "timeline.wrap_events") {
+      continue;
+    }
+    INFO("timeline.wrap_events finding: " << finding.dump(2));
+    ++wrap_events_findings;
+
+    // The unwrapped baseline reports its zero count and nothing to locate.
+    const auto& baseline = finding.at("evidence").at("baseline");
+    REQUIRE(baseline.at("wrap_count").get<std::int64_t>() == 0);
+    REQUIRE_FALSE(baseline.contains("first_wrap_index"));
+    REQUIRE_FALSE(baseline.contains("first_wrap_raw"));
+    REQUIRE_FALSE(baseline.contains("first_wrap_unwrapped"));
+
+    const auto& candidate = finding.at("evidence").at("candidate");
+    REQUIRE(candidate.at("wrap_count").get<std::int64_t>() == 1);
+    REQUIRE(candidate.at("first_wrap_index").get<std::int64_t>() >= 0);
+    const std::int64_t raw = candidate.at("first_wrap_raw").get<std::int64_t>();
+    const std::int64_t unwrapped = candidate.at("first_wrap_unwrapped").get<std::int64_t>();
+    REQUIRE(raw >= 0);
+    REQUIRE(raw < kModulus);
+    REQUIRE(unwrapped - raw == kModulus);
+  }
+  // One finding per stream: the video and audio PES timestamps both wrap.
+  REQUIRE(wrap_events_findings == 2);
 }

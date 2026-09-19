@@ -188,3 +188,45 @@ TEST_CASE("timeline_timecode - ROADMAP SC5: presence, the SMPTE start value, and
   CHECK(evidence.at("baseline").at("drop_frame").get<bool>() == true);
   CHECK(evidence.at("candidate").at("drop_frame").get<bool>() == false);
 }
+
+// --- Test 5 (TIME-11): the S12M and GOP sources report requires_decode ----
+//
+// TIME-11 names S12M and MPEG-2 GOP timecode as sources beside tmcd. Neither
+// has a no-decode extraction path in this build, so every timecode
+// measurement carries both, in a fixed order, as `unreachable_sources` with
+// reason requires_decode -- on the tmcd-bearing baseline and on the
+// tmcd-absent candidate alike, since the unreachability is a static fact of
+// the build, not of the file. The `detail` prose is not asserted.
+TEST_CASE("timeline_timecode - TIME-11: both timecode checks report S12M and MPEG-2 GOP timecode as "
+          "unreachable_sources with reason requires_decode, on a tmcd-bearing and a tmcd-absent side alike",
+          "[integration]") {
+  const nlohmann::ordered_json report =
+      compare_json(fixture("timeline_tc_ndf.mp4"), fixture("timeline_tc_absent.mp4"), "sw-encoder");
+
+  const auto expect_unreachable_sources = [](const nlohmann::ordered_json& side) {
+    const auto& sources = side.at("unreachable_sources");
+    REQUIRE(sources.size() == 2U);
+    REQUIRE(sources.at(0).at("source").get<std::string>() == "s12m_timecode");
+    REQUIRE(sources.at(0).at("reason").get<std::string>() == "requires_decode");
+    REQUIRE(sources.at(1).at("source").get<std::string>() == "mpeg2_gop_timecode");
+    REQUIRE(sources.at(1).at("reason").get<std::string>() == "requires_decode");
+  };
+
+  int timecode_findings = 0;
+  int timecode_value_findings = 0;
+  for (const auto& finding : report.at("findings")) {
+    const std::string id = finding.at("id").get<std::string>();
+    if (id == "timeline.timecode") {
+      ++timecode_findings;
+    } else if (id == "timeline.timecode.value") {
+      ++timecode_value_findings;
+    } else {
+      continue;
+    }
+    INFO(id << " finding: " << finding.dump(2));
+    expect_unreachable_sources(finding.at("evidence").at("baseline"));
+    expect_unreachable_sources(finding.at("evidence").at("candidate"));
+  }
+  REQUIRE(timecode_findings == 1);
+  REQUIRE(timecode_value_findings == 1);
+}
