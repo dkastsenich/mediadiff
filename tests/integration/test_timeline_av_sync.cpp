@@ -454,35 +454,49 @@ TEST_CASE("timeline_av_sync - TIME-08: the K=32 checkpoint trajectory survives a
 // --- Test 7 (TIME-06): known priming is converted and applied end to end --
 //
 // Test 1 proves the recoverable pair gates and Test 4 the unknown arm's raw
-// fallback, but neither would notice the adjustment silently no longer being
+// fallback, but neither notices the adjustment silently no longer being
 // applied: Test 1's pair still differs by 40ms raw-to-raw, and the MP4-to-MKV
-// stream copy below reads -23ms raw on both sides. Both pairs here carry
+// stream copy below reads -23ms raw on both sides. (Mutation checks showed
+// the mixed-priming pairs' declared sets do catch it, but only indirectly;
+// no other test asserts av_offset's own evidence.) Both pairs here carry
 // known priming on both sides, so every side must report the adjusted basis,
 // an adjusted offset that differs from its raw one, and the 1024-sample
 // priming converted into its own container's timebase: 1024 ticks in MP4's
-// 1/44100, 23 in Matroska's mandated 1/1000 (05-14-PLAN.md, Gap 3). Only
-// these recipe invariants are asserted, never the millisecond offsets.
+// 1/44100, 23 in Matroska's mandated 1/1000 (05-14-PLAN.md, Gap 3). A side
+// whose recipe starts audio and video together must also adjust to exactly
+// zero (-1024 + 1024 samples against a first frame at 0): a sign error, a
+// units error or a second edit-list application all leave it non-zero while
+// still differing from raw. Only these recipe invariants are asserted; the
+// shifted candidate's own millisecond offsets never are.
 TEST_CASE("timeline_av_sync - TIME-06: known priming is converted into each container's own timebase and applied "
           "on both sides of the recoverable pair and of the MP4-to-MKV stream copy",
           "[integration]") {
+  struct KnownPrimingSide {
+    std::int64_t priming_ticks;
+    bool starts_synchronized;  // the recipe starts audio and video together
+  };
   struct KnownPrimingPair {
     const char* baseline;
     const char* candidate;
     const char* profile;
-    std::int64_t baseline_priming_ticks;
-    std::int64_t candidate_priming_ticks;
+    KnownPrimingSide baseline_side;
+    KnownPrimingSide candidate_side;
   };
   const KnownPrimingPair pairs[] = {
-      {"timeline_start_base.mp4", "timeline_avoffset_video_shift.mp4", "sw-encoder", 1024, 1024},
-      {"timeline_ntsc_base.mp4", "timeline_ntsc_remux.mkv", "remux", 1024, 23},
+      {"timeline_start_base.mp4", "timeline_avoffset_video_shift.mp4", "sw-encoder", {1024, true}, {1024, false}},
+      {"timeline_ntsc_base.mp4", "timeline_ntsc_remux.mkv", "remux", {1024, true}, {23, true}},
   };
 
-  const auto expect_adjusted = [](const nlohmann::ordered_json& side, std::int64_t priming_ticks) {
+  const auto expect_adjusted = [](const nlohmann::ordered_json& side, const KnownPrimingSide& expected) {
     REQUIRE(side.at("comparison_basis").get<std::string>() == "adjusted");
     REQUIRE(side.at("priming").at("state").get<std::string>() == "known");
     REQUIRE(side.at("priming").at("rescale").get<std::string>() == "ok");
-    REQUIRE(side.at("priming").at("priming_ticks").get<std::int64_t>() == priming_ticks);
-    REQUIRE(side.at("adjusted_offset_ms").get<std::int64_t>() != side.at("raw_offset_ms").get<std::int64_t>());
+    REQUIRE(side.at("priming").at("priming_ticks").get<std::int64_t>() == expected.priming_ticks);
+    const std::int64_t adjusted_ms = side.at("adjusted_offset_ms").get<std::int64_t>();
+    REQUIRE(adjusted_ms != side.at("raw_offset_ms").get<std::int64_t>());
+    if (expected.starts_synchronized) {
+      REQUIRE(adjusted_ms == 0);
+    }
   };
 
   for (const KnownPrimingPair& pair : pairs) {
@@ -495,8 +509,8 @@ TEST_CASE("timeline_av_sync - TIME-06: known priming is converted into each cont
       }
       INFO(pair.baseline << " vs " << pair.candidate << ": " << finding.dump(2));
       ++av_offset_findings;
-      expect_adjusted(finding.at("evidence").at("baseline"), pair.baseline_priming_ticks);
-      expect_adjusted(finding.at("evidence").at("candidate"), pair.candidate_priming_ticks);
+      expect_adjusted(finding.at("evidence").at("baseline"), pair.baseline_side);
+      expect_adjusted(finding.at("evidence").at("candidate"), pair.candidate_side);
     }
     INFO(pair.baseline << " vs " << pair.candidate);
     REQUIRE(av_offset_findings == 1);
