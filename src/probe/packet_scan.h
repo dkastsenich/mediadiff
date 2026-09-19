@@ -214,6 +214,21 @@ struct StreamPacketScan {
   // is not `container_pes`.
   std::int64_t dts_container_joined = 0;
   std::int64_t dts_unjoined_with_pos = 0;
+
+  // 05-REVIEW.md WR-01 fix (orchestrator fix spec point 1): per-packet
+  // join outcome for this stream's own `packets[*].dts` substitution --
+  // index i is `true` iff `packets[i].dts` was replaced by PES-header
+  // truth (a join), `false` otherwise (a negative-`pos` split-out frame,
+  // or a non-negative-`pos` packet that did not match any recorded PES
+  // timestamp). Sized to `packets.size()` and populated ONLY when
+  // `dts_source` is `container_pes` (empty otherwise, mirroring
+  // `dts_container_joined`/`dts_unjoined_with_pos`'s own "both stay 0
+  // unless container_pes" contract). `timeline.dts_monotonic` is the sole
+  // consumer: it judges only the packets this marks joined, so a mixed
+  // joined/unjoined DTS axis on one stream can never produce a spurious
+  // violation at the boundary between PES-header truth and libavformat's
+  // own inferred read-back.
+  std::vector<bool> dts_joined;
 };
 
 // The whole scan's result: one StreamPacketScan per AVStream (doc 02

@@ -296,6 +296,30 @@ struct MonotonicResult {
 
 MonotonicResult count_dts_violations(const AxisView& view);
 
+// 05-REVIEW.md WR-01 fix (orchestrator fix spec point 1): on MPEG-TS with
+// a container-DTS substitution (`StreamPacketScan::dts_source ==
+// container_pes`), `timeline.dts_monotonic` judges ONLY the samples whose
+// own packet joined a PES header (`StreamPacketScan::dts_joined[
+// packet_index]` true) -- never a mix of PES-header truth and
+// libavformat's own inferred read-back, which are not guaranteed to agree
+// at the boundary between a joined run and an unjoined run (05-REVIEW.md's
+// own false-positive concern). `view` is filtered in READ order (the
+// property `count_dts_violations` requires is preserved: filtering never
+// reorders); a sample whose `packet_index` falls outside `dts_joined`
+// (never happens in production -- `dts_joined` is always sized to the
+// stream's own `packets` -- but a caller-supplied mismatch must never read
+// out of bounds) is treated as unjoined, not as an out-of-bounds access.
+// Exposed here, mirroring `unwrap_axis_view`'s own exposure convention, so
+// a unit test can prove the "mixed axis cannot produce a boundary
+// violation" property directly against hand-built samples, without a real
+// fixture that happens to carry a genuinely mixed join on disk.
+struct JoinFilterResult {
+  AxisView view;
+  std::int64_t excluded_unjoined = 0;
+};
+
+JoinFilterResult filter_axis_to_joined(const AxisView& view, const std::vector<bool>& dts_joined);
+
 // timeline.pts_unique's own count: duplicate presentation PTS values,
 // found by sorting a LOCAL COPY of `view.samples` by (value, packet_index)
 // -- never `view` itself, never the caller's own read-order array -- and

@@ -893,9 +893,25 @@ void record_pes_timestamp(PidStats& stats, const PesTimestampRecord& record, std
   --remaining_budget;
 }
 
-ContainerDtsJoin apply_container_dts(std::span<PacketRecord> packets, std::span<const PesTimestampRecord> records) {
+ContainerDtsJoin apply_container_dts(std::span<PacketRecord> packets, std::span<const PesTimestampRecord> records,
+                                      int ts_packet_size, std::vector<bool>* joined_mask) {
   ContainerDtsJoin result;
-  for (PacketRecord& packet : packets) {
+  if (joined_mask != nullptr) {
+    joined_mask->assign(packets.size(), false);
+  }
+  // 05-REVIEW.md WR-01 fix: ts_scan's own recorded PES-record offsets are
+  // byte offsets in the FULL container stride (188, 192 or 204 --
+  // run_ts_scan's own `offset` variable steps by `result.stride`), while
+  // libavformat's own `PacketRecord::pos` is a logical
+  // 188-byte-packet-stream offset -- the two differ by exactly
+  // `ts_packet_size - 188` on every packet (05-15-SUMMARY.md's own
+  // measurement). Adding that fixed adjustment to `packet.pos` before the
+  // lookup restores the join on every non-188 stride; the PTS-equality
+  // requirement below is unchanged, so a wrong adjustment can only ever
+  // fail to join, never produce a false one.
+  const std::int64_t offset_adjustment = static_cast<std::int64_t>(ts_packet_size) - 188;
+  for (std::size_t idx = 0; idx < packets.size(); ++idx) {
+    PacketRecord& packet = packets[idx];
     if (packet.pos < 0) {
       // A frame the demuxer split out of a multi-frame PES: no `pos`, no
       // PES header of its own -- the container carries no timestamp for
@@ -903,15 +919,26 @@ ContainerDtsJoin apply_container_dts(std::span<PacketRecord> packets, std::span<
       // counted either way (05-15-PLAN.md's own flagged item).
       continue;
     }
+    std::int64_t target_offset = 0;
+    if (!checked_add(packet.pos, offset_adjustment, &target_offset)) {
+      // Unreachable on any real file (the adjustment is at most 16), but a
+      // magnitude that cannot be adjusted safely cannot be looked up
+      // either -- degrade to "did not join", never a wrapped offset.
+      ++result.unjoined_with_pos;
+      continue;
+    }
     // `records` is ascending by offset (PidStats::pes_timestamps's own
     // invariant) -- binary search, mirroring
     // src/analyzers/timeline/discontinuities.cpp's own is_flagged join.
     const auto it = std::lower_bound(
-        records.begin(), records.end(), packet.pos,
+        records.begin(), records.end(), target_offset,
         [](const PesTimestampRecord& record, std::int64_t pos) { return record.offset < pos; });
-    if (it != records.end() && it->offset == packet.pos && it->pts == packet.pts) {
+    if (it != records.end() && it->offset == target_offset && it->pts == packet.pts) {
       packet.dts = it->dts_present ? it->dts : it->pts;
       ++result.joined;
+      if (joined_mask != nullptr) {
+        (*joined_mask)[idx] = true;
+      }
     } else {
       ++result.unjoined_with_pos;
     }

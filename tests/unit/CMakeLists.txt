@@ -242,6 +242,12 @@ add_executable(mediadiff_unit_tests
   # binary before this file existed, but not yet pinned as a permanent,
   # fixture-free regression test.
   test_timeline_start_duration.cpp
+  # 05-REVIEW.md WR-01 fix (orchestrator fix spec point 5): detail::
+  # filter_axis_to_joined -- the "a mixed joined/unjoined DTS axis on one
+  # stream cannot produce a spurious boundary violation" property, driven
+  # directly against hand-built PacketRecord arrays and a hand-built join
+  # mask, no fixture on disk.
+  test_timeline_monotonic.cpp
   # TIME-02 (05-02-PLAN.md Task 2): unwrap_ts_timestamps' doc 04 section
   # 1.2 asymmetric 33-bit unwrap rule, driven both end-to-end and (for
   # the offset-overflow behavior, T-05-05) directly at the

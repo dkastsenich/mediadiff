@@ -25,6 +25,7 @@
 #include "probe/ts_scan.h"
 #include "support/fixture_paths.h"
 
+using mediadiff::DtsSource;
 using mediadiff::kNullPid;
 using mediadiff::kPidCount;
 using mediadiff::PacketRecord;
@@ -38,6 +39,7 @@ using mediadiff::detail::parse_pes_timestamps;
 using mediadiff::detail::PesParseResult;
 using mediadiff::detail::PesParseStatus;
 using mediadiff::detail::record_pes_timestamp;
+using mediadiff::detail::resolve_dts_source;
 
 namespace {
 
@@ -789,4 +791,98 @@ TEST_CASE("ts_scan - PES join: two packets at the same pos, only the first match
   REQUIRE(join.unjoined_with_pos == 1);
   REQUIRE(packets[0].dts == 5000);
   REQUIRE(packets[1].dts == 2);
+}
+
+// --- 05-REVIEW.md WR-01 fix: the stride-aware join --------------------------
+// ts_scan's own recorded PES-record offsets are byte offsets in the FULL
+// container stride, while libavformat's PacketRecord::pos is a logical
+// 188-byte-packet-stream offset -- the two differ by exactly
+// `ts_packet_size - 188` (05-15-SUMMARY.md's own measurement: +4 on
+// ts_192.ts, +16 on ts_204.ts).
+
+TEST_CASE("ts_scan - PES join: a 192-byte stride joins when the record offset is pos + 4", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1004, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 192);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 0);
+  REQUIRE(packets[0].dts == 5000);
+}
+
+TEST_CASE("ts_scan - PES join: a 204-byte stride joins when the record offset is pos + 16", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1016, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 204);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 0);
+  REQUIRE(packets[0].dts == 5000);
+}
+
+TEST_CASE(
+    "ts_scan - PES join: the WRONG stride adjustment never produces a false join -- it only fails to join",
+    "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  // The record actually sits at pos + 16 (a 204-byte-stride offset), but
+  // this call claims a 192-byte stride (pos + 4) -- the lookup lands on
+  // offset 1004, which no record occupies, so the join fails rather than
+  // attaching to the wrong record.
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1016, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 192);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(packets[0].dts == 1400);
+}
+
+TEST_CASE("ts_scan - PES join: the default (188) stride behaves exactly as the unadjusted 2-arg call", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 188);
+  REQUIRE(join.joined == 1);
+  REQUIRE(packets[0].dts == 5000);
+}
+
+TEST_CASE("ts_scan - PES join: joined_mask marks exactly the packets that joined, false everywhere else",
+          "[unit]") {
+  std::vector<PacketRecord> packets(3);
+  packets[0].pos = 1000;  // joins
+  packets[0].pts = 5000;
+  packets[1].pos = -1;  // split-out frame, never counted
+  packets[1].pts = 5100;
+  packets[2].pos = 2000;  // non-negative pos, no matching record
+  packets[2].pts = 5200;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  std::vector<bool> joined_mask;
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 188, &joined_mask);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(joined_mask.size() == 3);
+  REQUIRE(joined_mask[0]);
+  REQUIRE_FALSE(joined_mask[1]);
+  REQUIRE_FALSE(joined_mask[2]);
+}
+
+// --- 05-REVIEW.md WR-01 fix: resolve_dts_source -----------------------------
+
+TEST_CASE("ts_scan - resolve_dts_source: at least one joined packet reports container_pes", "[unit]") {
+  REQUIRE(resolve_dts_source(ContainerDtsJoin{1, 0}) == DtsSource::container_pes);
+  REQUIRE(resolve_dts_source(ContainerDtsJoin{5, 3}) == DtsSource::container_pes);
+}
+
+TEST_CASE("ts_scan - resolve_dts_source: zero joined packets reports container_unavailable, even with unjoined "
+          "candidates present",
+          "[unit]") {
+  REQUIRE(resolve_dts_source(ContainerDtsJoin{0, 0}) == DtsSource::container_unavailable);
+  REQUIRE(resolve_dts_source(ContainerDtsJoin{0, 4}) == DtsSource::container_unavailable);
 }

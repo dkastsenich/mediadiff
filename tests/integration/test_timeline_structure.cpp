@@ -28,7 +28,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <map>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -694,4 +696,66 @@ TEST_CASE(
     }
   }
   REQUIRE(dts_backward_dts_monotonic_count == 2);
+}
+
+// --- Test 11 (05-REVIEW.md WR-01 fix, orchestrator fix spec point 3/5): the
+// non-188-byte-stride container-DTS join -- ts_192.ts (a 4-byte M2TS
+// timestamp prefix ahead of each 188-byte packet) and ts_204.ts (a 16-byte
+// Reed-Solomon FEC suffix) must now join EVERY packet the plain-188-byte
+// ts_single.ts joins, on both video and audio, once the join lookup
+// accounts for the stride's own byte offset (previously: 0 joined packets
+// on either fixture, dts_monotonic silently judging libavformat's own
+// inferred DTS under a container_pes label -- exactly the false-positive
+// risk 05-REVIEW.md WR-01 raised).
+TEST_CASE(
+    "timeline_structure - a 192-byte-stride and a 204-byte-stride MPEG-TS input join every packet a plain "
+    "188-byte stride joins",
+    "[integration]") {
+  struct Case {
+    std::string fixture_name;
+    std::string label;
+  };
+  const std::vector<Case> cases{
+      {"ts_192.ts", "192-byte stride"},
+      {"ts_204.ts", "204-byte stride"},
+  };
+
+  // The reference: ts_single.ts's own plain-188-byte join counts, per
+  // scope, established by the SAME code path the two non-188 cases below
+  // exercise -- proven equal rather than hand-transcribed, so a future
+  // fixture regeneration cannot silently desync this test's own
+  // expectation from reality.
+  const nlohmann::ordered_json reference_report = compare_json(fixture("ts_single.ts"), fixture("ts_single.ts"), "remux");
+  std::map<std::string, int> reference_joined_by_scope;
+  for (const auto& finding : reference_report.at("findings")) {
+    if (finding.at("id").get<std::string>() != "timeline.dts_monotonic") {
+      continue;
+    }
+    REQUIRE(finding.at("status").get<std::string>() == "pass");
+    const std::string scope_kind = finding.at("scope").at("kind").get<std::string>();
+    const nlohmann::ordered_json& evidence = finding.at("evidence").at("candidate");
+    REQUIRE(evidence.at("dts_source").at("source").get<std::string>() == "container_pes");
+    reference_joined_by_scope[scope_kind] = evidence.at("dts_source").at("container_joined").get<int>();
+  }
+  REQUIRE(reference_joined_by_scope.size() == 2);  // video and audio
+
+  for (const Case& c : cases) {
+    INFO(c.label);
+    const nlohmann::ordered_json report = compare_json(fixture(c.fixture_name), fixture(c.fixture_name), "remux");
+    std::map<std::string, int> joined_by_scope;
+    for (const auto& finding : report.at("findings")) {
+      if (finding.at("id").get<std::string>() != "timeline.dts_monotonic") {
+        continue;
+      }
+      INFO("timeline.dts_monotonic finding: " << finding.dump(2));
+      REQUIRE(finding.at("status").get<std::string>() == "pass");
+      REQUIRE(finding.at("candidate").get<int>() == 0);
+      const std::string scope_kind = finding.at("scope").at("kind").get<std::string>();
+      const nlohmann::ordered_json& evidence = finding.at("evidence").at("candidate");
+      REQUIRE(evidence.at("dts_source").at("source").get<std::string>() == "container_pes");
+      REQUIRE(evidence.at("dts_source").at("unjoined_with_pos").get<int>() == 0);
+      joined_by_scope[scope_kind] = evidence.at("dts_source").at("container_joined").get<int>();
+    }
+    REQUIRE(joined_by_scope == reference_joined_by_scope);
+  }
 }

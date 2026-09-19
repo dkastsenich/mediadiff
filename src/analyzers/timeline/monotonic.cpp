@@ -182,6 +182,21 @@ MonotonicResult count_dts_violations(const AxisView& view) {
   return result;
 }
 
+JoinFilterResult filter_axis_to_joined(const AxisView& view, const std::vector<bool>& dts_joined) {
+  JoinFilterResult result;
+  result.view.excluded_count = view.excluded_count;
+  result.view.samples.reserve(view.samples.size());
+  for (const AxisSample& sample : view.samples) {
+    const bool joined = sample.packet_index < dts_joined.size() && dts_joined[sample.packet_index];
+    if (joined) {
+      result.view.samples.push_back(sample);
+    } else {
+      ++result.excluded_unjoined;
+    }
+  }
+  return result;
+}
+
 DuplicateResult count_pts_duplicates(const AxisView& view) {
   DuplicateResult result;
   // A LOCAL COPY, sorted by (value, packet_index) -- never `view` itself,
@@ -279,7 +294,25 @@ void emit_dts_monotonic(Scope scope, const StreamPacketScan& stream_scan, bool i
     return;
   }
 
-  const detail::MonotonicResult result = detail::count_dts_violations(prepared->view);
+  // 05-REVIEW.md WR-01 fix (orchestrator fix spec point 1): on MPEG-TS
+  // with a container-DTS substitution, judge ONLY the packets whose own
+  // dts is PES-header truth -- never a mix of PES-header truth and
+  // libavformat's own inferred read-back (the two are not guaranteed to
+  // agree at the boundary between a joined run and an unjoined run).
+  // Non-TS inputs, and TS streams whose dts_source is not container_pes
+  // (already skipped above, via container_unavailable), are unaffected.
+  const bool filter_to_joined = is_ts && stream_scan.dts_source == DtsSource::container_pes;
+  const std::optional<detail::JoinFilterResult> filtered =
+      filter_to_joined ? std::make_optional(detail::filter_axis_to_joined(prepared->view, stream_scan.dts_joined))
+                        : std::nullopt;
+  const detail::AxisView& judged_view = filtered.has_value() ? filtered->view : prepared->view;
+
+  if (judged_view.samples.empty()) {
+    push_skip(CheckId::timeline_dts_monotonic, scope, SkipReason::no_timing_data, fp);
+    return;
+  }
+
+  const detail::MonotonicResult result = detail::count_dts_violations(judged_view);
 
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::timeline_dts_monotonic);
@@ -290,6 +323,15 @@ void emit_dts_monotonic(Scope scope, const StreamPacketScan& stream_scan, bool i
       {"container_joined", stream_scan.dts_container_joined},
       {"unjoined_with_pos", stream_scan.dts_unjoined_with_pos},
   };
+  if (filtered.has_value()) {
+    // The number of samples excluded from judgment because their own
+    // packet did not join a PES header -- a split-out frame with no `pos`
+    // of its own, or a non-negative-`pos` packet already counted in
+    // `unjoined_with_pos` above. Present only when filtering actually ran
+    // (container_pes), so a non-TS/demuxer measurement's evidence shape
+    // stays exactly as it was.
+    dts_source_evidence["excluded_from_judgment"] = filtered->excluded_unjoined;
+  }
   nlohmann::ordered_json evidence{
       {"axis", "dts"},
       {"unwrapped", prepared->unwrapped},

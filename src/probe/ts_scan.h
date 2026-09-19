@@ -407,19 +407,48 @@ struct ContainerDtsJoin {
 // or arbitrary order -- each is looked up independently) against `records`
 // (one PID's `PidStats::pes_timestamps`, ASCENDING by offset, the
 // invariant that struct's own comment guarantees), replacing `dts` in
-// place wherever a packet's `pos` equals a record's `offset` AND the
-// packet's own raw `pts` equals the record's `pts` -- the pts match is
-// what stops an unrelated record at a coincidentally-reused `pos` from
-// attaching to the wrong packet (T-05-70). On a join, `dts` becomes the
+// place wherever `record.offset == packet.pos + (ts_packet_size - 188)`
+// AND the packet's own raw `pts` equals the record's `pts` -- the pts
+// match is what stops an unrelated record at a coincidentally-reused
+// offset from attaching to the wrong packet (T-05-70), and is why a wrong
+// `ts_packet_size` can only ever fail to join, never produce a false one
+// (05-REVIEW.md WR-01 fix). `ts_packet_size` is the stride `run_ts_scan`
+// detected (188, 192 or 204, `TsScanResult::stride`) -- ts_scan's own
+// recorded `PesTimestampRecord::offset` is a byte offset in the FULL
+// container stride, while libavformat's `PacketRecord::pos` is a logical
+// 188-byte-packet-stream offset; the two differ by exactly
+// `ts_packet_size - 188` on every packet (05-15-SUMMARY.md's own
+// measurement: +4 on `ts_192.ts`, +16 on `ts_204.ts`, both stride-wide
+// constants). Defaults to 188 (no adjustment) so every existing 2-arg call
+// site and test keeps behaving identically. On a join, `dts` becomes the
 // record's `dts` when `dts_present`, otherwise the record's `pts`
 // (ISO/IEC 13818-1's own absent-DTS-equals-PTS rule, UD-3). A packet
 // whose `pos` is negative is left untouched and uncounted; a packet with
 // a non-negative `pos` that does not join keeps its own `dts` unchanged.
-// No arithmetic beyond comparisons -- there is no overflow surface here.
-// A pure function: 05-20 is the plan that wires this into the
-// orchestrator's DTS-axis consumers; this plan ships it tested and
-// unwired.
-ContainerDtsJoin apply_container_dts(std::span<PacketRecord> packets, std::span<const PesTimestampRecord> records);
+// When `joined_mask` is non-null, it is resized to `packets.size()` and
+// set to `true` at every index that joined, `false` everywhere else --
+// `timeline.dts_monotonic` is this seam's consumer (05-REVIEW.md WR-01
+// fix): it judges only the packets this mask marks joined, so a mixed
+// joined/unjoined DTS axis on one stream can never produce a spurious
+// violation at the boundary between PES-header truth and libavformat's
+// own inferred read-back. A pure function otherwise: 05-20 is the plan
+// that wires this into the orchestrator's DTS-axis consumers.
+ContainerDtsJoin apply_container_dts(std::span<PacketRecord> packets, std::span<const PesTimestampRecord> records,
+                                      int ts_packet_size = 188, std::vector<bool>* joined_mask = nullptr);
+
+// 05-REVIEW.md WR-01 fix (orchestrator fix spec point 2): resolves one
+// MPEG-TS stream's own `DtsSource` from `apply_container_dts`'s own join
+// outcome for that stream. Zero packets joined means container truth
+// could not be established for this stream AT ALL -- reported as
+// `container_unavailable` (the SAME "fully joined or skip" gate
+// `timeline.dts_monotonic` already trusts for the pre-existing
+// `pes_timestamps_truncated`/partial-scan reasons), never `container_pes`
+// over a stream where nothing actually joined. A pure function so the
+// orchestrator's own decision is directly unit-testable without a real
+// TS fixture.
+inline DtsSource resolve_dts_source(const ContainerDtsJoin& join) {
+  return join.joined > 0 ? DtsSource::container_pes : DtsSource::container_unavailable;
+}
 
 }  // namespace detail
 

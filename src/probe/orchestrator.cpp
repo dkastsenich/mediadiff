@@ -418,11 +418,31 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
         stream.dts_source = DtsSource::container_unavailable;
         continue;
       }
-      const mediadiff::detail::ContainerDtsJoin join =
-          mediadiff::detail::apply_container_dts(stream.packets, pid_stats.pes_timestamps);
+      // 05-REVIEW.md WR-01 fix (orchestrator fix spec point 3): the
+      // stride-aware join -- `results.ts->stride` is the packet size
+      // ts_scan detected (188, 192 or 204), which `apply_container_dts`
+      // needs to translate its own recorded PES offsets (measured in the
+      // FULL container stride) into libavformat's `PacketRecord::pos`
+      // convention (a logical 188-byte-packet-stream offset) before the
+      // join lookup. `joined_mask`, sized to this stream's own packets,
+      // records exactly which ones joined -- timeline.dts_monotonic
+      // (fix spec point 1) judges only those, never a mix of PES-header
+      // truth and libavformat's own inferred read-back.
+      std::vector<bool> joined_mask;
+      const mediadiff::detail::ContainerDtsJoin join = mediadiff::detail::apply_container_dts(
+          stream.packets, pid_stats.pes_timestamps, results.ts->stride, &joined_mask);
       stream.dts_container_joined = join.joined;
       stream.dts_unjoined_with_pos = join.unjoined_with_pos;
-      stream.dts_source = DtsSource::container_pes;
+      // Fix spec point 2: zero packets joined means container truth could
+      // not be established for this stream at all -- report
+      // container_unavailable (never container_pes with nothing actually
+      // joined) so timeline.dts_monotonic skips through the existing gate
+      // rather than judging libavformat's own inferred values under a
+      // container_pes label.
+      stream.dts_source = mediadiff::detail::resolve_dts_source(join);
+      if (stream.dts_source == DtsSource::container_pes) {
+        stream.dts_joined = std::move(joined_mask);
+      }
     }
   }
 
