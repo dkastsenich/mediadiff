@@ -106,10 +106,11 @@ Task IDs are assigned by the planner; this table is the requirement-to-command c
 The three gaps were requirement clauses with no test, each now pinned by a new integration test:
 
 - **TIME-02**: "preserving raw values in evidence". Test 12 in `test_timeline_structure.cpp` asserts that `timeline.wrap_events` evidence carries `first_wrap_raw` / `first_wrap_unwrapped` / `first_wrap_index` on both streams, exactly one 2^33 modulus apart.
-- **TIME-06**: "priming-adjusted". Before this audit, nothing would fail if the adjustment stopped being applied: the recoverable pair still fails raw-to-raw, and the MP4-to-MKV copy reads -23 ms raw on both sides. Test 7 in `test_timeline_av_sync.cpp` asserts on every known-priming side:
+- **TIME-06**: "priming-adjusted". No test asserted `timeline.av_offset`'s own evidence. The recoverable pair still fails raw-to-raw, and the MP4-to-MKV copy reads -23 ms raw on both sides. Two mutation checks in `av_sync.cpp`, both since reverted: zeroing the applied priming ticks, and flipping their sign. Each was caught only indirectly, by other pairs' declared finding sets (SC1, the TS remux pair, the MP4-to-TS tracer, dts_backward, doc03_coverage). Test 7 in `test_timeline_av_sync.cpp` fails under both mutations. It asserts on every known-priming side:
   - the adjusted basis;
   - an adjusted offset that differs from the raw one;
-  - the per-container priming conversion: 1024 ticks in MP4's 1/44100 timebase, 23 in Matroska's 1/1000.
+  - the per-container priming conversion: 1024 ticks in MP4's 1/44100 timebase, 23 in Matroska's 1/1000;
+  - an adjusted offset of exactly 0 on each side whose recipe starts audio and video together.
 - **TIME-11**: "S12M/GOP timecode". Test 5 in `test_timeline_timecode.cpp` asserts both unreachable sources, with reason `requires_decode`, in their fixed order, on the tmcd-bearing baseline and on the tmcd-absent candidate.
 
 All three assert invariants of the fixture recipe, never byte-dependent values. Fixtures are regenerated on every CI leg.
