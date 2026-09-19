@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements (completed 2026-08-18)
 - [x] **Phase 3: Probe Layer, Container & Size** - Real media enters: header pass, packet sweep, raw scanners, all `container.*`/`meta.*`/`size.*` checks (completed 2026-09-06)
 - [x] **Phase 4: Video Analysis** - Parser pass plus every `video.*` parameter, GOP, colorimetry and HDR check (completed 2026-09-14)
-- [ ] **Phase 5: Timeline Analysis** - Every `timeline.*` check and the flagship A/V drift algorithm on integer/rational math
+- [x] **Phase 5: Timeline Analysis** - Every `timeline.*` check and the flagship A/V drift algorithm on integer/rational math (completed 2026-09-19)
 - [ ] **Phase 6: Audio Analysis** - Audio decode path, determinism classes in practice, every `audio.*` check plus sample hashing
 - [ ] **Phase 7: Content & Quality** - Video decode path, `content.video.*`, opt-in `quality.*` — closes v1
 
@@ -486,7 +486,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
-| 5. Timeline Analysis | 23/25 | In Progress|  |
+| 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
 | 6. Audio Analysis | 0/TBD | Not started | - |
 | 7. Content & Quality | 0/TBD | Not started | - |
 
