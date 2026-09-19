@@ -26,7 +26,22 @@
 // the total to fifty-two. 04-11-PLAN.md registers video.hdr.mdcv/.
 // luminance/.primaries and video.hdr.cll/.max/.avg, bringing the total to
 // fifty-eight. 04-12-PLAN.md registers video.hdr.dovi, video.hdr.dovi.config
-// and video.hdr.coherence, bringing the total to sixty-one. This file is
+// and video.hdr.coherence, bringing the total to sixty-one. 05-01-PLAN.md
+// registers Phase 5's tracer, timeline.start, bringing the total to
+// sixty-two. 05-04-PLAN.md registers timeline.duration and
+// timeline.duration.coherence, bringing the total to sixty-four.
+// 05-05-PLAN.md registers timeline.dts_monotonic and timeline.pts_unique,
+// bringing the total to sixty-six. 05-06-PLAN.md registers timeline.gaps
+// and timeline.wrap_events, bringing the total to sixty-eight.
+// 05-07-PLAN.md registers timeline.discontinuities and timeline.
+// discontinuities.flagged, bringing the total to seventy. 05-08-PLAN.md
+// registers timeline.jitter and timeline.vfr_profile, bringing the total
+// to seventy-two. 05-09-PLAN.md registers timeline.av_offset, bringing the
+// total to seventy-three. 05-10-PLAN.md registers timeline.av_drift and
+// timeline.av_drift.pattern, bringing the total to seventy-five.
+// 05-11-PLAN.md registers timeline.timecode and timeline.timecode.value,
+// bringing the total to seventy-seven -- the full 16-id Phase 5 timeline
+// roster, closing out this phase's own DOC-03 obligation. This file is
 // where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
@@ -380,6 +395,182 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"video.hdr.coherence",
        {fixture("video_hdr_coherent.mp4"), fixture("video_hdr_pq_nomdcv.mp4"), fixture("video_hdr_coherent.mp4"),
         fixture("video_hdr_coherent_copy.mp4")}},
+
+      // --- timeline.start (05-01-PLAN.md, TIME-01/TIME-03, D-03) --- the
+      // trigger pair is the whole-file MPEG-TS remux, which reports a
+      // non-pass timeline.start finding at GLOBAL scope (D-03: one cause,
+      // one finding) -- `any_non_clean` only needs ONE non-pass finding
+      // among this check's own statuses, which the global measurement
+      // alone satisfies even though every per-stream timeline.start
+      // finding on this same pair stays `pass`. The clean pair is a
+      // byte-identical copy, matching every other tracer's own clean-pair
+      // shape.
+      {"timeline.start",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_start_shift.ts"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+
+      // --- timeline.duration / timeline.duration.coherence (05-04-PLAN.md,
+      // TIME-01/TIME-03, D-08, Phase 4 D-10's precedent) --- timeline.duration's
+      // trigger is a real 4s-vs-2s content-length change (timeline_duration_short.mp4,
+      // this plan's own new fixture); the clean pair is the same byte-identical
+      // copy every other tracer in this phase uses.
+      //
+      // timeline.duration.coherence's trigger is the SAME MPEG-TS remux pair
+      // timeline.start already declares above -- per this plan's own A1
+      // flagged_assumption, proven empirically against the real binary
+      // (not assumed) before being declared here: the TS demuxer's own
+      // AVStream::duration for the AUDIO stream genuinely disagrees with its
+      // own AVFormatContext::duration by more than the fixed 40ms threshold,
+      // firing `container_vs_stream` at `info` severity. Its clean pair is
+      // the identical byte-identical copy.
+      {"timeline.duration",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_duration_short.mp4"),
+        fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.duration.coherence",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_start_shift.ts"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+
+      // --- timeline.dts_monotonic / timeline.pts_unique (05-05-PLAN.md,
+      // TIME-01/TIME-04) --- timeline.dts_monotonic's trigger is
+      // timeline_dts_backward.ts, a two-segment MPEG-TS splice producing a
+      // genuine dts[i] <= dts[i-1] violation on each stream (05-05-SUMMARY.md
+      // documents why a `setts`-crafted single encode cannot produce this:
+      // a genuinely backward DTS is structurally impossible to write via
+      // ffmpeg's own CLI/muxer, MP4's `stts` box included). timeline.
+      // pts_unique's trigger is timeline_pts_dupe.mp4, a `setts`-crafted
+      // single encode with exactly one duplicate PTS pair. Both clean pairs
+      // are the same byte-identical copy every other tracer in this phase
+      // uses.
+      {"timeline.dts_monotonic",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_dts_backward.ts"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.pts_unique",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_pts_dupe.mp4"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+
+      // --- timeline.gaps / timeline.wrap_events (05-06-PLAN.md, TIME-02/
+      // TIME-04) --- timeline.gaps' trigger is timeline_gap.mp4, a
+      // `setts`-crafted PTS-only shift (DTS untouched) producing a real
+      // presentation-order hole verified empirically against the real
+      // binary: video reports `fail` with a single {1960ms,2120ms} span,
+      // audio stays `pass` (untouched by the shift). timeline.wrap_events'
+      // trigger pair is timeline_ts_nowrap.ts (unflagged `no_wrap`) against
+      // timeline_ts_wrap.ts (flagged `ts_33bit_wrap`, a genuine mid-file
+      // 33-bit PTS/DTS wrap from a direct -output_ts_offset encode) --
+      // the state-semantic asymmetry itself is the trigger. Both clean
+      // pairs are byte-identical copies: timeline.gaps reuses the phase's
+      // own timeline_start_base.mp4/_copy.mp4 pair; timeline.wrap_events
+      // uses timeline_ts_nowrap.ts/timeline_ts_nowrap_copy.ts so BOTH
+      // sides of the clean pair are unflagged (the state semantic's own
+      // `pass` requirement -- neither side flagged, never "both agree").
+      {"timeline.gaps",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_gap.mp4"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.wrap_events",
+       {fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_wrap.ts"), fixture("timeline_ts_nowrap.ts"),
+        fixture("timeline_ts_nowrap_copy.ts")}},
+
+      // --- timeline.discontinuities / timeline.discontinuities.flagged
+      // (05-07-PLAN.md, TIME-02/TIME-04) --- timeline.discontinuities'
+      // trigger pair is timeline_ts_nowrap.ts against timeline_ts_jump.ts
+      // (a genuine, UNFLAGGED ~3.02s forward presentation jump from two
+      // independently-muxed, spliced TS segments) -- verified empirically
+      // against the real binary: both video and audio report `fail`, each
+      // with jump_count 0 -> 1. Its clean pair reuses timeline_ts_nowrap.ts/
+      // timeline_ts_nowrap_copy.ts, the SAME byte-identical, both-
+      // unflagged pair timeline.wrap_events above already uses (all-`pass`
+      // confirmed empirically for both new check ids on this exact pair).
+      // timeline.discontinuities.flagged's trigger pair is
+      // timeline_ts_jump.ts against timeline_ts_jump_flagged.ts -- the
+      // SAME jump, now with tools/gen_ts_discontinuity.py's one-bit edit
+      // making it container-EXPLAINED on the video stream (verified via
+      // evidence: jump_count 0 -> 1, `info`, "+1 introduced span(s)");
+      // its clean pair reuses the same timeline_ts_nowrap.ts/_copy.ts pair
+      // (all-`pass` confirmed for `.flagged` there too, since neither side
+      // of that pair carries any discontinuity_indicator flag at all).
+      {"timeline.discontinuities",
+       {fixture("timeline_ts_nowrap.ts"), fixture("timeline_ts_jump.ts"), fixture("timeline_ts_nowrap.ts"),
+        fixture("timeline_ts_nowrap_copy.ts")}},
+      {"timeline.discontinuities.flagged",
+       {fixture("timeline_ts_jump.ts"), fixture("timeline_ts_jump_flagged.ts"), fixture("timeline_ts_nowrap.ts"),
+        fixture("timeline_ts_nowrap_copy.ts")}},
+
+      // --- timeline.jitter / timeline.vfr_profile (05-08-PLAN.md, TIME-05)
+      // --- timeline.jitter's trigger pair is timeline_start_base.mp4
+      // against timeline_jitter.mp4 (a single interior video frame shifted
+      // forward by exactly one whole frame, staying inside the original
+      // PTS range so the stream remains unambiguously CFR under D-05) --
+      // verified empirically: video reports `fail` with a real, non-zero
+      // sigma (~4.01ms), audio (untouched) stays `pass`. Its clean pair
+      // reuses timeline_start_base.mp4/_copy.mp4 (all-`pass` for both ids
+      // on this exact byte-identical pair, confirmed empirically).
+      // timeline.vfr_profile's trigger pair is timeline_start_base.mp4
+      // against timeline_vfr.mp4 (the SAME LGPL-clean `select`+`-fps_mode
+      // vfr` thinning chain video_vfr.mp4 already proves classifies VFR) --
+      // verified empirically: video reports `warn` (worst bin 'on_grid'
+      // exceeds tolerance) while `timeline.jitter` itself is
+      // `skipped:vfr` on that same stream (ROADMAP SC3); its clean pair
+      // reuses the same timeline_start_base.mp4/_copy.mp4 pair.
+      {"timeline.jitter",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_jitter.mp4"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.vfr_profile",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_vfr.mp4"), fixture("timeline_start_base.mp4"),
+        fixture("timeline_start_base_copy.mp4")}},
+
+      // --- timeline.av_offset (05-09-PLAN.md, TIME-06/TIME-09/TIME-10) ---
+      // trigger pair is timeline_start_base.mp4 against
+      // timeline_avoffset_video_shift.mp4 (the SAME testsrc2/sine lavfi
+      // sources with `-itsoffset` applied to the VIDEO input only, per
+      // D-12, so the audio edit list and its skip_samples priming signal
+      // survive) -- verified empirically under --profile sw-encoder: both
+      // sides resolve `priming.source == skip_samples`, the comparison
+      // basis is `adjusted`, and the measured 40ms delta reports `fail`
+      // (beyond the registered 20ms fail threshold). Its clean pair reuses
+      // the same timeline_start_base.mp4/_copy.mp4 pair every other
+      // timeline check above reuses (all-`pass` for this exact
+      // byte-identical pair, confirmed empirically).
+      {"timeline.av_offset",
+       {fixture("timeline_start_base.mp4"), fixture("timeline_avoffset_video_shift.mp4"),
+        fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
+      // 05-10-PLAN.md Task 3 (TIME-07/TIME-08, D-04): timeline.av_drift and
+      // timeline.av_drift.pattern -- ONE trigger pair covers BOTH ids.
+      // timeline_drift_base.mp4/timeline_drift_linear.mp4 (the classic 0.1%
+      // clock-error recipe, doc 04 section 5, `asetrate=48048,
+      // aresample=48000`) verified empirically under --profile sw-encoder:
+      // timeline.av_drift reports `fail` (measured rate ~-60.28ms/min,
+      // beyond the registered 0.2ms/min fail threshold) and
+      // timeline.av_drift.pattern reports `fail` with candidate value
+      // `linear-drift`. Its clean pair reuses the same
+      // timeline_start_base.mp4/_copy.mp4 byte-identical pair every other
+      // timeline check above reuses (both ids `pass`, confirmed
+      // empirically: rate/end_delta exactly zero, pattern `constant-
+      // offset`).
+      {"timeline.av_drift",
+       {fixture("timeline_drift_base.mp4"), fixture("timeline_drift_linear.mp4"),
+        fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
+      {"timeline.av_drift.pattern",
+       {fixture("timeline_drift_base.mp4"), fixture("timeline_drift_linear.mp4"),
+        fixture("timeline_start_base.mp4"), fixture("timeline_start_base_copy.mp4")}},
+      // 05-11-PLAN.md Task 3 (TIME-11): timeline.timecode's own trigger
+      // pair -- timeline_tc_ndf.mp4 (a tmcd track present) vs
+      // timeline_tc_absent.mp4 (the identical encode with no `-timecode`
+      // option at all, so no tmcd track) -- verified empirically under
+      // --profile sw-encoder: reports non-pass (`present` -> `Absent`).
+      // Clean pair: the byte-identical `cp` copy, verified `pass`.
+      {"timeline.timecode",
+       {fixture("timeline_tc_ndf.mp4"), fixture("timeline_tc_absent.mp4"), fixture("timeline_tc_ndf.mp4"),
+        fixture("timeline_tc_ndf_copy.mp4")}},
+      // 05-11-PLAN.md Task 3 (TIME-11): timeline.timecode.value's own
+      // trigger pair -- timeline_tc_ndf.mp4 (`00:00:10:00`) vs
+      // timeline_tc_ndf_shifted.mp4 (`00:00:20:00`, the SAME encode,
+      // differing only in the tmcd track's own start timecode) --
+      // verified empirically under --profile sw-encoder: reports
+      // non-pass (`info`, D-04-style exact-string-mismatch). Clean pair:
+      // the same byte-identical copy as timeline.timecode above.
+      {"timeline.timecode.value",
+       {fixture("timeline_tc_ndf.mp4"), fixture("timeline_tc_ndf_shifted.mp4"), fixture("timeline_tc_ndf.mp4"),
+        fixture("timeline_tc_ndf_copy.mp4")}},
   };
   return pairs;
 }

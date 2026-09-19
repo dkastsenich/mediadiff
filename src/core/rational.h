@@ -29,6 +29,32 @@ struct Ticks {
   Rational tb;
 };
 
+// kJitterSigmaFixedShift (05-08-PLAN.md Task 1, TIME-05, A1's own
+// Discretion resolution): `timeline.jitter`'s sigma is reported as an
+// EXACT fixed-point `RationalValue`, never a rounded real -- its
+// denominator is `2^kJitterSigmaFixedShift`, a power of two so scaling by
+// it is always an exact bit shift (a decimal-scaled denominator such as
+// 1000 would require an actual division to convert, reintroducing the
+// rounding this constant exists to avoid). 16 is the chosen sub-tick
+// scale: `2 * kJitterSigmaFixedShift == 32`, so `scale^2` (the factor
+// `detail::Int128Accum::try_isqrt`'s caller multiplies the tick-domain
+// variance by before taking the root, so the ROOT lands directly in
+// fixed-point sigma units) is the exact value `2^32`, comfortably an
+// ordinary `int64_t` constant with no `checked_mul` needed to form it,
+// while still carrying far more sub-tick precision than any real
+// timebase this project constructs could ever resolve. Because sigma is
+// a FLOOR (detail::Int128Accum::try_isqrt's own floor-exact contract), a
+// value stored at this scale is truncated TOWARD ZERO at
+// `1/2^kJitterSigmaFixedShift` of one tick, never rounded to the nearest
+// representable value -- stated here, in `timeline.jitter`'s own
+// `docs/checks/timeline.jitter.md`, and in `jitter_vfr.cpp`'s own
+// sigma-construction comment, so no reader assumes more precision exists
+// than this truncation actually preserves. Fixed, not tunable, for the
+// identical reason `probe/cadence.h`'s own detection constants are fixed
+// (D-08): a compared value's own precision must not vary per-invocation,
+// or two runs of the identical file could disagree at the CLI boundary.
+inline constexpr std::int64_t kJitterSigmaFixedShift = 16;
+
 namespace detail {
 
 // 64x64->64 multiply with overflow detection: returns false (leaving *out
@@ -54,6 +80,433 @@ inline bool checked_mul(std::int64_t a, std::int64_t b, std::int64_t* out) {
   return !__builtin_mul_overflow(a, b, out);
 }
 #endif
+
+// Int128Accum (05-02-PLAN.md Task 1, TIME-01/TIME-02): a small,
+// minimal-surface 128-bit-safe ACCUMULATOR for plan 05-09's av_drift
+// least-squares sums. Concrete magnitude bound, from 05-RESEARCH.md's own
+// worked analysis: a two-hour file at a 90 kHz timebase gives
+// x_max ~= 6.48e8 ticks, so the closed-form slope's K*Sum(x^2) term reaches
+// ~4.3e20 -- roughly 46x INT64_MAX (~9.22e18). This is genuine
+// ACCUMULATION, not overflow detection: checked_mul above correctly
+// detects overflow on a SINGLE 64-bit multiplication, but returning
+// "cannot compute" (insufficient_data) on an ordinary two-hour movie is
+// itself a defect, not a safety net -- Int128Accum accumulates the true
+// 128-bit sum across many terms and only narrows back to int64_t,
+// range-checked, once the caller is ready to use the result (always tiny,
+// ms/min-scale, by construction). Every caller maps a `try_narrow` false
+// return to SkipReason::insufficient_data -- the same precedent
+// src/probe/cadence.cpp's own comment states: "an overflow anywhere in
+// this arithmetic yields insufficient_data, never a wrapped value".
+//
+// The surface is deliberately minimal: add_product/add/try_narrow and
+// nothing else -- this is not a general bignum, and a wider surface
+// invites a second consumer to depend on semantics nobody tested. Same
+// conditional-compilation shape checked_mul above already establishes,
+// carried one step further (accumulate, not just detect): a genuine
+// 128-bit extension type on GCC/Clang/AppleClang (see the #else arm
+// below), composed `_mul128`+`_addcarry_u64` on MSVC (which has no
+// 128-bit integer type at all).
+#if defined(_MSC_VER)
+class Int128Accum {
+ public:
+  // Adds `a * b` to the running sum. The product itself never overflows
+  // 128 bits (the widest possible int64*int64 product, INT64_MIN*INT64_MIN,
+  // is ~8.5e37, well inside the signed 128-bit range of ~1.7e38) -- only
+  // the ACCUMULATED sum across many calls can eventually exceed int64_t,
+  // which is exactly what try_narrow below detects.
+  void add_product(std::int64_t a, std::int64_t b) {
+    std::int64_t high = 0;
+    const std::uint64_t low = static_cast<std::uint64_t>(_mul128(a, b, &high));
+    const unsigned char carry = _addcarry_u64(0, lo_, low, &lo_);
+    hi_ = static_cast<std::int64_t>(hi_ + high + carry);
+  }
+
+  // Adds a plain (sign-extended) value to the running sum -- the
+  // least-squares fit's Sigma-x/Sigma-y terms need this alongside
+  // add_product's Sigma-x^2/Sigma-xy.
+  void add(std::int64_t v) {
+    const std::uint64_t low = static_cast<std::uint64_t>(v);
+    const std::int64_t high = (v < 0) ? -1 : 0;
+    const unsigned char carry = _addcarry_u64(0, lo_, low, &lo_);
+    hi_ = static_cast<std::int64_t>(hi_ + high + carry);
+  }
+
+  // Range-checked narrowing: succeeds only when the 128-bit value is
+  // EXACTLY representable as int64_t (the high half is precisely the sign
+  // extension of the low half's sign bit -- the identical test
+  // checked_mul above uses for a single product). On failure, `*out` is
+  // left untouched -- never a truncated low word.
+  bool try_narrow(std::int64_t* out) const {
+    const std::int64_t low_signed = static_cast<std::int64_t>(lo_);
+    const std::int64_t sign_extend = (low_signed < 0) ? -1 : 0;
+    if (hi_ != sign_extend) {
+      return false;
+    }
+    *out = low_signed;
+    return true;
+  }
+
+  // try_isqrt (05-08-PLAN.md Task 1, TIME-05): floor(sqrt(this
+  // accumulator's own value)), computed directly over the wide (hi_, lo_)
+  // representation -- the sum of squared deviations this class exists to
+  // accumulate never has to narrow to int64_t before its own root is
+  // taken (T-05-34's own mitigation: the caller narrows only via
+  // try_narrow above, and reaches this function precisely when the value
+  // genuinely needs 128-bit precision). A portable bit-doubling
+  // (restoring) square root, composed from the SAME
+  // `_addcarry_u64`/`_subborrow_u64` 64-bit intrinsics add_product/add
+  // above already use (MSVC has no 128-bit integer type at all, the
+  // reason this whole class is split by `_MSC_VER` in the first place) --
+  // no standard-library square root, no floating point, no libm
+  // dependency anywhere in this function. Returns the FLOOR of the true
+  // root:
+  // `result*result <= value < (result+1)*(result+1)` -- the
+  // byte-identical-on-every-toolchain property PROJECT.md's determinism
+  // constraint requires, since a real square root is irrational for
+  // almost every input and any OTHER rounding convention has no
+  // canonical, portable answer. Returns false when the accumulated value
+  // is negative (never a legitimate input for a sum of squared
+  // deviations; a negative value here means the TRUE mathematical sum
+  // overflowed 127 bits and wrapped in two's complement -- T-05-34's own
+  // overflow signal) or when the floor root itself does not fit
+  // int64_t (e.g. INT64_MIN*INT64_MIN's own exact root, 2^63, is one
+  // more than INT64_MAX -- unreachable for any realistic
+  // packet-count-bounded input, guarded rather than assumed).
+  bool try_isqrt(std::int64_t* out) const {
+    if (hi_ < 0) {
+      return false;
+    }
+    std::uint64_t n_hi = static_cast<std::uint64_t>(hi_);
+    std::uint64_t n_lo = lo_;
+    std::uint64_t root_hi = 0;
+    std::uint64_t root_lo = 0;
+    // 2^126, the largest power of 4 that can appear in a 127-bit-or-fewer
+    // nonnegative magnitude (hi_ >= 0 above bounds the value strictly
+    // below 2^127) -- always a safe starting bit; the loop below spends
+    // its first few iterations harmlessly halving `root` (still zero)
+    // until `bit` shrinks to the value's own true magnitude, exactly the
+    // same fixed 64-iteration cost as the GCC/Clang `__int128` arm below.
+    std::uint64_t bit_hi = std::uint64_t{1} << 62;
+    std::uint64_t bit_lo = 0;
+    for (int i = 0; i < 64; ++i) {
+      std::uint64_t cand_hi = 0;
+      std::uint64_t cand_lo = 0;
+      {
+        const unsigned char carry = _addcarry_u64(0, root_lo, bit_lo, &cand_lo);
+        _addcarry_u64(carry, root_hi, bit_hi, &cand_hi);
+      }
+      const bool ge = (n_hi != cand_hi) ? (n_hi > cand_hi) : (n_lo >= cand_lo);
+      if (ge) {
+        std::uint64_t diff_hi = 0;
+        std::uint64_t diff_lo = 0;
+        const unsigned char borrow = _subborrow_u64(0, n_lo, cand_lo, &diff_lo);
+        _subborrow_u64(borrow, n_hi, cand_hi, &diff_hi);
+        n_hi = diff_hi;
+        n_lo = diff_lo;
+        // root = (root >> 1) + bit, the SAME two 64-bit-word shift-then-add
+        // shape used throughout this arm.
+        const std::uint64_t half_lo = (root_lo >> 1) | (root_hi << 63);
+        const std::uint64_t half_hi = root_hi >> 1;
+        const unsigned char carry2 = _addcarry_u64(0, half_lo, bit_lo, &root_lo);
+        _addcarry_u64(carry2, half_hi, bit_hi, &root_hi);
+      } else {
+        root_lo = (root_lo >> 1) | (root_hi << 63);
+        root_hi = root_hi >> 1;
+      }
+      // bit >>= 2
+      bit_lo = (bit_lo >> 2) | (bit_hi << 62);
+      bit_hi = bit_hi >> 2;
+    }
+    if (root_hi != 0 || root_lo > static_cast<std::uint64_t>(INT64_MAX)) {
+      return false;
+    }
+    *out = static_cast<std::int64_t>(root_lo);
+    return true;
+  }
+
+  // try_reduce_ratio (05-10-PLAN.md Task 1, TIME-07): `this` is the
+  // numerator, `denominator` is the denominator of a fraction BOTH of
+  // which may genuinely exceed int64_t even though the REDUCED fraction
+  // (after dividing out their GCD) very likely does not -- av_drift's own
+  // closed-form slope is exactly this shape: 05-RESEARCH.md's own worked
+  // example shows the RAW denominator (K*Sum(x^2)-(Sum x)^2) reaching
+  // ~3.8e19 for an ordinary two-hour 90kHz file, a genuine ~4x
+  // INT64_MAX -- but the numerator (proportional to the ACTUAL, small
+  // drift rate) is already comfortably int64_t-sized, and REAL tick data
+  // (video frame durations, audio sample-frame sizes) is overwhelmingly
+  // power-of-two-heavy, so the GCD reliably brings the denominator back
+  // into range too. This is NOT a general bignum-rational type -- it
+  // exists for exactly this one closed-form ratio, mirroring
+  // try_isqrt's own "one function for one caller's own real need" scope.
+  //
+  // Implementation: a portable UNSIGNED 128-bit Euclidean GCD plus two
+  // final divisions, composed ENTIRELY from the SAME bit-by-bit
+  // shift/compare/subtract primitives (`_addcarry_u64`/`_subborrow_u64`)
+  // try_isqrt above already uses -- no 128-bit division intrinsic exists
+  // on this toolchain, which is exactly why this whole class is split by
+  // `_MSC_VER` in the first place. Returns false (leaving the
+  // out-parameters untouched) when `denominator` is exactly zero (a
+  // degenerate fit with no real x-variance), or when EITHER reduced
+  // magnitude still does not fit int64_t after GCD reduction -- the
+  // caller maps this to `SkipReason::insufficient_data`, the SAME
+  // "a narrowing that does not fit yields insufficient_data, never a
+  // wrapped or truncated slope" contract every other narrowing in this
+  // file already promises. The reduced denominator is always POSITIVE
+  // (any negative sign folds into the numerator) -- the same convention
+  // every `RationalValue`/`Rational` in this project already assumes.
+  bool try_reduce_ratio(const Int128Accum& denominator, std::int64_t* out_num, std::int64_t* out_den) const {
+    if (denominator.hi_ == 0 && denominator.lo_ == 0) {
+      return false;
+    }
+
+    std::uint64_t num_hi = static_cast<std::uint64_t>(hi_);
+    std::uint64_t num_lo = lo_;
+    std::uint64_t den_hi = static_cast<std::uint64_t>(denominator.hi_);
+    std::uint64_t den_lo = denominator.lo_;
+
+    // Fold the denominator's sign into the numerator -- the reduced
+    // denominator this function emits is always positive.
+    if (denominator.hi_ < 0) {
+      negate_words(&num_hi, &num_lo);
+      negate_words(&den_hi, &den_lo);
+    }
+
+    const bool num_negative = static_cast<std::int64_t>(num_hi) < 0;
+    std::uint64_t abs_num_hi = num_hi;
+    std::uint64_t abs_num_lo = num_lo;
+    if (num_negative) {
+      negate_words(&abs_num_hi, &abs_num_lo);
+    }
+
+    std::uint64_t gcd_hi = 0;
+    std::uint64_t gcd_lo = 0;
+    if (abs_num_hi == 0 && abs_num_lo == 0) {
+      // gcd(0, den) == den -- Euclid's algorithm below would reach the
+      // identical fixed point, spelled out here so the zero-numerator
+      // fit (a perfectly flat, zero-slope trajectory) never enters the
+      // division loop at all.
+      gcd_hi = den_hi;
+      gcd_lo = den_lo;
+    } else {
+      std::uint64_t a_hi = abs_num_hi, a_lo = abs_num_lo;
+      std::uint64_t b_hi = den_hi, b_lo = den_lo;
+      while (b_hi != 0 || b_lo != 0) {
+        std::uint64_t q_hi = 0, q_lo = 0, r_hi = 0, r_lo = 0;
+        udivmod(a_hi, a_lo, b_hi, b_lo, &q_hi, &q_lo, &r_hi, &r_lo);
+        a_hi = b_hi;
+        a_lo = b_lo;
+        b_hi = r_hi;
+        b_lo = r_lo;
+      }
+      gcd_hi = a_hi;
+      gcd_lo = a_lo;
+    }
+
+    std::uint64_t qn_hi = 0, qn_lo = 0, rn_hi = 0, rn_lo = 0;
+    udivmod(abs_num_hi, abs_num_lo, gcd_hi, gcd_lo, &qn_hi, &qn_lo, &rn_hi, &rn_lo);
+    std::uint64_t qd_hi = 0, qd_lo = 0, rd_hi = 0, rd_lo = 0;
+    udivmod(den_hi, den_lo, gcd_hi, gcd_lo, &qd_hi, &qd_lo, &rd_hi, &rd_lo);
+
+    if (qn_hi != 0 || qn_lo > static_cast<std::uint64_t>(INT64_MAX)) {
+      return false;
+    }
+    if (qd_hi != 0 || qd_lo == 0 || qd_lo > static_cast<std::uint64_t>(INT64_MAX)) {
+      return false;
+    }
+
+    std::int64_t reduced_num = static_cast<std::int64_t>(qn_lo);
+    if (num_negative) {
+      if (reduced_num == INT64_MIN) {
+        // -INT64_MIN is not representable -- an astronomically unlikely
+        // exact-boundary case for a real drift numerator, guarded rather
+        // than assumed impossible.
+        return false;
+      }
+      reduced_num = -reduced_num;
+    }
+    *out_num = reduced_num;
+    *out_den = static_cast<std::int64_t>(qd_lo);
+    return true;
+  }
+
+ private:
+  std::int64_t hi_ = 0;
+  std::uint64_t lo_ = 0;
+
+  // Two's-complement negation of a (hi, lo) word pair: ~x + 1, via the
+  // SAME `_addcarry_u64` primitive add_product/add above already use.
+  static void negate_words(std::uint64_t* hi, std::uint64_t* lo) {
+    *lo = ~(*lo);
+    *hi = ~(*hi);
+    const unsigned char carry = _addcarry_u64(0, *lo, 1, lo);
+    _addcarry_u64(carry, *hi, 0, hi);
+  }
+
+  // Unsigned 128-bit binary long division (dividend / divisor -> quotient,
+  // remainder), bit by bit over 128 iterations -- the standard schoolbook
+  // algorithm, composed entirely from shift/compare/subtract on (hi, lo)
+  // word pairs, the SAME primitives try_isqrt's own bit-doubling loop
+  // above already uses. `divisor` must be nonzero (every call site above
+  // guards this before calling). Never invokes a 128-bit division
+  // intrinsic, because none exists on this toolchain.
+  static void udivmod(std::uint64_t dividend_hi, std::uint64_t dividend_lo, std::uint64_t divisor_hi,
+                       std::uint64_t divisor_lo, std::uint64_t* quotient_hi, std::uint64_t* quotient_lo,
+                       std::uint64_t* remainder_hi, std::uint64_t* remainder_lo) {
+    std::uint64_t rem_hi = 0, rem_lo = 0;
+    std::uint64_t quot_hi = 0, quot_lo = 0;
+    for (int i = 127; i >= 0; --i) {
+      // remainder <<= 1 (the bit shifted off the top is always 0: the
+      // loop's own invariant keeps remainder < divisor <= the full 128-bit
+      // range at every step, so no bit is ever lost here).
+      rem_hi = (rem_hi << 1) | (rem_lo >> 63);
+      rem_lo = rem_lo << 1;
+      // Bring down bit `i` of the dividend into remainder's own bit 0.
+      const std::uint64_t bit =
+          (i >= 64) ? ((dividend_hi >> (i - 64)) & 1u) : ((dividend_lo >> i) & 1u);
+      rem_lo |= bit;
+      // if remainder >= divisor: remainder -= divisor; set quotient bit i.
+      const bool ge = (rem_hi != divisor_hi) ? (rem_hi > divisor_hi) : (rem_lo >= divisor_lo);
+      if (ge) {
+        const unsigned char borrow = _subborrow_u64(0, rem_lo, divisor_lo, &rem_lo);
+        _subborrow_u64(borrow, rem_hi, divisor_hi, &rem_hi);
+        if (i >= 64) {
+          quot_hi |= (std::uint64_t{1} << (i - 64));
+        } else {
+          quot_lo |= (std::uint64_t{1} << i);
+        }
+      }
+    }
+    *quotient_hi = quot_hi;
+    *quotient_lo = quot_lo;
+    *remainder_hi = rem_hi;
+    *remainder_lo = rem_lo;
+  }
+};
+#else
+class Int128Accum {
+ public:
+  // See the MSVC arm's own comment above -- identical contract, __int128
+  // makes the GCC/Clang/AppleClang implementation direct.
+  void add_product(std::int64_t a, std::int64_t b) {
+    value_ += static_cast<__int128>(a) * static_cast<__int128>(b);
+  }
+
+  void add(std::int64_t v) { value_ += static_cast<__int128>(v); }
+
+  bool try_narrow(std::int64_t* out) const {
+    if (value_ > static_cast<__int128>(INT64_MAX) || value_ < static_cast<__int128>(INT64_MIN)) {
+      return false;
+    }
+    *out = static_cast<std::int64_t>(value_);
+    return true;
+  }
+
+  // try_isqrt -- see the MSVC arm's own identical-contract comment above
+  // (both arms share ONE doc comment's worth of reasoning; not repeated
+  // verbatim here to avoid drift between two copies of the same prose).
+  // `unsigned __int128` makes this arm direct where the MSVC arm has to
+  // compose two 64-bit words by hand.
+  bool try_isqrt(std::int64_t* out) const {
+    if (value_ < 0) {
+      return false;
+    }
+    unsigned __int128 n = static_cast<unsigned __int128>(value_);
+    unsigned __int128 root = 0;
+    // 2^126 -- see the MSVC arm's own comment on why this fixed starting
+    // bit is always safe and costs a fixed 64 iterations regardless of
+    // `n`'s true magnitude.
+    unsigned __int128 bit = static_cast<unsigned __int128>(1) << 126;
+    while (bit != 0) {
+      const unsigned __int128 candidate = root + bit;
+      if (n >= candidate) {
+        n -= candidate;
+        root = (root >> 1) + bit;
+      } else {
+        root >>= 1;
+      }
+      bit >>= 2;
+    }
+    if (root > static_cast<unsigned __int128>(INT64_MAX)) {
+      return false;
+    }
+    *out = static_cast<std::int64_t>(root);
+    return true;
+  }
+
+  // try_reduce_ratio -- see the MSVC arm's own identical-contract comment
+  // above (both arms share ONE doc comment's worth of reasoning; not
+  // repeated verbatim here to avoid drift between two copies of the same
+  // prose). Native `__int128` division/modulo makes this arm a direct
+  // Euclidean GCD where the MSVC arm has to compose bit-by-bit division
+  // by hand.
+  bool try_reduce_ratio(const Int128Accum& denominator, std::int64_t* out_num, std::int64_t* out_den) const {
+    if (denominator.value_ == 0) {
+      return false;
+    }
+    __int128 num = value_;
+    __int128 den = denominator.value_;
+    // Fold the denominator's sign into the numerator -- the reduced
+    // denominator this function emits is always positive.
+    if (den < 0) {
+      den = -den;
+      num = -num;
+    }
+    const bool num_negative = num < 0;
+    __int128 abs_num = num_negative ? -num : num;
+
+    __int128 gcd_a = abs_num;
+    __int128 gcd_b = den;
+    while (gcd_b != 0) {
+      const __int128 remainder = gcd_a % gcd_b;
+      gcd_a = gcd_b;
+      gcd_b = remainder;
+    }
+    // gcd(0, den) == den, the fixed point Euclid's algorithm reaches
+    // naturally when abs_num starts at 0 -- no special case needed.
+    const __int128 g = gcd_a;
+
+    const __int128 reduced_num = abs_num / g;
+    const __int128 reduced_den = den / g;
+    if (reduced_num > static_cast<__int128>(INT64_MAX)) {
+      return false;
+    }
+    if (reduced_den <= 0 || reduced_den > static_cast<__int128>(INT64_MAX)) {
+      return false;
+    }
+    std::int64_t reduced_num_i64 = static_cast<std::int64_t>(reduced_num);
+    if (num_negative) {
+      if (reduced_num_i64 == INT64_MIN) {
+        // -INT64_MIN is not representable -- an astronomically unlikely
+        // exact-boundary case for a real drift numerator, guarded rather
+        // than assumed impossible.
+        return false;
+      }
+      reduced_num_i64 = -reduced_num_i64;
+    }
+    *out_num = reduced_num_i64;
+    *out_den = static_cast<std::int64_t>(reduced_den);
+    return true;
+  }
+
+ private:
+  __int128 value_ = 0;
+};
+#endif
+
+// isqrt_i64 (05-08-PLAN.md Task 1, TIME-05, Test 4's own narrowed-input
+// call path): delegates to Int128Accum::try_isqrt via a single add() --
+// structurally the SAME implementation as the wide path above, not a
+// second, independently written one, which is what makes it IMPOSSIBLE
+// for the two entry points to drift from each other (rather than merely
+// unlikely to). A negative `n` (never a real input for the caller this
+// exists for -- a sum of squared deviations) reaches Int128Accum's own
+// negative-value domain-error check and returns false, the identical
+// contract try_isqrt itself documents.
+inline bool isqrt_i64(std::int64_t n, std::int64_t* out) {
+  Int128Accum accum;
+  accum.add(n);
+  return accum.try_isqrt(out);
+}
 
 // CR-03: a - b with overflow detection, the subtraction-side counterpart
 // to checked_mul above -- compare/tol.cpp's delta_num and compare/dist.cpp's

@@ -26,6 +26,14 @@ add_executable(mediadiff_unit_tests
   # core/rational.h's detail::checked_div, added alongside its four
   # siblings for SIZE-01's window-boundary math (03-01-PLAN.md Task 3).
   test_rational.cpp
+  # core/rational.h's detail::Int128Accum -- a genuine 128-bit-safe
+  # ACCUMULATOR (not merely overflow detection) for plan 05-09's av_drift
+  # least-squares sums (05-02-PLAN.md Task 1, TIME-01/TIME-02).
+  test_rational_wide.cpp
+  # core/exact_int.h's detail::ExactInt -- the exact 256-bit integer
+  # compare/tol.cpp cross-multiplies with (debug session
+  # test-898-ci-nonreproducible).
+  test_exact_int.cpp
   # Table-driven edge-value coverage for all seven semantics (02-04-PLAN.md
   # Task 3), distinct from test_fail_first_coverage.cpp's (semantic,
   # status) gate.
@@ -158,6 +166,42 @@ add_executable(mediadiff_unit_tests
   # wrapped-value, driven directly against hand-built PacketRecord arrays
   # with hand-computed expected values (no fixture on disk).
   test_cadence.cpp
+  # TIME-05 (05-08-PLAN.md): timeline.jitter/timeline.vfr_profile's own
+  # pure-function core -- detail::classify_vfr_bin's D-06 six-bucket
+  # cascade (every named boundary, both directions) and
+  # detail::compute_jitter_sigma's fixed-point sigma (uniform-interval
+  # zero case, a hand-computed nonzero case, the narrowed-vs-wide
+  # call-path identity, T-05-34's overflow-refuses-a-wrapped-sigma case)
+  # -- driven directly against hand-computed expected values, never
+  # captured from the implementation.
+  test_jitter_vfr.cpp
+  # TIME-06/TIME-09/TIME-10 (05-09-PLAN.md, D-09): resolve_priming's own
+  # skip-samples-first-then-initial_padding-fallback ordering (every
+  # combination the roster's own Test 1-4 name) and
+  # detail::primary_video_stream's first-video-scoped-stream selection --
+  # driven directly against plain integers/hand-built scope vectors, no
+  # fixture on disk.
+  test_av_sync.cpp
+  # TIME-07/TIME-08 (05-10-PLAN.md Task 1, D-04/D-07/D-08): fit_drift's own
+  # eleven hand-derived cases -- constant-offset/linear-drift/step/
+  # irregular classification, the plateau condition asserted load-bearing
+  # (a large jump WITHOUT stable plateaus is irregular, never step), a
+  # two-hour-90kHz-magnitude trajectory that a plain int64_t closed-form
+  # accumulation is shown to overflow while the widened path does not,
+  # x-shift slope invariance, the explicit-failure (never wrapped) paths
+  # for an unnarrowable fit and for fewer than two checkpoints, a
+  # duplicate-`t_v` trajectory still producing a defined fit, and
+  # repeated-call determinism -- driven directly against hand-built
+  # DriftCheckpoint arrays with hand-computed expected values, no fixture
+  # on disk.
+  test_av_drift.cpp
+  # TIME-11 (05-11-PLAN.md Task 2): timeline.timecode/timeline.timecode.
+  # value's own pure-function core -- detail::derive_drop_frame's
+  # punctuation-based drop-frame detection (semicolon vs colon before the
+  # frame field), driven directly against hand-built strings, including
+  # the same-nominal-position encoding-edge case (TIME-11's own drop-frame
+  # vs non-drop-frame distinguishability requirement).
+  test_timecode.cpp
   # VIDEO-05/VIDEO-12 (04-09-PLAN.md): the open/closed GOP classification's
   # own hand-verified NAL-type table, driven directly through
   # detail::classify_access_unit/detail::classify_gop -- every expected
@@ -185,6 +229,31 @@ add_executable(mediadiff_unit_tests
   # HDR fixture corpus (plan 04-04) for the mastering-display/content-
   # light presence, value and cross-family-independence behaviors.
   test_video_hdr.cpp
+  # TIME-01/TIME-03 (05-01-PLAN.md Task 2, D-03): timeline.start's own
+  # detail:: helpers driven directly against hand-built PacketRecord
+  # arrays and StreamOriginCandidate lists (first_presented_pts,
+  # global_origin_ticks, ticks_to_ms, subtract_ms) -- the AV_NOPTS_VALUE
+  # skip, the partial_scan-ahead-of-every-other-skip-reason ordering, the
+  # stable-tie-on-identical-PTS determinism, and the checked-arithmetic
+  # overflow-refuses-a-wrapped-value behaviors that a CLI-level fixture
+  # cannot reliably reach on its own. Added retroactively as a Rule 2
+  # deviation: this task's own tdd="true"/<behavior> block names these
+  # exact scenarios, and they were proven empirically against the real
+  # binary before this file existed, but not yet pinned as a permanent,
+  # fixture-free regression test.
+  test_timeline_start_duration.cpp
+  # 05-REVIEW.md WR-01 fix (orchestrator fix spec point 5): detail::
+  # filter_axis_to_joined -- the "a mixed joined/unjoined DTS axis on one
+  # stream cannot produce a spurious boundary violation" property, driven
+  # directly against hand-built PacketRecord arrays and a hand-built join
+  # mask, no fixture on disk.
+  test_timeline_monotonic.cpp
+  # TIME-02 (05-02-PLAN.md Task 2): unwrap_ts_timestamps' doc 04 section
+  # 1.2 asymmetric 33-bit unwrap rule, driven both end-to-end and (for
+  # the offset-overflow behavior, T-05-05) directly at the
+  # detail::apply_wrap_step state-machine level, mirroring
+  # test_ts_continuity.cpp's own table-driven shape.
+  test_timeline_unwrap.cpp
   # PROBE-09: the shared mutation smoke driving bmff_scan/ebml_scan/ts_scan
   # directly over truncated, structurally-corrupted and fixed-seed
   # pseudo-random inputs, plus the permanently-broken canary and the

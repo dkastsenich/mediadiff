@@ -17,9 +17,12 @@
 
 #include "probe/ts_scan.h"
 
+using mediadiff::PidStats;
+using mediadiff::kMaxDiscontinuityOffsetsPerPid;
 using mediadiff::detail::ContinuityIncrement;
 using mediadiff::detail::ContinuityStepResult;
 using mediadiff::detail::PidContinuityState;
+using mediadiff::detail::record_discontinuity_offset;
 using mediadiff::detail::step_continuity;
 
 namespace {
@@ -257,4 +260,117 @@ TEST_CASE("ts_continuity - every unflagged error is reported in sequence order, 
   REQUIRE(is_error_step[1]);
   REQUIRE_FALSE(is_error_step[2]);
   REQUIRE(is_error_step[3]);
+}
+
+// --- 05-07-PLAN.md Task 1 (TIME-04, T-05-28): detail::record_discontinuity_
+//     offset -- the bounded, per-PID discontinuity_indicator byte-offset
+//     seam. Every expected value below is hand-computed from the
+//     constructed offset table BEFORE the implementation changes (fail-
+//     first discipline), exactly as every TEST_CASE above already does for
+//     step_continuity. -----------------------------------------------------
+
+// --- Behavior 1: a single discontinuity_indicator=1 packet records exactly
+//     one offset, equal to that packet's own byte offset. -----------------
+
+TEST_CASE("ts_continuity - a single discontinuity_indicator=1 packet records exactly one offset equal to its own "
+          "byte offset",
+          "[unit]") {
+  PidStats stats{};
+  record_discontinuity_offset(stats, 4700);
+  REQUIRE(stats.discontinuity_indicator_offsets.size() == 1);
+  REQUIRE(stats.discontinuity_indicator_offsets[0] == 4700);
+  REQUIRE_FALSE(stats.discontinuity_offsets_truncated);
+}
+
+// --- Behavior 2: a PID that never has the indicator set records an empty
+//     offset list, distinguishable from "not scanned" (a default-
+//     constructed PidStats that was never touched at all is byte-identical
+//     to one whose packets were scanned but never flagged -- both are
+//     legitimately "zero occurrences", proven here directly since
+//     PidStats::packets is the field that distinguishes "this PID exists"
+//     from "this PID was never seen", not this offset list). ---------------
+
+TEST_CASE("ts_continuity - a PID with the indicator never set records an empty offset list and no truncation",
+          "[unit]") {
+  PidStats stats{};
+  stats.packets = 10;  // packets were scanned on this PID...
+  // ...but record_discontinuity_offset is never called, matching a real
+  // scan where discontinuity_indicator was never observed set.
+  REQUIRE(stats.discontinuity_indicator_offsets.empty());
+  REQUIRE_FALSE(stats.discontinuity_offsets_truncated);
+}
+
+// --- Behavior 3: a stream setting the indicator on more packets than the
+//     bound records exactly kMaxDiscontinuityOffsetsPerPid offsets and
+//     sets the truncation flag -- never an unbounded vector. -------------
+
+TEST_CASE(
+    "ts_continuity - more discontinuity_indicator offsets than the bound records exactly "
+    "kMaxDiscontinuityOffsetsPerPid offsets and sets the truncation flag",
+    "[unit]") {
+  PidStats stats{};
+  const std::int64_t attempted = kMaxDiscontinuityOffsetsPerPid + 50;
+  for (std::int64_t i = 0; i < attempted; ++i) {
+    record_discontinuity_offset(stats, i * 188);
+  }
+  REQUIRE(static_cast<std::int64_t>(stats.discontinuity_indicator_offsets.size()) == kMaxDiscontinuityOffsetsPerPid);
+  REQUIRE(stats.discontinuity_offsets_truncated);
+  // The bound is never exceeded, even after the flag is already set --
+  // further calls append nothing further.
+  record_discontinuity_offset(stats, attempted * 188);
+  REQUIRE(static_cast<std::int64_t>(stats.discontinuity_indicator_offsets.size()) == kMaxDiscontinuityOffsetsPerPid);
+}
+
+// --- Behavior 4: offsets are recorded in ascending byte order, matching
+//     scan order (call order), so a downstream join can binary-search
+//     them. -------------------------------------------------------------
+
+TEST_CASE("ts_continuity - discontinuity_indicator offsets are recorded in ascending call order",
+          "[unit]") {
+  PidStats stats{};
+  const std::vector<std::int64_t> offsets = {188, 1128, 9212, 40350};
+  for (std::int64_t offset : offsets) {
+    record_discontinuity_offset(stats, offset);
+  }
+  REQUIRE(stats.discontinuity_indicator_offsets.size() == offsets.size());
+  for (std::size_t i = 0; i < offsets.size(); ++i) {
+    REQUIRE(stats.discontinuity_indicator_offsets[i] == offsets[i]);
+  }
+  for (std::size_t i = 1; i < stats.discontinuity_indicator_offsets.size(); ++i) {
+    REQUIRE(stats.discontinuity_indicator_offsets[i] > stats.discontinuity_indicator_offsets[i - 1]);
+  }
+}
+
+// --- Behavior 5: two PIDs each setting the indicator record independently,
+//     with no cross-PID leakage (PidStats is a plain per-PID value type --
+//     proven directly by operating on two wholly separate instances). ----
+
+TEST_CASE("ts_continuity - two PIDs' own discontinuity_indicator offsets are recorded independently, with no "
+          "cross-PID leakage",
+          "[unit]") {
+  PidStats pid_a{};
+  PidStats pid_b{};
+  record_discontinuity_offset(pid_a, 100);
+  record_discontinuity_offset(pid_a, 200);
+  record_discontinuity_offset(pid_b, 300);
+
+  REQUIRE(pid_a.discontinuity_indicator_offsets.size() == 2);
+  REQUIRE(pid_a.discontinuity_indicator_offsets[0] == 100);
+  REQUIRE(pid_a.discontinuity_indicator_offsets[1] == 200);
+  REQUIRE(pid_b.discontinuity_indicator_offsets.size() == 1);
+  REQUIRE(pid_b.discontinuity_indicator_offsets[0] == 300);
+}
+
+// --- Behavior 6: cc_discontinuities' existing meaning and count are
+//     unchanged by this extension -- recording an offset never touches
+//     the unrelated cc_discontinuities field. ------------------------------
+
+TEST_CASE("ts_continuity - recording a discontinuity_indicator offset never touches the unrelated "
+          "cc_discontinuities counter",
+          "[unit]") {
+  PidStats stats{};
+  stats.cc_discontinuities = 3;  // set independently, e.g. by step_continuity
+  record_discontinuity_offset(stats, 500);
+  REQUIRE(stats.cc_discontinuities == 3);
+  REQUIRE(stats.discontinuity_indicator_offsets.size() == 1);
 }

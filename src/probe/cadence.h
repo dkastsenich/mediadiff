@@ -38,6 +38,33 @@
 // ⇒ CFR"). Neither constant is tunable: a threshold that varies lets two
 // nearly-identical files classify differently near the boundary, which is
 // the P0 false-positive class this project refuses.
+//
+// D-05 (05-CONTEXT.md, amending D-07 above): D-07's exact-tick-against-the-
+// MODE-interval rule is falsified by a real fixture, not a hypothetical --
+// A1's own proposal anticipated exactly this ("if execution ever finds real
+// fixtures where exact-tick comparison misclassifies genuinely-CFR content,
+// that is a finding to raise, not a silent widening"). A 29.97 fps
+// (30000/1001) MP4 stream-copied to Matroska's 1 ms timebase stores the
+// NTSC frame interval as a 33/33/34 ms rounding sequence; 33 ms is the
+// MODE, so D-07's rule reports `video.frame_rate.measured` as `warn`,
+// 29.970 vs 30.303 fps, under `--profile remux` -- a false positive on
+// genuinely-CFR content, exactly A1's own named failure mode.
+// D-05 replaces the CFR/VFR decision with GRID CONFORMANCE: the ideal
+// interval is the EXACT rational `span_ticks / interval_count` (the file's
+// own first-to-last span divided by the number of intervals, never the
+// mode), and a timestamp is conforming when it sits within
+// `kGridConformanceToleranceTicks` of `first_pts + round_half_even(n *
+// ideal)`. The measured RATE consumed by `video.frame_rate.measured`
+// (05-03-PLAN.md Task 3) is likewise derived from the SPAN, not the mode
+// interval -- the same content then reads the same true rate regardless of
+// which timebase stored it. D-07's own constants and its
+// `mode_interval_ticks`/`matching_intervals`/`total_intervals` fields are
+// NOT deleted -- they remain populated with D-07's own meaning (D-07's
+// exact-tick reasoning is still correct for a same-timebase comparison,
+// where no mode-versus-span divergence is possible) -- only the CFR/VFR
+// VERDICT itself now comes from the grid test below, not from them. This
+// comment block is the amendment record D-05 itself calls for ("the
+// amendment is recorded against D-07 rather than silently replacing it").
 
 #include <cstdint>
 #include <span>
@@ -93,6 +120,16 @@ inline constexpr std::int64_t kCadenceEpsilonTicks = 0;
 inline constexpr std::int64_t kCfrMatchingProportionNum = 995;
 inline constexpr std::int64_t kCfrMatchingProportionDen = 1000;
 
+// D-05: "within one tick" of the ideal grid point, per doc 04 section 1.2's
+// own tick domain (all timeline math runs on `{int64, AVRational}` ticks --
+// there is no finer unit to be "within" than one). INCLUSIVE: a timestamp
+// exactly `kGridConformanceToleranceTicks` away from its ideal grid point
+// still counts as conforming (both directions -- see this file's own
+// derive_cadence Tests). Fixed, not tunable, for the identical reason
+// kCadenceEpsilonTicks above is fixed: a threshold that varies lets two
+// nearly-identical files classify differently near the boundary.
+inline constexpr std::int64_t kGridConformanceToleranceTicks = 1;
+
 // This derivation's own primitive is `StreamPacketScan::packets`
 // (`kMaxPacketsPerStream`, packet_scan.h), so no crafted input can ever
 // hand this function more than that many records in practice -- checked
@@ -117,9 +154,43 @@ struct Cadence {
   // kCadenceEpsilonTicks, and the total number of consecutive intervals
   // considered -- both valid only when status == ok. A consumer computes
   // its own proportion from these two counts rather than reading a
-  // pre-computed one.
+  // pre-computed one. D-05: kept populated with D-07's own meaning, but no
+  // longer what decides `klass` below (see this file's own D-05 comment
+  // block above) -- a same-timebase consumer reading these two fields is
+  // unaffected by the amendment.
   std::int64_t matching_intervals = 0;
   std::int64_t total_intervals = 0;
+
+  // D-05: the file's own SPAN in ticks on the axis actually used -- the
+  // LAST usable timestamp minus the FIRST, via checked_sub -- the basis the
+  // measured rate is derived from (video.frame_rate.measured,
+  // 05-03-PLAN.md Task 3), never the mode interval. Valid only when
+  // status == ok.
+  std::int64_t span_ticks = 0;
+  // D-05: the number of consecutive intervals the span was divided into.
+  // The SAME VALUE as total_intervals above (both count the identical
+  // consecutive-interval structure) -- kept as its own field because it is
+  // ideal_interval_den's own denominator, and Phase 5's D-06 grid-relative
+  // histogram bins (timeline.vfr_profile) read it as that, not as a
+  // borrowed alias of a D-07-named field. Valid only when status == ok.
+  std::int64_t interval_count = 0;
+  // D-05: the EXACT rational ideal interval, `span_ticks / interval_count`
+  // -- NEVER pre-divided into a decimal or reduced to a rate. Plan 05-08's
+  // grid-relative histogram bins (D-06) read these two fields directly;
+  // pre-dividing here would make those bins incomparable across timebases,
+  // the very thing D-06 exists to fix. Valid only when status == ok.
+  std::int64_t ideal_interval_num = 0;
+  std::int64_t ideal_interval_den = 0;
+  // D-05's own CFR/VFR basis: the number of usable, sorted timestamps (NOT
+  // intervals -- one more count than total_intervals/interval_count) that
+  // sit within kGridConformanceToleranceTicks of `first_pts +
+  // round_half_even(n * ideal_interval_num/ideal_interval_den)`, out of
+  // `considered_timestamps` total. This decides `klass` below, replacing
+  // D-07's mode-interval-proportion test; matching_intervals/
+  // total_intervals above remain populated but are no longer what `klass`
+  // is computed from. Valid only when status == ok.
+  std::int64_t conforming_timestamps = 0;
+  std::int64_t considered_timestamps = 0;
 };
 
 // PROBE-10's shared primitive made concrete (see this file's own top

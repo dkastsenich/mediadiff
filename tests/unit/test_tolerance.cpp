@@ -298,18 +298,198 @@ TEST_CASE("tolerance widening: a delta beyond 3x the declared tolerance still fa
   CHECK(finding->message.find("estimated") != std::string::npos);
 }
 
-TEST_CASE("tolerance widening: a tolerance magnitude large enough that the 3x multiply would overflow int64 "
-          "returns the existing overflow finding, never a silently wrapped threshold",
+TEST_CASE("tolerance widening: a tolerance magnitude whose 3x widening exceeds int64 is widened exactly -- the "
+          "threshold is neither wrapped nor refused",
           "[tolerance]") {
   // 4e18 comfortably fits int64_t alone (max is ~9.223e18), but 4e18 * 3 =
-  // 1.2e19 does not.
+  // 1.2e19 does not. Until debug session test-898-ci-nonreproducible the
+  // comparator returned Status::error here; it now widens exactly
+  // (core/exact_int.h). A WRAPPED threshold (1.2e19 - 2^64 < 0) would fail
+  // every delta below, and a refused one would be `error` -- the boundary
+  // neighbors prove neither happens. -3e18 -> 9e18 is a delta of exactly
+  // 1.2e19ms, the widened line itself.
   const CheckDef check = make_tol_check("4000000000000000000ms");
+  const Measurement baseline = measurement_at(-3000000000000000000, /*estimated=*/true);
 
-  const Measurement baseline = measurement_at(0, /*estimated=*/true);
-  const Measurement candidate = measurement_at(1, /*estimated=*/true);
+  {
+    const Measurement candidate = measurement_at(9000000000000000000, /*estimated=*/true);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);  // exactly at the widened 1.2e19ms line
+    CHECK(finding->message.find("estimated") != std::string::npos);
+  }
+  {
+    const Measurement candidate = measurement_at(9000000000000000001, /*estimated=*/true);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::info);  // one past it: escalate(Severity::info)
+    CHECK(finding->message.find("12000000000000000001/1ms") != std::string::npos);
+  }
+  {
+    // Unwidened (neither side estimated): the same 1.2e19ms delta is far
+    // beyond the declared 4e18ms.
+    const Measurement plain_baseline = measurement_at(-3000000000000000000, /*estimated=*/false);
+    const Measurement plain_candidate = measurement_at(9000000000000000000, /*estimated=*/false);
+    auto finding = compare_tol(check, plain_baseline, plain_candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::info);
+  }
+}
+
+// Debug session test-898-ci-nonreproducible's own regression: the REAL
+// timeline.av_drift rates of tests/fixtures/timeline_ts_nowrap.ts vs
+// timeline_ts_jump.ts (reduced rationals, ms/min) -- 270183060000 *
+// 36327640 ~= 9.8e18 overflowed int64_t, so a real five-second splice
+// reported `error` ("cannot determine a verdict") instead of a verdict.
+// Exact delta, computed independently (Python fractions):
+// 270183060000/47612048 - 24030060000/36327640
+//   == 8670992567615520000/1729633339406720 ms/min ~= 5013.197 ms/min.
+TEST_CASE("tolerance: timeline.av_drift's real splice rates, whose cross-products exceed int64, get the exact verdict",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("0.2ms", Severity::fail);
+  const auto rate = [](std::int64_t num, std::int64_t den) {
+    Measurement m;
+    m.check_index = 0;
+    m.scope = Scope{Scope::Kind::global, 0};
+    m.value = mediadiff::Value{RationalValue{num, den, Rational{1, 1}}};
+    return m;
+  };
+  const Measurement baseline = rate(24030060000, 36327640);
+
+  {
+    auto finding = compare_tol(check, baseline, rate(270183060000, 47612048), kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::fail);
+    CHECK(finding->message.find("8670992567615520000/1729633339406720") != std::string::npos);
+  }
+  {
+    // Identical wide rates on both sides (the flagged/unflagged split pair's
+    // own situation): delta exactly zero -> pass, not `error`.
+    auto finding = compare_tol(check, rate(270183060000, 47612048), rate(270183060000, 47612048), kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);
+  }
+  {
+    // Boundary neighbors around the 0.2 line on the same baseline:
+    // baseline + 2/10 == 240373255280/363276400 exactly -> pass; one unit
+    // more in the numerator -> fail.
+    auto at_line = compare_tol(check, baseline, rate(240373255280, 363276400), kWidenPolicy);
+    REQUIRE(at_line.has_value());
+    CHECK(at_line->status == Status::pass);
+    auto past_line = compare_tol(check, baseline, rate(240373255281, 363276400), kWidenPolicy);
+    REQUIRE(past_line.has_value());
+    CHECK(past_line->status == Status::fail);
+  }
+}
+
+// --- 05-09-PLAN.md Task 2 (TIME-06, D-10): timeline.av_offset's boundary
+// behavior and the generic priming-basis override -----------------------
+//
+// Boundary behavior needs no check-specific machinery at all -- it is the
+// shared two-threshold `tol` comparator's own generic behavior, exercised
+// here at exactly timeline.av_offset's own registered "5ms,20ms" tolerance
+// (Test 9 in this task's own <behavior> block).
+
+namespace {
+
+CheckDef make_av_offset_check() { return make_tol_check("5ms,20ms", Severity::fail); }
+
+}  // namespace
+
+TEST_CASE("timeline.av_offset boundary: a delta exactly at the 5ms warn threshold passes; one tick past it warns",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  const Measurement baseline = measurement_at(0, /*estimated=*/false);
+
+  {
+    const Measurement candidate = measurement_at(5, /*estimated=*/false);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);
+  }
+  {
+    const Measurement candidate = measurement_at(6, /*estimated=*/false);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::warn);
+  }
+}
+
+TEST_CASE("timeline.av_offset boundary: a delta exactly at the 20ms fail threshold warns; one tick past it fails",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  const Measurement baseline = measurement_at(0, /*estimated=*/false);
+
+  {
+    const Measurement candidate = measurement_at(20, /*estimated=*/false);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::warn);
+  }
+  {
+    const Measurement candidate = measurement_at(21, /*estimated=*/false);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::fail);
+  }
+}
+
+namespace {
+
+// A Measurement carrying D-10's own evidence shape -- raw value as
+// Measurement::value (always `raw_ms`), `adjusted_offset_ms`/
+// `comparison_basis` in evidence, mirroring av_sync.cpp's own construction
+// exactly.
+Measurement priming_measurement(std::int64_t raw_ms, std::int64_t adjusted_ms, const std::string& basis) {
+  Measurement m = measurement_at(raw_ms, /*estimated=*/false);
+  m.evidence = nlohmann::ordered_json{
+      {"raw_offset_ms", raw_ms},
+      {"adjusted_offset_ms", adjusted_ms},
+      {"comparison_basis", basis},
+  };
+  return m;
+}
+
+}  // namespace
+
+TEST_CASE("compare_tol D-10 override: both sides declaring comparison_basis=adjusted swaps the compared magnitude "
+          "to adjusted_offset_ms on both sides",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  // Raw values differ by 23ms (would fail); adjusted values are identical
+  // (0ms delta) -- proving the OVERRIDE, not the raw value, decided the
+  // verdict.
+  const Measurement baseline = priming_measurement(/*raw=*/-23, /*adjusted=*/0, "adjusted");
+  const Measurement candidate = priming_measurement(/*raw=*/0, /*adjusted=*/0, "adjusted");
 
   auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
   REQUIRE(finding.has_value());
-  CHECK(finding->status == Status::error);
-  CHECK(finding->message.find("overflow") != std::string::npos);
+  CHECK(finding->status == Status::pass);
+}
+
+TEST_CASE("compare_tol D-10 override: EITHER side declaring comparison_basis=raw falls back to the raw magnitude "
+          "on BOTH sides, even when the other side prefers adjusted",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  // Raw values are identical (0ms delta, would pass); adjusted values
+  // differ by 23ms -- proving the candidate's own "raw" preference forced
+  // the WHOLE comparison to raw-to-raw, per D-10's own rule.
+  const Measurement baseline = priming_measurement(/*raw=*/0, /*adjusted=*/0, "adjusted");
+  const Measurement candidate = priming_measurement(/*raw=*/0, /*adjusted=*/23, "raw");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+}
+
+TEST_CASE("compare_tol D-10 override: a check with no comparison_basis/adjusted_offset_ms evidence shape at all is "
+          "entirely unaffected (the override is opt-in via evidence shape, never gated on check.id)",
+          "[tolerance]") {
+  const CheckDef check = make_av_offset_check();
+  const Measurement baseline = measurement_at(0, /*estimated=*/false);
+  const Measurement candidate = measurement_at(6, /*estimated=*/false);  // no evidence at all
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::warn);  // ordinary raw-value comparison, unaffected
 }

@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Core Engine** - Registry, semantics, profiles, config, snapshots, reports and `dir` mode working end to end on stub measurements (completed 2026-08-18)
 - [x] **Phase 3: Probe Layer, Container & Size** - Real media enters: header pass, packet sweep, raw scanners, all `container.*`/`meta.*`/`size.*` checks (completed 2026-09-06)
 - [x] **Phase 4: Video Analysis** - Parser pass plus every `video.*` parameter, GOP, colorimetry and HDR check (completed 2026-09-14)
-- [ ] **Phase 5: Timeline Analysis** - Every `timeline.*` check and the flagship A/V drift algorithm on integer/rational math
+- [x] **Phase 5: Timeline Analysis** - Every `timeline.*` check and the flagship A/V drift algorithm on integer/rational math (completed 2026-09-19)
 - [ ] **Phase 6: Audio Analysis** - Audio decode path, determinism classes in practice, every `audio.*` check plus sample hashing
 - [ ] **Phase 7: Content & Quality** - Video decode path, `content.video.*`, opt-in `quality.*` — closes v1
 
@@ -339,13 +339,105 @@ Plans:
 **Requirements**: TIME-01, TIME-02, TIME-03, TIME-04, TIME-05, TIME-06, TIME-07, TIME-08, TIME-09, TIME-10, TIME-11, DOC-04, PERF-01, PERF-03, PERF-05
 **Success Criteria** (what must be TRUE):
 
-  1. A 0.1% audio clock error is reported as `linear-drift` with a rate in ms/min and an end delta; a spliced 100 ms trim is reported as `step` with the step time; a pure offset is reported as `constant-offset` — and each fixture produces exactly the intended finding and **nothing else**, with the full checkpoint trajectory stored in the fingerprint so snapshot comparison keeps the same fidelity.
+  1. A 0.1% audio clock error is reported as `linear-drift` with a rate in ms/min and an end delta; a spliced trim with a timestamp discontinuity is reported as a non-pass `irregular` pattern with its residual max, and a seamlessly re-timestamped trim is documented as undetectable from timestamps alone until Phase 6; a pure offset is reported as `constant-offset` — and each fixture produces exactly the intended finding and **nothing else**, with the full checkpoint trajectory stored in the fingerprint so snapshot comparison keeps the same fidelity. (amended 2026-09-18, UD-1)
   2. `timeline.start`, the `timeline.duration` triple (container-declared, stream-declared, computed) with internal disagreement raising an `info` note, `dts_monotonic`, `pts_unique`, `gaps` and `discontinuities` all work on presentation timelines — with `AV_NOPTS_VALUE` treated as a first-class `absent` and MPEG-TS 33-bit wraparound unwrapped rather than mistaken for a backward discontinuity.
   3. A VFR stream is classified VFR and reports `skipped:vfr` on jitter while a CFR stream reports jitter σ and max deviation — using the same shared interval statistics `video.frame_rate.measured` consumes, not a second implementation.
   4. `timeline.av_offset` reports a signed, priming-adjusted offset, and on a fixture with **non-zero encoder priming** — the common case before the audio decode path exists — the finding visibly carries `priming: unknown` with an unadjusted value rather than a confidently wrong number.
-  5. `timeline.timecode` reports presence and SMPTE start value including the drop-frame flag; metadata-plus-timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s and adds under 15% over a plain packet scan, measured in CI with regression tracking over time.
+  5. `timeline.timecode` reports presence and SMPTE start value including the drop-frame flag; metadata-plus-timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s (recorded, never asserted, D-13) and is measured in CI with regression tracking over time via a committed instruction-count baseline ratchet (`tests/golden/PERF_BASELINE.txt`), not an asserted under-15% ratio (amended, 05-12-PLAN.md, 2026-09-17: measured overhead was 33% against the original <15% target, an absolute cost of 32-50 ms wall-clock — see the amended `PERF-03` text in REQUIREMENTS.md for the full evidence and measurement basis).
 
-**Plans**: TBD
+**Plans**: 23/25 plans executed (12 gap-closure plans added 2026-09-18 from 05-VERIFICATION.md)
+
+Plans:
+**Wave 1**
+
+- [x] 05-01-PLAN.md — Wave 1: the 16-id check roster checkpoint and the `timeline.start` tracer (global origin + per-stream relative, D-03), plus the shared DOC-04 no-others harness (TIME-01/03, DOC-04)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 05-02-PLAN.md — Wave 2: the arithmetic primitives — a 128-bit-safe accumulator in `core/rational.h` and doc 04 §1.2's 33-bit TS unwrap as a pure function (TIME-01/02)
+- [x] 05-03-PLAN.md — Wave 2: D-05's grid-conformance CFR/VFR rule and the span-derived measured rate, fixing a shipped `video.frame_rate.measured` false positive on an NTSC MP4→MKV remux (TIME-05)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 05-04-PLAN.md — Wave 3: the `timeline.duration` triple with per-member absent state, and `timeline.duration.coherence` firing even when both files share the incoherence (TIME-01/03, DOC-04)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 05-05-PLAN.md — Wave 4: `timeline.dts_monotonic` and `timeline.pts_unique`, sentinels excluded rather than counted (TIME-01/04, DOC-04)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 05-06-PLAN.md — Wave 5: `timeline.gaps` and `timeline.wrap_events`, with the mid-file 33-bit wrap fixture proving no false gap and no false discontinuity (TIME-02/04, DOC-04)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 05-07-PLAN.md — Wave 6: `timeline.discontinuities` split from `timeline.discontinuities.flagged` via a new bounded `discontinuity_indicator` offset seam on `ts_scan` (TIME-02/04, DOC-04)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [x] 05-08-PLAN.md — Wave 7: `timeline.jitter` (integer-sqrt fixed-point sigma) and `timeline.vfr_profile` (D-06 grid-relative bins, comparable across timebases) (TIME-05, DOC-04)
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [x] 05-09-PLAN.md — Wave 8: in-sweep priming capture, the shared `resolve_priming` primitive, and `timeline.av_offset` with D-10's raw/adjusted dual storage and D-11's unsoftened severity (TIME-06/09/10, DOC-04)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [x] 05-10-PLAN.md — Wave 9: the flagship `timeline.av_drift` / `timeline.av_drift.pattern` split, doc 04 §3's 32-checkpoint least-squares fit with 128-bit sums, and the stored trajectory (TIME-07/08, DOC-04)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [x] 05-11-PLAN.md — Wave 10: `timeline.timecode` / `timeline.timecode.value` from the header pass alone, with the two unreachable sources reported honestly (TIME-11, DOC-04)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [x] 05-12-PLAN.md — Wave 11: the instruction-count perf harness, the committed baseline ratchet, the designated-leg CI step, and the visible `PERF-03` / SC5 amendments (PERF-01/03/05)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [x] 05-13-PLAN.md — Wave 12: capture the designated `x64-linux` leg's digest listing and first real perf baseline, transcribe both, and confirm every leg-only gate actually ran (DOC-04, PERF-05)
+
+**Gap closure** *(from 05-VERIFICATION.md, 2026-09-18; sequential on one branch)*
+
+**Wave 13**
+
+- [x] 05-14-PLAN.md — Gap 3 and Gap 6: priming samples converted through the sample rate at both av_sync call sites, and the one-entry `sorted_pts_with_span` out-of-bounds read fixed and unit-tested via `detail::` (TIME-06/07/09/10)
+- [x] 05-15-PLAN.md — Gap 4, data half: a bounded PES-header PTS/DTS seam in `ts_scan`, and the pure `apply_container_dts` join (TIME-04)
+- [x] 05-16-PLAN.md — Gap 2, part 1: the promoted `TimelinePacketView` (33-bit unwrap plus cross-stream epoch), consumed by timeline.start/duration, frame_rate.measured and size bitrate (TIME-01/02/03)
+
+**Wave 14** *(blocked on 05-14, 05-16)*
+
+- [x] 05-17-PLAN.md — Gap 2, part 2: correct declared durations on a wrapping TS via an overflow-corrected re-probe, or withhold them (TIME-02/03)
+
+**Wave 15** *(blocked on 05-14, 05-16, 05-17)*
+
+- [x] 05-18-PLAN.md — Gap 2, part 3: av_sync and jitter_vfr on the views, the wrap pair asserted whole-report, and WINDOWS #26/#27/#30 closed (TIME-02/05/06/07, DOC-04)
+
+**Wave 16** *(blocked on 05-18)*
+
+- [x] 05-19-PLAN.md — Gap 5 (WINDOWS #28): sub-tick-quantization-aware vfr_profile bins and jitter sigma (UD-2), plus the NTSC MP4/MKV whole-report assertion (TIME-05/06/09, DOC-04)
+- [x] 05-21-PLAN.md — Gap 1, research: a calibrated scratch harness evaluating piecewise checkpoint mappings, then a blocking-human decision to adopt a design or narrow the vocabulary (UD-1) (TIME-07)
+
+**Wave 17** *(blocked on 05-15, 05-17, 05-18, 05-19)*
+
+- [x] 05-20-PLAN.md — Gap 4, consumer half: container-truth DTS substituted once in the orchestrator for every MPEG-TS DTS consumer; the declared sets that enshrined the inferred tie are corrected (TIME-01/04, DOC-04)
+
+**Wave 18** *(blocked on 05-20, 05-21)*
+
+- [x] 05-22-PLAN.md — Gap 1, code: implement the decided SC1 branch and span source in av_sync, with unit and whole-report SC1 coverage (TIME-07/08, DOC-04)
+
+**Wave 19** *(blocked on 05-22)*
+
+- [x] 05-23-PLAN.md — Gap 1, contract: compiled-in docs for timestamp-only limits, the vocabulary amendments where decided, and the residual MP4-to-TS drift ledger record (TIME-07, DOC-04)
+
+**Wave 20** *(blocked on 05-23)*
+
+- [x] 05-24-PLAN.md — Designated-leg confirmation: local pre-flight, a blocking-human push, and log capture with any required transcription (DOC-04, PERF-05)
+
+**Wave 21** *(blocked on 05-24)*
+
+- [x] 05-25-PLAN.md — A blocking-human second push (keep or drop any perf-baseline commit) and the confirmed-green designated leg (DOC-04, PERF-05)
+
 **Source doc**: `claude_docs/04-timeline-analysis.md` (design-doc phase 4)
 
 ### Phase 6: Audio Analysis
@@ -394,7 +486,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 2. Core Engine | 19/19 | Complete   | 2026-08-18 |
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
-| 5. Timeline Analysis | 0/TBD | Not started | - |
+| 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
 | 6. Audio Analysis | 0/TBD | Not started | - |
 | 7. Content & Quality | 0/TBD | Not started | - |
 

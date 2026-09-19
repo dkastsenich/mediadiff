@@ -180,6 +180,32 @@ add_library(libmediadiff STATIC
   src/analyzers/video/color.cpp
   src/analyzers/video/interlace.cpp
   src/analyzers/video/hdr.cpp
+  src/analyzers/timeline/start_duration.cpp
+  # TIME-02 (05-02-PLAN.md Task 2): unwrap_ts_timestamps, doc 04 section
+  # 1.2's 33-bit MPEG-TS PTS/DTS unwrap as a pure function -- consumed by
+  # later timeline plans before any other statistic runs on a TS stream.
+  src/analyzers/timeline/unwrap.cpp
+  # TIME-01/TIME-04 (05-05-PLAN.md): timeline.dts_monotonic and
+  # timeline.pts_unique over the shared PacketScan array, sentinels
+  # excluded and the TS unwrap applied first.
+  src/analyzers/timeline/monotonic.cpp
+  # TIME-02/TIME-04 (05-07-PLAN.md): timeline.discontinuities and
+  # timeline.discontinuities.flagged, joined against ts_scan's own bounded
+  # per-PID discontinuity_indicator offsets -- a separate TU from
+  # monotonic.cpp since this family needs Pass::ts_scan on one of its two
+  # AnalyzerSpecs.
+  src/analyzers/timeline/discontinuities.cpp
+  # TIME-05 (05-08-PLAN.md): timeline.jitter and timeline.vfr_profile,
+  # both consuming derive_cadence (probe/cadence.h) exactly once per
+  # stream.
+  src/analyzers/timeline/jitter_vfr.cpp
+  # TIME-06/TIME-09/TIME-10 (05-09-PLAN.md): timeline.av_offset, plus the
+  # shared resolve_priming primitive Phase 6's audio.priming extends.
+  src/analyzers/timeline/av_sync.cpp
+  # TIME-11 (05-11-PLAN.md): timeline.timecode and timeline.timecode.value
+  # -- a QuickTime tmcd track's SMPTE start timecode, reachable from
+  # Pass::demux_header alone (no scan of any kind needed).
+  src/analyzers/timeline/timecode.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -240,6 +266,8 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/analyzers/container/analyzers.h
   src/analyzers/size/analyzers.h
   src/analyzers/video/analyzers.h
+  src/analyzers/timeline/analyzers.h
+  src/analyzers/timeline/unwrap.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 
@@ -337,6 +365,14 @@ if(MEDIADIFF_BUILD_BENCH)
   target_link_libraries(mediadiff_parser_overhead PRIVATE libmediadiff fmt::fmt)
   mediadiff_apply_warnings(mediadiff_parser_overhead)
   mediadiff_apply_platform_definitions(mediadiff_parser_overhead)
+
+  # 05-12-PLAN.md Task 1 (PERF-01/PERF-03/PERF-05, D-13/D-16): the timeline
+  # analyzer-set overhead benchmark, mirroring mediadiff_parser_overhead's
+  # own four lines exactly -- same opt-in gate, same no-CTest-case rule.
+  add_executable(mediadiff_timeline_overhead tools/bench/timeline_overhead.cpp)
+  target_link_libraries(mediadiff_timeline_overhead PRIVATE libmediadiff fmt::fmt)
+  mediadiff_apply_warnings(mediadiff_timeline_overhead)
+  mediadiff_apply_platform_definitions(mediadiff_timeline_overhead)
 endif()
 
 enable_testing()

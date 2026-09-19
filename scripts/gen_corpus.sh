@@ -1550,4 +1550,585 @@ python3 tools/gen_video_fixtures.py \
 # unrelated codec family, which would prove a different property.
 cp "$OUT_DIR/video_h264_closed.h264" "$OUT_DIR/video_h264_closed_copy.h264"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4."
+# --- 05-01-PLAN.md Task 2 (TIME-01/TIME-03, D-03): the Phase 5 tracer's own
+# fixture pair -- `timeline.start`'s global-plus-per-stream scoping needs a
+# real whole-file shift to prove D-03's "one finding, not one per stream"
+# claim end to end. A two-stream MP4 tracer, a byte-identical copy for the
+# clean pair, and a `-c copy` remux to MPEG-TS -- the TS muxer's own default
+# mux delay (about 1.4s) shifts every stream's absolute PTS by the SAME
+# amount, which is exactly the D-03 case. `-c:v mpeg4 -c:a aac` -- never
+# libx264/GPL, matching this project's own decode-only LGPL convention and
+# confirmed present in the `win64-lgpl` Windows pin (scripts/ffmpeg_pin.json).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_start_base.mp4"
+
+cp "$OUT_DIR/timeline_start_base.mp4" "$OUT_DIR/timeline_start_base_copy.mp4"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/timeline_start_base.mp4" -c copy \
+  -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$OUT_DIR/timeline_start_shift.ts"
+
+# --- 05-04-PLAN.md Task 3 (TIME-01/TIME-03): timeline.duration's own DOC-03
+# trigger fixture -- identical to timeline_start_base.mp4's own recipe in
+# EVERY respect except `duration=2` instead of `duration=4` on BOTH lavfi
+# sources. A duration delta necessarily also moves frame count and file size
+# (a shorter encode has fewer frames and fewer bytes) -- the declared-set
+# assertion in tests/integration/test_timeline_start_duration.cpp declares
+# those as members of the expected finding set, each with its own causal
+# reason (D-02), rather than filtering them out of the comparison. Same
+# `-c:v mpeg4 -c:a aac`, never libx264/GPL, matching every other fixture in
+# this file.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_duration_short.mp4"
+
+# --- 05-03-PLAN.md Task 1 (D-05): the NTSC-in-Matroska remux pair that
+# reproduces the shipped `video.frame_rate.measured` false positive --------
+#
+# `timeline_ntsc_base.mp4`: NTSC-rate (30000/1001 fps, i.e. 29.97) content
+# in MP4, whose 1/30000-scale timebase stores every frame interval as the
+# exact integer 1001. The rate is written here as the literal rational
+# `30000/1001`, never as the decimal approximation `29.97` -- this project's
+# own rational-everywhere rule (PROJECT.md), and the entire point of this
+# fixture is that the SAME rational content reads differently once
+# `timeline_ntsc_remux.mkv` below re-times it onto a coarser timebase.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=30000/1001:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_ntsc_base.mp4"
+
+# `timeline_ntsc_remux.mkv`: a `-c copy` stream-copy remux of the base file
+# into Matroska -- no re-encode, so the only thing that changes is the
+# container's own timebase. Matroska mandates a 1 ms (1/1000) timebase, so
+# the SAME 33.366...ms NTSC frame interval that reads as the exact integer
+# 1001 in MP4's 1/30000 timebase is stored here as the non-exact 33/33/34 ms
+# rounding sequence -- the mode of that sequence is 33 ms, and a rate
+# derived from the MODE interval (Phase 4's D-07, pre-amendment) reads
+# 1000/33 = 30.303 fps, a false `warn video.frame_rate.measured` against
+# the base file's true 29.970 fps. D-05's fix (this same plan, Task 2/3)
+# derives the rate from the SPAN instead, which is what makes this pair
+# compare clean after the amendment lands.
+"$FFMPEG_BIN" -i "$OUT_DIR/timeline_ntsc_base.mp4" -c copy \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_ntsc_remux.mkv"
+
+# --- 05-05-PLAN.md Task 1 (TIME-01/TIME-04): timeline.dts_monotonic and
+# timeline.pts_unique crafted-anomaly fixtures -------------------------------
+#
+# `timeline_pts_dupe.mp4`: identical encode recipe to timeline_start_base.mp4
+# (same testsrc2/sine params, same `-c:v mpeg4 -c:a aac`, same duration=4/100
+# frames) with one addition: the `setts` bitstream filter
+# (libavcodec/bsf/setts.c, confirmed LGPL-2.1+, Paul B Mahol -- no `gpl`
+# dependency, safe under the win64-lgpl Windows pin) rewrites frame N=50's
+# own PTS to the NEXT packet's PTS value, producing exactly one duplicate
+# PTS pair (verified via `ffprobe -show_packets`, see 05-05-SUMMARY.md's
+# read-back transcript: packet 50 and 51 both carry pts=26112). DTS is left
+# untouched by this filter and stays strictly monotonic (verified: dts
+# still increments by exactly 512 every packet through the splice) -- this
+# fixture isolates pts_unique's own duplicate-count path without also
+# perturbing dts_monotonic.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -bsf:v "setts=pts='if(eq(N\,50)\,NEXT_PTS\,PTS)'" -y \
+  "$OUT_DIR/timeline_pts_dupe.mp4"
+
+# `timeline_dts_backward.ts` -- DEVIATION from 05-05-PLAN.md's literal
+# `timeline_dts_backward.mp4` name (Rule 1 auto-fix, documented in
+# 05-05-SUMMARY.md's Deviations section): a genuinely backward DTS jump
+# cannot be produced in ANY standard container via `setts`+`-c copy`+mux --
+# both fftools/ffmpeg_mux.c's CLI-level clamp and libavformat/mux.c's own
+# write_packet_common check reject a strictly-decreasing DTS for EVERY
+# muxer regardless of AVFMT_TS_NONSTRICT (confirmed by reading vendored
+# FFmpeg source, vcpkg/buildtrees/ffmpeg-bin2c/.../fftools/ffmpeg_mux.c and
+# .../libavformat/mux.c). MP4 specifically cannot represent it AT ALL even
+# in principle -- the ISO `stts` box is an UNSIGNED cumulative sample-delta
+# table, so backward DTS is structurally impossible in that container,
+# never merely a policy choice a bsf recipe could work around.
+#
+# Technique instead: two independently-muxed MPEG-TS segments (each its own
+# fresh ffmpeg process, so each starts from its own fresh mux DTS state
+# with no shared timestamp continuity) concatenated byte-for-byte via
+# `cat`. Each segment is testsrc2/sine duration=2 (50 video frames),
+# identical recipe to timeline_start_base.mp4's own but half the length --
+# ffmpeg's own default TS mux delay places both segments' PTS/DTS origins
+# at the same small offset, so segment B's first video DTS is LESS than
+# segment A's last video DTS, producing a genuine `dts[i] <= dts[i-1]`
+# violation on video at the splice (and on audio too), zero
+# bitstream-filter tampering.
+#
+# Segment B carries a `-itsoffset 0.5` on BOTH its inputs (video and audio
+# shifted together, so A/V sync within segment B is preserved) -- without
+# it, segment B's own PTS/DTS values land on the EXACT SAME tick grid as
+# segment A's (same fps, same tb, same ffmpeg-default mux-delay anchor,
+# same bitexact content), producing dozens of spurious `timeline.pts_unique`
+# duplicate pairs between the two segments' overlapping ranges rather than
+# the single intended `timeline.dts_monotonic` violation (discovered
+# empirically while proving this recipe: 05-05-SUMMARY.md's read-back
+# transcript). 0.5s is not an integer multiple of either the video frame
+# period (1/25 s) or the AAC frame period (1024/44100 s), so it de-aligns
+# segment B's whole timestamp grid from segment A's without affecting
+# whether segment B's first DTS still lands before segment A's last DTS
+# (the offset is small next to the ~2s gap between them) -- verified via
+# `ffprobe -show_packets` to produce EXACTLY one violation per stream and
+# ZERO `pts_unique` collisions.
+#
+# Segments are written to a scratch directory, never under $OUT_DIR, so
+# scripts/check_corpus.sh's textual `$OUT_DIR/<name>` extraction never
+# mistakes them for fixtures of their own.
+TIMELINE_SPLICE_TMP="$(mktemp -d)"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$TIMELINE_SPLICE_TMP/seg_a.ts"
+
+"$FFMPEG_BIN" -itsoffset 0.5 -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -itsoffset 0.5 -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$TIMELINE_SPLICE_TMP/seg_b.ts"
+
+cat "$TIMELINE_SPLICE_TMP/seg_a.ts" "$TIMELINE_SPLICE_TMP/seg_b.ts" > "$OUT_DIR/timeline_dts_backward.ts"
+rm -rf "$TIMELINE_SPLICE_TMP"
+
+# --- 05-06-PLAN.md Task 1 (TIME-02/TIME-04): timeline.gaps and
+# timeline.wrap_events fixtures ---------------------------------------------
+#
+# `timeline_gap.mp4`: identical encode recipe to timeline_start_base.mp4
+# (same testsrc2/sine params, same `-c:v mpeg4 -c:a aac`, same duration=4/100
+# frames), with the `setts` bitstream filter (already confirmed LGPL-2.1+,
+# no `gpl` dependency, safe under the win64-lgpl Windows pin -- see
+# timeline_pts_dupe.mp4's own recipe comment above) shifting every video
+# packet's own PTS from N=50 onward forward by 3 units, DTS left
+# UNTOUCHED. `setts`'s own PTS/DTS variables operate in the VIDEO CODEC's
+# own time_base (empirically confirmed this task: mpeg4 at 25fps uses a
+# 1/25 codec time_base, i.e. one unit IS one frame, NOT the final muxed
+# container tbn of 1/12800 -- `N` and `PTS` are evaluated before the
+# muxer's own tbn rescale), so a shift of 3 frames is exactly 3 x the
+# 512-tick nominal interval the muxed 1/12800 stream carries.
+#
+# PTS-ONLY, never DTS too (an earlier attempt during this task shifted
+# both and found the gap never fires): MP4's own `stts` box declares each
+# sample's own duration from the ACTUAL delta to the next sample in DECODE
+# (DTS) order -- shifting DTS along with PTS makes the muxer's own
+# declared duration for packet 49 grow to match the shifted gap exactly
+# (empirically: `duration` became 2048, not 512), which makes the gap
+# rule's own `declared_duration + 1 tick` threshold arm grow to swallow
+# the very gap this fixture exists to create (`2048 !> 2049`). Leaving DTS
+# untouched keeps packet 49's own DECLARED duration at the true nominal
+# 512 ticks while the PRESENTATION-order interval (PTS-based, what
+# `timeline.gaps` actually walks) still jumps by 2048 -- confirmed via
+# `ffprobe`: packet 49 `dts=25088 dur=512` (unaffected), packet 50
+# `pts=27136 dts=25600` (PTS leads DTS by 1536 ticks from this point on,
+# a legitimate PTS/DTS divergence, not a defect). Three frames, not one:
+# shifting by exactly ONE nominal interval would place the resulting hole
+# at EXACTLY `2 x nominal` -- the gap rule's own threshold -- making the
+# fixture's verdict depend on the tie-break, since the rule is `interval
+# STRICTLY EXCEEDS the threshold`, not `>=`. Three frames gives an
+# unambiguous 4x-nominal interval against a 2x-nominal threshold,
+# comfortably clear of the boundary. DTS itself is never touched, so
+# `timeline.dts_monotonic` stays clean -- this fixture isolates
+# `timeline.gaps` without perturbing the structural-integrity checks.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -bsf:v "setts=pts='if(gte(N\,50)\,PTS+3\,PTS)'" -y \
+  "$OUT_DIR/timeline_gap.mp4"
+
+# `timeline_ts_wrap.ts` / `timeline_ts_nowrap.ts` / `timeline_ts_nowrap_copy.ts`
+# -- DEVIATION from 05-06-PLAN.md's literal "`-c copy` MPEG-TS remux of
+# `timeline_start_base.mp4`" (Rule 1 auto-fix, documented in
+# 05-06-SUMMARY.md's Deviations section): a `-c copy` remux of the existing
+# MP4 tracer carries the SAME pre-existing `dts[1] == dts[0]` tie every
+# other MP4-to-TS remux of this exact fixture already exhibits (05-05-
+# SUMMARY.md's own documented, still-under-review artifact) -- declaring it
+# here too would bury this task's own `timeline.wrap_events` proof under an
+# unrelated, already-known collateral finding. A FRESH direct encode
+# straight to MPEG-TS (same testsrc2/sine/mpeg4/aac recipe as every sibling
+# fixture, `-output_ts_offset` applied at the ORIGINAL encode rather than a
+# later remux) produces the identical wrap behavior with zero collateral --
+# confirmed via `ffprobe -correct_ts_overflow 0` read-back (see the SUMMARY's
+# own transcript) and via the real binary's `timeline.dts_monotonic`/
+# `timeline.pts_unique` both reporting a clean `0` across the wrap boundary.
+#
+# The offset value: `2^33 / 90000 = 95443.717688...` seconds (the 33-bit,
+# 90kHz PES timestamp domain's own wrap period, doc 04 section 1.2). This
+# task's own generator-ffmpeg-version empirical exploration found that
+# `-output_ts_offset`'s wrap decision is a per-PACKET 33-bit field
+# truncation at MUX time (spec-correct), but that DEMUXING a wrapped TS
+# stream with libavformat's default `correct_ts_overflow=1` transparently
+# auto-corrects the wrap BEFORE any caller (including this project's own
+# PacketScan) ever sees a raw value -- closed as a Rule 1/2 gap in
+# `src/probe/demux_session.{h,cpp}` this same plan (see that file's own
+# header comment for the full citation trail). `95440.34` (`2^33/90000`
+# minus `3.377689` seconds) places the wrap just under two seconds into
+# this 4-second, 100-frame source -- comfortably mid-file, confirmed via a
+# genuine, non-auto-corrected `ffprobe -correct_ts_overflow 0` read-back
+# showing video packet 49 at `8589933000` (1592 ticks under `2^33`) and
+# packet 50 at `2008` (the wrapped, small post-boundary value).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -output_ts_offset 95440.34 -y -f mpegts \
+  "$OUT_DIR/timeline_ts_wrap.ts"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y -f mpegts \
+  "$OUT_DIR/timeline_ts_nowrap.ts"
+
+# The `state`-semantic clean pair (A2 in this plan's own flagged_assumptions):
+# under src/compare/state.cpp's post-WR-02 semantics, `pass` means NEITHER
+# side was flagged -- comparing timeline_ts_wrap.ts against a copy of itself
+# would be a TRIGGER (both sides flagged), not a clean pair. Two
+# deliberately-UNFLAGGED files, mirroring `tracer_a_copy.mp4`'s own `cp`
+# precedent, is what proves a genuine `pass`.
+cp "$OUT_DIR/timeline_ts_nowrap.ts" "$OUT_DIR/timeline_ts_nowrap_copy.ts"
+
+# --- 05-07-PLAN.md Task 3 (TIME-02/TIME-04, DOC-04): timeline_ts_jump.ts /
+# timeline_ts_jump_flagged.ts -- proves the timeline.discontinuities /
+# timeline.discontinuities.flagged split on a single, real byte-identical-
+# except-for-one-bit fixture pair.
+#
+# `timeline_ts_jump.ts`: same two-independently-muxed-TS-segments technique
+# as timeline_dts_backward.ts above (each segment its own fresh ffmpeg
+# process, concatenated via `cat`), but with a genuine FORWARD gap instead
+# of a backward DTS violation: segment B carries a global
+# `-output_ts_offset 5.0` (the same output-level primitive
+# timeline_ts_wrap.ts above already uses to relocate an entire segment's
+# timestamps, applied here to both video and audio together so A/V sync
+# within segment B is preserved) rather than dts_backward.ts's own
+# `-itsoffset` (an INPUT-level, pre-encode primitive that only de-aligns two
+# segments' tick grids without relocating them past each other). Read back
+# via `ffprobe -show_packets`: the video presentation timeline jumps from
+# pts_time=3.383222 to pts_time=6.400000 at the splice -- a genuine ~3.02s
+# gap, comfortably past the 250ms threshold, forward only (no
+# dts_backward.ts-style backward-DTS side effect, since `-output_ts_offset`
+# shifts every packet's PTS AND DTS by the identical amount, so ordering
+# within each segment is unaffected and segment B's shifted DTS values land
+# safely after segment A's).
+#
+# Why 5.0 and not the original 3.0 (debug session
+# test-898-ci-nonreproducible, .planning/debug/): with a ~1.02s gap, the
+# nowrap-vs-jump pair's VIDEO size.stream_bitrate delta landed at +2.4% to
+# +3.2% depending on the generating host -- straddling that check's 3% warn
+# line -- because the mpeg4 encoder's output depends on libavcodec's AUTO
+# slice-thread count (nb_cpus + 1: 9 on an 8-CPU workstation, 5 on a
+# 4-vCPU GitHub runner) and on the host's DSP code path (x86 SIMD vs C /
+# arm64 NEON). The same test then passed on the workstation and arm64-osx
+# and failed on x64-linux/x64-windows. The gap only lengthens the
+# candidate's measured span, so a ~3.02s gap moves the video delta to
+# -26.6% .. -27.1% and the audio delta to -42% on every thread count
+# (1/3/5/9) with SIMD on or off -- ~16.6 points past the 10% fail line
+# against a ~0.5-point spread, so no host can flip it. Segment A is
+# untouched, so the splice byte offset gen_ts_discontinuity.py receives
+# below (segment A's own length) is unchanged.
+#
+# `timeline_ts_jump_flagged.ts`: BYTE-IDENTICAL to timeline_ts_jump.ts
+# except for the one transport packet the splice actually lands on --
+# tools/gen_ts_discontinuity.py (Task 3's own byte-level writer, D-03: no
+# pinned ffmpeg CLI/filter can set discontinuity_indicator on a chosen
+# packet) sets that packet's discontinuity_indicator bit. `--pid 256`:
+# `ffprobe -show_streams` confirms both segments' video stream carries
+# `id=0x100` (the mpegts muxer's own default first-stream PID, unaffected
+# by -output_ts_offset, which only shifts timestamps, never PID
+# allocation). `--after-offset`: segment A's OWN byte length -- since the
+# two segments are concatenated byte-for-byte with no interleaving, this is
+# exactly the byte offset where segment B's own packets begin, and the
+# writer's own "first matching-PID packet at or after this offset" contract
+# lands precisely on the video PES packet whose PTS is the jump's own
+# far-side value (confirmed via `ffprobe -show_packets`: pos=150024, an
+# exact multiple of 188, matching the writer's own stride assumption).
+# Proven via `cmp -l`: the two files differ in EXACTLY ONE byte (this
+# packet already carried an adaptation field of its own -- PCR /
+# random-access, typical for a keyframe's first packet -- so the writer's
+# "already has AF, flip the flags byte's own bit in place" path fires, not
+# the "insert a fresh AF" path; a single bit, 0x50 -> 0xd0 at the flags
+# byte, everything else byte-identical). python3 >= 3.11 is already gated
+# above (04-05-PLAN.md's hand-constructed-video-fixtures block, this same
+# script) before this point is ever reached.
+TIMELINE_JUMP_TMP="$(mktemp -d)"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$TIMELINE_JUMP_TMP/seg_a.ts"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=2" \
+  -f lavfi -i "sine=frequency=440:duration=2" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -output_ts_offset 5.0 -y -f mpegts "$TIMELINE_JUMP_TMP/seg_b.ts"
+
+cat "$TIMELINE_JUMP_TMP/seg_a.ts" "$TIMELINE_JUMP_TMP/seg_b.ts" > "$OUT_DIR/timeline_ts_jump.ts"
+
+TIMELINE_JUMP_SEG_A_SIZE=$(wc -c < "$TIMELINE_JUMP_TMP/seg_a.ts" | tr -d ' ')
+rm -rf "$TIMELINE_JUMP_TMP"
+
+python3 tools/gen_ts_discontinuity.py \
+  --input "$OUT_DIR/timeline_ts_jump.ts" \
+  --output "$OUT_DIR/timeline_ts_jump_flagged.ts" \
+  --pid 256 \
+  --after-offset "$TIMELINE_JUMP_SEG_A_SIZE"
+
+# --- 05-08-PLAN.md Task 3 (TIME-05, DOC-03/DOC-04): timeline_jitter.mp4 /
+# timeline_vfr.mp4 -- doc 04 §5's own jitter/VFR recipes, adapted to this
+# project's LGPL-clean constraints (05-RESEARCH.md Pitfall 3): `mpdecimate`
+# is GPL-gated (`mpdecimate_filter_deps="gpl"`, confirmed against the
+# vendored FFmpeg source) and would silently produce nothing on the
+# win64-lgpl Windows pin -- NEVER invoked anywhere in this script.
+# `select`+`-fps_mode vfr` (already proven LGPL-clean and already proven to
+# classify VFR, video_vfr.mp4's own recipe above) is the route actually
+# used below.
+#
+# `timeline_jitter.mp4`: the same testsrc2/sine source and mpeg4/aac encode
+# family as every other timeline_* fixture in this file, at 8s/200 frames
+# (not timeline_start_base.mp4's own 4s/100) -- a deliberate DEVIATION from
+# this plan's own literal "identical encode" instruction (Rule 1, documented
+# here and in 05-08-SUMMARY.md): D-05's own grid-conformance CFR/VFR test
+# requires `conforming_timestamps * 1000 >= considered_timestamps * 995`
+# (99.5%), which at exactly 100 considered timestamps admits ZERO
+# non-conforming outliers (99/100 = 99.0% < 99.5%) -- doubling the
+# considered-timestamp count to 200 admits exactly ONE (199/200 = 99.5%,
+# the inclusive boundary), which is what this recipe needs room for.
+#
+# `setts`'s own PTS/DTS expressions operate in the VIDEO CODEC's own
+# time_base, not the muxed container's -- confirmed empirically THIS task
+# (mirrors `timeline_gap.mp4`'s own identical discovery above): mpeg4 at
+# 25fps uses a 1/25 codec time_base, so a bare arithmetic offset like
+# `PTS+150` is 150 WHOLE FRAMES (76800 muxed-timebase ticks), not 150
+# ticks -- confirmed by an empirical probe of the resulting packet PTS
+# during this task (see this task's own commit message for the full
+# transcript) before this final recipe was written; a sub-frame offset is
+# not expressible through this bsf at all (a fractional literal such as
+# `150/512` truncates to whichever whole frame it floors to, empirically
+# zero). The recipe therefore shifts frame N=100's own PTS by exactly
+# ONE WHOLE FRAME forward (`PTS+1`, i.e. +512 muxed-timebase ticks) --
+# dead centre, far from both edges, so first_pts/last_pts (and therefore
+# the derived span-based ideal interval, `timeline.start`, `timeline.
+# duration`, `video.frame_rate.measured`) stay untouched: the perturbed
+# value (51712) sits INSIDE the original [0, 101888]-tick range, never
+# becoming a new extremum (an earlier attempt during this task shifted
+# frame 100 far OUTSIDE that range and discovered the ideal interval
+# itself gets computed from whatever the ACTUAL min/max turn out to be,
+# corrupting every other interval's own classification -- a lesson kept
+# here so it is not rediscovered the hard way twice). By hand: shifting
+# frame 100 forward by exactly one frame lands it on frame 101's own
+# ORIGINAL slot (51712), producing a genuine `timeline.pts_unique`
+# duplicate pair alongside the jitter this fixture exists to prove (one
+# perturbation, two legitimate D-02 effects, both declared in this task's
+# own DOC-04 test) -- verified via `ffprobe -show_packets`. Two
+# consecutive-interval deviations result (99->100(dup): +512 ticks;
+# 100(dup)->101: -512 ticks -- both intervals touching the shifted
+# timestamp), every other of the 199 intervals stays exactly on the
+# (unperturbed, since the perturbation never left the original extremes)
+# 512-tick ideal -- proven against the real binary (this task's own
+# <verify> step) to classify CFR (exactly 199/200 conforming, the
+# inclusive 99.5% boundary) with a real, non-zero, threshold-crossing
+# sigma. DTS is left untouched by this filter (mirrors
+# timeline_pts_dupe.mp4's own precedent), so timeline.dts_monotonic stays
+# clean; the one 1024-tick interval sits AT (not strictly past)
+# timeline.gaps' own `2 x nominal` detection threshold, so timeline.gaps
+# stays clean too.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=8" \
+  -f lavfi -i "sine=frequency=440:duration=8" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -bsf:v "setts=pts='if(eq(N\,100)\,PTS+1\,PTS)'" -y \
+  "$OUT_DIR/timeline_jitter.mp4"
+
+# `timeline_vfr.mp4`: the SAME `select='not(eq(mod(n\,7),3))'` +
+# `-fps_mode vfr` LGPL-clean thinning chain video_vfr.mp4 above already
+# proves classifies VFR (04-07-PLAN.md's own comment: "producing genuinely
+# unequal packet PTS deltas... This is the CFR/VFR distinction plan 04-07
+# classifies") -- D-05 (this same phase) REPLACES the classification TEST,
+# not the underlying genuinely-uneven interval pattern this recipe
+# produces, so the same drop pattern remains VFR under the amended rule
+# (proven against the real binary, this task's own <verify> step, before
+# any test asserts on it -- A2's own instruction). Unlike video_vfr.mp4
+# (video-only), this fixture carries an untouched sine AUDIO stream too, so
+# a single file exercises BOTH ROADMAP SC3 halves at once: the VIDEO stream
+# reports `timeline.jitter` skipped:vfr with a real, populated
+# `timeline.vfr_profile` histogram (two_x/three_x bins from the dropped-
+# frame doubled intervals), while the AUDIO stream, genuinely unperturbed,
+# stays CFR with a real (near-zero) sigma and an all-on_grid histogram --
+# one fixture proving the CFR/VFR split on two streams of the SAME file.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -vf "select='not(eq(mod(n\,7),3))'" -fps_mode vfr \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_vfr.mp4"
+
+# --- 05-09-PLAN.md Task 3 (TIME-06/TIME-09/TIME-10, D-12): both
+# timeline.av_offset TIME-10 arms on real files ------------------------------
+#
+# `timeline_avoffset_video_shift.mp4`: the RECOVERABLE arm. IDENTICAL
+# testsrc2/sine sources and mpeg4/aac encode as timeline_start_base.mp4, with
+# `-itsoffset 0.042` applied to the VIDEO input, NOT the audio one -- this is
+# D-12's own amendment to doc 04 section 5's literal recipe ("-itsoffset 0.042
+# on audio" -> `av_offset` +42ms). 05-CONTEXT.md's own verification during
+# planning found that offsetting the AUDIO input rewrites the MP4 edit list
+# (`elst`), which is exactly the mechanism libav uses to compute the
+# priming-adjusted packet PTS this check's `resolve_priming` composes with
+# (05-RESEARCH.md Pitfall 5) -- offsetting audio destroys the very priming
+# signal TIME-10 needs to prove recoverable. Shifting the VIDEO input instead
+# leaves the audio input, and therefore its own edit list and packet-level
+# `AV_PKT_DATA_SKIP_SAMPLES` side data, completely untouched: this fixture's
+# own audio track is encoded IDENTICALLY to timeline_start_base.mp4's, so
+# `resolve_priming` reports `source: skip_samples` on BOTH sides of a compare
+# against that base file -- the exact (non-degraded) TIME-10 arm.
+"$FFMPEG_BIN" -itsoffset 0.042 -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_avoffset_video_shift.mp4"
+
+# `timeline_avoffset_unknown.ts`: the UNKNOWN arm. A `-c copy` MPEG-TS remux
+# of timeline_start_base.mp4 -- IDENTICAL technique to timeline_start_shift.ts
+# above, and verified (this task's own read-back, recorded in
+# 05-09-SUMMARY.md) to carry the SAME behavior: `initial_padding = 0` and no
+# `AV_PKT_DATA_SKIP_SAMPLES` side data on the audio stream's first packet at
+# all -- `priming: unknown` on this side. This fixture exercises ROADMAP
+# SC4's degrade path (an unadjusted offset visibly carrying `priming:
+# unknown`) on a REAL file produced by an ordinary stream-copy remux, not by
+# construction.
+"$FFMPEG_BIN" -i "$OUT_DIR/timeline_start_base.mp4" -c copy \
+  -flags +bitexact -fflags +bitexact -y \
+  -f mpegts "$OUT_DIR/timeline_avoffset_unknown.ts"
+
+# --- 05-10-PLAN.md Task 3 (TIME-07/TIME-08, D-04/D-07/D-08): the flagship
+# `timeline.av_drift` / `timeline.av_drift.pattern` checks' own fixtures ---
+#
+# `timeline_drift_linear.mp4` / `timeline_drift_base.mp4`: the LINEAR-DRIFT
+# arm, doc 04 section 5's own "classic 0.1% clock error" recipe --
+# `asetrate=48048,aresample=48000` reads the sine source at 48048Hz then
+# resamples it down to a DECLARED 48000Hz, so the encoded content plays
+# 48048/48000 = 1.001x faster than its own declared rate: a genuine,
+# uniform clock-rate mismatch between the audio and video timelines, not a
+# PTS-level artifact. 20 SECONDS, not doc 04's own unqualified duration --
+# this task's own empirical finding: at 30s/60s, the K=32 least-squares
+# fit's own reduced slope denominator exceeds `kMaxDriftDenominator`
+# (analyzers.h) at MILLISECOND-tick granularity over that span, correctly
+# returning `fit_failed` (never a false, truncated rate) rather than a
+# usable measurement -- 20s stays comfortably inside the safe range while
+# still landing close to doc 04's own "~60ms/min" worked prediction
+# (measured: -60.28ms/min against `timeline_drift_base.mp4` below).
+# `sample_rate=48000` explicit on `sine=` is REQUIRED: the `sine` lavfi
+# source's own default rate is 44100Hz, not 48000Hz, so omitting it turns
+# the intended 0.1% error into a ~8.9% one (44100/48048 =/= 48000/48048;
+# this task's own measured regression while iterating this recipe).
+# `timeline_drift_base.mp4` is the CLEAN, same-duration companion -- doc 02's
+# "every fixture produces exactly the intended findings and no others"
+# clause needs a duration-matched baseline, not `timeline_start_base.mp4`'s
+# own 4s tracer, or `timeline.duration`'s own triple-comparison would fire
+# as an unrelated collateral finding on every compare against this pair.
+# `-c:v mpeg4 -c:a aac`, never libx264/GPL, matching every other fixture in
+# this script.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
+  -f lavfi -i "sine=frequency=440:duration=20:sample_rate=48000,asetrate=48048,aresample=48000" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_drift_linear.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
+  -f lavfi -i "sine=frequency=440:duration=20:sample_rate=48000" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_drift_base.mp4"
+
+# `timeline_drift_step.mp4`: the STEP arm -- a genuine, isolated mid-file
+# audio PTS discontinuity, the SAME proven "PTS-only via `setts`, packet
+# N onward" technique `timeline_gap.mp4` above uses for VIDEO, applied to
+# AUDIO instead. Both `pts` AND `dts` are shifted together here (unlike
+# `timeline_gap.mp4`'s video-only, PTS-only shift): this task's own
+# empirical finding is that MP4 audio packets, unlike video, need BOTH set
+# together for the muxer to actually apply a forward PTS shift -- a
+# PTS-only attempt on audio measurably had no effect on the muxed output
+# (this task's own read-back via `ffprobe`, recorded in 05-10-SUMMARY.md).
+# `sine=duration=3.9` (not 4.0, matching the video's own 4s): this task's
+# own worked derivation -- with `N_total` real audio packets and a
+# `+4410`-tick (100ms) shift applied from packet 95 onward, the file's
+# OWN declared audio duration (`AVStream->duration`, computed by the
+# muxer from the actual written packets, shift included) must still equal
+# video's declared 4.0s EXACTLY, or `timeline.av_drift`'s own K=32
+# checkpoint construction (05-10-PLAN.md Task 2, `av_sync.cpp`) reads the
+# resulting total-duration MISMATCH as smooth, whole-file LINEAR drift
+# (correctly, by that construction's own design) rather than an isolated
+# mid-file event -- 3.9s of real source content plus the 100ms shift lands
+# the file's own true final packet position back at 4.0s, matching video
+# exactly (measured: `duration_ts=176400` on both streams, i.e. an EXACT
+# match, confirmed via `ffprobe`). Splice at packet N=95 (not
+# `timeline_gap.mp4`'s own N=50): chosen so the resulting displaced
+# region does not coincide with any of the K=32 checkpoints' own
+# proportionally-mapped audio targets (this task's own worked
+# derivation) -- this project's own `timeline.av_drift.pattern`
+# classifies the measured result `irregular` (residual max 60ms), not
+# `step`: this task's own extensive investigation (05-10-SUMMARY.md
+# Deviations) found that a literal two-flat-plateau `step` classification
+# is unreachable from any ffmpeg-synthesizable fixture under the current
+# checkpoint-construction algorithm (a provable consequence of using a
+# SINGLE whole-file audio/video span ratio, which is self-correcting by
+# construction) -- flagged there as a follow-up architecture item, not
+# silently worked around here. This fixture still exercises the REAL,
+# valuable behavior: a genuine mid-file audio timing anomaly is detected
+# (non-pass `timeline.av_drift.pattern`, non-zero residual) rather than
+# silently smeared into a clean-looking line.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=3.9:sample_rate=44100" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact \
+  -bsf:a "setts=pts='if(gte(N\,95)\,PTS+4410\,PTS)':dts='if(gte(N\,95)\,DTS+4410\,DTS)'" -y \
+  "$OUT_DIR/timeline_drift_step.mp4"
+
+# --- 05-11-PLAN.md (TIME-11): timeline.timecode / timeline.timecode.value's
+# own fixtures. `-timecode` makes the MOV/MP4 muxer add a `tmcd` timecode
+# data track automatically (the SAME mechanism topo_tmcd.mp4 above already
+# exercises for CONT-09) -- the MOV/MP4 demuxer resolves that track's own
+# starting SMPTE timecode during avformat_find_stream_info itself and
+# publishes it as a plain string under AVStream::metadata["timecode"], with
+# ZERO decode calls (05-RESEARCH.md Pattern 4, re-verified this task against
+# the pinned generator: `ffprobe -show_entries stream_tags=timecode` reports
+# exactly `00:00:10:00` for a `-timecode 00:00:10:00` non-drop-frame input).
+# `timeline_tc_ndf.mp4`/`timeline_tc_ndf_copy.mp4`/`timeline_tc_ndf_shifted.mp4`/
+# `timeline_tc_absent.mp4` all share the SAME 320x240/25fps/4s video+audio
+# shape as timeline_start_base.mp4 above, differing ONLY in the `-timecode`
+# option -- the ONLY structural change between the with-tmcd and
+# without-tmcd fixtures is the tmcd track itself.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -timecode 00:00:10:00 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_tc_ndf.mp4"
+
+cp "$OUT_DIR/timeline_tc_ndf.mp4" "$OUT_DIR/timeline_tc_ndf_copy.mp4"
+
+# The trigger pair for timeline.timecode.value: identical except the START
+# timecode (`00:00:20:00` instead of `00:00:10:00`). Presence is unchanged
+# (both carry a tmcd track) -- only the compared STRING changes.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -timecode 00:00:20:00 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_tc_ndf_shifted.mp4"
+
+# The trigger pair for timeline.timecode (presence): the IDENTICAL encode
+# with NO `-timecode` option at all -- no tmcd track at all, TIME-11's own
+# empty edge.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_tc_absent.mp4"
+
+# `timeline_tc_df.mp4`: the DROP-FRAME arm -- 05-RESEARCH.md's own Open
+# Question 1, resolved empirically this task (05-11-SUMMARY.md): a
+# drop-frame-rate `-timecode` input renders with a SEMICOLON before the
+# frame field (`00:00:10;00`) rather than a colon, confirmed against the
+# pinned generator -- the drop-frame flag IS recoverable from the string's
+# own punctuation on the no-decode path, no rate-derived fallback needed.
+# 30000/1001 (NTSC) is the only rate class SMPTE drop-frame timecode
+# applies to, so there is no same-rate non-drop-frame counterpart to pair
+# this against for a whole-report comparison (a rate change moves several
+# collateral checks at once) -- this fixture is proven standalone via
+# `mediadiff inspect --json` (05-11-SUMMARY.md), not folded into a DOC-04
+# declared-set pair.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=30000/1001:duration=4" \
+  -f lavfi -i "sine=frequency=440:duration=4" \
+  -c:v mpeg4 -c:a aac -timecode "00:00:10;00" -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/timeline_tc_df.mp4"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4."
