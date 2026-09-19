@@ -11,21 +11,35 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "probe/ts_scan.h"
 #include "support/fixture_paths.h"
 
+using mediadiff::DtsSource;
 using mediadiff::kNullPid;
 using mediadiff::kPidCount;
+using mediadiff::PacketRecord;
+using mediadiff::PesTimestampRecord;
+using mediadiff::PidStats;
 using mediadiff::run_ts_scan;
 using mediadiff::TsScanResult;
+using mediadiff::detail::apply_container_dts;
+using mediadiff::detail::ContainerDtsJoin;
+using mediadiff::detail::parse_pes_timestamps;
+using mediadiff::detail::PesParseResult;
+using mediadiff::detail::PesParseStatus;
+using mediadiff::detail::record_pes_timestamp;
+using mediadiff::detail::resolve_dts_source;
 
 namespace {
 
@@ -502,4 +516,373 @@ TEST_CASE("ts_scan - a section_length larger than the available bytes is discard
 TEST_CASE("ts_scan - a missing file returns Error::input_open, never a crash", "[unit]") {
   const auto result = run_ts_scan("/nonexistent/path/does/not/exist.ts");
   REQUIRE_FALSE(result.has_value());
+}
+
+// --- 05-15-PLAN.md Task 1: PES header timestamps on the real Gap 4 fixture
+
+TEST_CASE("ts_scan - PES timestamps on timeline_start_shift.ts", "[unit]") {
+  const auto result = run_ts_scan(fixture("timeline_start_shift.ts"));
+  REQUIRE(result.has_value());
+  REQUIRE(result->complete);
+
+  const auto& video = result->pid_stats(256);
+  REQUIRE(video.pes_timestamps.size() == 100);
+  REQUIRE(video.pes_headers_pts_only == 100);
+  REQUIRE(video.pes_headers_pts_dts == 0);
+  REQUIRE(video.pes_headers_unparsed == 0);
+  REQUIRE_FALSE(video.pes_timestamps_truncated);
+
+  // The exact Gap 4 values (05-VERIFICATION.md): the file's own PES
+  // headers carry PTS only, strictly increasing.
+  REQUIRE(video.pes_timestamps[0].pts == 128090);
+  const std::array<std::int64_t, 5> expected_first_five{128090, 131690, 135290, 138890, 142490};
+  for (std::size_t i = 0; i < expected_first_five.size(); ++i) {
+    REQUIRE(video.pes_timestamps[i].pts == expected_first_five[i]);
+  }
+  for (std::size_t i = 0; i < video.pes_timestamps.size(); ++i) {
+    REQUIRE_FALSE(video.pes_timestamps[i].dts_present);
+    REQUIRE(video.pes_timestamps[i].dts == video.pes_timestamps[i].pts);
+    if (i > 0) {
+      REQUIRE(video.pes_timestamps[i].pts > video.pes_timestamps[i - 1].pts);
+    }
+  }
+
+  const auto& audio = result->pid_stats(257);
+  REQUIRE(audio.pes_timestamps.size() == 13);
+  REQUIRE_FALSE(audio.pes_timestamps_truncated);
+}
+
+// --- 05-15-PLAN.md Task 2: parse_pes_timestamps's reject paths and the
+//     record budget, from hand-built byte buffers --------------------------
+
+namespace {
+
+// Encodes one 5-byte PTS/DTS field (ISO/IEC 13818-1 section 2.4.3.7):
+// `prefix4` occupies the top 4 bits of byte 0 (never validated by the
+// parser under test, per 05-15-PLAN.md's own A2) and all three marker
+// bits are set.
+std::vector<std::uint8_t> encode_ts_field(std::uint8_t prefix4, std::uint64_t value33) {
+  std::vector<std::uint8_t> f(5);
+  f[0] = static_cast<std::uint8_t>((prefix4 << 4) | (((value33 >> 30) & 0x7) << 1) | 0x1);
+  f[1] = static_cast<std::uint8_t>((value33 >> 22) & 0xFF);
+  f[2] = static_cast<std::uint8_t>((((value33 >> 15) & 0x7F) << 1) | 0x1);
+  f[3] = static_cast<std::uint8_t>((value33 >> 7) & 0xFF);
+  f[4] = static_cast<std::uint8_t>(((value33 & 0x7F) << 1) | 0x1);
+  return f;
+}
+
+// Builds the fixed 9-byte PES header prefix (start code, stream_id,
+// PES_packet_length -- unused by the parser under test -- byte 6,
+// PTS_DTS_flags in byte 7's top two bits, PES_header_data_length) plus
+// whatever `optional_fields` bytes follow.
+std::vector<std::uint8_t> build_pes_header(std::uint8_t stream_id, std::uint8_t byte6, std::uint8_t pts_dts_flags,
+                                            std::uint8_t header_data_length,
+                                            const std::vector<std::uint8_t>& optional_fields) {
+  std::vector<std::uint8_t> b{0x00, 0x00, 0x01, stream_id, 0x00, 0x00, byte6,
+                              static_cast<std::uint8_t>(pts_dts_flags << 6), header_data_length};
+  b.insert(b.end(), optional_fields.begin(), optional_fields.end());
+  return b;
+}
+
+std::span<const std::uint8_t> as_span(const std::vector<std::uint8_t>& v) {
+  return std::span<const std::uint8_t>(v.data(), v.size());
+}
+
+}  // namespace
+
+TEST_CASE("ts_scan - PES parse: PTS-only header decodes PTS 128090, status pts_only", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x80, 0b10, 5, encode_ts_field(0b0010, 128090));
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::pts_only);
+  REQUIRE(result.pts == 128090);
+  REQUIRE(result.dts == 128090);
+}
+
+TEST_CASE("ts_scan - PES parse: PTS+DTS header decodes PTS 7200 DTS 3600, status pts_dts", "[unit]") {
+  std::vector<std::uint8_t> optional = encode_ts_field(0b0011, 7200);
+  const std::vector<std::uint8_t> dts_field = encode_ts_field(0b0001, 3600);
+  optional.insert(optional.end(), dts_field.begin(), dts_field.end());
+  const auto buf = build_pes_header(0xE0, 0x80, 0b11, 10, optional);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::pts_dts);
+  REQUIRE(result.pts == 7200);
+  REQUIRE(result.dts == 3600);
+}
+
+TEST_CASE("ts_scan - PES parse: the 33-bit maximum PTS decodes exactly as 8589934591", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x80, 0b10, 5, encode_ts_field(0b0010, 0x1FFFFFFFFULL));
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::pts_only);
+  REQUIRE(result.pts == 8589934591LL);
+}
+
+TEST_CASE("ts_scan - PES parse: PTS_DTS_flags 00 is status no_timestamps", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x80, 0b00, 0, {});
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::no_timestamps);
+}
+
+TEST_CASE("ts_scan - PES parse: PTS_DTS_flags 01 (forbidden) is status malformed", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x80, 0b01, 0, {});
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::malformed);
+}
+
+TEST_CASE("ts_scan - PES parse: byte 6 top two bits not '10' is status malformed", "[unit]") {
+  const auto buf = build_pes_header(0xE0, 0x00, 0b10, 5, encode_ts_field(0b0010, 128090));
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::malformed);
+}
+
+TEST_CASE("ts_scan - PES parse: PTS_DTS_flags 10 with PES_header_data_length 4 is status malformed", "[unit]") {
+  const std::vector<std::uint8_t> filler(4, 0x00);
+  const auto buf = build_pes_header(0xE0, 0x80, 0b10, 4, filler);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::malformed);
+}
+
+TEST_CASE("ts_scan - PES parse: a cleared PTS marker bit is status malformed", "[unit]") {
+  std::vector<std::uint8_t> optional = encode_ts_field(0b0010, 128090);
+  optional[0] = static_cast<std::uint8_t>(optional[0] & ~0x01);  // clear byte-0's own marker bit
+  const auto buf = build_pes_header(0xE0, 0x80, 0b10, 5, optional);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::malformed);
+}
+
+TEST_CASE("ts_scan - PES parse: stream_id 0xBE (padding) is status excluded_stream_id", "[unit]") {
+  const std::vector<std::uint8_t> buf{0x00, 0x00, 0x01, 0xBE};
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::excluded_stream_id);
+}
+
+TEST_CASE("ts_scan - PES parse: a payload of 8 bytes is status truncated_in_packet", "[unit]") {
+  const std::vector<std::uint8_t> buf{0x00, 0x00, 0x01, 0xE0, 0x00, 0x00, 0x80, 0x80};
+  REQUIRE(buf.size() == 8);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::truncated_in_packet);
+}
+
+TEST_CASE(
+    "ts_scan - PES parse: PTS_DTS_flags 11 with only 14 of 19 declared bytes present is status truncated_in_packet",
+    "[unit]") {
+  std::vector<std::uint8_t> optional = encode_ts_field(0b0011, 7200);
+  const std::vector<std::uint8_t> dts_field = encode_ts_field(0b0001, 3600);
+  optional.insert(optional.end(), dts_field.begin(), dts_field.end());
+  auto buf = build_pes_header(0xE0, 0x80, 0b11, 10, optional);
+  REQUIRE(buf.size() == 19);
+  buf.resize(14);
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::truncated_in_packet);
+}
+
+TEST_CASE("ts_scan - PES parse: a start code of 00 00 02 is status no_pes", "[unit]") {
+  const std::vector<std::uint8_t> buf{0x00, 0x00, 0x02, 0xE0};
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::no_pes);
+}
+
+TEST_CASE("ts_scan - PES parse: an empty span is status no_pes", "[unit]") {
+  const std::vector<std::uint8_t> buf;
+  const PesParseResult result = parse_pes_timestamps(as_span(buf));
+  REQUIRE(result.status == PesParseStatus::no_pes);
+}
+
+TEST_CASE("ts_scan - PES record budget: a budget of 2 truncates after two records, budget reaches 0", "[unit]") {
+  PidStats stats;
+  std::int64_t budget = 2;
+  const PesTimestampRecord record{0, 1000, 1000, false};
+  record_pes_timestamp(stats, record, budget);
+  record_pes_timestamp(stats, record, budget);
+  record_pes_timestamp(stats, record, budget);
+  REQUIRE(stats.pes_timestamps.size() == 2);
+  REQUIRE(stats.pes_timestamps_truncated);
+  REQUIRE(budget == 0);
+}
+
+// --- 05-15-PLAN.md Task 3: apply_container_dts, the pure pos/pts join ------
+
+TEST_CASE("ts_scan - PES join: a PTS-only record replaces dts with the record's pts", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 0);
+  REQUIRE(packets[0].dts == 5000);
+}
+
+TEST_CASE("ts_scan - PES join: a PTS+DTS record replaces dts with the record's own dts", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 1400, true}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 1);
+  REQUIRE(packets[0].dts == 1400);
+}
+
+TEST_CASE("ts_scan - PES join: a pos match with a differing pts does not join", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5001;
+  packets[0].dts = 999;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(packets[0].dts == 999);
+}
+
+TEST_CASE("ts_scan - PES join: a negative pos packet is untouched and uncounted either way", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = -1;
+  packets[0].pts = 5000;
+  packets[0].dts = 777;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 0);
+  REQUIRE(packets[0].dts == 777);
+}
+
+TEST_CASE("ts_scan - PES join: an AV_NOPTS_VALUE (INT64_MIN) pts at a matching pos does not join", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = std::numeric_limits<std::int64_t>::min();
+  packets[0].dts = std::numeric_limits<std::int64_t>::min();
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(packets[0].dts == std::numeric_limits<std::int64_t>::min());
+}
+
+TEST_CASE("ts_scan - PES join: an empty record list leaves every packet unchanged, joined 0", "[unit]") {
+  std::vector<PacketRecord> packets(2);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 111;
+  packets[1].pos = 2000;
+  packets[1].pts = 6000;
+  packets[1].dts = 222;
+  const std::vector<PesTimestampRecord> records;
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 2);
+  REQUIRE(packets[0].dts == 111);
+  REQUIRE(packets[1].dts == 222);
+}
+
+TEST_CASE("ts_scan - PES join: two packets at the same pos, only the first matches pts, join independently",
+          "[unit]") {
+  std::vector<PacketRecord> packets(2);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1;
+  packets[1].pos = 1000;
+  packets[1].pts = 6000;
+  packets[1].dts = 2;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(packets[0].dts == 5000);
+  REQUIRE(packets[1].dts == 2);
+}
+
+// --- 05-REVIEW.md WR-01 fix: the stride-aware join --------------------------
+// ts_scan's own recorded PES-record offsets are byte offsets in the FULL
+// container stride, while libavformat's PacketRecord::pos is a logical
+// 188-byte-packet-stream offset -- the two differ by exactly
+// `ts_packet_size - 188` (05-15-SUMMARY.md's own measurement: +4 on
+// ts_192.ts, +16 on ts_204.ts).
+
+TEST_CASE("ts_scan - PES join: a 192-byte stride joins when the record offset is pos + 4", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1004, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 192);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 0);
+  REQUIRE(packets[0].dts == 5000);
+}
+
+TEST_CASE("ts_scan - PES join: a 204-byte stride joins when the record offset is pos + 16", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1016, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 204);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 0);
+  REQUIRE(packets[0].dts == 5000);
+}
+
+TEST_CASE(
+    "ts_scan - PES join: the WRONG stride adjustment never produces a false join -- it only fails to join",
+    "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  // The record actually sits at pos + 16 (a 204-byte-stride offset), but
+  // this call claims a 192-byte stride (pos + 4) -- the lookup lands on
+  // offset 1004, which no record occupies, so the join fails rather than
+  // attaching to the wrong record.
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1016, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 192);
+  REQUIRE(join.joined == 0);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(packets[0].dts == 1400);
+}
+
+TEST_CASE("ts_scan - PES join: the default (188) stride behaves exactly as the unadjusted 2-arg call", "[unit]") {
+  std::vector<PacketRecord> packets(1);
+  packets[0].pos = 1000;
+  packets[0].pts = 5000;
+  packets[0].dts = 1400;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 188);
+  REQUIRE(join.joined == 1);
+  REQUIRE(packets[0].dts == 5000);
+}
+
+TEST_CASE("ts_scan - PES join: joined_mask marks exactly the packets that joined, false everywhere else",
+          "[unit]") {
+  std::vector<PacketRecord> packets(3);
+  packets[0].pos = 1000;  // joins
+  packets[0].pts = 5000;
+  packets[1].pos = -1;  // split-out frame, never counted
+  packets[1].pts = 5100;
+  packets[2].pos = 2000;  // non-negative pos, no matching record
+  packets[2].pts = 5200;
+  const std::vector<PesTimestampRecord> records{PesTimestampRecord{1000, 5000, 5000, false}};
+  std::vector<bool> joined_mask;
+  const ContainerDtsJoin join = apply_container_dts(packets, records, 188, &joined_mask);
+  REQUIRE(join.joined == 1);
+  REQUIRE(join.unjoined_with_pos == 1);
+  REQUIRE(joined_mask.size() == 3);
+  REQUIRE(joined_mask[0]);
+  REQUIRE_FALSE(joined_mask[1]);
+  REQUIRE_FALSE(joined_mask[2]);
+}
+
+// --- 05-REVIEW.md WR-01 fix: resolve_dts_source -----------------------------
+
+TEST_CASE("ts_scan - resolve_dts_source: at least one joined packet reports container_pes", "[unit]") {
+  REQUIRE(resolve_dts_source(ContainerDtsJoin{1, 0}) == DtsSource::container_pes);
+  REQUIRE(resolve_dts_source(ContainerDtsJoin{5, 3}) == DtsSource::container_pes);
+}
+
+TEST_CASE("ts_scan - resolve_dts_source: zero joined packets reports container_unavailable, even with unjoined "
+          "candidates present",
+          "[unit]") {
+  REQUIRE(resolve_dts_source(ContainerDtsJoin{0, 0}) == DtsSource::container_unavailable);
+  REQUIRE(resolve_dts_source(ContainerDtsJoin{0, 4}) == DtsSource::container_unavailable);
 }

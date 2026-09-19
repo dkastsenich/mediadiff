@@ -7,6 +7,8 @@
 
 #include "analyzers/container/analyzers.h"
 #include "analyzers/size/analyzers.h"
+#include "analyzers/timeline/analyzers.h"
+#include "analyzers/timeline/unwrap.h"
 #include "analyzers/video/analyzers.h"
 #include "core/snapshot.h"
 #include "probe/bmff_scan.h"
@@ -135,6 +137,50 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // order (TRUST-05), rather than interleaved among the ParserScan-
       // consuming ones just above it.
       video_hdr_analyzer(),
+      // 05-01-PLAN.md Task 2 (TIME-01/TIME-03, D-03): timeline.start, this
+      // phase's tracer -- ContainerFamily::other (a timeline check applies
+      // to every container), Pass::packet_scan only (no parser_scan, no
+      // bmff/ebml/ts_scan of its own -- it opportunistically reads
+      // results.bmff/results.ebml for evidence ONLY when another
+      // applicable analyzer already populated them for this file). Listed
+      // last, after every video analyzer, so the stable, hand-written
+      // analyzer order (TRUST-05) keeps this phase's own family grouped
+      // and appended, never interleaved among Phase 4's.
+      timeline_start_duration_analyzer(),
+      // 05-05-PLAN.md (TIME-01/TIME-04): timeline.dts_monotonic and
+      // timeline.pts_unique -- ContainerFamily::other (applies to every
+      // container; the TS-only unwrap step is a runtime branch inside the
+      // analyzer, not a narrower AnalyzerSpec scope), Pass::packet_scan
+      // only. Listed directly after timeline_start_duration_analyzer() so
+      // this phase's own family stays grouped in the stable, hand-written
+      // analyzer order (TRUST-05).
+      timeline_monotonic_analyzer(),
+      // 05-07-PLAN.md (TIME-02/TIME-04): timeline.discontinuities and
+      // timeline.discontinuities.flagged -- same real-data-first,
+      // not-applicable-sibling-second ordering as the mp4/mkv/ts pairs
+      // above (container_ts_analyzer()/container_ts_not_applicable_analyzer());
+      // here the family-agnostic (ContainerFamily::other) spec is listed
+      // first since it owns every non-TS container AND is the one that
+      // silently no-ops on a TS input, deferring to the ts-scoped sibling.
+      timeline_discontinuities_analyzer(),
+      timeline_discontinuities_ts_analyzer(),
+      // 05-08-PLAN.md (TIME-05): timeline.jitter and timeline.vfr_profile,
+      // both consuming the SAME derive_cadence call -- ContainerFamily::other,
+      // Pass::demux_header + Pass::packet_scan only, listed directly after
+      // this phase's own discontinuities pair so the family stays grouped
+      // in the stable, hand-written analyzer order (TRUST-05).
+      timeline_jitter_vfr_analyzer(),
+      // 05-09-PLAN.md (TIME-06/TIME-09/TIME-10): timeline.av_offset --
+      // listed directly after this phase's own jitter/vfr_profile pair so
+      // the family stays grouped in the stable, hand-written analyzer
+      // order (TRUST-05).
+      timeline_av_sync_analyzer(),
+      // 05-11-PLAN.md (TIME-11): timeline.timecode / timeline.timecode.value
+      // -- listed directly after this phase's own av_offset/av_drift
+      // analyzer so the family stays grouped in the stable, hand-written
+      // analyzer order (TRUST-05). Pass::demux_header only -- no scan of
+      // any kind needed, matching video_color_analyzer()'s own shape.
+      timeline_timecode_analyzer(),
   };
   return registry;
 }
@@ -180,6 +226,16 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   // always be in the union whenever parser_scan is.
   if (union_passes.test(Pass::parser_scan)) {
     union_passes.set(Pass::packet_scan);
+  }
+
+  // 05-20-PLAN.md (Gap 4, TIME-04): on MPEG-TS, packet_scan implies
+  // ts_scan -- the container-DTS post-pass below needs 05-15's own PES
+  // seam (PidStats::pes_timestamps) whenever packets are scanned on a TS
+  // input, even when no applicable analyzer's own scope declared
+  // Pass::ts_scan directly (mirrors the parser_scan-implies-packet_scan
+  // rule just above).
+  if (family == ContainerFamily::ts && union_passes.test(Pass::packet_scan)) {
+    union_passes.set(Pass::ts_scan);
   }
 
   ProbeResults results;
@@ -295,6 +351,99 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     // Same reservation as bmff_scan_error/ebml_scan_error above, mirrored
     // for ts_scan.h's own complete/stop_offset contract.
     return mediadiff::unexpected(ts_scan_error.error());
+  }
+
+  // 05-17-PLAN.md (Gap 2, TIME-02/TIME-03, WINDOWS.md #26): on a
+  // genuinely-wrapping MPEG-TS input, DemuxSession's own primary session
+  // (opened with correct_ts_overflow=0, demux_session.h's own header
+  // comment) reports wrap-corrupted container/per-stream declared
+  // durations. session.reprobe_ts_declared_durations() recovers them from
+  // a second, overflow-corrected open -- run ONLY when the packet scan
+  // itself observed at least one wrap, via 05-16-PLAN.md's own
+  // TimelinePacketView::pts_wrap_events()/dts_wrap_events() (the SAME
+  // wrap-detecting primitive timeline.wrap_events already uses, never a
+  // second wrap detector), so every non-wrapping file -- the common case,
+  // and every non-TS file -- pays nothing for this step. Must run before
+  // any analyzer below reads a declared duration.
+  if (family == ContainerFamily::ts && results.packet_scan.has_value()) {
+    bool any_wrap = false;
+    for (const StreamPacketScan& stream : results.packet_scan->per_stream) {
+      const TimelinePacketView view = make_timeline_packet_view(stream, /*is_ts=*/true);
+      if (view.pts_wrap_events() > 0 || view.dts_wrap_events() > 0) {
+        any_wrap = true;
+        break;
+      }
+    }
+    if (any_wrap) {
+      session.reprobe_ts_declared_durations(utf8_path);
+    }
+  }
+
+  // 05-20-PLAN.md (Gap 4, TIME-04, UD-3): the container-DTS post-pass --
+  // on MPEG-TS, substitute the container's own PES-header DTS truth
+  // (05-15's detail::apply_container_dts) for every stream's dts, once
+  // here, ahead of every analyzer, so every DTS-axis consumer
+  // (timeline.dts_monotonic, size.stream_bitrate, size.peak_bitrate,
+  // derive_cadence's DTS fallback) reads the SAME substituted values --
+  // there is no per-analyzer patch. Never runs on a non-TS input; when
+  // results.packet_scan is unset (Pass::packet_scan not in this file's
+  // union), there is nothing to substitute.
+  if (family == ContainerFamily::ts && results.packet_scan.has_value()) {
+    for (std::size_t i = 0; i < results.packet_scan->per_stream.size(); ++i) {
+      StreamPacketScan& stream = results.packet_scan->per_stream[i];
+      const std::int64_t pid = session.stream_info(static_cast<int>(i)).stream_id;
+      if (!results.ts.has_value() || pid < 0 || pid > 8191) {
+        // No PES seam to join against at all, or a stream_id libavformat
+        // never set to a real PID -- container truth cannot be
+        // established for this stream.
+        stream.dts_source = DtsSource::container_unavailable;
+        continue;
+      }
+      const PidStats& pid_stats = results.ts->pid_stats(static_cast<int>(pid));
+      bool unavailable = pid_stats.pes_timestamps_truncated;
+      if (!unavailable && !results.ts->complete) {
+        for (const PacketRecord& pkt : stream.packets) {
+          if (pkt.pos >= results.ts->stop_offset) {
+            unavailable = true;
+            break;
+          }
+        }
+      }
+      if (unavailable) {
+        // ts_scan's own global PES-record budget was exhausted before
+        // this PID's list, or this stream carries a packet at/after a
+        // partial scan's stop_offset -- container truth is not fully
+        // known for this stream; a DTS-axis consumer skips rather than
+        // judging libavformat's own inferred values (T-05-85).
+        stream.dts_source = DtsSource::container_unavailable;
+        continue;
+      }
+      // 05-REVIEW.md WR-01 fix (orchestrator fix spec point 3): the
+      // stride-aware join -- `results.ts->stride` is the packet size
+      // ts_scan detected (188, 192 or 204), which `apply_container_dts`
+      // needs to translate its own recorded PES offsets (measured in the
+      // FULL container stride) into libavformat's `PacketRecord::pos`
+      // convention (a logical 188-byte-packet-stream offset) before the
+      // join lookup. `joined_mask`, sized to this stream's own packets,
+      // records exactly which ones joined -- timeline.dts_monotonic
+      // (fix spec point 1) judges only those, never a mix of PES-header
+      // truth and libavformat's own inferred read-back.
+      std::vector<bool> joined_mask;
+      const mediadiff::detail::ContainerDtsJoin join = mediadiff::detail::apply_container_dts(
+          stream.packets, pid_stats.pes_timestamps, results.ts->stride, &joined_mask);
+      stream.dts_container_joined = join.joined;
+      stream.dts_unjoined_with_pos = join.unjoined_with_pos;
+      // Fix spec point 2: zero packets joined means container truth could
+      // not be established for this stream at all -- report
+      // container_unavailable (never container_pes with nothing actually
+      // joined) so timeline.dts_monotonic skips through the existing gate
+      // rather than judging libavformat's own inferred values under a
+      // container_pes label.
+      stream.dts_source = mediadiff::detail::resolve_dts_source(join);
+      if (stream.dts_source == DtsSource::container_pes) {
+        stream.dts_joined = std::move(joined_mask);
+      }
+    }
   }
 
   Fingerprint fp;

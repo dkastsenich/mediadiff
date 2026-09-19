@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.1
-current_phase: 5
-current_phase_name: Timeline Analysis
+current_phase: 6
+current_phase_name: Audio Analysis
 status: planning
-stopped_at: Phase 04 complete, ready to plan Phase 5
-last_updated: "2026-09-14T20:42:23.673Z"
-last_activity: 2026-09-14
-last_activity_desc: Phase 04 complete, transitioned to Phase 5
-state_head: b84dffdc2d99253f7f64fec5b1460978e121c22b
+stopped_at: Phase 5 complete, ready to plan Phase 6
+last_updated: "2026-09-19T08:35:46.096Z"
+last_activity: 2026-09-19
+last_activity_desc: Phase 5 complete, transitioned to Phase 6
+state_head: dab73d4ae840d087a0f4d1a9ea1bac4fda9b914c
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 67
-  completed_plans: 67
+  completed_phases: 5
+  total_plans: 92
+  completed_plans: 92
 milestone_name: milestone
 ---
 
@@ -24,14 +24,14 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 04 — Video Analysis
+**Current focus:** Phase 5 — Timeline Analysis
 
 ## Current Position
 
-Phase: 5 — Timeline Analysis
+Phase: 6 — Audio Analysis
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-14 — Phase 04 complete, transitioned to Phase 5
+Last activity: 2026-09-19 — Phase 5 complete, transitioned to Phase 6
 
 Progress: [█████████░] 92%
 
@@ -39,7 +39,7 @@ Progress: [█████████░] 92%
 
 **Velocity:**
 
-- Total plans completed: 43
+- Total plans completed: 68
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -49,6 +49,7 @@ Progress: [█████████░] 92%
 |-------|-------|-------|----------|
 | 03 | 22 | - | - |
 | 04 | 21 | - | - |
+| 5 | 25 | - | - |
 
 **Recent Trend:**
 
@@ -118,6 +119,31 @@ Progress: [█████████░] 92%
 | Phase 04 P19 | ~10 min | 3 tasks | 2 files |
 | Phase 04 P20 | 5h 42m | 3 tasks | 1 files |
 | Phase 04 P21 | multi-session | 3 tasks | 3 files |
+| Phase 05 P01 | ~30min | 3 tasks | 18 files |
+| Phase 05 P02 | 20 min | 2 tasks | 7 files |
+| Phase 05-timeline-analysis P03 | 21min | 3 tasks | 10 files |
+| Phase 05 P04 | 22min | 3 tasks | 15 files |
+| Phase 05 P05 | 40min | 3 tasks | 15 files |
+| Phase 05 P06 | ~50min | 3 tasks | 12 files |
+| Phase 05 P07 | 45min | 3 tasks | 20 files |
+| Phase 05 P08 | ~2h | 3 tasks | 24 files |
+| Phase 05-timeline-analysis P09 | 19min | 3 tasks | 21 files |
+| Phase 05 P10 | this-session | 3 tasks | 10 files |
+| Phase 05 P11 | this-session | 3 tasks | 19 files |
+| Phase 05 P12 | this-session | 3 tasks | 8 files |
+| Phase 05 P13 | 40min | 3 tasks | 3 files |
+| Phase 05 P14 | 55min | 3 tasks | 8 files |
+| Phase 05 P15 | ~50min | 3 tasks | 3 files |
+| Phase 05 P16 | ~35min | 3 tasks | 7 files |
+| Phase 05 P17 | ~15min | 3 tasks | 7 files |
+| Phase 05 P18 | ~25min | 3 tasks | 5 files |
+| Phase 05-timeline-analysis P19 | ~50min | 3 tasks | 9 files |
+| Phase 05-timeline-analysis P21 | multi-session | 3 tasks | 3 files |
+| Phase 05-timeline-analysis P20 | ~45min | 3 tasks | 8 files |
+| Phase 05-timeline-analysis P22 | ~35min | 3 tasks | 4 files |
+| Phase 05 P23 | ~12min | 3 tasks | 6 files |
+| Phase 05-timeline-analysis P24 | 20min | 3 tasks | 0 files |
+| Phase 05-timeline-analysis P25 | 15min | 2 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -263,6 +289,54 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-20: Human Decision 4 route A taken - branch pushed and draft PR #5 opened behind three separate human confirmations; x64-linux listing captured verbatim (run 34776142545), cross-check vs main clean — Only a designated-leg run can produce the 58 provisional hashes; every outward-facing action required its own explicit confirmation and none was auto-approved
 - [Phase 04]: 04-21: Rule 3 deviation — lint clause 3 accepts a zero-entry provisional ledger only when a TRANSCRIBED-FROM-DESIGNATED-LEG marker names run and commit (positive and negative controls verified)
 - [Phase 04]: 04-21: the Windows blocking leg was fixed rather than waived — five root-caused failures (pin-reader CRLF, BtbN purge re-pin to the ffmpeg-pins mirror, GPL-gated tinterlace, GPL-gated interlace, MSVC C4996 getenv) closed by quick tasks; run 34891069554 green on all blocking legs
+- [Phase 05]: timeline.start ms conversion uses checked_mul/checked_div (truncating), matching container.ts.pcr_interval/psi_interval -- an unreduced exact fraction overflowed the compare engine on a real fixture
+- [Phase 05]: DOC-04 declared-set harness (timeline_findings.h) compares per-id OCCURRENCE COUNTS, not set membership, since one cause can legitimately fire the same check id at two scopes
+- [Phase 05]: 05-02: exposed detail::apply_wrap_step/WrapStepResult in unwrap.h beyond the plan's own Artifacts table so the running-offset overflow path (Test 8) is provable at the state-machine level, mirroring ts_scan.h's step_continuity precedent — reaching offset overflow via unwrap_ts_timestamps' top-level loop alone would need ~2^30 real wrap events, an input no unit test can build or iterate
+- [Phase 05]: 05-02: Int128Accum's try_narrow-only public API means a wide (>INT64_MAX) accumulated value is proven by subtracting a hand-computed int64_t-representable offset via add() before narrowing, never by reading internal state directly
+- [Phase 05-timeline-analysis]: 05-03: D-05 grid conformance replaces D-07's mode-interval CFR/VFR rule in derive_cadence, fixing video.frame_rate.measured's shipped false positive on coarse-timebase remuxes (29.97 fps MP4 to Matroska, 29.970 vs 30.303 -> both now measure ~29.97 within 0.1%) — amendment recorded against D-07 in cadence.h's own comment block, never silently replacing it; D-07's fields stay populated for same-timebase consumers
+- [Phase 05-timeline-analysis]: 05-03: conforms_to_grid's round-half-to-even test is computed entirely via cross-multiplication (checked_mul/checked_add/checked_sub), no division anywhere in the grid-conformance path — matches core/rational.h's compare_ticks discipline and the project's rational-everywhere/no-float rule
+- [Phase 05]: Combined Task 1 (timeline.duration triple) and Task 2 (timeline.duration.coherence) into a single commit because both share the same emit_timeline_duration function and checks.def registration, and splitting them would leave an intermediate non-buildable state
+- [Phase 05]: Duration-triple computation is structurally independent of D-03's global origin computation; run_timeline_start_duration falls through to an unconditional per-stream duration loop even when origin_ms or candidates are absent
+- [Phase 05]: Substituted mediadiff compare --json for mediadiff inspect --json -v to prove evidence-field claims, since inspect never renders Measurement::evidence (pre-existing gap documented in 05-01-SUMMARY.md)
+- [Phase 05]: timeline_dts_backward.mp4 (literal plan name) is impossible via ffmpeg's own CLI/muxer for any container; replaced with a two-segment MPEG-TS splice (timeline_dts_backward.ts) plus a 0.5s -itsoffset correction to avoid spurious PTS collisions
+- [Phase 05]: Pinned toolchain ships ffmpeg but not ffprobe; used system ffprobe for read-only fixture verification only (never for committed fixture bytes) -- a real gap against the plan's own precondition text
+- [Phase 05]: correct_ts_overflow=0 in src/probe/demux_session.cpp: libav's generic wrap-correction heuristic silently pre-corrects every 33-bit MPEG-TS wrap before mediadiff's probe layer sees it, so it must be disabled for TIME-02's own doc-04 unwrap rule to ever fire on a real wrap.
+- [Phase 05]: timeline_gap.mp4 uses a PTS-only setts shift, not PTS+DTS together: MP4's own stts box derives declared duration from DTS deltas at mux time, so a combined shift self-heals around the injected gap.
+- [Phase 05]: timeline_ts_wrap.ts is a fresh direct encode with -output_ts_offset, not a -c copy remux of timeline_start_base.mp4, to avoid that pair's own pre-existing collateral dts[1]==dts[0] tie at the start of the file.
+- [Phase 05]: StreamInfo::stream_id added (Rule 2): AVStream::id is set to the TS PID by libavformat's mpegts demuxer, closing the probe-layer seam the discontinuity_indicator attribution join needs.
+- [Phase 05]: kMaxDiscontinuityOffsetsPerPid=256 bounds a crafted every-packet-flagged TS stream; truncation is itself a skip condition ahead of every other TS-specific reason (T-05-28/T-05-29).
+- [Phase 05]: timeline.jitter/timeline.vfr_profile: shared single derive_cadence() call per stream feeds both checks; fixed-point sigma (isqrt_i64, kJitterSigmaFixedShift=16, no floating point); vfr_profile bins keyed on deviation from the stream's own ideal_interval_num/den (D-06)
+- [Phase 05]: NTSC-remux acceptance criterion documented as a real per-container precision limit (not a defect): MP4's native timebase yields an exact-integer ideal (on_grid), Matroska's 1ms timebase does not (one_tick) -- honestly asserted rather than hacked to force a false pass, per FALSE POSITIVES ARE P0
+- [Phase 05]: 05-09: D-10's cross-file basis selection required a Rule 2 extension to src/compare/tol.cpp (generic evidence-shape-gated override, never gated on check.id)
+- [Phase 05]: 05-09: ROADMAP SC4's no-softening case uses unknown.ts vs video_shift.mp4 (empirically demonstrates the property) rather than the plan's assumed base-vs-unknown pairing, which turns out to pass
+- [Phase 05]: D-07's dual gate is delta-based (|candidate_end_delta - baseline_end_delta| >= epsilon), not per-side AND -- the per-side design can never fire against a clean baseline.
+- [Phase 05]: clamp_into_nearest_packet caps containment width at 2x the stream's own median packet duration -- libavformat's gap-absorbing duration heuristic otherwise masks genuine splices.
+- [Phase 05]: Added an ordinal (packet-count-proportional) checkpoint cross-check alongside the time-proportional estimate -- the time-proportional value is provably self-correcting and cannot alone surface a mid-file discontinuity.
+- [Phase 05]: timeline.av_drift.pattern == step was not achieved for any fixture: proven algebraically unreachable under this checkpoint-construction architecture; flagged as a follow-up architecture item, not silently worked around.
+- [Phase 05]: 05-11: drop-frame flag recovered via string punctuation (semicolon vs colon), resolved empirically against the pinned ffmpeg generator before implementation
+- [Phase 05]: 05-11: S12M/GOP timecode sources reported honestly via unreachable_sources evidence, never a separately-triggerable check id
+- [Phase 05]: 05-11: timeline.timecode/timeline.timecode.value scoped Scope::Kind::global (file-level SMPTE origin, mirrors timeline.start's D-03)
+- [Phase 05]: 05-12: PERF_RATCHET_TOLERANCE_PERCENT=2 chosen from real, measured local evidence (5 repeated valgrind --tool=cachegrind runs of both legs against a fixed input produced IDENTICAL instruction counts every time -- zero same-binary run-to-run jitter, confirming D-13's determinism premise empirically)
+- [Phase 05]: 05-12: tests/golden/PERF_BASELINE.txt seeded with a genuinely measured (not invented) LOCAL baseline against the real 600s/1920x1080 D-16 reference file (plain=258117675, full=345365337 instructions, 33% overhead), explicitly marked provisional pending 05-13's designated-leg CI transcription
+- [Phase 05]: 05-13: PERF_BASELINE.txt transcribed from designated leg run 35347845434 (plain=257709408, full=344956981); commit field records PR head a56dd9b, not the ephemeral refs/pull/6/merge SHA c1cbc2d (identical tree)
+- [Phase 05]: 05-14: combined all three tasks into one commit -- av_offset conversion, drift-path reuse, and CR-01 memory-safety fix all touch the same functions in av_sync.cpp/analyzers.h; splitting would leave non-buildable intermediate states (precedented by 05-04)
+- [Phase 05]: 05-14: re-verified the MP4->TS pairs via a scratch git-worktree build of the pre-fix commit (never git stash) rather than assuming the flagged assumption held -- confirmed byte-identical priming.state/av_drift/av_drift.pattern evidence before and after, because the units bug never reaches an unknown-priming side or an MP4 identity-timebase side
+- [Phase 5]: 05-15: PES-parse PID range (0x0010..0x1FFE excluding known PMT PIDs) needed no new exclusion logic beyond the existing pmt_owner_by_pid table
+- [Phase 5]: 05-15: stride join-rate measurement found a constant +4 byte offset shift on ts_192.ts and +16 on ts_204.ts between ts_scan's own PES offset and libavformat's PacketRecord::pos -- recorded, not adapted, per plan A1
+- [Phase 5]: 05-16: Per-axis unwrap in TimelinePacketView calls unwrap_ts_timestamps directly (not detail::unwrap_axis_view) to expose wrap_events, mirroring monotonic.cpp's emit_wrap_events -- still one unwrap implementation
+- [Phase 5]: 05-17: DemuxSession-level declared-duration override (never a call-site parameter) transparently corrects av_sync.cpp's own declared spans (video_span_ticks/audio_span_ticks) on a wrapping TS file with that file untouched -- av_sync.cpp's remaining raw-PTS-read gap (av_offset/av_drift) stays 05-18's scope
+- [Phase 5]: 05-18: av_sync.cpp uses the multi-stream TimelinePacketView builder (cross-stream epoch alignment), jitter_vfr.cpp uses the per-stream builder; the wrap pair's measured complete non-pass set matched flagged assumption A1 exactly (timeline.start global fail, timeline.wrap_events x2 info, timeline.duration.coherence audio info); WINDOWS #26/#27/#30 closed, new entry #31 (av_sync.cpp) recorded and closed, #29 untouched
+- [Phase 5]: [Phase 05]: 05-19: classify_vfr_bin's on_grid/one_tick boundary made quantization-aware (|Q| < ideal_den is on_grid, strictly below one tick) and compute_jitter_sigma re-referenced from the stream's own exact ideal interval rather than the mode -- closes WINDOWS #28's NTSC false positive; integer-ideal streams bin/sigma identically to before (proven by unit test and by the jitter trigger fixture's byte-identical before/after sigma via a scratch pre-change worktree build)
+- [Phase 5]: [Phase 05]: 05-19: the NTSC MP4-to-MKV stream copy now compares clean on timeline.av_offset/jitter/vfr_profile, asserted by one whole-report expect_declared_set landing Gap 3 (05-14) and Gap 5 (this plan) together; the 90kHz-AAC TS-audio timeline.vfr_profile member dropped from test_timeline_start_duration.cpp Test 4 and its test_timeline_av_sync.cpp mirror (171/173 intervals now on_grid, 1.16% remain one_tick, under the 2% dist tolerance)
+- [Phase 05-timeline-analysis]: 05-21: Phase 5's timeline.av_drift.pattern step-vocabulary gap closed by narrow-vocabulary (not adopting D1/D2) -- neither candidate meets soundness criterion (c): D1 never reaches step, D2 reaches step at a step_time provably unrelated to the real join (a terminal-checkpoint artifact of the step-recipe construction). Decided 2026-09-18 by the human at a blocking-human checkpoint.
+- [Phase 05-timeline-analysis]: 05-21: span:declared kept as the checkpoint span source (not span:observed) -- the TS side of the MP4-to-TS pairs reports a false 39 ms linear-drift under span:observed regardless of definition; residual MP4-to-TS timeline.av_drift false finding filed as a follow-up needing a priming/padding-aware span, not closed by this plan.
+- [Phase 05-timeline-analysis]: 05-20: container-DTS post-pass substitutes 05-15's PES-header truth for every MPEG-TS DTS consumer once, in the orchestrator, before any analyzer runs -- closes Gap 4 (timeline.dts_monotonic's fabricated dts tie on the MP4-to-TS tracer pair); dts_backward's genuine splice violations unaffected; dts_monotonic skips insufficient_data when container truth is unavailable
+- [Phase 05-timeline-analysis]: 05-22: narrow-vocabulary implemented -- DriftPattern loses `step`, DriftFit loses `step_time_ms`, fit_drift's plateau-detection branch removed; span:declared unchanged (already shipped). kDriftStepResidualMultiple removed as dead-code cleanup (Rule 1). Proven equivalent to pre-plan binary on 24 fixture pairs except for step_time_ms's absence (scratch git-worktree build of 448361e).
+- [Phase 5]: [Phase 05-timeline-analysis]: 05-23: narrow-vocabulary documentation half of Gap 1 closed -- docs/checks/timeline.av_drift.pattern.md narrowed to three spellings with a new Limits of timestamp-only detection subsection (seamless-trim undetectable until Phase 6, A1's dropout-vs-sync-step ambiguity, which reading the shipped mapping assumes); 05-CHECK-ROSTER.md/ROADMAP SC1/REQUIREMENTS TIME-07 amended in place citing UD-1; checks.def's timeline.av_drift.pattern comment and the sibling timeline.av_drift comment's stale step_time_ms reference both corrected (comment-only diff, verified).
+- [Phase 5]: [Phase 05-timeline-analysis]: 05-23: WINDOWS #32 records the residual MP4-to-TS timeline.av_drift/pattern false finding (libavformat's estimated TS audio duration as checkpoint span, AAC priming/padding with no edit list that neither span source removes) and waives it with the human's 05-21 recorded reason (span:declared kept, priming/padding-aware span filed as follow-up); #26/#27/#28/#30 confirmed fixed, #29 untouched.
+- [Phase 5]: 05-24: no digest transcription and no perf-baseline commit needed — the provisional ledger was already empty and the perf ratchet passed both metrics (plain -0.033%, full +0.254%) well within +/-2% tolerance on the designated leg (run 35389474602, job 105744204442); this is the second CI cross-run confirmation of the 05-13 baseline, with zero commits beyond planning metadata
+- [Phase 5]: 05-25: reply push-all recorded verbatim; push 8ad53f1..d40c040 (docs-only) updates PR #6, redundant for confirmation but keeps branch in sync — Human's explicit choice at the blocking-human checkpoint
+- [Phase 5]: 05-25: arm64-linux WINDOWS.md attribution corrected to #11 (NuGet feed registration exit 1) -- prior 'no mono' claim in 05-24-SUMMARY.md was wrong; Install mono step completes cleanly — Direct log inspection at arm64linux.log:5729-5733 (mono install success) vs :5798 (NuGet feed exit 1)
 
 ### Pending Todos
 
@@ -275,6 +349,7 @@ None yet.
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
 - **RESOLVED by 03-14 (real CI evidence, PR #3, run 33951407521; WINDOWS.md #8 marked fixed).** `scripts/gen_corpus.sh` is now invoked, unconditionally, before `Configure` on every matrix leg. **Correction to the original scope:** the gap covered all 5 legs, not 4 — the Windows leg's `gen_corpus.ps1` generated zero fixtures and ran after `Test`, so the `Test` step ran without media fixtures on every leg, not just Linux/macOS. The real run confirmed the corpus steps execute in the correct order on all five legs; the macOS legs' only failure was `check_corpus.sh`'s own bash-3.2 incompatibility (`mapfile`), fixed same-plan (`91d9d2f`). Full five-leg green is **not yet achieved**: x64-windows-static-md and x64-linux both fail for reasons unrelated to the corpus (WINDOWS.md #9: `ebml_scan.cpp:348` NOMINMAX/`std::max` macro clash on MSVC; WINDOWS.md #10: committed byte-level goldens generated against a different ffmpeg build than CI's installed 9.0.1). arm64-linux's non-blocking `Register vcpkg NuGet feed` credentials failure is WINDOWS.md #11. BUILD-01/BUILD-05/BUILD-06 (below) remain unproven pending a fully green run.
+- WINDOWS.md #26 (open): correct_ts_overflow=0 exposes raw-axis PTS/DTS reads in timeline.start/timeline.duration/timeline.duration.coherence (start_duration.cpp), video.frame_rate.measured (stream_params.cpp), and size.stream_bitrate (size.cpp) on any genuinely-wrapping TS file -- a follow-up plan must extend the shared doc-04-section-1.2 unwrap to these consumers.
 
 ### Quick Tasks Completed
 
@@ -301,6 +376,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-14T20:15:57.218Z
-Stopped at: Phase 04 complete, ready to plan Phase 5
+Last session: 2026-09-18T20:36:29.202Z
+Stopped at: Phase 5 complete, ready to plan Phase 6
 Resume file: None

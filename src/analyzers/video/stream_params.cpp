@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <numeric>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "core/model.h"
 #include "core/rational.h"
 
+#include "analyzers/timeline/unwrap.h"
 #include "probe/cadence.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
@@ -355,18 +357,34 @@ bool declared_measured_agree(std::int64_t declared_num, std::int64_t declared_de
 }
 
 // video.frame_rate.measured: src/probe/cadence.h's shared PURE derivation
-// (D-05) is this check's entire computation -- never a second sweep, never
-// a statistic this file re-derives on its own. D-02: a truncated packet
-// scan skips ahead of the derivation itself, since a rate from an
-// incomplete sweep is a confidently wrong number.
-void emit_frame_rate_measured(const StreamInfo& info, const StreamPacketScan& stream, bool packet_scan_partial,
-                               Scope scope, Fingerprint& fp) {
+// (D-05, amending D-07) is this check's entire computation -- never a
+// second sweep, never a statistic this file re-derives on its own. D-02: a
+// truncated packet scan skips ahead of the derivation itself, since a rate
+// from an incomplete sweep is a confidently wrong number.
+// 05-16-PLAN.md (TIME-01/TIME-02, the assumption-delta `promote` decision):
+// `packets`/`tb` come from the caller's own `TimelinePacketView` (never
+// `StreamPacketScan::packets` directly) -- on MPEG-TS this is the
+// per-stream-unwrapped-and-epoch-aligned axis, on every other container
+// it is the exact same zero-copy span this check always read. `overflowed`
+// is that view's own `overflowed()` -- checked ahead of the partial-scan
+// gate is unnecessary (both degrade to a skip either way), but it is
+// checked before ever calling `derive_cadence` so a wrap that could not be
+// unwrapped never reaches the cadence derivation as a raw, wrapped value.
+void emit_frame_rate_measured(const StreamInfo& info, std::span<const PacketRecord> packets, Rational tb,
+                               bool packet_scan_partial, bool overflowed, Scope scope, Fingerprint& fp) {
   if (packet_scan_partial) {
     push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::partial_scan, fp);
     return;
   }
+  if (overflowed) {
+    // T-05-71: this stream's own TS unwrap (or the cross-stream epoch
+    // shift) could not complete without an int64 overflow -- never a
+    // wrapped or fabricated rate.
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
 
-  const Cadence cadence = derive_cadence(stream.packets, stream.tb);
+  const Cadence cadence = derive_cadence(packets, tb);
   if (cadence.status == CadenceStatus::no_timing_data) {
     push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::no_timing_data, fp);
     return;
@@ -376,16 +394,33 @@ void emit_frame_rate_measured(const StreamInfo& info, const StreamPacketScan& st
     return;
   }
 
-  // rate = tb.den / (tb.num * mode_interval_ticks) -- cross-multiplied via
-  // the checked helpers, never a division, then GCD-reduced so the same
-  // true rate always renders as the identical canonical num/den pair
-  // (byte-identical --json across runs and across files sharing a rate).
-  std::int64_t den = 0;
-  if (!detail::checked_mul(cadence.tb.num, cadence.mode_interval_ticks, &den) || den <= 0) {
+  // D-05 (05-03-PLAN.md Task 3): rate = tb.den * interval_count /
+  // (tb.num * span_ticks) -- derived from the file's own SPAN, never the
+  // mode interval. This is the fix for the shipped false positive: on a
+  // coarse timebase (Matroska's 1 ms), a genuinely constant cadence's MODE
+  // interval reads a different rate than the true one, because the
+  // rounding sequence's most frequent value is not its average. The span
+  // basis makes the same content measure the same rate regardless of which
+  // timebase stored it. Cross-multiplied via the checked helpers, never a
+  // division, then GCD-reduced so the same true rate always renders as the
+  // identical canonical num/den pair (byte-identical --json across runs and
+  // across files sharing a rate). span_ticks == 0 (every usable timestamp
+  // identical) has no meaningful rate -- degrades to insufficient_data
+  // rather than a fabricated infinite/zero value.
+  if (cadence.span_ticks <= 0) {
     push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
     return;
   }
-  std::int64_t num = cadence.tb.den;
+  std::int64_t den = 0;
+  if (!detail::checked_mul(cadence.tb.num, cadence.span_ticks, &den) || den <= 0) {
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+  std::int64_t num = 0;
+  if (!detail::checked_mul(cadence.tb.den, cadence.interval_count, &num)) {
+    push_skip(CheckId::video_frame_rate_measured, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
   const std::int64_t divisor = std::gcd(num, den);
   if (divisor > 1) {
     num /= divisor;
@@ -401,9 +436,18 @@ void emit_frame_rate_measured(const StreamInfo& info, const StreamPacketScan& st
   measurement.value = RationalValue{num, den, cadence.tb};
   measurement.evidence = nlohmann::ordered_json{
       {"axis", cadence.axis == CadenceAxis::pts ? "pts" : "dts"},
+      // D-07's own fields: kept, unchanged meaning (a same-timebase
+      // consumer reading them is unaffected by the D-05 amendment).
       {"mode_interval_ticks", cadence.mode_interval_ticks},
       {"matching_intervals", cadence.matching_intervals},
       {"total_intervals", cadence.total_intervals},
+      // D-05's own fields: the span basis the reported rate is now derived
+      // from, and the grid-conformance counts that decide `class` below.
+      {"span_ticks", cadence.span_ticks},
+      {"ideal_interval_num", cadence.ideal_interval_num},
+      {"ideal_interval_den", cadence.ideal_interval_den},
+      {"conforming_timestamps", cadence.conforming_timestamps},
+      {"considered_timestamps", cadence.considered_timestamps},
       {"class", cadence.klass == CadenceClass::cfr ? "cfr" : "vfr"},
       {"declared_agrees", declared_agrees},
   };
@@ -431,6 +475,13 @@ void run_video_stream_params(const ProbeResults& results, Fingerprint& fp) {
 
   const bool frame_count_partial = packet_scan.partial || (parser_scan != nullptr && parser_scan->partial);
 
+  // 05-16-PLAN.md: video.frame_rate.measured reads through the SAME
+  // promoted TimelinePacketView start_duration.cpp already builds --
+  // never a second unwrap implementation, and never a raw wrapped read on
+  // MPEG-TS.
+  const bool is_ts = container_family_from_format_name(demux.format_name()) == ContainerFamily::ts;
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(packet_scan, is_ts);
+
   const std::vector<std::optional<Scope>> scopes = compute_stream_scopes(demux, packet_scan.per_stream.size());
 
   for (std::size_t i = 0; i < scopes.size(); ++i) {
@@ -449,18 +500,20 @@ void run_video_stream_params(const ProbeResults& results, Fingerprint& fp) {
     emit_sar_conflict(info, scope, fp);
     emit_frame_rate_declared(info, scope, fp);
 
-    if (i >= packet_scan.per_stream.size()) {
+    if (i >= packet_scan.per_stream.size() || i >= views.size()) {
       // Defensive only -- packet_scan.per_stream is sized from
-      // demux.stream_count() by construction (probe/packet_scan.cpp).
+      // demux.stream_count() by construction (probe/packet_scan.cpp), and
+      // views is index-aligned with it by construction above.
       continue;
     }
 
     // video.frame_rate.measured depends ONLY on the packet scan (D-05's
-    // shared derivation reads StreamPacketScan::packets directly, never
+    // shared derivation reads the view's own packets, never
     // ParserScanResult) -- gated on packet_scan.partial alone, independent
     // of frame_count_partial below (which also folds in the parser scan's
     // own completeness, a dependency this check does not have).
-    emit_frame_rate_measured(info, packet_scan.per_stream[i], packet_scan.partial, scope, fp);
+    emit_frame_rate_measured(info, views[i].packets(), packet_scan.per_stream[i].tb, packet_scan.partial,
+                              views[i].overflowed(), scope, fp);
 
     if (frame_count_partial) {
       // Inline rather than push_skip (which leaves evidence unset): the

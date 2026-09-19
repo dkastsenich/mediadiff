@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "compare/engine.h"
@@ -101,26 +102,49 @@ TEST_CASE("semantics: dist boundary -- worst-bin delta exactly at tolerance pass
 // CR-03 regression: baseline_mag/candidate_mag's num/den are int64
 // magnitudes read straight off an (in principle untrusted) snapshot --
 // CR-01 validates their TYPE at read time, never their MAGNITUDE. A
-// near-INT64_MAX num crossed with a den > 1 must be REJECTED (Status::error,
-// "cannot determine a verdict") rather than silently overflowing into an
-// arbitrary pass/warn/fail via UB.
-TEST_CASE("semantics: CR-03 tol comparator returns Status::error on cross-multiplication overflow, never a "
-          "fabricated verdict",
+// near-INT64_MAX num crossed with a den > 1 must never be silently
+// overflowed into an arbitrary pass/warn/fail via UB. Until debug session
+// test-898-ci-nonreproducible the comparator honored that by returning
+// Status::error -- which real media also reached (timeline.av_drift's own
+// rates). It now computes every cross-product exactly (core/exact_int.h),
+// so the SAME inputs get the mathematically exact verdict: still never a
+// wrapped one, and no longer an error.
+TEST_CASE("semantics: CR-03 tol comparator returns the exact verdict when num*den cross-products exceed int64_t, "
+          "never an error and never a wrapped verdict",
           "[semantics]") {
   constexpr std::int64_t kMax = std::numeric_limits<std::int64_t>::max();
-  // den=2/den=3 guarantees the very first cross-multiplication
-  // (candidate.num * baseline.den) overflows: kMax * 2 cannot fit in
-  // int64_t.
-  const RationalValue baseline{kMax, 2, mediadiff::Rational{1, 1}};
-  const RationalValue candidate{kMax, 3, mediadiff::Rational{1, 1}};
-  const Finding f = single_finding("t.tol_ms", mediadiff::Value{baseline}, mediadiff::Value{candidate});
-  CHECK(f.status == Status::error);
+  // den=2/den=3: the very first cross-multiplication (candidate.num *
+  // baseline.den == kMax * 2) cannot fit in int64_t. Exact delta:
+  // kMax/3 - kMax/2 == -kMax/6 ms, far beyond t.tol_ms's 5ms fail line.
+  {
+    const RationalValue baseline{kMax, 2, mediadiff::Rational{1, 1}};
+    const RationalValue candidate{kMax, 3, mediadiff::Rational{1, 1}};
+    const Finding f = single_finding("t.tol_ms", mediadiff::Value{baseline}, mediadiff::Value{candidate});
+    CHECK(f.status == Status::fail);
+    CHECK(f.message.find("9223372036854775807/6ms") != std::string::npos);
+  }
+
+  // Boundary neighbors of t.tol_ms's "3ms,5ms" zones at a magnitude where
+  // EVERY cross-product overflows int64_t (num ~ kMax, den 2): the delta
+  // is (kMax - baseline_num)/2 ms exactly, so a one-unit step in the
+  // baseline numerator is a half-millisecond step across each line.
+  const RationalValue candidate{kMax, 2, mediadiff::Rational{1, 1}};
+  const auto status_for_baseline_num = [&](std::int64_t baseline_num) {
+    const RationalValue baseline{baseline_num, 2, mediadiff::Rational{1, 1}};
+    return single_finding("t.tol_ms", mediadiff::Value{baseline}, mediadiff::Value{candidate}).status;
+  };
+  CHECK(status_for_baseline_num(kMax) == Status::pass);       // 0ms
+  CHECK(status_for_baseline_num(kMax - 6) == Status::pass);   // 3ms, exactly at the warn line
+  CHECK(status_for_baseline_num(kMax - 7) == Status::warn);   // 3.5ms
+  CHECK(status_for_baseline_num(kMax - 10) == Status::warn);  // 5ms, exactly at the fail line
+  CHECK(status_for_baseline_num(kMax - 11) == Status::fail);  // 5.5ms
 }
 
 // CR-03 regression: compare_dist's own bin-total accumulation and
 // cross-multiplication are equally reachable from an untrusted histogram's
-// int64 bin counts -- same "reject, never wrap" contract as compare_tol
-// above.
+// int64 bin counts -- the "never wrap" contract compare_tol above also
+// honors (compare_dist still honors it by rejecting with Status::error;
+// compare_tol now does so by computing exactly).
 TEST_CASE("semantics: CR-03 dist comparator returns Status::error on bin-total overflow, never a fabricated "
           "verdict",
           "[semantics]") {

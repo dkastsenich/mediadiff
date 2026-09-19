@@ -123,6 +123,29 @@ struct PacketRecord {
 // what keeps the two from silently drifting apart.
 inline constexpr int kPacketFlagKeyframe = 0x0001;
 
+// 05-20-PLAN.md (Gap 4, TIME-04, UD-3): which source produced this
+// stream's own `packets[*].dts` values, set once by the orchestrator's
+// container-DTS post-pass (src/probe/orchestrator.cpp) -- never inferred
+// per-analyzer. `demuxer` (the default) means libavformat's own dts, as
+// PacketScan read it verbatim: every non-TS container, and any MPEG-TS
+// stream whose container truth could not be established. `container_pes`
+// means every joined packet's dts now holds the value
+// detail::apply_container_dts (src/probe/ts_scan.h) read directly from
+// the stream's own PES headers (ISO/IEC 13818-1 section 2.4.3.7), never
+// libavformat's read-back inference. `container_unavailable` means this
+// MPEG-TS stream's PES timestamps could not be trusted for a substitution
+// (ts_scan's own global PES-record budget was exhausted before this
+// stream's list, or a packet's own byte offset falls at or beyond a
+// partial scan's `stop_offset`) -- `dts` stays whatever the demuxer
+// reported, and a DTS-axis consumer on this stream skips with
+// `insufficient_data` rather than judging libavformat's own inferred
+// value (05-VERIFICATION.md Gap 4, T-05-85's mitigation).
+enum class DtsSource {
+  demuxer,
+  container_pes,
+  container_unavailable,
+};
+
 // One stream's own packet array plus its byte total and timebase. `tb` is
 // held ONCE per stream, not once per record -- every packet in a stream
 // shares its stream's timebase, and per-record duplication would
@@ -144,6 +167,68 @@ struct StreamPacketScan {
   std::int64_t byte_total = 0;
   Rational tb{0, 1};
   bool partial = false;
+
+  // D-09 (05-09-PLAN.md, TIME-06): the FIRST packet actually accepted into
+  // `packets` for this stream is inspected for `AV_PKT_DATA_SKIP_SAMPLES`
+  // side data, captured INSIDE this existing sweep -- never a second
+  // av_read_frame call, never a decode. `std::optional` distinguishes "the
+  // first packet carried no such side data" (std::nullopt) from "the side
+  // data was present and reported zero" (a real, present 0) -- the same
+  // absent-vs-zero reasoning `EbmlTrack::codec_delay_ns`
+  // (src/probe/ebml_scan.h) and `PidStats::first_cc_error_offset`
+  // (src/probe/ts_scan.h) already establish for this project's own sibling
+  // fields. Only the stream's OWN first packet is ever inspected -- a
+  // later packet carrying `AV_PKT_DATA_SKIP_SAMPLES` never overwrites this
+  // value, whether or not the first packet itself carried the side data.
+  // Exists because `PacketRecord` carries no side data of any kind today,
+  // and `timeline.av_offset`'s priming resolver needs this signal without
+  // opening a decode pass; Phase 6's `audio.priming` (`AUDIO-04`) is this
+  // field's designed second consumer.
+  std::optional<std::int64_t> first_packet_skip_samples;
+
+  // D-09: `codecpar->initial_padding` verbatim, surfaced through this
+  // existing per-stream scan seam (populated alongside `tb` above, from
+  // the SAME already-open `AVFormatContext` -- no new libav call site) so
+  // `timeline.av_offset`'s priming resolver never needs its own libav
+  // include. A plain `std::int64_t`, not `std::optional`: libav's own
+  // `codecpar->initial_padding` is always a real reported int (0 by
+  // default) -- there is no distinct "absent" state to preserve here, only
+  // "declared, and it says N" (05-RESEARCH.md Pattern 3: MP4's own
+  // `initial_padding` is a real, reported 0, not an absence).
+  std::int64_t initial_padding = 0;
+
+  // 05-20-PLAN.md (Gap 4, TIME-04): which source this stream's own
+  // `packets[*].dts` values currently hold, set once by the
+  // orchestrator's container-DTS post-pass. `demuxer` by default --
+  // every non-TS stream, and any MPEG-TS stream for which no
+  // substitution was attempted or possible, keeps this default
+  // untouched.
+  DtsSource dts_source = DtsSource::demuxer;
+
+  // 05-20-PLAN.md: detail::apply_container_dts's own ContainerDtsJoin
+  // counters (src/probe/ts_scan.h), copied here once the orchestrator's
+  // post-pass runs -- how many of this stream's packets had their dts
+  // replaced by container truth (`dts_container_joined`), and how many
+  // carried a non-negative `pos` but did not join any recorded PES
+  // timestamp (`dts_unjoined_with_pos`). Both stay 0 when `dts_source`
+  // is not `container_pes`.
+  std::int64_t dts_container_joined = 0;
+  std::int64_t dts_unjoined_with_pos = 0;
+
+  // 05-REVIEW.md WR-01 fix (orchestrator fix spec point 1): per-packet
+  // join outcome for this stream's own `packets[*].dts` substitution --
+  // index i is `true` iff `packets[i].dts` was replaced by PES-header
+  // truth (a join), `false` otherwise (a negative-`pos` split-out frame,
+  // or a non-negative-`pos` packet that did not match any recorded PES
+  // timestamp). Sized to `packets.size()` and populated ONLY when
+  // `dts_source` is `container_pes` (empty otherwise, mirroring
+  // `dts_container_joined`/`dts_unjoined_with_pos`'s own "both stay 0
+  // unless container_pes" contract). `timeline.dts_monotonic` is the sole
+  // consumer: it judges only the packets this marks joined, so a mixed
+  // joined/unjoined DTS axis on one stream can never produce a spurious
+  // violation at the boundary between PES-header truth and libavformat's
+  // own inferred read-back.
+  std::vector<bool> dts_joined;
 };
 
 // The whole scan's result: one StreamPacketScan per AVStream (doc 02

@@ -59,3 +59,19 @@ video.hdr.cll.avg  severity=fail  tolerance=5/1 %
 video.hdr.dovi  severity=fail  tolerance=<none>
 video.hdr.dovi.config  severity=fail  tolerance=<none>
 video.hdr.coherence  severity=info  tolerance=<none>
+timeline.start  severity=fail  tolerance=20/1 ms (warn 5/1)
+timeline.duration  severity=fail  tolerance=40/1 ms (warn 20/1)
+timeline.duration.coherence  severity=info  tolerance=<none>
+timeline.dts_monotonic  severity=fail  tolerance=0/1 bytes
+timeline.pts_unique  severity=fail  tolerance=0/1 bytes
+timeline.gaps  severity=fail  tolerance=<none>
+timeline.wrap_events  severity=info  tolerance=<none>
+timeline.discontinuities  severity=fail  tolerance=<none>
+timeline.discontinuities.flagged  severity=info  tolerance=<none>
+timeline.jitter  severity=fail  tolerance=20/10 ms (warn 5/10)
+timeline.vfr_profile  severity=warn  tolerance=2/1 %
+timeline.av_offset  severity=fail  tolerance=20/1 ms (warn 5/1)
+timeline.av_drift  severity=fail  tolerance=2/10 ms/min
+timeline.av_drift.pattern  severity=fail  tolerance=<none>
+timeline.timecode  severity=info  tolerance=<none>
+timeline.timecode.value  severity=info  tolerance=<none>

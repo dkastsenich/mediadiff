@@ -70,6 +70,53 @@ add_executable(mediadiff_integration_tests
   # verified count must equal the registry's own check count
   # (03-11-PLAN.md Task 4).
   test_doc03_coverage.cpp
+  # TIME-01/TIME-03, DOC-04 (05-01-PLAN.md Task 3): the shared DOC-04
+  # no-others harness (tests/integration/timeline_findings.h) proven
+  # against a synthetic report and against the timeline.start tracer
+  # pair -- the MP4-to-TS remux declares its complete non-pass finding
+  # set (with a causal reason per member beyond timeline.start itself)
+  # and count_non_pass matches that declared set's size exactly.
+  test_timeline_start_duration.cpp
+  # TIME-01/TIME-04, DOC-04 (05-05-PLAN.md Task 3): the DOC-04 no-others
+  # harness proven against this plan's own two crafted fixtures --
+  # timeline_dts_backward.ts (a two-segment TS splice, one
+  # dts_monotonic violation per stream) and timeline_pts_dupe.mp4 (a
+  # setts-crafted single duplicate PTS pair) -- plus the shared
+  # byte-identical clean pair.
+  test_timeline_structure.cpp
+  # TIME-05, DOC-04 (05-08-PLAN.md Task 3): the DOC-04 no-others harness
+  # proven against this plan's own two crafted fixtures -- timeline_jitter.mp4
+  # (a single interior frame shifted forward by exactly one whole frame,
+  # staying inside the original PTS range so the stream remains
+  # unambiguously CFR) and timeline_vfr.mp4 (the LGPL-clean `select`+
+  # `-fps_mode vfr` thinning chain video_vfr.mp4 already proves classifies
+  # VFR) -- plus the NTSC remux pair's own timeline.vfr_profile comparison
+  # and a dedicated ROADMAP SC3 case.
+  test_timeline_jitter.cpp
+  # TIME-06/TIME-09/TIME-10, DOC-04 (05-09-PLAN.md Task 3): the DOC-04
+  # no-others harness proven against this plan's own two crafted fixtures
+  # -- timeline_avoffset_video_shift.mp4 (the RECOVERABLE arm: the SAME
+  # testsrc2/sine sources as timeline_start_base.mp4 with `-itsoffset`
+  # applied to the VIDEO input only, per D-12, so the audio edit list and
+  # therefore its skip_samples priming signal survive) and
+  # timeline_avoffset_unknown.ts (the UNKNOWN arm: a `-c copy` MPEG-TS
+  # remux of timeline_start_base.mp4, structurally identical to
+  # timeline_start_shift.ts's own recipe, whose audio stream carries no
+  # AV_PKT_DATA_SKIP_SAMPLES side data at all) -- plus the shared
+  # byte-identical clean pair and a dedicated ROADMAP SC4 case proving
+  # unknown priming gates at the check's normal severity rather than
+  # being demoted (D-11).
+  test_timeline_av_sync.cpp
+  # TIME-11, DOC-04 (05-11-PLAN.md Task 3): the DOC-04 no-others harness
+  # proven against this plan's own crafted fixtures -- timeline_tc_ndf.mp4/
+  # timeline_tc_ndf_shifted.mp4 (the timeline.timecode.value trigger pair,
+  # differing only in the tmcd track's own start timecode) and
+  # timeline_tc_ndf.mp4/timeline_tc_absent.mp4 (the timeline.timecode
+  # presence trigger pair, differing only in whether a tmcd track exists
+  # at all) -- plus the byte-identical clean pair and a dedicated ROADMAP
+  # SC5 case proving presence, the exact SMPTE value, and the drop-frame
+  # flag are all visible in one finding.
+  test_timeline_timecode.cpp
   # 04-08-PLAN.md Task 3 (VIDEO-03): the phase's own signature test made
   # into a counting assertion -- yuvj420p vs yuv420p-limited-range
   # produces EXACTLY ONE non-pass finding (video.color.range) across the

@@ -20,6 +20,7 @@
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
+#include "analyzers/timeline/unwrap.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
 
@@ -187,10 +188,25 @@ void emit_overhead(const DemuxSession& demux, const PacketScanResult& scan, Fing
 // function's own comment for why AV_NOPTS_VALUE is excluded rather than
 // normalized to 0. Never `estimated` (D-03): this is a directly measured
 // value, not derived from any estimate.
-void emit_stream_bitrate(const StreamPacketScan& stream, Scope scope, Fingerprint& fp) {
+// 05-16-PLAN.md (TIME-01/TIME-02, the assumption-delta `promote`
+// decision): `packets`/`tb` come from the caller's own
+// `TimelinePacketView`, not `StreamPacketScan::packets` directly --
+// `byte_total` and `partial` (handled by the caller, see
+// emit_partial_scan_skips/run_size) still come from the `StreamPacketScan`
+// itself, since neither is a timestamp. `overflowed` is checked first: a
+// stream whose TS unwrap (or the cross-stream epoch shift) could not
+// complete never reaches the DTS min/max walk with a raw, wrapped value
+// (T-05-71).
+void emit_stream_bitrate(std::span<const PacketRecord> packets, std::int64_t byte_total, Rational tb, bool overflowed,
+                          Scope scope, Fingerprint& fp) {
+  if (overflowed) {
+    push_skip(CheckId::size_stream_bitrate, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+
   std::optional<std::int64_t> first_dts;
   std::optional<std::int64_t> last_dts;
-  for (const PacketRecord& record : stream.packets) {
+  for (const PacketRecord& record : packets) {
     if (record.dts == INT64_MIN) {
       continue;
     }
@@ -207,7 +223,7 @@ void emit_stream_bitrate(const StreamPacketScan& stream, Scope scope, Fingerprin
   }
 
   std::int64_t span = 0;
-  if (!detail::checked_sub(*last_dts, *first_dts, &span) || span <= 0 || stream.tb.num <= 0 || stream.tb.den <= 0) {
+  if (!detail::checked_sub(*last_dts, *first_dts, &span) || span <= 0 || tb.num <= 0 || tb.den <= 0) {
     push_skip(CheckId::size_stream_bitrate, scope, SkipReason::insufficient_data, fp);
     return;
   }
@@ -215,8 +231,8 @@ void emit_stream_bitrate(const StreamPacketScan& stream, Scope scope, Fingerprin
   std::int64_t bits = 0;
   std::int64_t numerator = 0;
   std::int64_t denominator = 0;
-  if (!detail::checked_mul(stream.byte_total, 8, &bits) || !detail::checked_mul(bits, stream.tb.den, &numerator) ||
-      !detail::checked_mul(span, stream.tb.num, &denominator) || denominator == 0) {
+  if (!detail::checked_mul(byte_total, 8, &bits) || !detail::checked_mul(bits, tb.den, &numerator) ||
+      !detail::checked_mul(span, tb.num, &denominator) || denominator == 0) {
     push_skip(CheckId::size_stream_bitrate, scope, SkipReason::insufficient_data, fp);
     return;
   }
@@ -224,17 +240,24 @@ void emit_stream_bitrate(const StreamPacketScan& stream, Scope scope, Fingerprin
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::size_stream_bitrate);
   measurement.scope = scope;
-  measurement.value = RationalValue{numerator, denominator, stream.tb};
-  measurement.evidence =
-      nlohmann::ordered_json{{"byte_total", stream.byte_total}, {"dts_span_ticks", span}};
+  measurement.value = RationalValue{numerator, denominator, tb};
+  measurement.evidence = nlohmann::ordered_json{{"byte_total", byte_total}, {"dts_span_ticks", span}};
   fp.measurements.push_back(std::move(measurement));
 }
 
 // size.peak_bitrate: wraps detail::compute_peak_window (analyzers.h),
 // doubling the winning window's byte sum into bits and emitting the exact
-// RationalValue the tol comparator's cross-multiplication needs.
-void emit_peak_bitrate(const StreamPacketScan& stream, Scope scope, Fingerprint& fp) {
-  const detail::WindowResult result = detail::compute_peak_window(stream.packets, stream.tb);
+// RationalValue the tol comparator's cross-multiplication needs. `packets`/
+// `tb` come from the caller's own `TimelinePacketView`, same rationale as
+// emit_stream_bitrate above.
+void emit_peak_bitrate(std::span<const PacketRecord> packets, Rational tb, bool overflowed, Scope scope,
+                        Fingerprint& fp) {
+  if (overflowed) {
+    push_skip(CheckId::size_peak_bitrate, scope, SkipReason::insufficient_data, fp);
+    return;
+  }
+
+  const detail::WindowResult result = detail::compute_peak_window(packets, tb);
   if (result.status == detail::WindowStatus::no_timing_data) {
     push_skip(CheckId::size_peak_bitrate, scope, SkipReason::no_timing_data, fp);
     return;
@@ -253,7 +276,7 @@ void emit_peak_bitrate(const StreamPacketScan& stream, Scope scope, Fingerprint&
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::size_peak_bitrate);
   measurement.scope = scope;
-  measurement.value = RationalValue{peak_bits, 1, stream.tb};
+  measurement.value = RationalValue{peak_bits, 1, tb};
   measurement.evidence = nlohmann::ordered_json{{"peak_window_bytes", result.peak_bytes}};
   fp.measurements.push_back(std::move(measurement));
 }
@@ -321,13 +344,21 @@ void run_size(const ProbeResults& results, Fingerprint& fp) {
 
   emit_overhead(demux, scan, fp);
 
+  // 05-16-PLAN.md: size.stream_bitrate/size.peak_bitrate read through the
+  // SAME promoted TimelinePacketView start_duration.cpp/stream_params.cpp
+  // already build -- never a second unwrap implementation, and never a
+  // raw wrapped DTS read on MPEG-TS.
+  const bool is_ts = container_family_from_format_name(demux.format_name()) == ContainerFamily::ts;
+  const std::vector<TimelinePacketView> views = make_timeline_packet_views(scan, is_ts);
+
   const std::vector<std::optional<Scope>> scopes = compute_stream_scopes(demux, scan.per_stream.size());
   for (std::size_t i = 0; i < scan.per_stream.size(); ++i) {
-    if (i >= scopes.size() || !scopes[i].has_value()) {
+    if (i >= scopes.size() || !scopes[i].has_value() || i >= views.size()) {
       continue;
     }
-    emit_stream_bitrate(scan.per_stream[i], *scopes[i], fp);
-    emit_peak_bitrate(scan.per_stream[i], *scopes[i], fp);
+    emit_stream_bitrate(views[i].packets(), scan.per_stream[i].byte_total, scan.per_stream[i].tb,
+                         views[i].overflowed(), *scopes[i], fp);
+    emit_peak_bitrate(views[i].packets(), scan.per_stream[i].tb, views[i].overflowed(), *scopes[i], fp);
   }
 }
 

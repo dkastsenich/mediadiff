@@ -1040,3 +1040,478 @@ unit = "none"
 value_kind = "string"
 severity = "info"
 flagged_values = ["hdr_meta_sdr_transfer", "pq_without_mdcv"]
+
+# 05-01-PLAN.md (TIME-01/TIME-03), src/analyzers/timeline/start_duration.cpp
+# -- this phase's tracer, approved at 05-CHECK-ROSTER.md. D-03: ONE
+# Scope{Kind::global} measurement holds the file's earliest presentation
+# time; ONE Scope{Kind::video/audio/subtitle/data} measurement per
+# timestamped stream holds that stream's own first presentation PTS MINUS
+# the global origin -- never a per-stream absolute PTS. This is what makes
+# a whole-file shift (an MP4 stream-copied to MPEG-TS, which the TS muxer
+# delays by its own 1.4s default) report ONE global finding instead of one
+# per stream, for one cause. Skip-reason vocabulary, in priority order:
+# `partial_scan` (Phase 3 D-02, ahead of everything -- a truncated
+# PacketScan makes even the GLOBAL scope's own claim of "earliest" provably
+# wrong), `no_timing_data` (a stream, or the whole file, with no real PTS
+# at all -- TIME-01's `AV_NOPTS_VALUE`-as-`Absent{}` requirement), then
+# `insufficient_data` (an overflow anywhere in the checked cross-timebase
+# arithmetic -- T-05-01). `strict_bitexact`/`remux`'s tighter 1ms tolerance
+# reflects that a byte-exact re-encode or a stream-copy remux should move
+# the origin by nothing at all.
+[[check]]
+id = "timeline.start"
+group = "timeline"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "5ms,20ms"
+
+[check.profile_tolerance]
+strict_bitexact = "1ms"
+remux = "1ms"
+
+# 05-04-PLAN.md (TIME-01/TIME-03), src/analyzers/timeline/start_duration.cpp
+# -- the duration TRIPLE: container-declared (AVFormatContext->duration),
+# stream-declared (AVStream->duration), computed (last presentation end -
+# first PTS, doc 04 section 1.3's own reconstructed-packet-duration rule).
+# Compared value is the COMPUTED member; the other two, plus
+# `duration_source` (declared/reconstructed) and `absent_members`, ride in
+# evidence -- an absent member is reported absent, NEVER substituted for
+# another (T-05-13/T-05-16). **Deviation from doc 04's literal "±1 frame"**
+# (05-CHECK-ROSTER.md): 40ms (one frame at 25fps) is a FIXED named
+# constant -- a frame-derived threshold is frame-rate-dependent, ruled out
+# by D-08's data-dependent-threshold prohibition. Skip-reason vocabulary,
+# same priority order as timeline.start: `partial_scan` first (Phase 3
+# D-02), then `no_timing_data` (a stream with no real PTS at all), then
+# `insufficient_data` (an overflow anywhere in the reconstruction/rescale
+# arithmetic, T-05-14).
+[[check]]
+id = "timeline.duration"
+group = "timeline"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "20ms,40ms"
+
+# 05-04-PLAN.md (TIME-03, D-08, Phase 4 D-10's precedent), src/analyzers/
+# timeline/start_duration.cpp -- the duration triple's OWN internal
+# cross-check: whether the three members (container-declared,
+# stream-declared, computed) agree with each other, within
+# kDurationIncoherenceThresholdMs (40ms, the SAME "one frame at 25fps"
+# constant timeline.duration's own tolerance uses). `state` semantic
+# (mirrors video.hdr.coherence exactly, src/compare/state.cpp): fires
+# whenever EITHER side's value is one of the three flagged pairs, so two
+# files that SHARE an incoherence still report it rather than comparing
+# away to `pass` under `exact`'s baseline-equality rule -- there is no
+# delta to hang it on, and a shared defect is still a defect. `info`
+# severity, and DELIBERATELY no [check.profile_severity]/
+# [check.profile_tolerance] override of any kind, in ANY profile -- this
+# check never gates the exit code, by design, not by omission (mirrors
+# video.hdr.coherence's own identical precedent). Only a pair whose BOTH
+# members are present is testable (T-05-13/T-05-16); an untestable or
+# all-agreeing case emits the unflagged value, "coherent".
+[[check]]
+id = "timeline.duration.coherence"
+group = "timeline"
+semantic = "state"
+unit = "none"
+value_kind = "string"
+severity = "info"
+flagged_values = ["container_vs_stream", "container_vs_computed", "stream_vs_computed"]
+
+# 05-05-PLAN.md (TIME-01/TIME-04), src/analyzers/timeline/monotonic.cpp --
+# the count of `dts[i] <= dts[i-1]` violations per stream, in READ order,
+# AFTER the 33-bit TS unwrap (05-02-PLAN.md) on a ContainerFamily::ts
+# input. Packets carrying AV_NOPTS_VALUE on the DTS axis are EXCLUDED from
+# the count, never coerced to a value -- a stream of entirely-absent DTS
+# reports `skipped:no_timing_data`, never a fabricated `0` clean bill of
+# health (TIME-01). **Deviation from doc 04's literal "count exact 0"**
+# (05-CHECK-ROSTER.md): `tol`/`count` with tolerance `"0"`, not `exact` --
+# a zero-magnitude absolute tolerance behaves identically to exact equality
+# while leaving `--tol timeline.dts_monotonic=2` meaningful for a pipeline
+# with known, accepted noise (mirrors Phase 4's `video.frame_count`
+# "0frames" precedent). Runs on every stream carrying timestamps EXCEPT
+# `Scope::Kind::subtitle` (05-CHECK-ROSTER.md's own scope decision).
+# Skip-reason vocabulary, in priority order: `partial_scan` (Phase 3 D-02,
+# ahead of everything), then `no_timing_data` (no real DTS at all on this
+# stream), then `insufficient_data` (the TS unwrap overflowed, T-05-18).
+[[check]]
+id = "timeline.dts_monotonic"
+group = "timeline"
+semantic = "tol"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+tolerance = "0"
+
+# 05-05-PLAN.md (TIME-01/TIME-04), src/analyzers/timeline/monotonic.cpp --
+# the count of duplicate presentation PTS values per stream, found by
+# sorting a LOCAL index view by PTS (never read order) and counting
+# adjacent equal values. Same sentinel-exclusion, TS-unwrap-first and
+# subtitle-scope-exclusion rules as `timeline.dts_monotonic` above, and the
+# same **deviation from doc 04's literal "count exact 0"**: `tol`/`count`
+# with tolerance `"0"`, not `exact`, for the identical
+# zero-magnitude-tolerance reasoning. Same skip-reason priority order as
+# `timeline.dts_monotonic` above.
+[[check]]
+id = "timeline.pts_unique"
+group = "timeline"
+semantic = "tol"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+tolerance = "0"
+
+# 05-06-PLAN.md (TIME-04, D-08), src/analyzers/timeline/monotonic.cpp --
+# spans where the interval between two consecutive PRESENTATION-order
+# timestamps strictly exceeds `max(kGapNominalMultiplier x nominal,
+# declared_duration + kGapDeclaredDurationSlackTicks)`. `nominal` comes
+# from the ONE shared `derive_cadence` mode interval (src/probe/cadence.h,
+# PROBE-10) -- never a second interval computation. `declared_duration` is
+# the preceding packet's own reconstructed duration
+# (`detail::reconstruct_packet_durations`, doc 04 section 1.3, already
+# landed by 05-04-PLAN.md -- called, never re-implemented). Both `2` and
+# `1 tick` are fixed named constants (D-08): a detection parameter changes
+# the MEASURED span list, unlike a tolerance, which only changes the
+# verdict -- making either configurable would require fingerprint
+# recording plus mismatch-skip machinery deliberately deferred past v1.
+# `span` semantic (`src/compare/span.cpp`): an introduced span gates on
+# this check's own severity; a removed span is always `info`, never
+# gating. On a ContainerFamily::ts input, both the interval walk and the
+# duration reconstruction run over the UNWRAPPED presentation timeline
+# (05-02-PLAN.md's `unwrap_ts_timestamps`, doc 04 section 1.2) -- a
+# genuine mid-file 33-bit wrap produces ZERO spans attributable to the
+# wrap itself (doc 04 section 5's own TS-wrap acceptance criterion). Runs
+# on every stream carrying timestamps EXCEPT `Scope::Kind::subtitle`
+# (05-CHECK-ROSTER.md's own scope decision, docs/checks/timeline.gaps.md
+# states the reason) -- a subtitle track's intentionally sparse timing
+# would false-positive under a rule tuned for audio/video. Skip-reason
+# vocabulary, in priority order: `partial_scan` (Phase 3 D-02, ahead of
+# everything -- a gap list from an incomplete sweep is silently MISSING
+# exactly the gaps at the truncation point), `no_timing_data` (no real PTS
+# at all on this stream), then `insufficient_data` (the shared cadence
+# derivation did not report `ok`, or any checked-arithmetic step
+# overflowed -- never a fallback nominal or a fabricated span).
+[[check]]
+id = "timeline.gaps"
+group = "timeline"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 05-06-PLAN.md (TIME-02, D-08, Phase 4 D-10's precedent), src/analyzers/
+# timeline/monotonic.cpp -- **Addition** (05-CHECK-ROSTER.md): doc 04
+# section 1.2's own "wrap events themselves are recorded (info)" sentence,
+# given its own check id since a shared-condition note with no delta to
+# hang it on needs the `state` semantic (mirrors `video.hdr.coherence`
+# and `timeline.duration.coherence` exactly). Fires the flagged value
+# `ts_33bit_wrap` when a `ContainerFamily::ts` stream's raw PTS/DTS
+# sequence exhibits at least one wrap event under
+# `unwrap_ts_timestamps`'s own asymmetric rule -- the unflagged value is
+# `no_wrap`. Because `state`'s own `pass` means NEITHER side was flagged
+# (src/compare/state.cpp, WR-02 precedent), a pair whose BOTH files wrap
+# still reports the flagged value as a non-`pass` finding -- there is no
+# delta to hang it on, and a shared wrap is still a real property worth
+# surfacing, per doc 04's own "a candidate that wraps where baseline
+# didn't usually means a start-offset change upstream" reasoning. Evidence
+# carries `wrap_count`, and -- when `wrap_count > 0` -- the first wrapping
+# packet's own index plus its RAW and UNWRAPPED values (TIME-02's "raw
+# values are preserved in evidence" requirement, satisfied concretely).
+# On a non-TS input this check reports `skipped:not_applicable_container`
+# -- the 33-bit wrap is an MPEG-TS-specific property of the 90kHz PES
+# timestamp field, meaningless for MP4/Matroska. `skipped:insufficient_data`
+# when the unwrap's own running-offset arithmetic overflows (T-05-05).
+[[check]]
+id = "timeline.wrap_events"
+group = "timeline"
+semantic = "state"
+unit = "none"
+value_kind = "string"
+severity = "info"
+flagged_values = ["ts_33bit_wrap"]
+
+# 05-07-PLAN.md (TIME-02/TIME-04, D-08), src/analyzers/timeline/discontinuities.cpp
+# -- doc 04 section 2's own `timeline.discontinuities` row: presentation-time
+# jumps STRICTLY EXCEEDING the fixed `kDiscontinuityThresholdMs` (250ms) that
+# are NOT explained by container structure. **Deviation from doc 04's literal
+# "(config)"** (D-08): a fixed named constant in v1, never a tunable knob -- a
+# detection parameter changes the MEASURED span list, unlike a tolerance,
+# which only changes the verdict; a configurable threshold would require
+# fingerprint recording plus mismatch-skip machinery (the `--sample N`
+# shape) deliberately deferred past v1. On a `ContainerFamily::ts` input the
+# flag is `discontinuity_indicator=1` on the transport packet attributable
+# to the jump via `ts_scan`'s own recorded byte offsets (05-07-PLAN.md
+# Task 1) joined by `PacketRecord::pos` -- never a second byte-level TS
+# parser (T-05-30). UNflagged TS jumps and every non-TS jump land HERE,
+# gating; the flagged split lives at `timeline.discontinuities.flagged`,
+# `info` severity, below. `span` semantic (`src/compare/span.cpp`): an
+# introduced span gates on this check's own severity; a removed span is
+# always `info`, never gating. Runs on every stream carrying timestamps
+# EXCEPT `Scope::Kind::subtitle` (same scope as `timeline.gaps`).
+# Skip-reason priority: `partial_scan` (Phase 3 D-02, ahead of everything --
+# TS-scoped: also when `TsScanResult::complete` is false, since the
+# discontinuity_indicator offset list itself is then unreliable), then
+# `no_timing_data` (no real PTS at all on this stream), then
+# `insufficient_data` (an overflow anywhere in the checked interval/
+# threshold arithmetic, the TS unwrap itself overflowing, or --
+# TS-scoped -- `PidStats::discontinuity_offsets_truncated` being set:
+# T-05-29, a classification built on a partial flag list could silently
+# demote real breakage to `info`, so both ids skip rather than classify).
+[[check]]
+id = "timeline.discontinuities"
+group = "timeline"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 05-07-PLAN.md (TIME-02, D-08, Phase 3's container.ts.cc_errors/
+# .cc_discontinuities split precedent), src/analyzers/timeline/
+# discontinuities.cpp -- **Addition** (05-CHECK-ROSTER.md): split from doc
+# 04's `timeline.discontinuities` row -- TS packets under
+# `discontinuity_indicator=1` are FLAGGED structure (the muxer declared the
+# break on purpose, e.g. a splice point), `info` severity, never gating.
+# Attribution rule (A2, docs/checks/timeline.discontinuities.flagged.md):
+# `PacketRecord::pos` is a PES-packet byte offset; the flag lives on a
+# 188-byte transport packet inside that PES packet's own byte range, so a
+# jump is flagged when a recorded `discontinuity_indicator` offset falls
+# within the demuxed packet's own `[pos, next_pos)` range -- an
+# approximate-at-the-PES-boundary attribution, documented as such rather
+# than claimed as per-transport-packet precision. On a non-TS input this
+# check reports `skipped:not_applicable_container` -- never an empty span
+# list, because "no flagged structure exists here" and "this container
+# cannot express flagged structure" are different facts. Same skip-reason
+# priority as `timeline.discontinuities` above, substituting
+# `not_applicable_container` for the non-TS case.
+[[check]]
+id = "timeline.discontinuities.flagged"
+group = "timeline"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "info"
+
+# 05-08-PLAN.md (TIME-05), src/analyzers/timeline/jitter_vfr.cpp --
+# 05-CHECK-ROSTER.md's own Discretion resolution: ONE id, not two. Sigma
+# (the standard deviation of the interval distribution around the stream's
+# own mode interval, D-07's `Cadence::mode_interval_ticks`) is the compared
+# value, reported as an EXACT fixed-point `RationalValue` (denominator
+# `2^kJitterSigmaFixedShift`, `core/rational.h`) -- never a rounded real,
+# never computed via `std::sqrt` on a double anywhere in the compared-value
+# path (a portable integer bit-doubling square root,
+# `detail::Int128Accum::try_isqrt`, computes the root exactly). The maximum
+# absolute deviation rides in evidence on this SAME id, never a second
+# check -- doubling a single jittery stream into two findings is exactly
+# the D-01/D-02 noise concern the roster's own Discretion note names.
+# `skipped:vfr` (never a sigma) on a stream `derive_cadence` (PROBE-10, the
+# ONE shared cadence primitive, consumed once per stream by both this check
+# and `timeline.vfr_profile` below) classifies as VFR -- a jitter
+# statistic computed around a nominal interval that does not exist for a
+# genuinely variable-rate stream is not a measurement, it is noise. Runs
+# on every stream carrying timestamps EXCEPT `Scope::Kind::subtitle`
+# (mirrors `timeline_monotonic_analyzer()`'s own scope decision). Skip-
+# reason priority: `partial_scan` (Phase 3 D-02, ahead of everything),
+# then whatever `derive_cadence` itself reports (`no_timing_data`/
+# `insufficient_data`), then `vfr` (this check only), then
+# `insufficient_data` again for a sigma-specific overflow (T-05-34: a
+# crafted interval distribution whose accumulated sum of squared
+# deviations cannot narrow to int64_t -- degrades honestly, never a
+# wrapped sigma).
+[[check]]
+id = "timeline.jitter"
+group = "timeline"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.5ms,2ms"
+
+# 05-08-PLAN.md (TIME-05, D-06), src/analyzers/timeline/jitter_vfr.cpp --
+# a six-bin histogram (`on_grid`, `one_tick`, `one_percent`, `two_x`,
+# `three_x`, `longer`, 05-CHECK-ROSTER.md's own fixed, approved labels)
+# over every consecutive-interval deviation on the SAME axis
+# `derive_cadence` used, keyed on the deviation from the stream's OWN grid
+# (D-05's exact rational `Cadence::ideal_interval_num/den`), never raw
+# ticks -- the property that makes the identical content bin identically
+# whether it is stored as an MP4 (a coarse timebase) or remuxed to
+# Matroska (a 1ms timebase): a raw-tick histogram would bin the SAME
+# real-world jitter into different buckets purely because the two
+# containers store the interval as different tick counts, which is
+# exactly the false-positive class D-06 exists to prevent. Runs
+# REGARDLESS of `Cadence::klass` (unlike `timeline.jitter` above, which
+# skips entirely on VFR) -- the histogram itself is what tells a reader
+# the stream is not constant-rate, mirroring
+# `video.frame_rate.measured`'s own "a VFR classification does not skip
+# this check" precedent. Runs on every stream carrying timestamps EXCEPT
+# `Scope::Kind::subtitle` (same scope as `timeline.jitter` above). Skip-
+# reason priority: `partial_scan` (Phase 3 D-02, ahead of everything),
+# then whatever `derive_cadence` itself reports
+# (`no_timing_data`/`insufficient_data`) -- IDENTICAL to `timeline.jitter`
+# above for these two reasons (never letting one id compute a real value
+# while the other skips for a DIFFERENT reason on the SAME stream), then
+# `insufficient_data` again for a bin-classification overflow (a crafted
+# ideal/interval pair whose cross-multiplication cannot fit int64_t).
+[[check]]
+id = "timeline.vfr_profile"
+group = "timeline"
+semantic = "dist"
+unit = "percent"
+value_kind = "histogram"
+severity = "warn"
+tolerance = "2%"
+
+# 05-09-PLAN.md (TIME-06/TIME-09/TIME-10, D-09/D-10/D-11), src/analyzers/
+# timeline/av_sync.cpp -- the signed offset between the first audible
+# sample (audio-side priming-adjusted, D-09's resolver) and the first
+# visible frame of the primary video stream; positive means audio late
+# (doc 04 section 2's own sign convention). D-09: priming is read from
+# what the demuxer already exposes without decoding -- packet-level
+# `AV_PKT_DATA_SKIP_SAMPLES` checked FIRST, `codecpar->initial_padding` as
+# fallback (05-RESEARCH.md's own verified finding: MP4 signals priming
+# ONLY via the packet-level side data). D-10: the fingerprint stores the
+# RAW offset, the ADJUSTED offset and a structured `priming`
+# {state,source,samples} object per side; `comparison_basis` records this
+# side's own preference, and src/compare/tol.cpp's generic evidence-driven
+# override (Rule 2 addition) swaps the compared magnitude to
+# `adjusted_offset_ms` only when BOTH sides agree -- raw-to-raw whenever
+# either side's priming is unknown, so a mixed MP4-vs-TS pair compares
+# something meaningful instead of an adjusted number against an
+# unadjusted one. D-11: unknown priming NEVER softens severity or widens
+# tolerance -- the uncertainty is visible structured evidence, not a
+# weaker gate. Primary-stream selection: the first video-scoped stream, by
+# array order; one measurement per audio stream. No audio, or no video, at
+# all: `skipped:insufficient_data`, never silence. Skip-reason priority:
+# `partial_scan` (Phase 3 D-02, ahead of everything), then
+# `insufficient_data` for every other "nothing to measure" case.
+[[check]]
+id = "timeline.av_offset"
+group = "timeline"
+semantic = "tol"
+unit = "ms"
+value_kind = "rational"
+severity = "fail"
+tolerance = "5ms,20ms"
+
+# 05-10-PLAN.md (TIME-07/TIME-08), src/analyzers/timeline/av_sync.cpp --
+# doc 04 section 3's flagship A/V drift algorithm, one `fit_drift` call per
+# audio stream producing TWO ids from the ONE fit (D-04, locked at the
+# 05-01 roster checkpoint: an id comparing rate alone would never fire on
+# a clean step; a THIRD id for end delta would turn one drift report into
+# three findings for a reader to reconcile by hand). This id is the RATE,
+# ms/min, an exact `RationalValue` from `Int128Accum::try_reduce_ratio`'s
+# GCD-reduced slope -- never a pre-divided float. D-07's dual gate: the
+# rate is ALWAYS published, but a non-pass verdict additionally requires
+# the accumulated END DELTA (evidence `end_delta_ms`) to clear the SAME 2
+# ms epsilon `fit_drift`'s own classification uses (kDriftEpsilonMs,
+# analyzers.h) -- src/compare/tol.cpp's generic evidence-shape override
+# (mirrors D-10's `timeline.av_offset` precedent immediately above)
+# forces `pass` when the end delta does not clear it, regardless of the
+# rate delta. Reason: 0.2 ms/min accumulated over the ten-minute reference
+# file is exactly 2 ms -- WITHOUT the dual condition, ordinary timebase
+# rounding on a short clip would false-positive on a rate that is not a
+# real drift (P0: false positives are worse than a missed one). Evidence
+# also carries `residual_max_ms`, `comparison_basis` (the SAME
+# raw-versus-adjusted basis `timeline.av_offset` chose for this side,
+# D-10) and the full K=32
+# `{k, t_v_ms, offset_ms}` trajectory (TIME-08) -- `05-RESEARCH.md`
+# confirmed `Measurement::evidence` already round-trips through
+# `src/core/snapshot.cpp` (read ~line 297, write ~line 356), so `compare`
+# against a stored snapshot retains full trajectory fidelity, doc 04
+# section 3 step 5. Skip-reason priority identical to `timeline.av_offset`
+# immediately above: `partial_scan`, then `insufficient_data` (no audio,
+# no video, too few usable checkpoints, or `fit_drift` itself refusing an
+# unnarrowable/degenerate fit) -- never a wrapped or fabricated rate.
+[[check]]
+id = "timeline.av_drift"
+group = "timeline"
+semantic = "tol"
+unit = "ms_per_min"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.2ms/min"
+
+# 05-10-PLAN.md (TIME-07/TIME-08), the SAME `fit_drift` call as
+# `timeline.av_drift` immediately above -- this id is the CLASSIFIED
+# PATTERN, three spellings exactly:
+# `constant-offset` / `linear-drift` / `irregular`
+# (`DriftPattern`, analyzers.h). D-04, locked and one-way at the 05-01
+# roster checkpoint: exists so a step small enough to leave the fitted
+# RATE under `timeline.av_drift`'s own 0.2 ms/min tolerance (a brief,
+# large jump can average out to a shallow slope over a long file) still
+# produces a finding a reader can act on -- the rate id alone would stay
+# silent on exactly that case. `exact`/`string`, mirroring
+# `video.pix_fmt`'s own shape immediately below in this file's git
+# history (04-08-PLAN.md) -- no tolerance, any change of class gates.
+# Same skip-reason priority as `timeline.av_drift`: both ids skip
+# together, from the same `fit_drift` call, never independently.
+# AMENDED 2026-09-18, UD-1 (05-23-PLAN.md, narrow-vocabulary per
+# 05-STEP-DESIGN.md's `## Decision`): doc 04 section 3.4's fourth
+# spelling, `step`, is withdrawn -- neither evaluated checkpoint-mapping
+# design (05-21-SUMMARY.md D1/D2) reports a step at a location tied to
+# the real splice, so a spliced trim now classifies `irregular` with its
+# residual max instead. See docs/checks/timeline.av_drift.pattern.md and
+# 05-CHECK-ROSTER.md's `## Amendments` for the full record.
+[[check]]
+id = "timeline.av_drift.pattern"
+group = "timeline"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 05-11-PLAN.md (TIME-11), src/analyzers/timeline/timecode.cpp -- SMPTE
+# timecode PRESENCE from a QuickTime `tmcd` track, reachable from
+# Pass::demux_header ALONE (05-RESEARCH.md Pattern 4: the MOV/MP4 demuxer
+# resolves the tmcd track's starting timecode during
+# avformat_find_stream_info itself, ZERO decode calls). `presence`
+# semantic, `info` severity (doc 04's own table: "broadcast configs raise
+# to fail via one --set"). A file with no tmcd track reports Absent{} --
+# an explicit, comparable absence, never an empty string, so a timecode
+# that DISAPPEARS between two builds is reported (TIME-11's empty edge).
+# SkipReason::none in every case (an ordinary, real, permanent absence,
+# never `skipped`). Evidence carries `source` ("tmcd"), `drop_frame`,
+# `timecode_stream_index` and `unreachable_sources` -- the latter names
+# AV_PKT_DATA_S12M_TIMECODE (no file-demuxer producer in this build,
+# libavdevice is not linked) and MPEG-2 GOP timecode
+# (AV_FRAME_DATA_GOP_TIMECODE, decode-only) with the reason
+# "requires_decode", so a user asking why their broadcast/GOP timecode was
+# not detected gets the answer from `mediadiff explain` (05-RESEARCH.md
+# Pitfall 6). No separately-triggerable S12M id: DOC-03 requires a real
+# trigger fixture, and none can exist for a source this build cannot ever
+# reach (05-CHECK-ROSTER.md).
+[[check]]
+id = "timeline.timecode"
+group = "timeline"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "info"
+
+# 05-11-PLAN.md (TIME-11), the SAME `run_timeline_timecode` call as
+# `timeline.timecode` immediately above -- this id is the SMPTE START
+# VALUE itself, split per src/compare/presence.cpp's own documented "a
+# value comparison is a separate check on the same extraction" rule
+# (mirrors video.hdr.mdcv/.luminance's own split, 04-CHECK-ROSTER.md
+# precedent). `exact` semantic: the value libav publishes compared BYTE
+# FOR BYTE -- never parsed into fields, never normalised, trimmed or
+# case-folded, so the drop-frame punctuation (a semicolon before the frame
+# field, confirmed reachable on the no-decode path, 05-RESEARCH.md/
+# 05-11-SUMMARY.md's own empirical resolution of Open Question 1) is part
+# of the compared value: a drop-frame and non-drop-frame timecode at the
+# same nominal position compare as DIFFERENT. `Absent{}` (never an empty
+# string) when no tmcd track exists -- `compare/exact.cpp`'s structural
+# Value::operator== makes an Absent-versus-string pair a genuine
+# difference, so a timecode that disappears is caught by THIS id too, not
+# only by the presence id above. Same skip-reason behaviour and the same
+# `unreachable_sources` evidence as `timeline.timecode`, since both ids
+# skip together from the same call.
+[[check]]
+id = "timeline.timecode.value"
+group = "timeline"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "info"
