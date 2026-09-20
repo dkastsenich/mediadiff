@@ -198,6 +198,16 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
           // in, exactly the splice point, 22 divergent blocks total) --
           // one more legitimate effect of the same splice root cause.
           "content.audio.sample_hash",
+          // 06-06-PLAN.md (AUDIO-04, D-14): the fresh re-encode's own
+          // MPEG-TS output carries no AV_PKT_DATA_SKIP_SAMPLES side data at
+          // all (verified via `mediadiff compare --json` evidence:
+          // baseline "1024"/source skip_samples, candidate "unknown") --
+          // the SAME MP4-to-TS container-family effect
+          // test_timeline_av_sync.cpp's own unknown-priming pair declares,
+          // now a comparable non-pass finding rather than a skip because
+          // `unknown` is a real value (D-14). One more legitimate effect of
+          // the same splice/re-encode root cause (D-02).
+          "audio.priming",
       });
 }
 

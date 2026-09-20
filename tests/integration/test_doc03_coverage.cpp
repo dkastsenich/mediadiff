@@ -47,7 +47,10 @@
 // stream identity checks (audio.codec/sample_rate/sample_fmt/bit_depth/
 // channels/layout), bringing the total to eighty-four. 06-04-PLAN.md
 // registers audio.profile (the HE-AAC SBR signaling mode check), bringing
-// the total to eighty-five. This file is where a gap becomes visible.
+// the total to eighty-five. 06-06-PLAN.md registers audio.priming (the
+// precedence-chain check that makes `unknown` a comparable value),
+// bringing the total to eighty-six. This file is where a gap becomes
+// visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -657,6 +660,38 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"audio.profile",
        {fixture("audio_sbr_explicit.mp4"), fixture("audio_sbr_implicit.mp4"), fixture("audio_sbr_explicit.mp4"),
         fixture("audio_sbr_explicit_copy.mp4")}},
+      // audio.priming (06-06-PLAN.md, AUDIO-04, D-14): trigger is
+      // audio_prime_base.mp4 (known priming, source skip_samples, "1024")
+      // vs audio_prime_copy.ts (a `-c copy` MPEG-TS remux carrying no
+      // AV_PKT_DATA_SKIP_SAMPLES side data at all) -- verified `fail`,
+      // "1024" vs the literal "unknown" (D-14: unknown compares as its own
+      // value, never a skip). Clean pair is audio_prime_base.mp4 vs
+      // audio_prime_roundtrip.mkv (a single MP4->MKV hop) -- verified
+      // `pass`, "1024" both sides, even though the evidence's own
+      // `container_reading.source` differs (mp4_edit_list vs
+      // mkv_codec_delay) between the two sides. NOTE:
+      // audio_prime_roundtrip2.mp4 (the MP4->MKV->MP4 round trip
+      // 06-06-PLAN.md's own must_haves/acceptance-criteria text names as
+      // the clean pair) is deliberately NOT used here -- measured directly
+      // against this project's own linked FFmpeg 8.1 (never the system
+      // ffprobe, which is a materially different, newer build), it reports
+      // "1014" against the base's "1024", a genuine ~10-sample rounding
+      // artifact of the MKV `CodecDelay` intermediate's own
+      // nanosecond-granularity round trip -- exactly the risk
+      // 06-02-SUMMARY.md's own "Next Phase Readiness" note flagged in
+      // advance ("06-06 should treat this as data to measure a tolerance
+      // against, not assume away"). Since `audio.priming` is registered
+      // `semantic=exact` over a `string` value (D-14 forces this shape; no
+      // numeric tolerance is expressible), there is no way to make that
+      // specific pair report `pass` without either regenerating the
+      // fixture (forbidden: `tests/golden/CORPUS_DIGEST.txt` never
+      // rewrites an existing line) or adding a tolerance mechanism D-14
+      // explicitly rules out. See 06-06-SUMMARY.md's own Deviations
+      // section for the full measurement and reasoning; the fixture
+      // substitution here is deliberate, not an oversight.
+      {"audio.priming",
+       {fixture("audio_prime_base.mp4"), fixture("audio_prime_copy.ts"), fixture("audio_prime_base.mp4"),
+        fixture("audio_prime_roundtrip.mkv")}},
   };
   return pairs;
 }

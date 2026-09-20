@@ -222,6 +222,15 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // one-way, and reports the resulting classification flip).
                                    "timeline.av_drift",
                                    "timeline.av_drift.pattern",
+                                   // 06-06-PLAN.md (AUDIO-04, D-14): the SAME `-c copy` MPEG-TS
+                                   // remux carries no AV_PKT_DATA_SKIP_SAMPLES side data on its
+                                   // audio packets at all (verified via `mediadiff compare --json`
+                                   // evidence: baseline "1024"/source skip_samples, candidate
+                                   // "unknown") -- `unknown` is now a real, comparable value
+                                   // (D-14) rather than a skip, so the remux's loss of priming
+                                   // signaling is a genuine, declared member of this same-cause
+                                   // set (D-02), not new noise.
+                                   "audio.priming",
                                });
 }
 

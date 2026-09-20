@@ -198,6 +198,15 @@ TEST_CASE("timeline_av_sync - the MPEG-TS remux (unknown-priming) pair declares 
                                    // flip).
                                    "timeline.av_drift",
                                    "timeline.av_drift.pattern",
+                                   // 06-06-PLAN.md (AUDIO-04, D-14): the SAME `-c copy` MPEG-TS
+                                   // remux recipe as test_timeline_start_duration.cpp Test 4 --
+                                   // no AV_PKT_DATA_SKIP_SAMPLES side data on the candidate's
+                                   // audio packets (verified via `mediadiff compare --json`
+                                   // evidence: baseline "1024"/source skip_samples, candidate
+                                   // "unknown"). `unknown` compares as its own value (D-14), so
+                                   // this loss of priming signaling is now a declared,
+                                   // non-pass member of the same remux-caused set (D-02).
+                                   "audio.priming",
                                });
 
   // Note this fixture's own priming becomes unknown (verified via evidence
