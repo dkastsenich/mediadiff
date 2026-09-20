@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-09-20T12:18:49.575Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-09-20T13:30:51.151Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 06 execution started
-state_head: b4c08c731d6178fae5d82ee229255ef7ebef539c
+state_head: 9e907b1fc541439c19a6833162af11f9eeafb874
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 93
+  completed_plans: 94
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 2 of 13
+Plan: 3 of 13
 Status: Ready to execute
 Last activity: 2026-09-20 — Phase 06 execution started
 
@@ -145,6 +145,7 @@ Progress: [█████████░] 92%
 | Phase 05-timeline-analysis P24 | 20min | 3 tasks | 0 files |
 | Phase 05-timeline-analysis P25 | 15min | 2 tasks | 0 files |
 | Phase 06 P01 | 44min | 3 tasks | 46 files |
+| Phase 06 P02 | ~2h | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -341,6 +342,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-CHECK-ROSTER.md's class-3 interpretation: no decoder available in this build, never 'hash discarded for a successfully-decoded stream'.
 - [Phase 06]: Audio decode sweep fused inside run_packet_scan's existing av_read_frame loop, not a separate pass (structural AUDIO-10/PROBE-08 requirement).
 - [Phase 06]: compare/engine.cpp's evidence assignment changed from overwrite to merge-if-object so a comparator can populate finding.evidence itself (D-03).
+- [Phase 06]: NOISE_BT scalefactor bands give a hand-written AAC fixture non-zero PCM with zero spectral bits, enabling a byte-identical-on-every-leg class-1 proof input
+- [Phase 06]: audio_flt_base built as .ogg/native-vorbis instead of the plan's literal .flac, since FLAC's decoder can never emit a float sample format
+- [Phase 06]: New CORPUS_DIGEST.txt fixture hash lines follow the project's own committed provenance policy (never rewriting an existing line) for all three tasks, overriding one plan acceptance-criteria bullet that contradicted its own required verify gate
 
 ### Pending Todos
 
@@ -380,6 +384,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-20T12:18:49.400Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-09-20T13:30:50.924Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
