@@ -72,4 +72,35 @@ const AnalyzerSpec& audio_stream_params_analyzer();
 // soften severity (Phase 5 D-11 applied here).
 const AnalyzerSpec& audio_priming_analyzer();
 
+// audio.loudness.integrated/audio.loudness.true_peak (06-08-PLAN.md,
+// AUDIO-05, AUDIO-06, AUDIO-10): a pure consumer of
+// `ProbeResults::audio_decode` -- never opens a decoder, never re-reads the
+// file (PROBE-08). `required_passes = {Pass::demux_header, Pass::packet_scan,
+// Pass::audio_decode}`, `scope = ContainerFamily::other`. Skip-reason
+// priority: `partial_scan` first (Phase 3 D-02), then `requires_decode`
+// when `results.audio_decode` is `std::nullopt` or this stream's own
+// `StreamAudioDecode::attempted` is false (content decode not requested,
+// or this build's linked FFmpeg could not open a decoder for this codec at
+// all), then `insufficient_data` when the stream decoded but
+// `loudness_measured` is false (Test 8: a zero-sample stream) --
+// mirroring `content_audio_sample_hash_analyzer()`'s own established
+// priority exactly.
+//
+// `audio.loudness.integrated`'s compared value is the quantised
+// `RationalValue` at `src/probe/audio_decode.h`'s `kLoudnessQuantiserDen`,
+// or that SAME quantisation of the fixed `kLoudnessGatingFloorLufs`
+// sentinel when `loudness_below_floor` is true (doc 05 §4: "silent" is a
+// real, comparable value, never a skip -- and a FIXED sentinel, not the
+// real below-floor reading, is what makes two different silent tracks
+// compare `pass`). Evidence carries `integrated_lufs` (the raw double, at
+// fixed precision) and `state` (`"measured"`/`"silent"`).
+//
+// `audio.loudness.true_peak`'s compared value is the quantised
+// maximum-over-channels dBTP. Evidence carries `true_peak_dbtp` (the raw
+// double) and `ceiling_state` (`"under"`/`"above"` the named
+// `kTruePeakCeilingDbtp` constant) -- the evidence key
+// `src/compare/tol.cpp`'s generic asymmetric-ceiling escalation reads from
+// BOTH sides (never gated on `check.id`).
+const AnalyzerSpec& audio_loudness_analyzer();
+
 }  // namespace mediadiff

@@ -1665,3 +1665,47 @@ semantic = "exact"
 unit = "samples"
 value_kind = "string"
 severity = "fail"
+
+# 06-08-PLAN.md (AUDIO-05, D-13), src/analyzers/audio/loudness.cpp -- EBU
+# R128 integrated loudness from libebur128 (EBUR128_MODE_I), quantised to a
+# RationalValue at a fixed denominator (`src/probe/audio_decode.h`'s
+# kLoudnessQuantiserDen) since `src/compare/tol.cpp` supports only
+# `rational`/`int64` under `tol` (a `real` value_kind reaches its
+# internal-error arm) -- libebur128's raw `double` rides in evidence at
+# fixed precision instead. Below the -70 LUFS gating floor, the value is
+# the SAME quantisation of that fixed floor constant (doc 05 §4's "silent"
+# spelling), never the real below-floor reading, so two different silent
+# tracks compare `pass`. `remux` tightens to +/-0.1 LU (D-13's own
+# float-noise allowance); `transform` widens to +/-1.0 LU (an intentional
+# transcode may re-level, doc 05 §5).
+[[check]]
+id = "audio.loudness.integrated"
+group = "audio"
+semantic = "tol"
+unit = "lu"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.5LU,1.0LU"
+
+[check.profile_tolerance]
+remux = "0.1LU"
+transform = "1.0LU"
+
+# 06-08-PLAN.md (AUDIO-06), src/analyzers/audio/loudness.cpp --
+# EBUR128_MODE_TRUE_PEAK, maximum over channels, dBTP. `warn` severity for
+# an ordinary tolerance excursion, but a candidate crossing the -1.0 dBTP
+# ceiling upward from a baseline that was under it escalates to `fail`
+# regardless of the magnitude delta -- a GENERIC, evidence-shape-gated
+# escalation in `src/compare/tol.cpp` (never a second check id: headroom
+# loss risks clipping after a downstream lossy encode, headroom gained does
+# not, and `src/compare/state.cpp`'s flagged-value membership semantic
+# would fire whenever EITHER side is hot, including on an unchanged pair
+# already above the ceiling -- the P0 false-positive class).
+[[check]]
+id = "audio.loudness.true_peak"
+group = "audio"
+semantic = "tol"
+unit = "db"
+value_kind = "rational"
+severity = "warn"
+tolerance = "0.3dB"

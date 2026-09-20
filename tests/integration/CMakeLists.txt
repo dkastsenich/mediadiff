@@ -201,6 +201,12 @@ add_executable(mediadiff_integration_tests
   # acceptance criterion re: audio_prime_roundtrip2.mp4 (see the file's own
   # top-of-file comment and 06-06-SUMMARY.md).
   test_audio_priming.cpp
+  # AUDIO-05/AUDIO-06/AUDIO-10 (06-08-PLAN.md): audio.loudness.integrated/
+  # .true_peak through the real CLI -- the gating-floor silent sentinel, the
+  # asymmetric -1.0 dBTP ceiling escalation (upward crosses, downward does
+  # not), and the transform profile's tolerance widening. Extended by Task 3
+  # with the +/-0.1 LU golden-reference assertion.
+  test_audio_loudness.cpp
   # AUDIO-09/TRUST-01/TRUST-02 (06-05-PLAN.md Tasks 1/3): --hash-decoder and
   # the determinism-class table's end-to-end consequences, plus the
   # three-way class proof (class-1 equal across builds behind the D-11

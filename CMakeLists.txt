@@ -236,6 +236,10 @@ add_library(libmediadiff STATIC
   # precedence chain, extending src/analyzers/timeline/analyzers.h's own
   # resolve_priming() in place.
   src/analyzers/audio/priming.cpp
+  # 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): audio.loudness.integrated/
+  # .true_peak -- a pure consumer of the shared decode sweep's own
+  # libebur128 sink outputs (src/probe/audio_decode.{h,cpp}).
+  src/analyzers/audio/loudness.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

@@ -274,6 +274,52 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     }
   };
 
+  // 06-08-PLAN.md (AUDIO-06) -- a THIRD generic, evidence-shape-driven
+  // override in this SAME family (D-10's comparison_basis/adjusted_
+  // offset_ms above, D-07's end_delta_ms/D-16's span_basis above that):
+  // when BOTH sides declare a `ceiling_state` string ("under"/"above") AND
+  // the baseline reads "under" while the candidate reads "above", the
+  // candidate crossed a declared ceiling UPWARD -- escalate to the check's
+  // FAIL status regardless of whether the magnitude delta fit the
+  // tolerance (doc 05 section 4's asymmetric -1.0 dBTP rule: headroom loss
+  // risks clipping after a downstream lossy encode, headroom gained does
+  // not). Any other combination -- both under, both above, candidate under
+  // with baseline above, or either side missing/misspelling the key --
+  // leaves the normal tolerance verdict computed below untouched.
+  //
+  // Never gated on `check.id`: a `state`-semantic second id (src/compare/
+  // state.cpp) was the obvious alternative and is wrong here, because
+  // `state` tests flagged-value MEMBERSHIP, not difference -- it would
+  // fire whenever EITHER side's value is flagged, including on an
+  // UNCHANGED pair that is already above the ceiling on both sides, which
+  // is exactly the P0 false-positive class this project exists to
+  // prevent. Reading the evidence shape instead means an unchanged
+  // above-ceiling pair (both sides "above") never escalates, only a
+  // genuine under-to-above TRANSITION does.
+  const auto side_ceiling_state = [](const Measurement& side) -> std::optional<std::string> {
+    if (!side.evidence.is_object() || !side.evidence.contains("ceiling_state") ||
+        !side.evidence.at("ceiling_state").is_string()) {
+      return std::nullopt;
+    }
+    return side.evidence.at("ceiling_state").get<std::string>();
+  };
+  const std::optional<std::string> baseline_ceiling_state = side_ceiling_state(baseline);
+  const std::optional<std::string> candidate_ceiling_state = side_ceiling_state(candidate);
+  const bool ceiling_crossed_upward = baseline_ceiling_state.has_value() && candidate_ceiling_state.has_value() &&
+                                       *baseline_ceiling_state == "under" && *candidate_ceiling_state == "above";
+  // Applied at every return point below, after `finding.status`/`finding.
+  // message` are set -- an unconditional escalation to `fail` (never
+  // `escalate(severity)`: the risk this rule guards against is real
+  // regardless of the check's own configured severity), and a no-op when
+  // the evidence shape above did not detect an upward crossing.
+  const auto apply_ceiling_escalation = [&]() {
+    if (ceiling_crossed_upward) {
+      finding.status = Status::fail;
+      finding.message += " (asymmetric ceiling crossing: baseline under, candidate above -- escalated regardless of "
+                          "tolerance)";
+    }
+  };
+
   // delta = candidate - baseline, as an exact rational over
   // baseline_den*candidate_den -- cross-multiplication, never a division.
   //
@@ -415,12 +461,14 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
                                      tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
     }
     apply_end_delta_gate();
+    apply_ceiling_escalation();
     return finding;
   }
 
   if (within_fail) {
     finding.status = Status::pass;
     finding.message = "delta within tolerance" + widened_suffix;
+    apply_ceiling_escalation();
     return finding;
   }
 
@@ -428,6 +476,7 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   finding.message = fmt::format("delta {}{}/{}{} exceeds tolerance{}", sign, abs_delta_num_text, delta_den_text,
                                  tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
   apply_end_delta_gate();
+  apply_ceiling_escalation();
   return finding;
 }
 

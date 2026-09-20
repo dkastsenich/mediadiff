@@ -208,6 +208,14 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // stay grouped and appended in commit order, never interleaved among
       // Phase 5's.
       audio_priming_analyzer(),
+      // 06-08-PLAN.md (AUDIO-05, AUDIO-06): audio.loudness.integrated/
+      // .true_peak -- a pure consumer of the SAME shared decode sweep's
+      // own libebur128 sink outputs content_audio_sample_hash_analyzer()
+      // already declares Pass::audio_decode for. Listed directly after
+      // audio_priming_analyzer() so this phase's own registrations stay
+      // grouped and appended in commit order, never interleaved among
+      // Phase 5's.
+      audio_loudness_analyzer(),
   };
   return registry;
 }

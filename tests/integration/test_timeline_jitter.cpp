@@ -109,6 +109,14 @@ TEST_CASE("timeline_jitter - the jitter trigger pair declares its complete expec
           // 4s/44100Hz boundary where the original sine ends and the
           // independently-generated longer encode's own audio continues).
           "content.audio.sample_hash",
+          // 06-08-PLAN.md (AUDIO-06): the SAME independently-generated
+          // longer encode's own audio content genuinely peaks ~5.3dB
+          // higher (verified: -17.7 vs -12.4 dBTP, both comfortably under
+          // the -1.0 dBTP ceiling on both sides -- no escalation, an
+          // ordinary tolerance-exceeding `warn`). audio.loudness.integrated
+          // itself stays `pass` (within the 0.5/1.0LU two-threshold
+          // tolerance).
+          "audio.loudness.true_peak",
       });
 }
 
