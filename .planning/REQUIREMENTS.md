@@ -145,7 +145,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **AUDIO-06**: `audio.loudness.true_peak` reports dBTP and fails asymmetrically when the candidate crosses −1.0 dBTP upward from a baseline that was under it
 - [x] **AUDIO-07**: `audio.silence.edges` and `audio.silence.dropouts` detect introduced leading/trailing silence and interior dropouts as spans
 - [x] **AUDIO-08**: `content.audio.sample_hash` chains XXH3-128 over decoded PCM per track and reports the first divergent sample index and time
-- [ ] **AUDIO-09**: Hashing automatically prefers class-1 fixed-point decoder siblings (`aac_fixed`, `ac3_fixed`) when available, and `--hash-decoder default` opts out while recording class 2
+- [x] **AUDIO-09**: Hashing automatically prefers class-1 fixed-point decoder siblings (`aac_fixed`, `ac3_fixed`) when available, and `--hash-decoder default` opts out while recording class 2
 - [x] **AUDIO-10**: Loudness, silence detection, and hashing share a single decode sweep per track
 
 ### Content, Quality & Size Checks
@@ -166,7 +166,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 ### Trust & Determinism Guarantees
 
 - [x] **TRUST-01**: Every fingerprint records, per hashed stream, the decoder name, determinism class, flags, and (class 2) a path signature
-- [ ] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
+- [x] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
 - [x] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
 - [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
 - [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
@@ -350,7 +350,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | AUDIO-06 | Phase 6 | Complete |
 | AUDIO-07 | Phase 6 | Complete |
 | AUDIO-08 | Phase 6 | Complete |
-| AUDIO-09 | Phase 6 | Pending |
+| AUDIO-09 | Phase 6 | Complete |
 | AUDIO-10 | Phase 6 | Complete |
 | SIZE-01 | Phase 3 | Complete |
 | CONTENT-01 | Phase 7 | Pending |
@@ -365,7 +365,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONTENT-10 | Phase 7 | Pending |
 | CONTENT-11 | Phase 7 | Pending |
 | TRUST-01 | Phase 6 | Complete |
-| TRUST-02 | Phase 6 | Pending |
+| TRUST-02 | Phase 6 | Complete |
 | TRUST-03 | Phase 2 | Complete |
 | TRUST-04 | Phase 7 | Pending |
 | TRUST-05 | Phase 2 | Complete |

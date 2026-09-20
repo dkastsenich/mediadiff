@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 12
+open_count: 13
 waived_count: 2
 fixed_count: 18
-total_count: 32
-last_updated: 2026-09-18T19:55:09.810Z
+total_count: 33
+last_updated: 2026-09-20T15:50:55.876Z
 ---
 
 # Broken Windows Ledger
@@ -47,6 +47,7 @@ last_updated: 2026-09-18T19:55:09.810Z
 | 30 | 05 | deviation | src/analyzers/size/size.cpp |  | Follow-up to WINDOWS.md #26 (still open): #26 cites 'int64_t overflow in size.stream_bitrate's tolerance comparator, status=error' as its observable instance. Debug session test-898-ci-nonreproducible made src/compare/tol.cpp exact (core/exact_int.h), so that comparator can no longer overflow: on timeline_ts_nowrap.ts vs timeline_ts_wrap.ts the same corrupted, un-unwrapped size.stream_bitrate (and timeline.av_drift) inputs now produce status=fail with meaningless magnitudes (e.g. video 'delta 1164020667413667840000/3061451405548800%') instead of error. The defect is unchanged and still #26's (analyzers reading raw wrapped PTS/DTS); only its symptom moved from error to a false fail, so anyone searching reports for #26's error signature will no longer find it. tests/integration/test_timeline_structure.cpp's Test 4 still asserts only timeline.wrap_events on that pair, by design. Close together with #26. | fixed |  | 2026-09-18T12:14:35.643Z | 2026-09-18T17:28:56.479Z |
 | 31 | 05 | deviation | src/analyzers/timeline/av_sync.cpp |  | timeline.av_offset/timeline.av_drift/timeline.av_drift.pattern read raw, un-unwrapped PTS on MPEG-TS, the same root cause as WINDOWS.md #26, found by 05-VERIFICATION.md Gap 2 and not previously filed. libavformat's declared durations were also corrupted under correct_ts_overflow=0 on a wrapping file, fixed by 05-17's overflow-corrected re-probe. Both are fixed by 05-16/05-17/05-18, and the whole-report wrap assertion (tests/integration/test_timeline_structure.cpp) guards them. | fixed |  | 2026-09-18T17:29:06.380Z | 2026-09-18T17:29:10.070Z |
 | 32 | 05 | deviation | src/analyzers/timeline/av_sync.cpp |  | On the lossless MP4-to-TS remux pairs (timeline_start_base.mp4 vs timeline_start_shift.ts, and vs timeline_avoffset_unknown.ts), timeline.av_drift reports fail and timeline.av_drift.pattern reports fail (pattern=irregular, residual_max_ms=42). Cause: the checkpoint span uses libavformat's ESTIMATED TS audio stream duration -- MPEG-TS does not declare a per-stream duration the way MP4 does. Observed TS packet extents include AAC priming/padding samples with no edit list to exclude them, so neither span source removes the residual by itself: span:observed only swaps this reading for a different, still-wrong 39ms false linear-drift on the TS side (05-STEP-DESIGN.md Orchestrator note, 2026-09-18 -- the earlier span:observed MP4-side regression this research first reported was a harness-variant artifact, not evidence against span:observed as the plan actually scoped it). The human kept span:declared, today's shipped checkpoint span source, at the 05-21 blocking-human checkpoint. Closing this residual needs a priming/padding-aware span, filed as a follow-up. | waived | span:declared -- observed MPEG-TS packet extents include AAC priming/padding (no edit list), so span:observed only swaps the MP4-to-TS pairs' `irregular` reading for a false 39 ms linear-drift; the residual needs a priming/padding-aware span (follow-up). | 2026-09-18T19:55:05.254Z | 2026-09-18T19:55:09.810Z |
+| 33 | 06 | deviation | src/probe/audio_decode.cpp |  | Task 1 Test 6 (--hash-decoder aac_fixed falls back on USAC content) not exercised end-to-end -- hand-built USAC ASC rejected by avcodec_open2 for all candidate decoders in this env; steering code reviewed by inspection only, see 06-05-SUMMARY.md Known Stubs | open |  | 2026-09-20T15:50:55.876Z |  |
 
 ````json
 [
@@ -433,6 +434,18 @@ last_updated: 2026-09-18T19:55:09.810Z
     "reason": "span:declared -- observed MPEG-TS packet extents include AAC priming/padding (no edit list), so span:observed only swaps the MP4-to-TS pairs' `irregular` reading for a false 39 ms linear-drift; the residual needs a priming/padding-aware span (follow-up).",
     "recorded_at": "2026-09-18T19:55:05.254Z",
     "resolved_at": "2026-09-18T19:55:09.810Z"
+  },
+  {
+    "id": 33,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/probe/audio_decode.cpp",
+    "line": null,
+    "description": "Task 1 Test 6 (--hash-decoder aac_fixed falls back on USAC content) not exercised end-to-end -- hand-built USAC ASC rejected by avcodec_open2 for all candidate decoders in this env; steering code reviewed by inspection only, see 06-05-SUMMARY.md Known Stubs",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T15:50:55.876Z",
+    "resolved_at": null
   }
 ]
 ````

@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-04-PLAN.md
-last_updated: "2026-09-20T14:48:56.768Z"
+stopped_at: Completed 06-05-PLAN.md
+last_updated: "2026-09-20T15:51:44.894Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 06 execution started
-state_head: 29dd738faf3401d40ad53f7b15e039fbd1cb46e2
+state_head: 6fa996f941dc038fbc36fe92a7224106b9f27a5b
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 96
+  completed_plans: 97
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 5 of 13
+Plan: 6 of 13
 Status: Ready to execute
 Last activity: 2026-09-20 — Phase 06 execution started
 
@@ -148,6 +148,7 @@ Progress: [█████████░] 92%
 | Phase 06 P02 | ~2h | 3 tasks | 11 files |
 | Phase 06 P03 | 50min | 3 tasks | 19 files |
 | Phase 06 P04 | 39min | 2 tasks | 14 files |
+| Phase 06 P05 | unrecorded | 3 tasks | 33 files |
 
 ## Accumulated Context
 
@@ -353,6 +354,9 @@ Recent decisions affecting current work:
 - [Phase 06]: T-06-09 sanitization threat confirmed already mitigated generically: tty_render.cpp routes every finding.baseline/candidate through sanitize_for_display and junit.cpp XML-escapes generically (T-2-33 precedent), so audio.codec/audio.layout needed no per-check sanitization code
 - [Phase 06]: 06-04: SBR signaling resolved entirely in DemuxSession's header pass via a no-decode ASC fast path plus a bounded one-packet decode fallback, keeping audio.profile pass-independent (D-12).
 - [Phase 06]: 06-04: effective_sample_rate_hz caches the bounded probe's own directly-observed decoded rate rather than a formulaic core_rate*2, since avformat_find_stream_info() can already resolve codecpar->sample_rate to the SBR-doubled value for a short implicit stream.
+- [Phase 06]: By-name-only decoder classification, re-derived from the recorded decoder NAME at measurement time rather than trusted from a stored class integer (T-06-15)
+- [Phase 06]: mp3/mp2 promoted to determinism class 1 (D-06), provisional pending an arm64 CI leg confirming cross-architecture bit-exactness (06-13)
+- [Phase 06]: USAC fallback (Test 6) documented as a known gap -- no USAC bitstream/encoder available in this LGPL decode-only pin to prove end-to-end
 
 ### Pending Todos
 
@@ -392,6 +396,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-20T14:48:56.569Z
-Stopped at: Completed 06-04-PLAN.md
+Last session: 2026-09-20T15:51:44.700Z
+Stopped at: Completed 06-05-PLAN.md
 Resume file: None
