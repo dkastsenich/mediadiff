@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-07-PLAN.md
-last_updated: "2026-09-20T17:51:36.798Z"
+stopped_at: Completed 06-08-PLAN.md
+last_updated: "2026-09-20T18:53:17.427Z"
 last_activity: 2026-09-20
-last_activity_desc: Phase 06 plan 07 executed (D-16 av_drift span, WINDOWS.md #32 left open on evidence)
-state_head: f00e54de4daa3d6e169d2d03b4799939a327c665
+last_activity_desc: Phase 06 plan 07 executed (D-16 av_drift span, WINDOWS.md
+state_head: 159d47a3eaa420abb97cae11ee871727e715ed6a
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 99
+  completed_plans: 100
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 8 of 13
+Plan: 9 of 13
 Status: Ready to execute
 Last activity: 2026-09-20 — Completed 06-07-PLAN.md (D-16 av_drift span; WINDOWS.md #32 left open on evidence)
 
@@ -151,6 +151,7 @@ Progress: [█████████░] 94%
 | Phase 06 P05 | unrecorded | 3 tasks | 33 files |
 | Phase 06 P06 | 47min | 3 tasks | 21 files |
 | Phase 06 P07 | ~30min (session resumed after context compaction) | 2 tasks | 11 files |
+| Phase 06 P08 | 60min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -366,6 +367,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-07: Rejected an unconditional raw-forced Measurement::value design after it regressed a currently-clean, real-priming MP4-vs-MP4 constant-offset pair to a spurious linear-drift -- kept a single fit per measurement, computed on the audio stream's own shared basis preference.
 - [Phase 06]: 06-07: Fixed a real gap -- resolve_priming()'s call site in av_sync.cpp was missing the D-17 last_packet_discard_padding argument, and padding-tick conversion was gated on `> 0`, silently treating a genuinely known, zero padding count as unknown.
 - [Phase 06]: 06-07: WINDOWS.md #32 moved from waived to OPEN (not fixed) on new measured evidence -- audio.priming's own evidence confirms the MP4-to-TS pairs' TS-side priming is genuinely unrecoverable after remux (no skip_samples, no initial_padding, no edit list survives), a structural limitation this plan's own A2 flagged_assumption explicitly sanctions leaving open rather than closing on an assumption.
+- [Phase 06]: Gating-floor comparison made inclusive (<=) not strict (<): audio_loud_floor.flac decodes to exactly -70.0 LUFS, so a strict less-than never fired on the fixture built to prove doc 05's silent sentinel rule.
+- [Phase 06]: Ceiling-escalation invariants (Tests 5-8) proven at unit level against a synthetic check id (tests/unit/test_tolerance.cpp) since the real fixture pair's own delta already exceeds tolerance on magnitude alone, unable to isolate the escalation's own effect.
+- [Phase 06]: Channel-role mapping tested as a pure exported function (loudness_channel_role_for_avchannel) against real libebur128 enum constants, since libebur128's own weighting table applies an identical factor to side- and back-surround roles in this version.
 
 ### Pending Todos
 
@@ -406,6 +410,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-20T17:51:36.798Z
-Stopped at: Completed 06-07-PLAN.md
+Last session: 2026-09-20T18:53:17.230Z
+Stopped at: Completed 06-08-PLAN.md
 Resume file: None
