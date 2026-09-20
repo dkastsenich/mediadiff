@@ -24,6 +24,11 @@ extern "C" {
 // libavcodec/codec_par.h's own #include "packet.h" above.
 #include <libavutil/mastering_display_metadata.h>
 #include <libavutil/pixdesc.h>
+// 06-03-PLAN.md (AUDIO-01): AVChannelLayout description and sample-format
+// packed-equivalent resolution -- the SAME two libavutil headers
+// src/probe/audio_decode.cpp already includes for the decoded-frame case.
+#include <libavutil/channel_layout.h>
+#include <libavutil/samplefmt.h>
 // 04-12-PLAN.md (VIDEO-09's third HDR family): AVDOVIDecoderConfigurationRecord's
 // own struct layout -- AV_PKT_DATA_DOVI_CONF itself is declared in
 // libavcodec/packet.h, already transitively included above.
@@ -634,6 +639,44 @@ StreamInfo DemuxSession::stream_info(int index) const {
   // ticks conversion in src/analyzers/timeline/av_sync.cpp).
   if (info.media_type == StreamMediaType::audio && codecpar->sample_rate > 0) {
     info.sample_rate = codecpar->sample_rate;
+  }
+
+  // 06-03-PLAN.md (AUDIO-01): the remaining audio-only codecpar fields,
+  // same per-field boundary as every other value above -- src/analyzers/
+  // audio/stream_params.cpp never sees an AVSampleFormat/AVChannelLayout
+  // value, only these plain fields.
+  if (info.media_type == StreamMediaType::audio) {
+    const auto native_fmt = static_cast<AVSampleFormat>(codecpar->format);
+    info.sample_fmt_raw = static_cast<std::int64_t>(native_fmt);
+    // D-02 (06-CONTEXT.md): resolved to the PACKED-equivalent spelling here
+    // -- mirrors probe/audio_decode.cpp's identical canonicalisation of a
+    // decoded frame's own native format -- so `fltp` and `flt` record
+    // identically and a planar/packed difference alone is never reported.
+    const AVSampleFormat packed_fmt = av_get_alt_sample_fmt(native_fmt, /*planar=*/0);
+    const AVSampleFormat name_fmt = packed_fmt != AV_SAMPLE_FMT_NONE ? packed_fmt : native_fmt;
+    const char* sample_fmt_name = av_get_sample_fmt_name(name_fmt);
+    if (sample_fmt_name != nullptr) {
+      info.sample_fmt_name = sample_fmt_name;
+    }
+
+    // Never coerced to the sample format's container width -- codecpar->
+    // bits_per_raw_sample is a real reported 0 when the codec declares
+    // none, kept as std::nullopt rather than fabricated.
+    if (codecpar->bits_per_raw_sample > 0) {
+      info.bits_per_raw_sample = static_cast<std::int64_t>(codecpar->bits_per_raw_sample);
+    }
+
+    info.channels = static_cast<std::int64_t>(codecpar->ch_layout.nb_channels);
+
+    // AVChannelLayout only -- never the legacy uint64_t channel_layout
+    // mask, which is absent from these linked headers entirely. Mirrors
+    // probe/audio_decode.cpp's identical av_channel_layout_describe call
+    // on a decoded frame's own ch_layout.
+    char layout_buf[64] = {0};
+    const int layout_len = av_channel_layout_describe(&codecpar->ch_layout, layout_buf, sizeof(layout_buf));
+    if (layout_len > 0) {
+      info.channel_layout = layout_buf;
+    }
   }
 
   return info;

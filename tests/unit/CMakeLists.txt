@@ -354,6 +354,11 @@ add_executable(mediadiff_unit_tests
   # exported assertion helper 06-05's own class-1 two-build proof calls
   # before comparing anything (06-02-PLAN.md Task 1).
   test_gen_he_aac.cpp
+  # AUDIO-01/AUDIO-02 (06-03-PLAN.md): audio.codec/sample_rate/sample_fmt/
+  # bit_depth/channels/layout -- the six header-pass audio stream-parameter
+  # checks, exercised directly against audio_stream_params_analyzer()'s own
+  # run().
+  test_audio_stream_params.cpp
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain Threads::Threads)
 mediadiff_apply_warnings(mediadiff_unit_tests)

@@ -216,6 +216,10 @@ add_library(libmediadiff STATIC
   # audio decode-sink consumer, first real populator of hash.cpp's
   # kPreconditionKeys.
   src/analyzers/content/sample_hash.cpp
+  # 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/sample_fmt/
+  # bit_depth/channels/layout -- the six per-audio-stream identity checks,
+  # codecpar-only extraction mirroring video/stream_params.cpp's own shape.
+  src/analyzers/audio/stream_params.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -281,6 +285,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/analyzers/timeline/analyzers.h
   src/analyzers/timeline/unwrap.h
   src/analyzers/content/analyzers.h
+  src/analyzers/audio/analyzers.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 

@@ -1537,3 +1537,72 @@ severity = "fail"
 [check.profile_severity]
 hw_encoder = "info"
 transform = "ignore"
+
+# 06-03-PLAN.md (AUDIO-01, AUDIO-02), src/analyzers/audio/stream_params.cpp
+# -- the six per-audio-stream identity checks: codec, sample rate, sample
+# format, bit depth, channel count and canonical layout. Approved at
+# 06-CHECK-ROSTER.md (the frozen Phase-6 audio/meta id roster). All six are
+# codec-scoped (ContainerFamily::other): every one extracts directly from
+# AVStream.codecpar after the header pass alone -- no decode pass is
+# required for any of the six, so they report real values under
+# `--no-content` (AUDIO-01). Unlike video.codec/profile/level/resolution
+# above, a file with NO audio stream at all still emits all six of these as
+# `skipped:insufficient_data` rather than nothing -- `skipped != pass` is
+# load-bearing (06-CONTEXT.md's own must_have).
+
+# codecpar->codec_id -> avcodec_get_name, the SAME field/extraction
+# video.codec reads for a video stream.
+[[check]]
+id = "audio.codec"
+group = "audio"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# The CORE rate as the compared value, with BOTH a core and an effective
+# rate key in evidence (equal here) -- 06-04's HE-AAC implicit-SBR
+# detection is what makes the two diverge, without changing this check's
+# own value shape (06-CONTEXT.md).
+[[check]]
+id = "audio.sample_rate"
+group = "audio"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+
+# codecpar->format (AVSampleFormat) -> av_get_sample_fmt_name of its
+# PACKED-equivalent spelling (D-02, 06-CONTEXT.md) -- `fltp` and `flt`
+# record identically, so a planar/packed difference alone is never
+# reported as a format change.
+[[check]]
+id = "audio.sample_fmt"
+group = "audio"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# codecpar->bits_per_raw_sample verbatim, or `Absent{}` plus an explicit
+# `insufficient_data` skip when the codec declares none -- NEVER coerced to
+# the sample format's container width (this plan's own prohibition: a
+# fabricated number is the P0 class this project exists to prevent).
+[[check]]
+id = "audio.bit_depth"
+group = "audio"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+
+# codecpar->ch_layout.nb_channels -- the count alone, never the layout
+# (audio.layout, registered in this same plan's Task 2, never reads this
+# field to derive its own string).
+[[check]]
+id = "audio.channels"
+group = "audio"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "fail"

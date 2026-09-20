@@ -501,6 +501,30 @@ struct StreamInfo {
   // sample rate (true for MP4-muxed AAC, false for Matroska's mandated
   // 1ms timebase -- 05-VERIFICATION.md Gap 3).
   std::optional<std::int64_t> sample_rate;
+
+  // 06-03-PLAN.md (AUDIO-01): the remaining audio-only codecpar fields the
+  // six header-pass stream-parameter checks extract -- resolved HERE, same
+  // per-field boundary as every other codecpar value above. `sample_fmt_
+  // name`/`sample_fmt_raw` mirror `pix_fmt_name`/`pix_fmt_raw`'s shape,
+  // resolved to the format's PACKED-equivalent spelling (av_get_alt_
+  // sample_fmt) here -- the SAME canonicalisation probe/audio_decode.cpp
+  // already applies to a decoded frame -- so a planar/packed pair of the
+  // identical underlying format records identically and a planar/packed
+  // difference alone is never reported as a sample-format change (D-02,
+  // 06-CONTEXT.md). `bits_per_raw_sample` is std::nullopt when the codec
+  // declares none (codecpar->bits_per_raw_sample == 0) -- never coerced to
+  // the sample format's container width (this plan's own prohibition:
+  // a fabricated number is the P0 class this project exists to prevent).
+  // `channels`/`channel_layout` come from codecpar->ch_layout
+  // (AVChannelLayout only -- the legacy uint64_t channel_layout mask is
+  // absent from these linked headers entirely), `channel_layout` via
+  // av_channel_layout_describe(), the SAME canonical description
+  // probe/audio_decode.cpp already produces for the decoded-frame case.
+  std::optional<std::string> sample_fmt_name;
+  std::int64_t sample_fmt_raw = -1;  // AV_SAMPLE_FMT_NONE
+  std::optional<std::int64_t> bits_per_raw_sample;
+  std::int64_t channels = 0;
+  std::string channel_layout;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE

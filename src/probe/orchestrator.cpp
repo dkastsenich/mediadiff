@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "analyzers/audio/analyzers.h"
 #include "analyzers/container/analyzers.h"
 #include "analyzers/content/analyzers.h"
 #include "analyzers/size/analyzers.h"
@@ -190,6 +191,14 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // (TRUST-05) keeps this phase's own family appended, never
       // interleaved among Phase 5's.
       content_audio_sample_hash_analyzer(),
+      // 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/
+      // sample_fmt/bit_depth/channels/layout -- the six per-audio-stream
+      // identity checks, mirroring video_stream_params_analyzer()'s own
+      // codecpar-only extraction shape. Listed directly after
+      // content_audio_sample_hash_analyzer() so this phase's own
+      // registrations stay grouped and appended in commit order (06-01
+      // then 06-03), never interleaved among Phase 5's.
+      audio_stream_params_analyzer(),
   };
   return registry;
 }
