@@ -23,13 +23,22 @@ std::string enabled_features_csv();
 std::string tool_version();
 
 // Composes the class-2 decode-path signature (doc 01 sections 1, 7,
-// TRUST-03): the libavcodec/libavformat/swscale version triples read from
-// the LINKED libraries at runtime, parsed as integers via the
-// AV_VERSION_MAJOR/MINOR/MICRO macros — never as substrings of a rendered
-// version string — so a version bump in any one of the three always
-// changes this signature, and two builds sharing all three versions
-// always compose it identically. Leaves room for a device/driver
-// component a later phase appends once hwaccel decode paths exist.
+// TRUST-03; extended by 06-CHECK-ROSTER.md's approved D-05 format): the
+// libavcodec/libavformat/swscale version triples read from the LINKED
+// libraries at runtime, parsed as integers via the AV_VERSION_MAJOR/
+// MINOR/MICRO macros — never as substrings of a rendered version string —
+// so a version bump in any one of the three always changes this
+// signature, and two builds sharing all three versions always compose it
+// identically. Additionally carries the build's own vcpkg target triplet
+// (MEDIADIFF_VCPKG_TRIPLET, CMakeLists.txt) and the runtime
+// av_get_cpu_flags() value: D-05's own finding is that the version triple
+// ALONE is not sufficient to gate a class-2 (float-decoded) hash across
+// machines -- an AVX2 runner and an SSE-only runner on the identical
+// triplet, identical library versions, produce different decoded bytes.
+// The triplet and the CPU-flag mask are inseparable: AV_CPU_FLAG_* bit
+// values are NOT architecture-unique (0x1 is simultaneously MMX, ALTIVEC
+// and ARMV5TE), so the raw flags integer is meaningless without the
+// triplet beside it.
 //
 // core/ receives this as an opaque std::string, never a libav header
 // (D-07) — this function, implemented in version.cpp, is the one place

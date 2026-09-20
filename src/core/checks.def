@@ -1515,3 +1515,25 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "info"
+
+# 06-01-PLAN.md (Phase 6's tracer, AUDIO-08/AUDIO-10, TRUST-01/TRUST-02):
+# content.audio.sample_hash -- the untrimmed-output, fixed-block XXH3-128
+# hash chain over every audio stream's decoded PCM (D-01/D-02/D-04), the
+# first real populator of src/compare/hash.cpp's kPreconditionKeys table.
+# `hash` semantic, `hash_chain` value_kind. Approved at 06-CHECK-ROSTER.md
+# (approve-as-proposed): `hw_encoder` demotes to `info` (an HW encoder's
+# own re-encode is expected to change the audio essence in ways this
+# project does not yet model as tolerable), `transform` demotes to
+# `ignore` (a declared transcode profile's own explicit expectation
+# already covers intentional audio changes elsewhere).
+[[check]]
+id = "content.audio.sample_hash"
+group = "content"
+semantic = "hash"
+unit = "none"
+value_kind = "hash_chain"
+severity = "fail"
+
+[check.profile_severity]
+hw_encoder = "info"
+transform = "ignore"

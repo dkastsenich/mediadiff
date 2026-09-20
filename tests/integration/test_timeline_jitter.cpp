@@ -102,6 +102,13 @@ TEST_CASE("timeline_jitter - the jitter trigger pair declares its complete expec
           // effect timeline_structure's own dts_backward pair declares.
           "size.file",
           "size.stream_bitrate",
+          // 06-01-PLAN.md: twice the source duration is genuinely twice
+          // the decoded audio-sample content -- audio_hash correctly
+          // reports the chains differ (verified: baseline element_count
+          // 41 vs candidate 81, first divergent block 39, the exact
+          // 4s/44100Hz boundary where the original sine ends and the
+          // independently-generated longer encode's own audio continues).
+          "content.audio.sample_hash",
       });
 }
 

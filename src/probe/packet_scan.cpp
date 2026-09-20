@@ -127,6 +127,16 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     parser_states.resize(stream_count);
   }
 
+  // 06-01-PLAN.md (AUDIO-10, PROBE-08): mirrors the parser_states
+  // allocation immediately above -- only paid for when a caller actually
+  // requested the decode pass.
+  std::vector<detail::AudioDecodeState> audio_decode_states;
+  if (request.decode_audio) {
+    outputs.audio_decode = AudioDecodeResult{};
+    outputs.audio_decode->per_stream.resize(stream_count);
+    audio_decode_states.resize(stream_count);
+  }
+
   ScratchPacket pkt;
   if (!pkt.valid()) {
     return mediadiff::unexpected(Error{ErrorKind::internal, "could not allocate AVPacket for a packet scan"});
@@ -282,7 +292,28 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
       pstream.ref_frame_count = pstate.ref_frame_count();
     }
 
+    // 06-01-PLAN.md (AUDIO-10, PROBE-08): the audio decode fusion point --
+    // AFTER the PacketRecord append and the parser fusion above, BEFORE
+    // pkt.unref(), inside this SAME loop iteration (never a second
+    // av_read_frame sweep). Lazily initializes on the stream's own first
+    // accepted packet; every later packet on the same stream is a no-op
+    // re-check via AudioDecodeState::ensure_initialized's own
+    // attempted_init_ guard.
+    if (request.decode_audio) {
+      detail::AudioDecodeState& astate = audio_decode_states[stream_index];
+      astate.ensure_initialized(*ctx->streams[stream_index]->codecpar);
+      if (astate.attempted()) {
+        astate.feed_packet(pkt.get()->data, pkt.get()->size);
+      }
+    }
+
     pkt.unref();
+  }
+
+  if (request.decode_audio) {
+    for (std::size_t i = 0; i < audio_decode_states.size(); ++i) {
+      outputs.audio_decode->per_stream[i] = audio_decode_states[i].finalize();
+    }
   }
 
   result.accounted_bytes = accounted_bytes;

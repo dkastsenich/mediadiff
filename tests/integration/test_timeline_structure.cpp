@@ -193,6 +193,11 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
           // same splice root cause (D-02).
           "timeline.av_drift",
           "timeline.av_drift.pattern",
+          // 06-01-PLAN.md: the splice itself edits the decoded audio
+          // sample stream (verified: first divergent block 19, ~1900ms
+          // in, exactly the splice point, 22 divergent blocks total) --
+          // one more legitimate effect of the same splice root cause.
+          "content.audio.sample_hash",
       });
 }
 
@@ -574,6 +579,11 @@ TEST_CASE(
           // deliberately absent here. One more legitimate effect of the
           // same splice root cause (D-02).
           "timeline.av_drift",
+          // 06-01-PLAN.md: the same splice edits the decoded audio
+          // sample stream (verified: first divergent block 19, ~1900ms
+          // in, 22 divergent blocks total) -- one more legitimate effect
+          // of the same splice root cause.
+          "content.audio.sample_hash",
       });
 }
 

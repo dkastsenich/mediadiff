@@ -163,6 +163,12 @@ add_library(libmediadiff STATIC
   src/probe/demux_session.cpp
   src/probe/packet_scan.cpp
   src/probe/parser_scan.cpp
+  # 06-01-PLAN.md (AUDIO-10): mediadiff's own MPEG-4 AudioSpecificConfig
+  # bit-reader (USAC/AOT detection ahead of decoder selection) and the
+  # audio decode pass itself, fused inside packet_scan.cpp's own
+  # av_read_frame loop.
+  src/probe/audio_config.cpp
+  src/probe/audio_decode.cpp
   src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
@@ -206,6 +212,10 @@ add_library(libmediadiff STATIC
   # -- a QuickTime tmcd track's SMPTE start timecode, reachable from
   # Pass::demux_header alone (no scan of any kind needed).
   src/analyzers/timeline/timecode.cpp
+  # 06-01-PLAN.md (this phase's tracer): content.audio.sample_hash --
+  # audio decode-sink consumer, first real populator of hash.cpp's
+  # kPreconditionKeys.
+  src/analyzers/content/sample_hash.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -258,6 +268,8 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/demux_session.h
   src/probe/packet_scan.h
   src/probe/parser_scan.h
+  src/probe/audio_config.h
+  src/probe/audio_decode.h
   src/probe/cadence.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
@@ -268,6 +280,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/analyzers/video/analyzers.h
   src/analyzers/timeline/analyzers.h
   src/analyzers/timeline/unwrap.h
+  src/analyzers/content/analyzers.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 
@@ -283,6 +296,10 @@ if(APPLE)
 endif()
 
 target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VERSION="${PROJECT_VERSION}")
+# 06-CHECK-ROSTER.md's approved D-05 signature format: the build's own
+# vcpkg target triplet, additive to compose_decode_path_signature()'s
+# existing version-triple fields (src/util/version.cpp).
+target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VCPKG_TRIPLET="${VCPKG_TARGET_TRIPLET}")
 if(MEDIADIFF_WITH_VMAF)
   target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_WITH_VMAF)
 endif()

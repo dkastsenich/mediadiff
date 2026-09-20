@@ -68,3 +68,16 @@
 # zero-entry branch does not apply -- clause 3 instead checks the entries
 # themselves are LC_ALL=C sorted, unique, and each names a real line in
 # CORPUS_DIGEST.txt.
+#
+# 06-01-PLAN.md added the nine content.audio.sample_hash tracer fixtures
+# (audio_hash_*, audio_pcm_*) below -- workstation-computed hashes awaiting
+# the same designated-leg transcription a later 06-plan performs.
+audio_hash_alt.mp4
+audio_hash_base.mkv
+audio_hash_base.mp4
+audio_hash_base.ts
+audio_hash_base_copy.mp4
+audio_pcm_base.mov
+audio_pcm_base.wav
+audio_pcm_flac_large.mkv
+audio_pcm_flac_small.mkv

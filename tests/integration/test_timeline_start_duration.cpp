@@ -411,5 +411,10 @@ TEST_CASE("timeline_start_duration - the duration-short trigger pair (timeline_s
                                    "size.file",
                                    "size.stream_bitrate",
                                    "size.overhead",
+                                   // 06-01-PLAN.md: half the duration is
+                                   // genuinely half the decoded audio-sample
+                                   // content -- the chains differ starting
+                                   // at the point the shorter encode ends.
+                                   "content.audio.sample_hash",
                                });
 }

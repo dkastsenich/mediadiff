@@ -364,6 +364,15 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
                                      "container.mp4.edit_list",
                                      "timeline.av_drift",
                                      "timeline.av_drift.pattern",
+                                     // 06-01-PLAN.md: a linearly drifting audio
+                                     // stream is genuinely different decoded
+                                     // audio content from block 0 onward
+                                     // (verified: first divergent block 0,
+                                     // 201 divergent blocks total) -- the
+                                     // drift itself is resampled/retimed
+                                     // audio, not merely a container-level
+                                     // timestamp change.
+                                     "content.audio.sample_hash",
                                  });
     for (const auto& f : report.at("findings")) {
       if (f.at("id").get<std::string>() != "timeline.av_drift.pattern") {
@@ -379,6 +388,12 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
     expect_declared_set(report, {
                                      "timeline.vfr_profile",
                                      "timeline.av_drift.pattern",
+                                     // 06-01-PLAN.md: the splice/trim itself
+                                     // is a genuine audio-content edit
+                                     // (verified: first divergent block 38,
+                                     // ~3800ms in, 3 divergent blocks total,
+                                     // exactly where the step occurs).
+                                     "content.audio.sample_hash",
                                  });
     for (const auto& f : report.at("findings")) {
       if (f.at("id").get<std::string>() != "timeline.av_drift.pattern") {

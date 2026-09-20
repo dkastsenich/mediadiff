@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "analyzers/container/analyzers.h"
+#include "analyzers/content/analyzers.h"
 #include "analyzers/size/analyzers.h"
 #include "analyzers/timeline/analyzers.h"
 #include "analyzers/timeline/unwrap.h"
@@ -181,6 +182,14 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // analyzer order (TRUST-05). Pass::demux_header only -- no scan of
       // any kind needed, matching video_color_analyzer()'s own shape.
       timeline_timecode_analyzer(),
+      // 06-01-PLAN.md (this phase's tracer): content.audio.sample_hash --
+      // ContainerFamily::other (a content check applies to every
+      // container), declares Pass::audio_decode (implied into the union
+      // alongside Pass::packet_scan below). Listed last, after every
+      // Phase 5 analyzer, so the stable, hand-written analyzer order
+      // (TRUST-05) keeps this phase's own family appended, never
+      // interleaved among Phase 5's.
+      content_audio_sample_hash_analyzer(),
   };
   return registry;
 }
@@ -189,7 +198,7 @@ namespace detail {
 
 mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
                                                      const std::vector<AnalyzerSpec>& analyzers,
-                                                     PassExecutionLog* pass_log) {
+                                                     PassExecutionLog* pass_log, const ProbeOptions& options) {
   auto session_result = DemuxSession::open(utf8_path, DemuxOptions{});
   if (!session_result) {
     return mediadiff::unexpected(session_result.error());
@@ -219,12 +228,31 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
     union_passes |= spec.required_passes;
   }
 
+  // 06-01-PLAN.md (Claude's Discretion, "--content/--no-content"): when
+  // content decode is disabled for this invocation, Pass::audio_decode is
+  // removed from the union entirely -- ProbeResults::audio_decode stays
+  // std::nullopt regardless of which analyzers declared the pass, and
+  // every decode-consuming analyzer reports skipped:requires_decode
+  // rather than a fabricated value.
+  if (!options.content_enabled) {
+    union_passes.clear(Pass::audio_decode);
+  }
+
   // PROBE-03 (04-01-PLAN.md Task 2): an analyzer that declared ONLY
   // Pass::parser_scan would otherwise get no sweep run at all -- the
   // parser's own data is produced INSIDE Pass::packet_scan's own arm
   // below (the fused loop in probe/packet_scan.cpp), so packet_scan must
   // always be in the union whenever parser_scan is.
   if (union_passes.test(Pass::parser_scan)) {
+    union_passes.set(Pass::packet_scan);
+  }
+
+  // 06-01-PLAN.md (AUDIO-10, PROBE-08): mirrors the parser_scan
+  // implication immediately above -- Pass::audio_decode's own data is
+  // produced INSIDE Pass::packet_scan's own arm too (probe/packet_scan.cpp's
+  // fused loop), so packet_scan must always be in the union whenever
+  // audio_decode is.
+  if (union_passes.test(Pass::audio_decode)) {
     union_passes.set(Pass::packet_scan);
   }
 
@@ -307,13 +335,20 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
       // implication just above guarantees packet_scan is always in
       // `union_passes` whenever parser_scan is, so this IS the only place
       // either pass's own data is ever produced).
+      // 06-01-PLAN.md (AUDIO-10, PROBE-08): mirrors `parse_access_units`'s
+      // own comment immediately above -- `decode_audio` fuses
+      // Pass::audio_decode's own per-stream decode INSIDE this same call
+      // (never a second dispatch arm; the implication above guarantees
+      // packet_scan is always in `union_passes` whenever audio_decode is).
       PacketScanRequest request;
       request.limits = PacketScanLimits{};
       request.parse_access_units = union_passes.test(Pass::parser_scan);
+      request.decode_audio = union_passes.test(Pass::audio_decode);
       auto scan_result = run_packet_scan(session, request);
       if (scan_result) {
         results.packet_scan = std::move(scan_result->packets);
         results.parser_scan = std::move(scan_result->access_units);
+        results.audio_decode = std::move(scan_result->audio_decode);
       } else {
         packet_scan_error = mediadiff::unexpected(scan_result.error());
       }
@@ -471,7 +506,8 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
 
 }  // namespace detail
 
-mediadiff::expected<Fingerprint, Error> fingerprint_input(const std::string& utf8_path, const CheckRegistry& registry) {
+mediadiff::expected<Fingerprint, Error> fingerprint_input(const std::string& utf8_path, const CheckRegistry& registry,
+                                                             const ProbeOptions& options) {
   auto snapshot_result = read_snapshot(utf8_path, registry);
   if (snapshot_result) {
     return snapshot_result;
@@ -489,7 +525,11 @@ mediadiff::expected<Fingerprint, Error> fingerprint_input(const std::string& utf
     return mediadiff::unexpected(snapshot_result.error());
   }
 
-  return detail::run_probe(utf8_path, all_analyzers(), nullptr);
+  return detail::run_probe(utf8_path, all_analyzers(), nullptr, options);
+}
+
+mediadiff::expected<Fingerprint, Error> fingerprint_input(const std::string& utf8_path, const CheckRegistry& registry) {
+  return fingerprint_input(utf8_path, registry, ProbeOptions{});
 }
 
 }  // namespace mediadiff

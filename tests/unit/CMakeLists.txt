@@ -344,6 +344,11 @@ add_executable(mediadiff_unit_tests
   # CMakeLists.txt).
   "${MEDIADIFF_TEST_GENERATED_DIR}/test_check_registry.cpp"
   "${MEDIADIFF_TEST_GENERATED_DIR}/test_check_explain.cpp"
+  # AUDIO-10/PROBE-08: content.audio.sample_hash's own decode-sink pass --
+  # decoder selection/class (D-06/D-07/D-08), D-04's rate-derived block
+  # math, the single-sweep read_frame_call_count proof, and TRUST-05
+  # determinism (06-01-PLAN.md Task 2).
+  test_audio_decode.cpp
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain Threads::Threads)
 mediadiff_apply_warnings(mediadiff_unit_tests)

@@ -397,7 +397,22 @@ mediadiff::expected<std::vector<Finding>, Error> compare_fingerprints(const Fing
       evidence["candidate"] = candidate_m.evidence;
     }
     if (!evidence.empty()) {
-      finding->evidence = std::move(evidence);
+      // 06-01-PLAN.md (D-03) Rule 1 fix: a comparator MAY already have set
+      // finding->evidence itself before returning (src/compare/hash.cpp's
+      // own divergence-locator keys, populated only when the chains
+      // genuinely differ) -- merge baseline/candidate INTO that object
+      // rather than overwriting it outright, so a comparator-populated
+      // key survives this seam. No pre-existing comparator sets
+      // finding->evidence before this point (grep-verified), so this is
+      // additive: every other comparator's behavior is unchanged (the
+      // `else` branch below is the exact previous assignment).
+      if (finding->evidence.is_object()) {
+        for (auto it = evidence.begin(); it != evidence.end(); ++it) {
+          finding->evidence[it.key()] = it.value();
+        }
+      } else {
+        finding->evidence = std::move(evidence);
+      }
     }
 
     findings.push_back(std::move(*finding));

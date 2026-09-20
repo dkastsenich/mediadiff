@@ -176,6 +176,11 @@ add_executable(mediadiff_integration_tests
   # argv-supplied string before it reaches stderr, across the real CLI
   # binary, on every platform (no _WIN32 skip).
   test_cli_diagnostics_escaping.cpp
+  # AUDIO-08/AUDIO-10/TRUST-01 (06-01-PLAN.md Task 2): content.audio.sample_hash
+  # end to end -- D-01's cross-container equality, D-02's cross-packetization
+  # equality, D-03's divergence-locator report (media and snapshot baselines
+  # alike), D-04's snapshot round trip, and --no-content's requires_decode skip.
+  test_audio_sample_hash.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"

@@ -259,8 +259,20 @@ nlohmann::ordered_json value_to_json(const Value& value) {
           }
           return arr;
         } else if constexpr (std::is_same_v<T, HashChain>) {
-          return nlohmann::ordered_json{
-              {"algorithm", v.algorithm}, {"digest", v.digest}, {"element_count", v.element_count}};
+          nlohmann::ordered_json j{{"algorithm", v.algorithm}, {"digest", v.digest}, {"element_count", v.element_count}};
+          // D-04: emitted only when non-empty, so every pre-Phase-6
+          // HashChain golden (element_count-only) stays byte-identical --
+          // mirrors Measurement::estimated/skip_reason's own
+          // emit-only-when-non-default convention in core/snapshot.cpp.
+          if (!v.block_digests.empty()) {
+            nlohmann::ordered_json digests = nlohmann::ordered_json::array();
+            for (const std::string& d : v.block_digests) {
+              digests.push_back(d);
+            }
+            j["block_digests"] = std::move(digests);
+            j["element_stride"] = v.element_stride;
+          }
+          return j;
         } else {
           static_assert(!sizeof(T*), "value_to_json: unhandled Value alternative");
         }
@@ -429,6 +441,29 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
       chain.algorithm = json.at("algorithm").get<std::string>();
       chain.digest = json.at("digest").get<std::string>();
       chain.element_count = json.at("element_count").get<std::int64_t>();
+      // D-04: block_digests/element_stride are optional -- absent on
+      // every pre-Phase-6 snapshot, and on any HashChain whose producer
+      // did not populate a per-block array.
+      if (json.contains("block_digests")) {
+        if (!json.at("block_digests").is_array()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "hash_chain 'block_digests' is not an array"});
+        }
+        for (const auto& digest_json : json.at("block_digests")) {
+          if (!digest_json.is_string()) {
+            return mediadiff::unexpected(
+                Error{ErrorKind::input_unsupported, "hash_chain 'block_digests' element is not a string"});
+          }
+          chain.block_digests.push_back(digest_json.get<std::string>());
+        }
+      }
+      if (json.contains("element_stride")) {
+        if (!json.at("element_stride").is_number_integer()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "hash_chain 'element_stride' is not an integer"});
+        }
+        chain.element_stride = json.at("element_stride").get<std::int64_t>();
+      }
       return Value{std::move(chain)};
     }
   }

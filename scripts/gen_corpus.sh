@@ -2131,4 +2131,55 @@ cp "$OUT_DIR/timeline_tc_ndf.mp4" "$OUT_DIR/timeline_tc_ndf_copy.mp4"
   -c:v mpeg4 -c:a aac -timecode "00:00:10;00" -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/timeline_tc_df.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4."
+# --- 06-01-PLAN.md (Phase 6's tracer, content.audio.sample_hash) ----------
+# `audio_hash_base.mp4`: a 4s 44100Hz stereo AAC payload, audio-only (no
+# video stream at all -- the untrimmed-hash tracer needs only the audio
+# essence). `audio_hash_base_copy.mp4` is a SECOND, independent encoder
+# invocation with byte-identical arguments (this script's own
+# idem_a.mp4/idem_b.mp4 precedent: proves the ENCODER's own determinism,
+# never a `cp` of one output onto the other) -- the clean pair for
+# content.audio.sample_hash and DOC-03's own trigger/clean discipline.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_base.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_base_copy.mp4"
+
+# D-01's own cross-container proof: `-c copy` stream copies of the SAME
+# encoded AAC payload into Matroska and MPEG-TS -- no re-encode, so any
+# hash difference would be purely a container/trim-mechanism artifact
+# (exactly what AV_CODEC_FLAG2_SKIP_MANUAL's untrimmed basis neutralises).
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_hash_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_base.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_hash_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_base.ts"
+
+# The TRIGGER pair's own candidate: the identical recipe at a different
+# tone -- a genuinely different audio essence, never a container/trim
+# artifact.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=880:duration=4:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_alt.mp4"
+
+# D-02's own fixed-block-not-decoder-frame proof: one PCM payload,
+# packaged four ways (WAV, a `-c copy` MOV remux, and FLAC at two
+# different `-frame_size` values) -- every packetization decodes to the
+# identical sample stream, so all four must hash equal despite radically
+# different packet sizes.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_pcm_base.wav"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_pcm_base.wav" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_pcm_base.mov"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_pcm_base.wav" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_pcm_flac_small.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_pcm_base.wav" -c:a flac -frame_size 8192 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_pcm_flac_large.mkv"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv."

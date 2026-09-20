@@ -41,8 +41,9 @@
 // timeline.av_drift.pattern, bringing the total to seventy-five.
 // 05-11-PLAN.md registers timeline.timecode and timeline.timecode.value,
 // bringing the total to seventy-seven -- the full 16-id Phase 5 timeline
-// roster, closing out this phase's own DOC-03 obligation. This file is
-// where a gap becomes visible.
+// roster, closing out this phase's own DOC-03 obligation. 06-01-PLAN.md
+// registers Phase 6's tracer, content.audio.sample_hash, bringing the
+// total to seventy-eight. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -571,6 +572,18 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"timeline.timecode.value",
        {fixture("timeline_tc_ndf.mp4"), fixture("timeline_tc_ndf_shifted.mp4"), fixture("timeline_tc_ndf.mp4"),
         fixture("timeline_tc_ndf_copy.mp4")}},
+      // 06-01-PLAN.md Task 2 (AUDIO-10, D-01/D-02): content.audio.sample_hash's
+      // own trigger pair -- audio_hash_base.mp4 (440 Hz sine) vs
+      // audio_hash_alt.mp4 (the identical recipe at 880 Hz, a genuinely
+      // different sample stream) -- verified empirically: reports non-pass
+      // with a populated D-03 divergence report. Clean pair:
+      // audio_hash_base.mp4 vs audio_hash_base_copy.mp4, two INDEPENDENT
+      // bitexact encodes of the identical 440 Hz signal -- verified
+      // empirically to hash byte-identical (`89d280015b77f4702bd20d52638f4753`),
+      // proving D-01's encoder-determinism claim, not merely a `cp` copy.
+      {"content.audio.sample_hash",
+       {fixture("audio_hash_base.mp4"), fixture("audio_hash_alt.mp4"), fixture("audio_hash_base.mp4"),
+        fixture("audio_hash_base_copy.mp4")}},
   };
   return pairs;
 }

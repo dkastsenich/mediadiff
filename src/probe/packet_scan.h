@@ -41,6 +41,7 @@
 
 #include "core/error.h"
 #include "core/rational.h"
+#include "probe/audio_decode.h"
 #include "probe/parser_scan.h"
 #include "util/expected.h"
 
@@ -289,14 +290,25 @@ struct PacketScanLimits {
 // `union_passes.test(Pass::parser_scan)` -- when false, `access_units`
 // stays std::nullopt and the whole call behaves identically to the
 // pre-Phase-4 PacketScanLimits-only overload (Test 4).
+// 06-01-PLAN.md (AUDIO-10, PROBE-08): `decode_audio` fuses the audio
+// decode sweep (probe/audio_decode.h) INSIDE this same av_read_frame
+// loop, mirroring `parse_access_units`'s own fusion exactly -- a stream's
+// packet bytes are never retained past this loop iteration (D-01's own
+// per-file budget), so a later, independent decode pass could not read
+// them again without re-opening the file. Set from
+// `union_passes.test(Pass::audio_decode)` by src/probe/orchestrator.cpp.
 struct PacketScanRequest {
   PacketScanLimits limits{};
   bool parse_access_units = false;
+  bool decode_audio = false;
 };
 
 struct PacketScanOutputs {
   PacketScanResult packets;
   std::optional<ParserScanResult> access_units;
+  // Populated only when `PacketScanRequest::decode_audio` was set --
+  // std::nullopt otherwise, mirroring `access_units`'s own contract.
+  std::optional<AudioDecodeResult> audio_decode;
 };
 
 // One `av_read_frame` sweep of `session`'s already-open AVFormatContext,
