@@ -360,6 +360,11 @@ add_executable(mediadiff_unit_tests
   # math, the single-sweep read_frame_call_count proof, and TRUST-05
   # determinism (06-01-PLAN.md Task 2).
   test_audio_decode.cpp
+  # 06-08-PLAN.md Task 1 (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink
+  # fused into the same decode sweep -- channel-role mapping, feed dispatch,
+  # the gating-floor sentinel, quantiser determinism, and the zero-sample
+  # not-measured state.
+  test_loudness_sink.cpp
   # AUDIO-03/D-10/D-11: tools/gen_he_aac.py's hand-written HE-AAC fixtures --
   # audio_aac_handwritten.mp4's recorded XXH3-128 input identity and the
   # exported assertion helper 06-05's own class-1 two-build proof calls

@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <utility>
 
 #include <fmt/format.h>
@@ -15,6 +17,14 @@ extern "C" {
 #include <libavutil/channel_layout.h>
 #include <libavutil/samplefmt.h>
 }
+
+// 06-08-PLAN.md (AUDIO-05, AUDIO-06): the ONLY translation unit that
+// includes <ebur128.h> -- confined here exactly as libavcodec/libavutil
+// are confined to this file's own decode loop (this file's own top-of-file
+// promise). C linkage: libebur128's own header wraps its declarations in
+// `extern "C"` when __cplusplus is defined, so no explicit block is needed
+// here (mirrors this file's own libav includes, whose headers do the same).
+#include <ebur128.h>
 
 #include "probe/audio_config.h"
 #include "probe/demux_session.h"
@@ -71,7 +81,120 @@ const char* fixed_sibling_name(AVCodecID id) {
 // rather than re-derived from AVCodecContext at record-construction time.
 constexpr std::string_view kDecodeFlagsRecorded = "bitexact,skip_manual";
 
+// 06-08-PLAN.md (AUDIO-05, AUDIO-06): the loudness sink's own feed-function
+// dispatch, chosen ONCE at sweep start from the decoder's native output
+// format (D-08) -- never per frame. `none` is the "this sample format is
+// not one of the four ebur128_add_frames_* accepts" case (Test 3): the
+// sink is never constructed for such a stream.
+enum class Ebur128Feed {
+  none = -1,
+  short_fmt,
+  int_fmt,
+  float_fmt,
+  double_fmt,
+};
+
+// Dispatches on the PACKED equivalent of `fmt` -- a planar and a packed
+// spelling of the same underlying format resolve identically (Test 4: the
+// sink always interleaves before feeding, exactly like the hash sink's own
+// pending_block_).
+Ebur128Feed ebur128_feed_for_format(AVSampleFormat fmt) {
+  const AVSampleFormat packed = av_get_packed_sample_fmt(fmt);
+  switch (packed) {
+    case AV_SAMPLE_FMT_S16:
+      return Ebur128Feed::short_fmt;
+    case AV_SAMPLE_FMT_S32:
+      return Ebur128Feed::int_fmt;
+    case AV_SAMPLE_FMT_FLT:
+      return Ebur128Feed::float_fmt;
+    case AV_SAMPLE_FMT_DBL:
+      return Ebur128Feed::double_fmt;
+    default:
+      return Ebur128Feed::none;
+  }
+}
+
+// 06-RESEARCH.md Common Pitfall 3: libebur128 has NO knowledge of
+// AVChannelLayout -- every channel's role must be mapped explicitly, or a
+// surround channel silently gets the wrong (or no) BS.1770 weighting.
+// `EBUR128_LEFT_SURROUND`/`EBUR128_RIGHT_SURROUND` (== `EBUR128_Mp110`/
+// `EBUR128_Mm110`) are a DIFFERENT enumerator identity from
+// `EBUR128_Mp090`/`EBUR128_Mm090`, so a back-surround position and a
+// side-surround position are never folded onto one shared default (this
+// plan's own must_have), even though libebur128's own gating-block
+// weighting table (ebur128.c) happens to apply the identical 1.41x factor
+// to both roles today -- the distinction is about correct, non-default
+// MAPPING per se, not (for this specific pair of roles) a different
+// resulting number.
+int ebur128_role_for_channel(AVChannel channel, int position_index) {
+  switch (channel) {
+    case AV_CHAN_FRONT_LEFT:
+      return EBUR128_LEFT;
+    case AV_CHAN_FRONT_RIGHT:
+      return EBUR128_RIGHT;
+    case AV_CHAN_FRONT_CENTER:
+      return EBUR128_CENTER;
+    case AV_CHAN_LOW_FREQUENCY:
+    case AV_CHAN_LOW_FREQUENCY_2:
+      // BS.1770 excludes the LFE channel from the loudness sum entirely.
+      return EBUR128_UNUSED;
+    case AV_CHAN_BACK_LEFT:
+      return EBUR128_LEFT_SURROUND;
+    case AV_CHAN_BACK_RIGHT:
+      return EBUR128_RIGHT_SURROUND;
+    case AV_CHAN_SIDE_LEFT:
+      return EBUR128_Mp090;
+    case AV_CHAN_SIDE_RIGHT:
+      return EBUR128_Mm090;
+    default:
+      break;
+  }
+  // `AV_CHAN_NONE` (an AV_CHANNEL_ORDER_UNSPEC layout, which carries a
+  // channel COUNT but no per-position identity at all -- a real, observed
+  // case in this project's own corpus, per audio.layout's own "N channels"
+  // rendering) or a position code doc 05 does not discuss: fall back to
+  // libebur128's OWN documented positional default (ebur128.h's own
+  // ebur128_set_channel doc comment: 0=L, 1=R, 2=C, 3=UNUSED, 4=Ls, 5=Rs)
+  // rather than excluding an unidentified channel from the sum outright,
+  // which would silently under-measure an ordinary unspecified-layout
+  // stereo/mono file.
+  switch (position_index) {
+    case 0:
+      return EBUR128_LEFT;
+    case 1:
+      return EBUR128_RIGHT;
+    case 2:
+      return EBUR128_CENTER;
+    case 3:
+      return EBUR128_UNUSED;
+    case 4:
+      return EBUR128_LEFT_SURROUND;
+    case 5:
+      return EBUR128_RIGHT_SURROUND;
+    default:
+      return EBUR128_UNUSED;
+  }
+}
+
+// Ties away from zero, at kLoudnessQuantiserDen -- std::llround is
+// specified (since C++11) to round half away from zero unconditionally,
+// independent of the current floating-point rounding mode, so this is
+// byte-identical across GCC/Clang/MSVC/AppleClang (TRUST-05). `value` must
+// already be finite -- callers clamp a non-finite libebur128 read-out to
+// kNonFiniteLoudnessReadoutSentinel before reaching here.
+std::int64_t quantize_loudness_milli(double value) {
+  return static_cast<std::int64_t>(std::llround(value * static_cast<double>(kLoudnessQuantiserDen)));
+}
+
 }  // namespace
+
+int loudness_feed_dispatch_for_sample_fmt(int av_sample_fmt_id) {
+  return static_cast<int>(ebur128_feed_for_format(static_cast<AVSampleFormat>(av_sample_fmt_id)));
+}
+
+int loudness_channel_role_for_avchannel(int av_channel_id, int position_index) {
+  return ebur128_role_for_channel(static_cast<AVChannel>(av_channel_id), position_index);
+}
 
 int determinism_class_for_decoder(std::string_view decoder_name) {
   // Every PCM decoder is bit-exact by construction (a straight byte
@@ -108,7 +231,130 @@ bool hash_decoder_name_exists(std::string_view name) {
 
 namespace detail {
 
+// 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink,
+// constructed once per audio stream (AudioDecodeState's own lazy-init
+// block, alongside the hash sink's own once-per-stream setup) and fed the
+// SAME one-frame-in-flight decoded output the hash sink already
+// interleaves -- no second decode, no retained PCM, no second file read.
+// Defined here (not in the header) since it is the only type in this file
+// that needs libebur128's own complete `ebur128_state` -- AudioDecodeState
+// holds one only by pointer-to-incomplete-type.
+struct LoudnessSink {
+  ebur128_state* state = nullptr;
+  Ebur128Feed feed_kind = Ebur128Feed::none;
+
+  LoudnessSink() = default;
+  LoudnessSink(const LoudnessSink&) = delete;
+  LoudnessSink& operator=(const LoudnessSink&) = delete;
+
+  ~LoudnessSink() {
+    if (state != nullptr) {
+      ebur128_destroy(&state);
+    }
+  }
+
+  // `channels`/`sample_rate` are the SAME values the hash sink's own
+  // lazy-init block just resolved from the first decoded frame -- never
+  // re-derived. Returns false (leaving `state` null) for a channel count
+  // <= 0, a sample rate <= 0, a native format none of the four feed
+  // functions accept, or an ebur128_init allocation failure -- every
+  // failure degrades to "this stream's loudness is not measured"
+  // (StreamAudioDecode::loudness_measured stays false), never a crash and
+  // never a fabricated value.
+  bool init(int channels, int sample_rate, AVSampleFormat native_fmt) {
+    feed_kind = ebur128_feed_for_format(native_fmt);
+    if (feed_kind == Ebur128Feed::none || channels <= 0 || sample_rate <= 0) {
+      return false;
+    }
+    // 06-RESEARCH.md Q8: EBUR128_MODE_I already implies momentary mode,
+    // EBUR128_MODE_TRUE_PEAK already implies sample peak -- this mask is
+    // the confirmed minimal, sufficient set for both read-outs below.
+    state = ebur128_init(static_cast<unsigned int>(channels), static_cast<unsigned long>(sample_rate),
+                          EBUR128_MODE_I | EBUR128_MODE_TRUE_PEAK);
+    return state != nullptr;
+  }
+
+  // Maps EVERY channel's role explicitly from `layout`'s own per-position
+  // codes (06-RESEARCH.md Common Pitfall 3) -- called ONCE, immediately
+  // after a successful init(), never per frame.
+  void set_channel_map(const AVChannelLayout& layout) {
+    if (state == nullptr) {
+      return;
+    }
+    for (int c = 0; c < layout.nb_channels; ++c) {
+      const AVChannel channel = av_channel_layout_channel_from_index(&layout, static_cast<unsigned int>(c));
+      ebur128_set_channel(state, static_cast<unsigned int>(c), ebur128_role_for_channel(channel, c));
+    }
+  }
+
+  // Dispatches to the ONE feed function chosen at init() time -- never
+  // re-evaluated per call. `interleaved` holds `frames * channels *
+  // bytes_per_sample` bytes in the native (packed-equivalent) layout the
+  // hash sink's own scratch buffer already produced.
+  void feed(const std::uint8_t* interleaved, int frames) {
+    if (state == nullptr || frames <= 0) {
+      return;
+    }
+    const std::size_t count = static_cast<std::size_t>(frames);
+    switch (feed_kind) {
+      case Ebur128Feed::short_fmt:
+        ebur128_add_frames_short(state, reinterpret_cast<const short*>(interleaved), count);
+        break;
+      case Ebur128Feed::int_fmt:
+        ebur128_add_frames_int(state, reinterpret_cast<const int*>(interleaved), count);
+        break;
+      case Ebur128Feed::float_fmt:
+        ebur128_add_frames_float(state, reinterpret_cast<const float*>(interleaved), count);
+        break;
+      case Ebur128Feed::double_fmt:
+        ebur128_add_frames_double(state, reinterpret_cast<const double*>(interleaved), count);
+        break;
+      case Ebur128Feed::none:
+        break;
+    }
+  }
+
+  struct Readout {
+    bool valid = false;
+    double integrated_lufs = 0.0;
+    double true_peak_dbtp = 0.0;
+  };
+
+  // Reads out `ebur128_loudness_global` and the MAXIMUM over channels of
+  // `ebur128_true_peak` (converted from libebur128's own linear 1.0 ==
+  // 0 dBTP scale via 20*log10, per ebur128.h's own doc comment on both
+  // functions). `valid` stays false when this sink was never constructed
+  // (init() failed) or the global read-out itself reports
+  // EBUR128_ERROR_INVALID_MODE -- unreachable in practice, since init()
+  // never leaves `state` non-null without EBUR128_MODE_I set, but guarded
+  // rather than assumed (Test 1: "both read-out calls succeed rather than
+  // returning EBUR128_ERROR_INVALID_MODE").
+  Readout finalize() {
+    Readout out;
+    if (state == nullptr) {
+      return out;
+    }
+    double integrated = 0.0;
+    if (ebur128_loudness_global(state, &integrated) != EBUR128_SUCCESS) {
+      return out;
+    }
+    double max_peak_linear = 0.0;
+    for (unsigned int c = 0; c < state->channels; ++c) {
+      double peak = 0.0;
+      if (ebur128_true_peak(state, c, &peak) == EBUR128_SUCCESS) {
+        max_peak_linear = std::max(max_peak_linear, peak);
+      }
+    }
+    out.valid = true;
+    out.integrated_lufs = integrated;
+    out.true_peak_dbtp = max_peak_linear > 0.0 ? 20.0 * std::log10(max_peak_linear) : -HUGE_VAL;
+    return out;
+  }
+};
+
 struct AudioDecodeState::BlockAccumulator {};
+
+AudioDecodeState::AudioDecodeState() = default;
 
 AudioDecodeState::~AudioDecodeState() {
   if (codec_ctx_ != nullptr) {
@@ -138,7 +384,9 @@ AudioDecodeState::AudioDecodeState(AudioDecodeState&& other) noexcept
       block_stride_bytes_(other.block_stride_bytes_),
       total_samples_(other.total_samples_),
       pending_block_(std::move(other.pending_block_)),
-      block_digests_(std::move(other.block_digests_)) {
+      block_digests_(std::move(other.block_digests_)),
+      interleave_scratch_(std::move(other.interleave_scratch_)),
+      loudness_sink_(std::move(other.loudness_sink_)) {
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -173,6 +421,8 @@ AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept
   total_samples_ = other.total_samples_;
   pending_block_ = std::move(other.pending_block_);
   block_digests_ = std::move(other.block_digests_);
+  interleave_scratch_ = std::move(other.interleave_scratch_);
+  loudness_sink_ = std::move(other.loudness_sink_);
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -318,24 +568,33 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
     if (hash_enabled_) {
       pending_block_.reserve(static_cast<std::size_t>(std::max<std::int64_t>(block_stride_bytes_, 0)));
     }
+
+    // 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the loudness sink is
+    // constructed here too, on the SAME first-decoded-frame lazy-init
+    // block, from the SAME resolved packed format and the SAME frame's
+    // own channel layout -- independent of hash_enabled_ (a class-3
+    // codec's hash is disabled, but its loudness is not). Dispatch and
+    // channel mapping are each chosen/set exactly once, here, never
+    // per frame (D-08).
+    auto sink = std::make_unique<LoudnessSink>();
+    if (sink->init(static_cast<int>(channels_), static_cast<int>(sample_rate_), name_fmt)) {
+      sink->set_channel_map(frame.ch_layout);
+      loudness_sink_ = std::move(sink);
+    }
   }
 
   total_samples_ += nb_samples;
 
-  // 06-05-PLAN.md (D-06): a class-3 stream (doc 05 section 3 does not list
-  // its decoder) still decodes in full -- other audio.* checks need the
-  // real sample count/format/layout above -- but no PCM byte is ever
-  // copied into pending_block_ and no digest is ever computed for it,
-  // "hashing disabled" rather than "decoding disabled".
-  if (!hash_enabled_) {
-    return;
-  }
-
+  // 06-08-PLAN.md: interleave ONCE per frame into a reusable scratch
+  // buffer, regardless of hash_enabled_ -- a byte-level interleave is
+  // format-agnostic (moving whole sample-width byte groups, never
+  // reinterpreting their contents), so the SAME bytes correctly feed both
+  // the hash sink (below, when hash_enabled_) and the loudness sink
+  // (below, unconditionally) with no second interleave pass.
   const std::size_t frame_bytes =
       static_cast<std::size_t>(nb_samples) * static_cast<std::size_t>(channels) * static_cast<std::size_t>(bytes_per_sample);
-  const std::size_t old_size = pending_block_.size();
-  pending_block_.resize(old_size + frame_bytes);
-  std::uint8_t* out = pending_block_.data() + old_size;
+  interleave_scratch_.resize(frame_bytes);
+  std::uint8_t* scratch = interleave_scratch_.data();
 
   if (planar) {
     for (int s = 0; s < nb_samples; ++s) {
@@ -343,16 +602,33 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
         const std::uint8_t* src =
             frame.extended_data[c] + static_cast<std::size_t>(s) * static_cast<std::size_t>(bytes_per_sample);
         std::uint8_t* dst =
-            out + (static_cast<std::size_t>(s) * static_cast<std::size_t>(channels) + static_cast<std::size_t>(c)) *
-                      static_cast<std::size_t>(bytes_per_sample);
+            scratch + (static_cast<std::size_t>(s) * static_cast<std::size_t>(channels) + static_cast<std::size_t>(c)) *
+                          static_cast<std::size_t>(bytes_per_sample);
         std::memcpy(dst, src, static_cast<std::size_t>(bytes_per_sample));
       }
     }
   } else {
-    std::memcpy(out, frame.extended_data[0], frame_bytes);
+    std::memcpy(scratch, frame.extended_data[0], frame_bytes);
   }
 
-  digest_full_blocks();
+  // 06-05-PLAN.md (D-06): a class-3 stream (doc 05 section 3 does not list
+  // its decoder) still decodes in full -- other audio.* checks need the
+  // real sample count/format/layout above -- but no PCM byte is ever
+  // copied into pending_block_ and no digest is ever computed for it,
+  // "hashing disabled" rather than "decoding disabled".
+  if (hash_enabled_) {
+    const std::size_t old_size = pending_block_.size();
+    pending_block_.resize(old_size + frame_bytes);
+    std::memcpy(pending_block_.data() + old_size, scratch, frame_bytes);
+    digest_full_blocks();
+  }
+
+  // 06-08-PLAN.md (AUDIO-10): independent of hash_enabled_ -- the loudness
+  // sink measures every successfully decoded stream, whether or not its
+  // hash is comparable.
+  if (loudness_sink_) {
+    loudness_sink_->feed(scratch, nb_samples);
+  }
 }
 
 void AudioDecodeState::digest_full_blocks() {
@@ -443,9 +719,10 @@ StreamAudioDecode AudioDecodeState::finalize() {
 
   // D-04: the trailing partial block -- never zero-padded, never dropped
   // (Test 4). pending_block_ only ever accumulates bytes when
-  // hash_enabled_ is true (consume_frame's own early return above), so
-  // this naturally stays empty -- and block_digests_/chain_digest below
-  // stay empty -- for a class-3 stream without a separate branch here.
+  // hash_enabled_ is true (consume_frame's own `if (hash_enabled_)`
+  // guard), so this naturally stays empty -- and block_digests_/
+  // chain_digest below stay empty -- for a class-3 stream without a
+  // separate branch here.
   if (!pending_block_.empty()) {
     block_digests_.push_back(digest_bytes(pending_block_.data(), pending_block_.size()));
     pending_block_.clear();
@@ -478,6 +755,42 @@ StreamAudioDecode AudioDecodeState::finalize() {
       concat += d;
     }
     result.chain_digest = digest_bytes(concat.data(), concat.size());
+  }
+
+  // 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the loudness sink's own
+  // read-out. `loudness_sink_` stays null for Test 8's own case (no frame
+  // was ever decoded, e.g. a zero-sample stream) -- `loudness_measured`
+  // then stays false and every other loudness field below stays at its
+  // default, never a fabricated 0 LUFS reading.
+  if (loudness_sink_) {
+    const LoudnessSink::Readout readout = loudness_sink_->finalize();
+    if (readout.valid) {
+      result.loudness_measured = true;
+      const double integrated =
+          std::isfinite(readout.integrated_lufs) ? readout.integrated_lufs : kNonFiniteLoudnessReadoutSentinel;
+      const double true_peak =
+          std::isfinite(readout.true_peak_dbtp) ? readout.true_peak_dbtp : kNonFiniteLoudnessReadoutSentinel;
+      result.integrated_lufs_raw = integrated;
+      result.true_peak_dbtp_raw = true_peak;
+      // doc 05 §4's own wording ("< -70 LUFS gating floor") reads as
+      // strict, but this comparison is INCLUSIVE (<=) of the floor itself --
+      // a Rule 1 fix discovered while proving Test 5 (06-08-SUMMARY.md's own
+      // deviation record): tests/fixtures/audio_loud_floor.flac (gen_corpus.sh's
+      // own "-80dB" fixture, built specifically to exercise this branch, and
+      // tests/golden/AUDIO_EBUR128_REFERENCE.txt's own committed
+      // integrated_lufs=-70.0 for it) decodes to EXACTLY -70.0 LUFS to full
+      // double precision under libebur128 -- a strict `<` would silently
+      // never fire on the one fixture this whole rule exists to exercise.
+      // "gating floor" is ordinarily inclusive in broadcast-loudness usage
+      // (a level AT the floor is already inaudible/unmeasurable content, not
+      // merely approaching it), and flagged_assumption A1 in 06-08-PLAN.md
+      // already named this exact boundary as an unresolved reading -- the
+      // check's fixed `silent` sentinel value, not a real number.
+      result.loudness_below_floor = integrated <= kLoudnessGatingFloorLufs;
+      result.integrated_lufs_milli =
+          quantize_loudness_milli(result.loudness_below_floor ? kLoudnessGatingFloorLufs : integrated);
+      result.true_peak_dbtp_milli = quantize_loudness_milli(true_peak);
+    }
   }
 
   return result;

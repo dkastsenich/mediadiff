@@ -29,6 +29,7 @@
 // branches when it is set.
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -57,6 +58,33 @@ class DemuxSession;
 // every rate has a well-defined, non-fractional block. Named so no bare
 // literal appears at any use site (this plan's own acceptance criterion).
 inline constexpr std::int64_t kAudioBlockDivisor = 10;
+
+// 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the three named constants
+// `--explain` echoes rather than restating as prose numbers (Phase 5 D-08's
+// rule: detection thresholds ship as fixed named constants). doc 05 §4's
+// literal wording ("< -70 LUFS gating floor", "crossing -1.0 dBTP upward")
+// is preserved verbatim here.
+inline constexpr double kLoudnessGatingFloorLufs = -70.0;
+inline constexpr double kTruePeakCeilingDbtp = -1.0;
+// RationalValue{num = round(value * kLoudnessQuantiserDen), den =
+// kLoudnessQuantiserDen}, ties away from zero -- the ONLY representation
+// `src/compare/tol.cpp` can extract a magnitude from under a `tol`
+// semantic (it supports `rational`/`int64` only; a `real` value_kind
+// reaches its internal-error arm). libebur128's raw `double` rides in
+// evidence at fixed precision instead; this is where precision is
+// actually lost, deliberately, in exchange for determinism.
+inline constexpr std::int64_t kLoudnessQuantiserDen = 1000;
+// Defensive-only: libebur128 reports -HUGE_VAL for a global loudness (or,
+// in principle, a true peak of exactly digital-silence-forever) rather
+// than a finite number. Never observed on any fixture in this project's
+// corpus (audio_loud_floor.flac's own committed reference is a real,
+// finite -70.0 LUFS / -100.9 dBTP), but guarded anyway: nlohmann::json
+// cannot round-trip an infinity, and a fabricated "silent" LUFS reading is
+// already this project's own answer (doc 05 §4) for "nothing audible
+// here". True peak borrows the same sentinel rather than inventing a
+// second one -- it has no gating-floor concept of its own, only a "there
+// was truly nothing to measure" edge case this constant exists to name.
+inline constexpr double kNonFiniteLoudnessReadoutSentinel = kLoudnessGatingFloorLufs;
 
 // One audio stream's own decode-sink outputs. `attempted` is false for
 // every non-audio stream and for an audio stream this build's linked
@@ -123,6 +151,40 @@ struct StreamAudioDecode {
   // attempted=true, total_samples=0, undecodable=false, and the caller
   // reports SkipReason::insufficient_data per Test 5).
   bool undecodable = false;
+
+  // 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink's own
+  // outputs, fed from the SAME decoded frames as the hash sink above --
+  // never a second decode, independent of `decoder_class`/`hash_enabled_`
+  // (a class-3 codec's hash is disabled, but its loudness is not; these
+  // are unrelated questions). `loudness_measured` is false whenever this
+  // stream never fed the sink at all (Test 8: a stream that decodes to
+  // zero samples is a real, comparable "nothing to measure" outcome, never
+  // a fabricated 0 LUFS reading) -- every other field below is meaningless
+  // (left at its default) when this is false.
+  bool loudness_measured = false;
+  // True when the (possibly -HUGE_VAL-clamped) global integrated loudness
+  // read out under kLoudnessGatingFloorLufs -- the analyzer
+  // (06-08-PLAN.md Task 2) reports the check's fixed `silent` sentinel
+  // value instead of a real number in that case, so two different
+  // below-floor tracks still compare `pass` (doc 05 §4).
+  bool loudness_below_floor = false;
+  // The quantised RationalValue numerator (denominator
+  // kLoudnessQuantiserDen), ties away from zero -- computed ONCE here so
+  // `src/compare/tol.cpp`'s rational-only comparator has a byte-identical-
+  // across-runs integer to compare, never a raw double. When
+  // `loudness_below_floor` is true this already holds the QUANTISED FLOOR
+  // value (kLoudnessGatingFloorLufs), not the real (softer) below-floor
+  // reading -- the sentinel the analyzer reports as `silent`.
+  std::int64_t integrated_lufs_milli = 0;
+  // Same quantisation, for the maximum-over-channels true peak in dBTP --
+  // never floor-clamped (true peak has no gating-floor concept).
+  std::int64_t true_peak_dbtp_milli = 0;
+  // The un-quantised raw doubles, kept for evidence at fixed precision
+  // only (never the compared value itself) -- clamped to
+  // kNonFiniteLoudnessReadoutSentinel when libebur128's own read-out was
+  // non-finite, since JSON cannot round-trip an infinity.
+  double integrated_lufs_raw = 0.0;
+  double true_peak_dbtp_raw = 0.0;
 };
 
 // One decode sweep's whole result: index-aligned with AVStream (mirrors
@@ -167,7 +229,43 @@ int determinism_class_for_decoder(std::string_view decoder_name);
 // this build's linked FFmpeg.
 bool hash_decoder_name_exists(std::string_view name);
 
+// 06-08-PLAN.md (AUDIO-05, AUDIO-06): the loudness sink's two pure dispatch
+// tables, exposed by raw integer identity (never by declaring libav's
+// AVSampleFormat/AVChannel, or libebur128's own `enum channel`, in this
+// header) so tests/unit/test_loudness_sink.cpp can assert both tables
+// directly without needing one real fixture per native sample format, or a
+// way to observe an internal `ebur128_set_channel`/`ebur128_add_frames_*`
+// call from outside audio_decode.cpp. A caller passes the real enumerator
+// value from the header that defines it (e.g. `AV_SAMPLE_FMT_S32` or
+// `AV_CHAN_SIDE_LEFT`) by its plain `int` identity.
+//
+// Returns -1 for a sample format none of the four feed functions
+// (ebur128_add_frames_short/_int/_float/_double) accept -- Test 3's own
+// "chosen once from s16/s32/float/double, nothing else" contract. Planar
+// and packed spellings of the SAME underlying format resolve to the SAME
+// dispatch (Test 4): the sink always interleaves before feeding.
+int loudness_feed_dispatch_for_sample_fmt(int av_sample_fmt_id);
+
+// Returns the real libebur128 `enum channel` value (ebur128.h) this
+// decoded position maps to -- `EBUR128_UNUSED` for LFE (BS.1770 excludes
+// it from the loudness sum) and for any position this table cannot
+// identify (an unspecified layout, or a channel code doc 05 does not
+// discuss), falling back to `position_index`'s own canonical role
+// (libebur128's OWN documented positional default: 0=L, 1=R, 2=C,
+// 3=UNUSED, 4=Ls, 5=Rs) rather than excluding an unidentified channel from
+// the sum outright -- 06-RESEARCH.md Common Pitfall 3's "silently wrong,
+// never a crash" risk is what this fallback avoids for exactly the
+// content this project's corpus actually carries (an unspecified stereo/
+// mono layout, never an exotic > 6-channel one with no identity at all).
+int loudness_channel_role_for_avchannel(int av_channel_id, int position_index);
+
 namespace detail {
+
+// 06-08-PLAN.md: the libebur128 sink -- defined entirely in
+// audio_decode.cpp (the only translation unit that includes <ebur128.h>).
+// Forward declared here ONLY so AudioDecodeState can hold one by pointer;
+// this header never names libebur128's own `ebur128_state` type.
+struct LoudnessSink;
 
 // One stream's own decode lifetime, fused into probe/packet_scan.cpp's
 // existing av_read_frame loop exactly as probe/parser_scan.h's
@@ -179,7 +277,19 @@ namespace detail {
 // the underlying AVCodecContext.
 class AudioDecodeState {
  public:
-  AudioDecodeState() = default;
+  // Declared (not defaulted inline) and defined out-of-line in
+  // audio_decode.cpp, exactly like the destructor/move members below --
+  // an inline-defaulted default constructor's implicit body needs to know
+  // how to unwind (destroy) an already-constructed `loudness_sink_`
+  // member if a LATER member's constructor were to throw, which requires
+  // LoudnessSink to be a complete type wherever this constructor is
+  // instantiated. Since every member here is in practice non-throwing,
+  // this is pure boilerplate to satisfy that rule -- but it must still be
+  // satisfied at THIS translation unit, the only one where LoudnessSink is
+  // complete, not at a caller's (src/probe/packet_scan.cpp constructs a
+  // std::vector<AudioDecodeState> and would otherwise instantiate this
+  // constructor itself, with LoudnessSink still incomplete there).
+  AudioDecodeState();
   ~AudioDecodeState();
   AudioDecodeState(const AudioDecodeState&) = delete;
   AudioDecodeState& operator=(const AudioDecodeState&) = delete;
@@ -262,6 +372,24 @@ class AudioDecodeState {
   std::int64_t total_samples_ = 0;
   std::vector<std::uint8_t> pending_block_;
   std::vector<std::string> block_digests_;
+  // 06-08-PLAN.md: the interleaved-bytes scratch buffer BOTH sinks read --
+  // resized (never re-allocated from scratch) once per decoded frame,
+  // regardless of hash_enabled_, since the loudness sink below needs it
+  // unconditionally. Never retained across finalize(): a fresh
+  // AudioDecodeState is constructed per stream.
+  std::vector<std::uint8_t> interleave_scratch_;
+  // 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink,
+  // constructed lazily on the SAME first-decoded-frame lazy-init block the
+  // hash sink's own sample_format_packed_/block_samples_ are resolved
+  // from. Pointer-to-incomplete-type (LoudnessSink is defined entirely in
+  // audio_decode.cpp, the only place <ebur128.h> is included) so this
+  // header never has to declare libebur128's own anonymous-struct-typedef
+  // `ebur128_state` -- which, unlike AVCodecContext, has no struct TAG a
+  // forward declaration could name at all. std::nullptr iff
+  // initialisation failed (an unsupported native sample format, or
+  // ebur128_init itself returning null) or no frame was ever decoded --
+  // finalize() reports loudness_measured=false in either case.
+  std::unique_ptr<LoudnessSink> loudness_sink_;
 
   void consume_frame(const AVFrame& frame);
   void digest_full_blocks();

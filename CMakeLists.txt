@@ -47,6 +47,18 @@ find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 find_package(xxHash CONFIG REQUIRED)
+# 06-08-PLAN.md (AUDIO-05, AUDIO-06): libebur128 ships no CMake package
+# config (only a pkg-config .pc file) -- discovered the same way this
+# file's own GPL-fast-fail block above already discovers a vcpkg-installed
+# static library with no CMake config of its own: find_library scoped to
+# this triplet's own install tree, NO_DEFAULT_PATH so a system libebur128
+# (if one happens to be installed) can never be silently substituted for
+# the pinned 1.2.6.
+find_library(EBUR128_LIBRARY NAMES ebur128
+             PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib" NO_DEFAULT_PATH)
+if(NOT EBUR128_LIBRARY)
+  message(FATAL_ERROR "libebur128 not found under ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib -- check vcpkg.json's libebur128 dependency")
+endif()
 # src/cli/worker_pool.cpp (DIR-05, plan 02-11): plain std::thread, which on
 # some libstdc++ configurations needs an explicit pthread link even though
 # no code here names pthread_* directly.
@@ -236,7 +248,7 @@ target_include_directories(libmediadiff PUBLIC
 )
 target_include_directories(libmediadiff SYSTEM PUBLIC ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(libmediadiff PUBLIC ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash)
+target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash ${EBUR128_LIBRARY})
 
 # --- Header compilation gate --------------------------------------------------
 # A header nothing includes is a header nothing type-checks, and Phase 2
