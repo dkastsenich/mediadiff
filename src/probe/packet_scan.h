@@ -188,6 +188,25 @@ struct StreamPacketScan {
   // field's designed second consumer.
   std::optional<std::int64_t> first_packet_skip_samples;
 
+  // D-17 (06-06-PLAN.md, AUDIO-04): the TRAILING half of the SAME 10-byte
+  // `AV_PKT_DATA_SKIP_SAMPLES` record `first_packet_skip_samples` above
+  // already reads the leading half of -- the wire format is u32le
+  // start_skip, u32le end_skip (`discard_padding`), u8 reason_start, u8
+  // reason_end (libavcodec/packet.h's own doc comment) -- captured from
+  // the LAST packet in THIS stream that carries the side data, in the SAME
+  // existing sweep (never a second read, never a decode). Unlike
+  // `first_packet_skip_samples` (first-packet-only, never overwritten),
+  // this field is refreshed every time a later packet ALSO carries the
+  // side data, so it reflects the stream's own final discard_padding
+  // value -- T-06-19's own short-record guard applies here identically: a
+  // present-but-too-short (< 8 bytes) payload is treated as "no side data
+  // for this packet" and does not touch this field. `std::optional`
+  // distinguishes "no packet in this stream ever carried the side data"
+  // (std::nullopt) from "the side data was present and reported a real
+  // zero" -- the same absent-vs-zero convention `first_packet_skip_samples`
+  // above already establishes.
+  std::optional<std::int64_t> last_packet_discard_padding;
+
   // D-09: `codecpar->initial_padding` verbatim, surfaced through this
   // existing per-stream scan seam (populated alongside `tb` above, from
   // the SAME already-open `AVFormatContext` -- no new libav call site) so

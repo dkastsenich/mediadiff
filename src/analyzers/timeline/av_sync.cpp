@@ -118,6 +118,18 @@ std::string_view priming_source_to_string(PrimingResult::Source source) {
       return "initial_padding";
     case PrimingResult::Source::unknown:
       return "unknown";
+    // 06-06-PLAN.md (D-15): this analyzer's own resolve_priming() call
+    // site (below) never supplies a container_reading, so these three
+    // arms are unreachable from THIS file today -- handled exhaustively
+    // anyway so a future caller that does supply one, or a `switch` over
+    // this enum elsewhere, is never left silently defaulting (this task's
+    // own explicit requirement).
+    case PrimingResult::Source::mp4_edit_list:
+      return "mp4_edit_list";
+    case PrimingResult::Source::mp4_itunsmpb:
+      return "mp4_itunsmpb";
+    case PrimingResult::Source::mkv_codec_delay:
+      return "mkv_codec_delay";
   }
   return "unknown";
 }
@@ -492,18 +504,50 @@ std::int64_t index_proportional_raw_ticks(std::span<const std::int64_t> sorted,
 
 }  // namespace
 
-PrimingResult resolve_priming(std::int64_t first_packet_skip_samples, std::int64_t codecpar_initial_padding) {
+PrimingResult resolve_priming(std::int64_t first_packet_skip_samples, std::int64_t codecpar_initial_padding,
+                               std::optional<std::int64_t> discard_padding_samples,
+                               std::optional<PrimingResult::Reading> container_reading) {
+  PrimingResult result;
   // Checked FIRST, per 05-RESEARCH.md's own empirically-verified finding:
   // MP4's codecpar->initial_padding is ZERO while its first AAC packet's
   // own side data carries the real value -- an initial_padding-first
   // resolver would silently report every MP4 as priming: unknown.
   if (first_packet_skip_samples > 0) {
-    return PrimingResult{PrimingResult::Source::skip_samples, first_packet_skip_samples};
+    result.source = PrimingResult::Source::skip_samples;
+    result.samples = first_packet_skip_samples;
+  } else if (codecpar_initial_padding > 0) {
+    result.source = PrimingResult::Source::initial_padding;
+    result.samples = codecpar_initial_padding;
+  } else if (container_reading.has_value()) {
+    // 06-06-PLAN.md (D-15): consulted for RESOLUTION only when the first
+    // two tiers report nothing -- 06-RESEARCH.md Q7's own finding that the
+    // common MP4/MKV cases are already folded into the two fields above by
+    // libav itself, so this tier only ever wins on the edge cases those
+    // fields did not capture. Presence, not magnitude, is what wins here
+    // (a supplied Reading of exactly 0 samples still resolves through this
+    // tier rather than falling to `unknown`) -- the boundary edge D-14/D-17
+    // require: a DECLARED zero is a real source reporting 0, distinguishable
+    // from no container evidence at all reporting Source::unknown.
+    result.source = container_reading->source;
+    result.samples = container_reading->samples;
+  } else {
+    result.source = PrimingResult::Source::unknown;
+    result.samples = 0;
   }
-  if (codecpar_initial_padding > 0) {
-    return PrimingResult{PrimingResult::Source::initial_padding, codecpar_initial_padding};
+
+  // D-17: carried through verbatim, no derivation performed here.
+  result.padding_samples = discard_padding_samples;
+
+  // D-15: consulted for EVIDENCE always -- a supplied container reading
+  // that disagrees with the resolved value (regardless of which tier won)
+  // records BOTH readings, so the resolver stays deterministic while the
+  // disagreement stays visible to `inspect`/`--explain`.
+  if (container_reading.has_value() && container_reading->samples != result.samples) {
+    result.conflicting_readings.push_back(PrimingResult::Reading{result.source, result.samples});
+    result.conflicting_readings.push_back(*container_reading);
   }
-  return PrimingResult{PrimingResult::Source::unknown, 0};
+
+  return result;
 }
 
 namespace detail {

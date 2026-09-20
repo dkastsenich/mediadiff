@@ -182,6 +182,11 @@ add_executable(mediadiff_unit_tests
   # driven directly against plain integers/hand-built scope vectors, no
   # fixture on disk.
   test_av_sync.cpp
+  # AUDIO-04 (06-06-PLAN.md Task 1, D-15/D-17): resolve_priming()'s
+  # extended container-mechanism tier, trailing padding and
+  # conflicting_readings evidence mechanism -- driven directly against
+  # plain integers/hand-built Reading values, no fixture on disk.
+  test_priming_resolver.cpp
   # TIME-07/TIME-08 (05-10-PLAN.md Task 1, D-04/D-07/D-08): fit_drift's own
   # eleven hand-derived cases -- constant-offset/linear-drift/step/
   # irregular classification, the plateau condition asserted load-bearing

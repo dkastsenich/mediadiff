@@ -495,25 +495,102 @@ std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t ideal_num, st
 // (`start_skip=1024`); a resolver that checked `initial_padding` FIRST
 // would silently report every MP4 as `priming: unknown` while the signal
 // is present and free. `Source` is OPEN TO EXTENSION without renaming its
-// existing members -- Phase 6 adds the container-mechanism tier (MP4
-// `elst` / iTunSMPB / MKV `CodecDelay`) as further fallback arms, never a
-// second, independently-written resolver.
+// existing members -- Phase 6 (06-06-PLAN.md, D-15) adds the
+// container-mechanism tier (MP4 `elst` / iTunSMPB, MKV `CodecDelay`) as
+// further arms AFTER `unknown`, never a second, independently-written
+// resolver: `skip_samples`, `initial_padding` and `unknown` keep their
+// original spelling and relative order exactly as this comment always
+// promised.
 struct PrimingResult {
   enum class Source : std::uint8_t {
     skip_samples,
     initial_padding,
     unknown,
+    // 06-06-PLAN.md (D-15): additive-only arms. 06-RESEARCH.md Q7 proved
+    // libavformat already folds MP4 `elst`/iTunSMPB and MKV `CodecDelay`
+    // into `skip_samples`/`initial_padding` upstream of this resolver, so
+    // these three are reached only via the EXPLICIT `container_reading`
+    // parameter below -- when the first two tiers report nothing AND a
+    // caller supplies a raw container-mechanism reading (evidence
+    // `bmff_scan`/`ebml_scan` already captured for an unrelated check).
+    // `mp4_itunsmpb` is declared for roster completeness (06-CHECK-ROSTER.md)
+    // but is not currently reachable from a real caller: no probe-layer
+    // field captures the raw iTunSMPB integer separately from what already
+    // folds into `skip_samples` (06-RESEARCH.md Q7) -- named honestly here,
+    // mirroring `timeline.timecode`'s own S12M "declared, not built out"
+    // precedent, rather than silently wired to a value that isn't real
+    // container evidence.
+    mp4_edit_list,
+    mp4_itunsmpb,
+    mkv_codec_delay,
   };
+
+  // One source's own raw reading, in SAMPLES -- used both as
+  // resolve_priming()'s optional container-mechanism input below and to
+  // record a disagreeing reading in `conflicting_readings` (D-15's "the
+  // highest-precedence source wins and disagreements ride in evidence").
+  struct Reading {
+    Source source = Source::unknown;
+    std::int64_t samples = 0;
+
+    bool operator==(const Reading&) const = default;
+  };
+
   Source source = Source::unknown;
   std::int64_t samples = 0;
+  // D-17 (06-06-PLAN.md): trailing padding, carried HERE rather than in a
+  // second check -- check IDs are forever, and promoting padding to its
+  // own id later is additive. std::optional distinguishes "no packet
+  // carried AV_PKT_DATA_SKIP_SAMPLES's own discard_padding half" from "it
+  // was present and reported zero", the same absent-vs-zero convention
+  // this project's sibling fields (StreamPacketScan::first_packet_skip_samples,
+  // EbmlTrack::codec_delay_ns) already establish.
+  std::optional<std::int64_t> padding_samples;
+  // D-15: every reading that DISAGREED with the resolved `source`/`samples`
+  // above -- both the winning reading and the disagreeing container
+  // reading are recorded (never just one side), so `inspect`/`--explain`
+  // can show the discrepancy while the resolution itself stays
+  // deterministic (the highest-precedence source still wins). Empty when
+  // no container reading was supplied, or when the supplied reading agreed
+  // with the resolved value.
+  std::vector<Reading> conflicting_readings;
 };
 
 // `first_packet_skip_samples`/`codecpar_initial_padding` both follow the
 // "0 if absent" convention `StreamPacketScan::first_packet_skip_samples`'s
 // own caller resolves via `.value_or(0)` before this call -- resolve_priming
-// itself stays a pure, allocation-free function over two plain integers so
-// it is trivially unit-testable without a `StreamPacketScan` on hand.
-PrimingResult resolve_priming(std::int64_t first_packet_skip_samples, std::int64_t codecpar_initial_padding);
+// itself stays a pure, allocation-free function over plain values so it is
+// trivially unit-testable without a `StreamPacketScan` on hand.
+//
+// `discard_padding_samples` (D-17) is `StreamPacketScan::
+// last_packet_discard_padding` verbatim, copied straight into the result's
+// own `padding_samples` -- resolve_priming performs no derivation over it,
+// it is carried through so a caller has exactly one place to build a
+// complete `PrimingResult` from.
+//
+// `container_reading` (D-15) is the container-mechanism tier's own raw
+// reading (an `elst` media_time-derived sample count under
+// `Source::mp4_edit_list`, or an `ebml_scan`-derived `CodecDelay` sample
+// count under `Source::mkv_codec_delay`), supplied by the CALLER --
+// resolve_priming itself never reads `bmff_scan`/`ebml_scan` (it would stop
+// being a plain-value pure function if it did). Consulted for RESOLUTION
+// only when both `first_packet_skip_samples` and `codecpar_initial_padding`
+// report nothing (06-RESEARCH.md Q7: the common cases are already folded
+// upstream by libav into those two fields, so this tier's real job is
+// evidence transparency and the two edge cases 06-06-PLAN.md measures).
+// Consulted for EVIDENCE always: whenever it is supplied and its own
+// `samples` disagrees with the resolved value, BOTH readings land in
+// `conflicting_readings` -- the resolution itself never changes because a
+// disagreement was found (D-15's own determinism requirement).
+//
+// Both new parameters default to `std::nullopt` so every existing 2-arg
+// call site (this project's own Phase-5 unit tests, `av_sync.cpp`'s own
+// consumer) keeps compiling and behaving identically -- neither trailing
+// padding nor a container reading was ever in scope for `timeline.av_offset`
+// itself.
+PrimingResult resolve_priming(std::int64_t first_packet_skip_samples, std::int64_t codecpar_initial_padding,
+                               std::optional<std::int64_t> discard_padding_samples = std::nullopt,
+                               std::optional<PrimingResult::Reading> container_reading = std::nullopt);
 
 // timeline.av_offset (05-09-PLAN.md, TIME-06/TIME-09/TIME-10, D-09/D-10/
 // D-11): the signed offset between the first audible sample (audio-side
