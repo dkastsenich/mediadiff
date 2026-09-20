@@ -96,18 +96,17 @@ TEST_CASE("audio_sample_hash - WAV stream-copied to MOV (both decoder_class 1) r
 }
 
 TEST_CASE("audio_sample_hash - one PCM payload written as WAV and independently encoded to FLAC at two "
-          "block sizes all produce the SAME underlying HashChain digest (D-02), even though the "
-          "comparator itself reports skipped:hash_incomparable across decoder classes",
+          "block sizes all produce the SAME underlying HashChain digest (D-02), and now compare "
+          "pass now that FLAC is promoted to class 1 (06-05-PLAN.md, D-06)",
           "[integration]") {
-  // FLAC decodes through decoder_class 2 (not the PCM/class-1 path), so
-  // `src/compare/hash.cpp`'s own precondition system correctly reports
-  // skipped:hash_incomparable for a WAV(class1)-vs-FLAC(class2) pair --
-  // TRUST-01/TRUST-02's whole point is that a cross-class comparison is
-  // never silently trusted, even when (as proven here) the underlying
-  // chain digest is bit-for-bit identical. D-02's claim is about the
-  // DIGEST VALUE the fixed-block chain produces, which is still directly
-  // observable in the finding's own baseline/candidate value fields
-  // regardless of the comparator's skip decision.
+  // 06-05-PLAN.md's determinism_class_for_decoder() promotes `flac` to
+  // class 1 (doc 05 section 3's own normative table, as this plan's own
+  // action text spells it) -- so a WAV(class1)-vs-FLAC(class1) pair now
+  // shares the SAME decode_path_class precondition and the comparator
+  // actually renders pass/fail rather than skipping. This is D-02's own
+  // original claim finally realized: "a lossless WAV to FLAC transcode
+  // compares equal when the sample format matches", not merely "produces
+  // an equal digest value that the comparator declines to compare".
   const std::vector<std::string> siblings = {"audio_pcm_flac_small.mkv", "audio_pcm_flac_large.mkv"};
   for (const std::string& sibling : siblings) {
     CliResult result = run_cli({"compare", fixture("audio_pcm_base.wav"), fixture(sibling), "--json"});
@@ -116,8 +115,7 @@ TEST_CASE("audio_sample_hash - one PCM payload written as WAV and independently 
     const auto* finding = find_finding(report, "content.audio.sample_hash");
     INFO("sibling: " << sibling);
     REQUIRE(finding != nullptr);
-    CHECK(finding->at("status") == "skipped");
-    CHECK(finding->at("skip_reason") == "hash_incomparable");
+    CHECK(finding->at("status") == "pass");
     REQUIRE(finding->at("baseline").contains("digest"));
     REQUIRE(finding->at("candidate").contains("digest"));
     CHECK(finding->at("baseline").at("digest") == finding->at("candidate").at("digest"));
@@ -125,7 +123,7 @@ TEST_CASE("audio_sample_hash - one PCM payload written as WAV and independently 
   }
 
   // The two FLAC block sizes hash identically to EACH OTHER too (both
-  // class 2, so the precondition agrees and the comparator actually
+  // class 1, so the precondition agrees and the comparator actually
   // renders pass here).
   CliResult flac_pair =
       run_cli({"compare", fixture("audio_pcm_flac_small.mkv"), fixture("audio_pcm_flac_large.mkv"), "--json"});
