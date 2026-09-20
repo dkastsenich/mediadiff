@@ -26,8 +26,14 @@ void register_compare_command(CLI::App& app);
 // default_policy_args()/default_color_args()/default_probe_args() instead.
 // Exits the process directly (ENG-16 -- exit()/stdout/stderr are the CLI's
 // prerogative) and therefore never returns.
+// 06-01-PLAN.md Task 2 (AUDIO-10): `content_enabled` governs whether the
+// probe layer's audio decode pass runs for this invocation --
+// `compare`'s own default is true (main.cpp's implicit two-positional
+// route passes true unconditionally, matching the `compare` subcommand's
+// own unflagged default).
 [[noreturn]] void run_compare(const std::string& baseline_path, const std::string& candidate_path, bool strict,
-                               bool verbose, bool quiet, const ReportArgs& report_args, const PolicyArgs& policy_args,
-                               const ColorArgs& color_args, const ProbeArgs& probe_args);
+                               bool verbose, bool quiet, bool content_enabled, const ReportArgs& report_args,
+                               const PolicyArgs& policy_args, const ColorArgs& color_args,
+                               const ProbeArgs& probe_args);
 
 }  // namespace mediadiff

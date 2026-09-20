@@ -26,6 +26,16 @@ void register_inspect_command(CLI::App& app) {
   // ->type_name("TEXT"): see src/cli/options.cpp's add_policy_flags for the
   // fully worked rationale (D-05).
   CLI::Option* file_path = cmd->add_option("file", "A *.snap.json to inspect")->type_name("TEXT")->required();
+  // 06-01-PLAN.md Task 3: inspect decodes ON REQUEST -- the same opt-in
+  // default `dir` already established (decode stays off unless --content
+  // is explicitly given). Only matters when `file` is a live media path
+  // rather than an existing *.snap.json: fingerprint_input's own
+  // snapshot-first fallthrough means a stored snapshot's decode-derived
+  // rows always come from whatever ProbeOptions were in force when IT was
+  // written, never re-decoded here.
+  CLI::Option* content_flag = cmd->add_flag("--content", "Enable the decode-pass content checks (opt-in for inspect)");
+  CLI::Option* no_content_flag = cmd->add_flag(
+      "--no-content", "Explicitly disable the decode-pass content checks (inspect's own default)");
 
   CliOptions options = add_common_options(*cmd);
 
@@ -35,8 +45,17 @@ void register_inspect_command(CLI::App& app) {
   // safe as the shared_ptr it replaces (D-05): the App owns the Option
   // for the whole program lifetime, and this callback only runs during
   // app.parse().
-  cmd->callback([file_path, options]() {
+  cmd->callback([file_path, content_flag, no_content_flag, options]() {
     const CheckRegistry& registry = builtin_registry();
+
+    auto content_enabled_result =
+        resolve_content_enabled(ContentArgs{content_flag, no_content_flag}, ContentCommandDefault::opt_in);
+    if (!content_enabled_result) {
+      const Error& err = content_enabled_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const ProbeOptions probe_options{/*content_enabled=*/*content_enabled_result};
 
     // Policy resolution, through the SAME resolve_policy sequence
     // compare/list-checks already run (T-2-23) -- never a parallel
@@ -77,7 +96,7 @@ void register_inspect_command(CLI::App& app) {
     }
     set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
 
-    auto fp = fingerprint_input(opt_string(file_path), registry);
+    auto fp = fingerprint_input(opt_string(file_path), registry, probe_options);
     if (!fp) {
       const Error& err = fp.error();
       report_cli_error(err.message);

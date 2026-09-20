@@ -284,3 +284,177 @@ TEST_CASE("audio_sample_hash - comparing the same pair twice produces byte-ident
   REQUIRE(second_finding != nullptr);
   CHECK(*first_finding == *second_finding);
 }
+
+// =====================================================================
+// 06-01-PLAN.md Task 3: --content/--no-content across compare, snapshot,
+// dir and inspect, with snapshot's own must-decode rule.
+// =====================================================================
+
+// --- Task 3 Test 1: compare decodes by default ------------------------
+
+TEST_CASE("audio_sample_hash - compare decodes by default -- content.audio.sample_hash reports a real "
+          "status, not skipped:requires_decode",
+          "[integration]") {
+  CliResult result =
+      run_cli({"compare", fixture("audio_hash_base.mp4"), fixture("audio_hash_base_copy.mp4"), "--json"});
+  REQUIRE(result.exit_code == 0);
+  const nlohmann::ordered_json report = nlohmann::ordered_json::parse(result.out, nullptr, false);
+  REQUIRE_FALSE(report.is_discarded());
+  const auto* finding = find_finding(report, "content.audio.sample_hash");
+  REQUIRE(finding != nullptr);
+  CHECK(finding->at("status") != "skipped");
+  CHECK(finding->at("skip_reason") == "none");
+}
+
+// --- Task 3 Test 2: compare --no-content skips on every audio scope ---
+// (covered above in more detail by the dedicated --no-content TEST_CASE;
+// this one additionally asserts the normal exit-code contract holds.)
+
+TEST_CASE("audio_sample_hash - compare --no-content still exits on the normal contract (0, clean)",
+          "[integration]") {
+  CliResult result = run_cli(
+      {"compare", fixture("audio_hash_base.mp4"), fixture("audio_hash_base_copy.mp4"), "--no-content", "--json"});
+  CHECK(result.exit_code == 0);
+}
+
+// --- Task 3 Test 3: snapshot always decodes; --no-content is a usage error
+
+TEST_CASE("audio_sample_hash - snapshot always decodes, and --no-content exits 64 naming the flag",
+          "[integration]") {
+  const std::string out_path = (scratch_dir() / "task3_snapshot_default.snap.json").string();
+  CliResult default_run = run_cli({"snapshot", fixture("audio_hash_base.mp4"), "--out", out_path});
+  REQUIRE(default_run.exit_code == 0);
+  REQUIRE(fs::exists(out_path));
+  std::ifstream snap_file(out_path);
+  REQUIRE(snap_file.is_open());
+  const nlohmann::ordered_json snap_json = nlohmann::ordered_json::parse(snap_file, nullptr, false);
+  REQUIRE_FALSE(snap_json.is_discarded());
+  CHECK(snap_json.dump().find("content.audio.sample_hash") != std::string::npos);
+
+  const std::string rejected_out_path = (scratch_dir() / "task3_snapshot_no_content.snap.json").string();
+  CliResult no_content_run =
+      run_cli({"snapshot", fixture("audio_hash_base.mp4"), "--no-content", "--out", rejected_out_path});
+  CHECK(no_content_run.exit_code == 64);
+  CHECK(no_content_run.err.find("--no-content") != std::string::npos);
+  CHECK_FALSE(fs::exists(rejected_out_path));
+}
+
+// --- Task 3 Test 4: dir does not decode by default; --content enables it
+
+TEST_CASE("audio_sample_hash - dir does not decode by default, and --content enables it", "[integration]") {
+  const fs::path base_dir = scratch_dir() / "task3_dir_base";
+  const fs::path cand_dir = scratch_dir() / "task3_dir_cand";
+  std::error_code ec;
+  fs::create_directories(base_dir, ec);
+  fs::create_directories(cand_dir, ec);
+  fs::copy_file(fixture("audio_hash_base.mp4"), base_dir / "a.mp4", fs::copy_options::overwrite_existing, ec);
+  fs::copy_file(fixture("audio_hash_base_copy.mp4"), cand_dir / "a.mp4", fs::copy_options::overwrite_existing, ec);
+
+  CliResult default_run = run_cli({"dir", base_dir.string(), cand_dir.string(), "--json"});
+  const nlohmann::ordered_json default_report = nlohmann::ordered_json::parse(default_run.out, nullptr, false);
+  REQUIRE_FALSE(default_report.is_discarded());
+  bool found_default = false;
+  for (const auto& file_result : default_report.at("files")) {
+    for (const auto& finding : file_result.at("findings")) {
+      if (finding.at("id") == "content.audio.sample_hash") {
+        found_default = true;
+        CHECK(finding.at("status") == "skipped");
+        CHECK(finding.at("skip_reason") == "requires_decode");
+      }
+    }
+  }
+  REQUIRE(found_default);
+
+  CliResult content_run = run_cli({"dir", base_dir.string(), cand_dir.string(), "--content", "--json"});
+  const nlohmann::ordered_json content_report = nlohmann::ordered_json::parse(content_run.out, nullptr, false);
+  REQUIRE_FALSE(content_report.is_discarded());
+  bool found_content = false;
+  for (const auto& file_result : content_report.at("files")) {
+    for (const auto& finding : file_result.at("findings")) {
+      if (finding.at("id") == "content.audio.sample_hash") {
+        found_content = true;
+        CHECK(finding.at("status") == "pass");
+      }
+    }
+  }
+  REQUIRE(found_content);
+}
+
+// --- Task 3 Test 5: inspect --content vs --no-content ------------------
+
+TEST_CASE("audio_sample_hash - inspect --content renders decode-derived facts, --no-content marks the "
+          "same section not measured, never blank",
+          "[integration]") {
+  CliResult content_run = run_cli({"inspect", fixture("audio_hash_base.mp4"), "--content", "--json"});
+  REQUIRE(content_run.exit_code == 0);
+  const nlohmann::ordered_json content_report = nlohmann::ordered_json::parse(content_run.out, nullptr, false);
+  REQUIRE_FALSE(content_report.is_discarded());
+  bool found_content = false;
+  for (const auto& finding : content_report.at("groups").at("content")) {
+    if (finding.at("id") == "content.audio.sample_hash") {
+      found_content = true;
+      // inspect's own JSON rendering (src/cli/commands/inspect_render.h)
+      // omits "status"/"skip_reason" entirely for the ordinary
+      // skip_reason==none case -- their ABSENCE here is itself the
+      // "real, decode-derived measurement" signal.
+      CHECK_FALSE(finding.contains("status"));
+      REQUIRE(finding.contains("value"));
+      CHECK_FALSE(finding.at("value").is_null());
+    }
+  }
+  REQUIRE(found_content);
+
+  CliResult no_content_run = run_cli({"inspect", fixture("audio_hash_base.mp4"), "--no-content", "--json"});
+  REQUIRE(no_content_run.exit_code == 0);
+  const nlohmann::ordered_json no_content_report = nlohmann::ordered_json::parse(no_content_run.out, nullptr, false);
+  REQUIRE_FALSE(no_content_report.is_discarded());
+  bool found_no_content = false;
+  for (const auto& finding : no_content_report.at("groups").at("content")) {
+    if (finding.at("id") == "content.audio.sample_hash") {
+      found_no_content = true;
+      CHECK(finding.at("status") == "skipped");
+      CHECK(finding.at("skip_reason") == "requires_decode");
+      CHECK(finding.at("value").is_null());
+    }
+  }
+  REQUIRE(found_no_content);
+
+  // Text mode: the row is present (never absent/blank) and explicitly
+  // names its skip reason rather than fabricating a value.
+  CliResult text_run = run_cli({"inspect", fixture("audio_hash_base.mp4"), "--no-content"});
+  REQUIRE(text_run.exit_code == 0);
+  CHECK(text_run.out.find("content.audio.sample_hash") != std::string::npos);
+  CHECK(text_run.out.find("skipped: requires_decode") != std::string::npos);
+}
+
+// --- Task 3 Test 6: --content and --no-content together is a usage error,
+// on every command that accepts the pair -------------------------------
+
+TEST_CASE("audio_sample_hash - --content and --no-content together exits 64 naming the conflict, on "
+          "compare, dir and inspect",
+          "[integration]") {
+  {
+    CliResult result = run_cli({"compare", fixture("audio_hash_base.mp4"), fixture("audio_hash_base_copy.mp4"),
+                                 "--content", "--no-content"});
+    CHECK(result.exit_code == 64);
+    CHECK(result.err.find("--content") != std::string::npos);
+    CHECK(result.err.find("--no-content") != std::string::npos);
+  }
+  {
+    CliResult result = run_cli({"inspect", fixture("audio_hash_base.mp4"), "--content", "--no-content"});
+    CHECK(result.exit_code == 64);
+    CHECK(result.err.find("--content") != std::string::npos);
+    CHECK(result.err.find("--no-content") != std::string::npos);
+  }
+  {
+    const fs::path base_dir = scratch_dir() / "task3_conflict_base";
+    const fs::path cand_dir = scratch_dir() / "task3_conflict_cand";
+    std::error_code ec;
+    fs::create_directories(base_dir, ec);
+    fs::create_directories(cand_dir, ec);
+    CliResult result = run_cli({"dir", base_dir.string(), cand_dir.string(), "--content", "--no-content"});
+    CHECK(result.exit_code == 64);
+    CHECK(result.err.find("--content") != std::string::npos);
+    CHECK(result.err.find("--no-content") != std::string::npos);
+  }
+}

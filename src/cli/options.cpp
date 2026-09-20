@@ -401,6 +401,34 @@ mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_bytes(const
   return bytes;
 }
 
+// 06-01-PLAN.md Task 3: see options.h's own doc comment for the full
+// three-way contract this implements.
+mediadiff::expected<bool, Error> resolve_content_enabled(const ContentArgs& args,
+                                                            ContentCommandDefault command_default) {
+  const bool content_given = opt_flag(args.content_flag);
+  const bool no_content_given = opt_flag(args.no_content_flag);
+  if (content_given && no_content_given) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, "--content and --no-content cannot both be given"});
+  }
+  if (command_default == ContentCommandDefault::must_decode) {
+    if (no_content_given) {
+      return mediadiff::unexpected(Error{
+          ErrorKind::usage, "--no-content is not valid here -- this command always decodes, since a "
+                              "snapshot taken once is compared under any profile later and a non-decoding "
+                              "snapshot would be permanently incomparable against a decoding compare"});
+    }
+    return true;
+  }
+  if (content_given) {
+    return true;
+  }
+  if (no_content_given) {
+    return false;
+  }
+  return command_default == ContentCommandDefault::decode_by_default;
+}
+
 PolicyArgs default_policy_args() { return {}; }
 
 ReportArgs default_report_args() { return {}; }

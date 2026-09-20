@@ -49,6 +49,14 @@ Flags: `--profile --config --set --tol --no-content --content --ssim --psnr --vm
 
 Exit codes: `0` clean · `1` fail findings · `2` warn + `--strict` · `64` usage · `65` unreadable input · `66` decode failure mid-analysis (partial JSON still emitted) · `70` internal. The `<3` vs `≥64` split is a CI contract: "regression" vs "could not run".
 
+**`--content` / `--no-content` (06-01-PLAN.md Task 3, D-05):** resolved per command via `resolve_content_enabled` (`src/cli/options.{h,cpp}`), a three-way `explicit flag > (per-command default)` precedence — there is no config-file layer for this one, unlike `--probe-timeout`. Both flags given together is always `ErrorKind::usage` (exit 64), naming both spellings. Per-command default when NEITHER flag is given:
+  - `compare`: decodes (`--no-content` disables it).
+  - `snapshot`: ALWAYS decodes — there is no "off" state; `--no-content` is ITSELF a usage error (exit 64), because a snapshot taken once is compared under any profile later and a non-decoding snapshot would be permanently incomparable against a decoding `compare`.
+  - `dir`: opt-in — decode stays off unless `--content` is given (corpus-speed default).
+  - `inspect`: opt-in — decodes on request, matching `dir`'s own default.
+
+`--hash-decoder` (06-05-PLAN.md) is added to `ProbeOptions` as a sibling flag once that plan lands; not yet present as of 06-01.
+
 ### 3.2 Parsing design — CLI11
 
 **Chosen: CLI11** (header-only, vcpkg `cli11`). Reasons: first-class subcommands, repeatable options (`--set`, `--tol`), option groups, config-file hooks we deliberately do *not* use (TOML handled by our own layer for precedence control), good Windows behavior. Rejected: `cxxopts` (no subcommands), `boost::program_options` (heavy dep for no gain), hand-rolled (subcommand + repeatable-flag matrix is exactly where hand-rolling rots).

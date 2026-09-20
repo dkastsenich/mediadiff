@@ -159,7 +159,6 @@ void register_dir_command(CLI::App& app) {
   // Option for the whole program lifetime, and this callback only runs
   // during app.parse().
   cmd->callback([baseline_dir, candidate_dir, threads, threads_opt, content_flag, no_content_flag, options]() {
-    (void)no_content_flag;
     const CheckRegistry& registry = builtin_registry();
 
     // Materialized once, here, rather than called repeatedly at each of
@@ -172,7 +171,19 @@ void register_dir_command(CLI::App& app) {
     // pointer dereference repeated at each use.
     const std::string baseline_dir_text = opt_string(baseline_dir);
     const std::string candidate_dir_text = opt_string(candidate_dir);
-    const bool content_requested = opt_flag(content_flag);
+    // 06-01-PLAN.md Task 3: dir mode's own documented default is opt-in
+    // (decode stays off unless --content is explicitly given) -- the
+    // ContentArgs{content_flag, no_content_flag} pair above is unchanged
+    // from its original registration; only the resolution itself now goes
+    // through the shared resolver instead of a bare opt_flag read.
+    auto content_enabled_result =
+        resolve_content_enabled(ContentArgs{content_flag, no_content_flag}, ContentCommandDefault::opt_in);
+    if (!content_enabled_result) {
+      const Error& err = content_enabled_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const bool content_enabled = *content_enabled_result;
     const bool strict = opt_flag(options.strict);
     const bool quiet = opt_flag(options.quiet);
     const bool verbose = opt_flag(options.verbose);
@@ -264,14 +275,6 @@ void register_dir_command(CLI::App& app) {
           std::exit(kExitUsage);
         }
       }
-    }
-
-    // DIR-02: --content is plumbing only in this phase -- the probe layer
-    // (Phase 3) is what actually consumes a pass-selection request. A
-    // diagnostic, not an error: the corpus run still completes on the
-    // default header-plus-packet pass set.
-    if (content_requested) {
-      report_cli_error("--content is accepted but has no effect yet -- the decode pass arrives with a later phase");
     }
 
     // --threads resolution: explicit --threads > [dir] threads > hardware
@@ -378,12 +381,18 @@ void register_dir_command(CLI::App& app) {
         const std::string baseline_path = join_relative(baseline_dir_text, pair.relative_path);
         const std::string candidate_path = join_relative(candidate_dir_text, pair.relative_path);
 
-        auto baseline_fp = fingerprint_input(baseline_path, registry);
+        // 06-01-PLAN.md Task 3: `content_enabled` is resolved ONCE, above,
+        // outside this per-job lambda -- every file in the corpus shares
+        // the SAME content-decode preference, the same "resolved once,
+        // read many times across worker threads" pattern this command
+        // already applies to the base Policy and the probe-memory budget.
+        const ProbeOptions probe_options{/*content_enabled=*/content_enabled};
+        auto baseline_fp = fingerprint_input(baseline_path, registry, probe_options);
         if (!baseline_fp) {
           outcomes[i].hard_error = baseline_fp.error();
           return;
         }
-        auto candidate_fp = fingerprint_input(candidate_path, registry);
+        auto candidate_fp = fingerprint_input(candidate_path, registry, probe_options);
         if (!candidate_fp) {
           outcomes[i].hard_error = candidate_fp.error();
           return;
