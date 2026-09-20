@@ -2201,4 +2201,137 @@ python3 tools/gen_he_aac.py \
   --aac-handwritten "$OUT_DIR/audio_aac_handwritten.mp4" \
   --aac-handwritten-copy "$OUT_DIR/audio_aac_handwritten_copy.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4."
+# --- 06-02-PLAN.md Task 2 (AUDIO-05, AUDIO-06, AUDIO-07, D-13): lossless
+# loudness/true-peak/silence fixtures, with the pinned generator's own
+# `ffmpeg -af ebur128` reference captured to a committed text golden.
+#
+# Every recipe below is `-c:a flac` or `-c:a pcm_s16le` -- NEVER aac/ac3/
+# eac3, whose encoders proved byte-UNSTABLE across SIMD levels (WINDOWS.md
+# #12's class); `flac` proved byte-stable, so the reference captured here
+# on THIS workstation is valid evidence on all five CI legs, not only the
+# designated one (D-13). The reference is captured with the SAME pinned
+# `$FFMPEG_BIN` this script already resolved, immediately after each
+# fixture is written -- never a separately-installed ffmpeg, and never
+# computed at `ctest` time (which would require the pinned binary present
+# during tests on every leg, exactly what D-13 rejects).
+AUDIO_EBUR128_REFERENCE="tests/golden/AUDIO_EBUR128_REFERENCE.txt"
+
+# capture_ebur128_reference NAME -- runs the pinned ffmpeg's own
+# `-af ebur128=peak=true` summary over "$OUT_DIR/$NAME" and appends one
+# "<name> integrated_lufs=<I> true_peak_dbtp=<Peak>" line to
+# $AUDIO_EBUR128_REFERENCE. `Integrated loudness:`/`True peak:` are
+# ffmpeg's own literal, unique Summary-block headers (unlike the bare "I:"/
+# "Peak:" tokens, which also appear once per analysis window in ffmpeg's
+# per-second progress lines) -- anchoring on the header line, then reading
+# exactly the next line, is what makes this extraction immune to matching
+# the wrong occurrence. Rejects (rather than writes an empty/partial line)
+# when either value fails to parse -- T-06-07's mitigation: a parse miss
+# fails corpus generation loudly, never silently mints a bad golden line.
+capture_ebur128_reference() {
+  local name="$1"
+  local fixture_path="$OUT_DIR/$name"
+  local ffmpeg_output
+  ffmpeg_output="$("$FFMPEG_BIN" -hide_banner -i "$fixture_path" -af ebur128=peak=true -f null - 2>&1 || true)"
+
+  local integrated_line
+  integrated_line="$(printf '%s\n' "$ffmpeg_output" | grep -A1 'Integrated loudness:' | tail -n1)"
+  local integrated_lufs
+  integrated_lufs="$(printf '%s\n' "$integrated_line" | awk '{print $2}')"
+
+  local true_peak_line
+  true_peak_line="$(printf '%s\n' "$ffmpeg_output" | grep -A1 'True peak:' | tail -n1)"
+  local true_peak_dbtp
+  true_peak_dbtp="$(printf '%s\n' "$true_peak_line" | awk '{print $2}')"
+
+  if [ -z "$integrated_lufs" ] || [ -z "$true_peak_dbtp" ]; then
+    echo "gen_corpus error: capture_ebur128_reference could not parse Integrated loudness/True peak for '${name}' from the pinned ffmpeg's own -af ebur128 output." >&2
+    echo "--- ffmpeg -af ebur128 output for ${name} ---" >&2
+    printf '%s\n' "$ffmpeg_output" >&2
+    exit 1
+  fi
+
+  printf '%s integrated_lufs=%s true_peak_dbtp=%s\n' "$name" "$integrated_lufs" "$true_peak_dbtp" >> "$AUDIO_EBUR128_REFERENCE"
+}
+
+: > "$AUDIO_EBUR128_REFERENCE"
+{
+  echo "# tests/golden/AUDIO_EBUR128_REFERENCE.txt -- committed ffmpeg -af ebur128"
+  echo "# reference for every lossless loudness/true-peak/silence fixture"
+  echo "# (06-02-PLAN.md Task 2, D-13). See tests/golden/README.md for this"
+  echo "# file's full provenance and regeneration rule."
+  echo "#"
+  echo "# Format: one line per measured fixture, LC_ALL=C sorted:"
+  echo "#   <fixture-name> integrated_lufs=<I dB LUFS> true_peak_dbtp=<Peak dBTP>"
+  echo "# Regenerated ONLY by scripts/gen_corpus.sh, from the PINNED ffmpeg"
+  echo "# (scripts/ffmpeg_pin.json) -- a deliberate, reviewed act, exactly like"
+  echo "# CORPUS_DIGEST.txt's own regeneration rule (never mixed with a"
+  echo "# different ffmpeg build's output)."
+} >> "$AUDIO_EBUR128_REFERENCE"
+
+# Loudness: a comfortably-above-floor reference tone, its DOC-03 clean pair
+# (a second, independent encode, never a `cp`), a +3dB delta (far outside
+# the 0.5lu/1.0lu tolerance), and one fixture below the < -70 LUFS gating
+# floor so 06-08 can prove the `silent` value rather than a number.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_loud_ref.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_loud_ref_copy.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=3dB" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_loud_plus3.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=-80dB" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_loud_floor.flac"
+
+# True peak: the same tone at +19dB (measured empirically against the
+# pinned ffmpeg: peaks at -2.1 dBTP, comfortably under the -1.0 dBTP
+# ceiling) and at +20.5dB (-0.6 dBTP, comfortably above it) -- AUDIO-06's
+# asymmetric upward-crossing gate. sine='s own default amplitude peaks
+# around -21 dBTP with no gain applied (confirmed empirically, not assumed
+# to be 0 dBFS/full-scale), which is why these gains are ~19-20dB, not the
+# ~1-2dB a full-scale assumption would suggest.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=19dB" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_peak_under.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=20.5dB" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_peak_over.flac"
+
+# Silence: a continuous tone (no silence at all -- the negative control),
+# leading silence touching the very FIRST sample (`adelay=250`), trailing
+# silence touching the very LAST sample (`apad` then `-t` past the tone's
+# own natural end), a 400ms interior dropout comfortably above doc 05's
+# 150ms minimum span, and that dropout's DOC-03 clean pair.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_silence_none.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -af "adelay=250|250" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_silence_lead.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -af "apad" -t 4.5 -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_silence_trail.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=enable='between(t,3,3.4)':volume=0" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_dropout.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=enable='between(t,3,3.4)':volume=0" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_dropout_clean.flac"
+
+for f in audio_dropout.flac audio_dropout_clean.flac audio_loud_floor.flac audio_loud_plus3.flac \
+         audio_loud_ref.flac audio_loud_ref_copy.flac audio_peak_over.flac audio_peak_under.flac \
+         audio_silence_lead.flac audio_silence_none.flac audio_silence_trail.flac; do
+  capture_ebur128_reference "$f"
+done
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac."
