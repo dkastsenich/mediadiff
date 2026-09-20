@@ -207,6 +207,11 @@ add_executable(mediadiff_integration_tests
   # not), and the transform profile's tolerance widening. Extended by Task 3
   # with the +/-0.1 LU golden-reference assertion.
   test_audio_loudness.cpp
+  # AUDIO-07/AUDIO-10 (06-09-PLAN.md): audio.silence.edges/.dropouts
+  # through the real CLI -- introduced leading/trailing silence, interior
+  # dropouts, the removed-span info rule, the mutual edge/dropout
+  # exclusion, and the requires_decode/insufficient_data skip ladder.
+  test_audio_silence.cpp
   # AUDIO-09/TRUST-01/TRUST-02 (06-05-PLAN.md Tasks 1/3): --hash-decoder and
   # the determinism-class table's end-to-end consequences, plus the
   # three-way class proof (class-1 equal across builds behind the D-11

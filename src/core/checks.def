@@ -1709,3 +1709,34 @@ unit = "db"
 value_kind = "rational"
 severity = "warn"
 tolerance = "0.3dB"
+
+# 06-09-PLAN.md (AUDIO-07), src/analyzers/audio/silence.cpp -- introduced
+# leading/trailing silence, detected by a symmetric-hysteresis peak
+# (-60 dBFS, 5ms hysteresis) run over the shared decode sweep's own
+# per-sample-frame peak. An interior peak-silent run is discarded here
+# entirely (audio.silence.dropouts' own territory); a stream with no
+# detected span reports an EMPTY span list as a real measured value, never
+# `Absent{}` and never a skip (D-14 of 06-CONTEXT.md's "unmeasured vs.
+# empty" distinction). Exact-touch adjacent spans are merged at the probe
+# layer already, ahead of `span`'s own (redundant but harmless) merge.
+[[check]]
+id = "audio.silence.edges"
+group = "audio"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 06-09-PLAN.md (AUDIO-07), src/analyzers/audio/silence.cpp -- interior
+# dropouts, detected by a sliding 100ms RMS window falling below
+# -70 dBFS for at least 150ms, over the SAME shared decode sweep (never a
+# second decode -- AUDIO-10). A run starting at sample 0 or still open at
+# the stream's own end is discarded here -- that physical region is
+# audio.silence.edges' own territory, never double-reported.
+[[check]]
+id = "audio.silence.dropouts"
+group = "audio"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"

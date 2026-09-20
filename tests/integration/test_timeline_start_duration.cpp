@@ -437,5 +437,14 @@ TEST_CASE("timeline_start_duration - the duration-short trigger pair (timeline_s
                                    // content -- the chains differ starting
                                    // at the point the shorter encode ends.
                                    "content.audio.sample_hash",
+                                   // 06-09-PLAN.md (AUDIO-07): timeline_start_base.mp4's own baseline
+                                   // audio carries a genuine ~14ms near-silent trailing stretch right
+                                   // at its true audio end (~4026-4040ms, past timeline.duration's own
+                                   // 4023ms presentation figure), which the halved-duration candidate
+                                   // (ending around 2s) does not reach at all -- a REMOVED span,
+                                   // always `info` under the `span` semantic (src/compare/span.cpp),
+                                   // never gating, but still counted by count_non_pass (D-01: every
+                                   // non-pass, non-skipped finding, `info` included).
+                                   "audio.silence.edges",
                                });
 }

@@ -240,6 +240,10 @@ add_library(libmediadiff STATIC
   # .true_peak -- a pure consumer of the shared decode sweep's own
   # libebur128 sink outputs (src/probe/audio_decode.{h,cpp}).
   src/analyzers/audio/loudness.cpp
+  # 06-09-PLAN.md (AUDIO-07, AUDIO-10): audio.silence.edges/.dropouts --
+  # the third and final consumer of the shared decode sweep's own
+  # silence/dropout span-detector outputs (src/probe/audio_decode.{h,cpp}).
+  src/analyzers/audio/silence.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

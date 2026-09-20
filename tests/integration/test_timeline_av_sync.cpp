@@ -415,6 +415,21 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
                                      // ~3800ms in, 3 divergent blocks total,
                                      // exactly where the step occurs).
                                      "content.audio.sample_hash",
+                                     // 06-09-PLAN.md (AUDIO-07): the SAME
+                                     // splice/trim removes a genuine ~14ms
+                                     // near-silent trailing stretch this
+                                     // fixture's own baseline carries right at
+                                     // its true audio end (~4026-4040ms, past
+                                     // timeline.duration's own 4023ms
+                                     // presentation figure -- inside the
+                                     // priming/trailing-padding region a raw
+                                     // decode includes) -- a REMOVED span,
+                                     // always `info` under the `span`
+                                     // semantic (src/compare/span.cpp), never
+                                     // gating, but still counted by
+                                     // count_non_pass (D-01: every non-pass,
+                                     // non-skipped finding, `info` included).
+                                     "audio.silence.edges",
                                  });
     for (const auto& f : report.at("findings")) {
       if (f.at("id").get<std::string>() != "timeline.av_drift.pattern") {

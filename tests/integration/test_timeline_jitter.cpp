@@ -117,6 +117,18 @@ TEST_CASE("timeline_jitter - the jitter trigger pair declares its complete expec
           // itself stays `pass` (within the 0.5/1.0LU two-threshold
           // tolerance).
           "audio.loudness.true_peak",
+          // 06-09-PLAN.md (AUDIO-07): timeline_start_base.mp4's own
+          // baseline audio carries a genuine ~14ms near-silent trailing
+          // stretch right at its true audio end (~4026-4040ms, past
+          // timeline.duration's own 4023ms presentation figure -- inside
+          // the priming/trailing-padding region a raw decode includes),
+          // which the independently-generated, twice-as-long jitter
+          // candidate does not share at the same relative position -- a
+          // REMOVED span, always `info` under the `span` semantic
+          // (src/compare/span.cpp), never gating, but still counted by
+          // count_non_pass (D-01: every non-pass, non-skipped finding,
+          // `info` included).
+          "audio.silence.edges",
       });
 }
 

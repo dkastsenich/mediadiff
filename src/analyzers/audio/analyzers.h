@@ -103,4 +103,30 @@ const AnalyzerSpec& audio_priming_analyzer();
 // BOTH sides (never gated on `check.id`).
 const AnalyzerSpec& audio_loudness_analyzer();
 
+// audio.silence.edges/audio.silence.dropouts (06-09-PLAN.md, AUDIO-07,
+// AUDIO-10): a pure consumer of `ProbeResults::audio_decode`'s
+// `edge_silence_spans`/`dropout_spans` -- never opens a decoder, never
+// re-reads the file (PROBE-08). This is the THIRD and final sink sharing
+// the audio decode sweep the hash and loudness sinks already declare
+// `Pass::audio_decode` for (AUDIO-10's own single-sweep guarantee becomes
+// complete and measurable here). `required_passes = {Pass::demux_header,
+// Pass::packet_scan, Pass::audio_decode}`, `scope = ContainerFamily::other`.
+// Skip-reason priority (mirrors `audio_loudness_analyzer()`'s own):
+// `partial_scan` first, then `requires_decode` when the slot is
+// `std::nullopt` or this stream's own decode was never attempted, then
+// `insufficient_data` when the stream decoded but `silence_measured` is
+// false (a zero-sample stream, or a native sample format none of the
+// silence detector's four supported feeds accept).
+//
+// Both compared values are `SpanList`s in milliseconds, converted from the
+// probe layer's own sample-index `SampleSpan`s via
+// `src/analyzers/timeline/analyzers.h`'s `detail::ticks_to_ms(sample,
+// Rational{1, sample_rate})` -- the SAME checked-rational helper
+// `timeline.gaps`/`timeline.discontinuities` already use for their own
+// `unit = "ms"` span checks. A stream with no detected spans emits an
+// EMPTY `SpanList` as a real measured value, never `Absent{}` and never a
+// skip (D-14 of 06-CONTEXT.md's own "unmeasured vs. empty" distinction,
+// applied here to silence).
+const AnalyzerSpec& audio_silence_analyzer();
+
 }  // namespace mediadiff

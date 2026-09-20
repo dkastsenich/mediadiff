@@ -51,7 +51,9 @@
 // precedence-chain check that makes `unknown` a comparable value),
 // bringing the total to eighty-six. 06-08-PLAN.md registers
 // audio.loudness.integrated and audio.loudness.true_peak, bringing the
-// total to eighty-eight. This file is where a gap becomes visible.
+// total to eighty-eight. 06-09-PLAN.md registers audio.silence.edges and
+// audio.silence.dropouts, bringing the total to ninety. This file is
+// where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -712,6 +714,25 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"audio.loudness.true_peak",
        {fixture("audio_peak_under.flac"), fixture("audio_peak_over.flac"), fixture("audio_loud_ref.flac"),
         fixture("audio_loud_ref_copy.flac")}},
+      // audio.silence.edges (06-09-PLAN.md, AUDIO-07): trigger is
+      // audio_silence_none.flac (baseline, no silence) vs
+      // audio_silence_lead.flac (candidate, 250ms leading silence) --
+      // verified `fail`, one introduced leading span. Clean pair is
+      // audio_silence_none.flac vs itself -- verified `pass`.
+      {"audio.silence.edges",
+       {fixture("audio_silence_none.flac"), fixture("audio_silence_lead.flac"), fixture("audio_silence_none.flac"),
+        fixture("audio_silence_none.flac")}},
+      // audio.silence.dropouts (06-09-PLAN.md, AUDIO-07): trigger is
+      // audio_dropout_clean.flac (baseline, no interior dropout) vs
+      // audio_dropout.flac (candidate, a 400ms interior mute) -- verified
+      // `fail`, one introduced interior span. Clean pair is
+      // audio_dropout_clean.flac vs itself -- verified `pass`. (Rule 1 fix,
+      // 06-09-SUMMARY.md: the plan's own literal recipe made these two
+      // fixtures byte-identical; scripts/gen_corpus.sh was corrected so
+      // audio_dropout_clean.flac genuinely carries no mute.)
+      {"audio.silence.dropouts",
+       {fixture("audio_dropout_clean.flac"), fixture("audio_dropout.flac"), fixture("audio_dropout_clean.flac"),
+        fixture("audio_dropout_clean.flac")}},
   };
   return pairs;
 }

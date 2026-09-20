@@ -216,6 +216,13 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // grouped and appended in commit order, never interleaved among
       // Phase 5's.
       audio_loudness_analyzer(),
+      // 06-09-PLAN.md (AUDIO-07, AUDIO-10): audio.silence.edges/
+      // .dropouts -- the THIRD and final consumer of the shared decode
+      // sweep's own sink outputs, completing AUDIO-10's single-sweep
+      // guarantee. Listed directly after audio_loudness_analyzer() so
+      // this phase's own registrations stay grouped and appended in
+      // commit order, never interleaved among Phase 5's.
+      audio_silence_analyzer(),
   };
   return registry;
 }

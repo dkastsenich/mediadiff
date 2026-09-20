@@ -86,3 +86,5 @@ audio.profile  severity=fail  tolerance=<none>
 audio.priming  severity=fail  tolerance=<none>
 audio.loudness.integrated  severity=fail  tolerance=10/10 LU (warn 5/10)
 audio.loudness.true_peak  severity=warn  tolerance=3/10 dB
+audio.silence.edges  severity=fail  tolerance=<none>
+audio.silence.dropouts  severity=fail  tolerance=<none>

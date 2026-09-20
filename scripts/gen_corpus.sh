@@ -2324,8 +2324,16 @@ capture_ebur128_reference() {
   -af "volume=enable='between(t,3,3.4)':volume=0" -c:a flac -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/audio_dropout.flac"
 
+# 06-09-PLAN.md Task 2 (Rule 1 fix): audio_dropout_clean.flac is the
+# DOC-03 "clean" pair for the interior-dropout trigger above -- it must
+# NOT carry the same volume=0 mute, or comparing it against audio_dropout
+# .flac would compare two byte-identical files and never trigger
+# audio.silence.dropouts at all. The plan's own literal recipe (copied
+# verbatim from audio_dropout.flac, including the mute) could never have
+# delivered its stated "clean pair" purpose; fixed here to a plain,
+# unmuted 6s tone.
 "$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
-  -af "volume=enable='between(t,3,3.4)':volume=0" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/audio_dropout_clean.flac"
 
 for f in audio_dropout.flac audio_dropout_clean.flac audio_loud_floor.flac audio_loud_plus3.flac \

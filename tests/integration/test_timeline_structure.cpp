@@ -208,6 +208,16 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
           // `unknown` is a real value (D-14). One more legitimate effect of
           // the same splice/re-encode root cause (D-02).
           "audio.priming",
+          // 06-09-PLAN.md (AUDIO-07): the SAME splice/re-encode root cause
+          // shifts the fresh encode's own genuine ~14-17ms near-silent
+          // trailing stretch to a slightly different position than the
+          // clean baseline's own (verified via `mediadiff compare --json`
+          // evidence: baseline {4026ms,4040ms}, candidate {4069ms,4086ms} --
+          // non-overlapping, so `src/compare/span.cpp`'s own interval
+          // algebra reports this as +1 introduced (never a false pass from
+          // a coincidental match) -- one more legitimate effect of the same
+          // splice/re-encode root cause.
+          "audio.silence.edges",
       });
 }
 
@@ -621,6 +631,15 @@ TEST_CASE(
           // in, 22 divergent blocks total) -- one more legitimate effect
           // of the same splice root cause.
           "content.audio.sample_hash",
+          // 06-09-PLAN.md (AUDIO-07): the same splice/re-encode shifts the
+          // fresh encode's own genuine ~14-17ms near-silent trailing
+          // stretch to a slightly different position than the baseline's
+          // own (verified via `mediadiff compare --json` evidence:
+          // baseline {4026ms,4040ms}, candidate {4069ms,4086ms} --
+          // non-overlapping, so `src/compare/span.cpp`'s own interval
+          // algebra reports this as +1 introduced) -- one more legitimate
+          // effect of the same splice root cause.
+          "audio.silence.edges",
       });
 }
 

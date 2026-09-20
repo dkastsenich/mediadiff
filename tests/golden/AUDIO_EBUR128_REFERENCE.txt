@@ -10,7 +10,7 @@
 # CORPUS_DIGEST.txt's own regeneration rule (never mixed with a
 # different ffmpeg build's output).
 audio_dropout.flac integrated_lufs=-22.0 true_peak_dbtp=-21.1
-audio_dropout_clean.flac integrated_lufs=-22.0 true_peak_dbtp=-21.1
+audio_dropout_clean.flac integrated_lufs=-21.8 true_peak_dbtp=-21.1
 audio_loud_floor.flac integrated_lufs=-70.0 true_peak_dbtp=-100.9
 audio_loud_plus3.flac integrated_lufs=-18.8 true_peak_dbtp=-18.1
 audio_loud_ref.flac integrated_lufs=-21.8 true_peak_dbtp=-21.1
