@@ -59,7 +59,7 @@ namespace {
 
 Scope global0() { return Scope{Scope::Kind::global, 0}; }
 
-// All 14 SkipReason enumerators, paired with the exact snake_case spelling
+// All 15 SkipReason enumerators, paired with the exact snake_case spelling
 // both src/report/json.cpp's skip_reason_to_string and
 // src/report/junit.cpp's skip_reason_text must render for it. Hand-listed
 // by design (per this plan's Test 1 behavior spec: "a test that must be
@@ -84,6 +84,10 @@ const SkipReasonCase kAllSkipReasons[] = {
     {SkipReason::partial_scan, "partial_scan"},
     {SkipReason::insufficient_data, "insufficient_data"},
     {SkipReason::no_timing_data, "no_timing_data"},
+    // 06-05-PLAN.md (D-06, TRUST-01): a successfully-decoded stream whose
+    // decoder doc 05 section 3's determinism-class table does not list --
+    // content.audio.sample_hash reports no digest for it.
+    {SkipReason::hash_disabled, "hash_disabled"},
 };
 
 Finding make_skip_finding(SkipReason reason, std::string message = "") {
@@ -141,7 +145,7 @@ std::string junit_skip_reason_text(SkipReason reason) {
 TEST_CASE("skip_reason: every SkipReason enumerator round-trips through the JSON renderer to its own snake_case "
           "spelling",
           "[measurement_provenance]") {
-  REQUIRE(std::size(kAllSkipReasons) == 14);
+  REQUIRE(std::size(kAllSkipReasons) == 15);
   for (const SkipReasonCase& c : kAllSkipReasons) {
     INFO("reason: " << c.text);
     CHECK(json_skip_reason_text(c.reason) == c.text);
@@ -170,10 +174,10 @@ TEST_CASE("skip_reason: the JSON renderer's output vocabulary is exactly the set
   }
 
   CHECK(rendered_values == schema_values);
-  CHECK(schema_values.size() == 14);
+  CHECK(schema_values.size() == 15);
 }
 
-TEST_CASE("skip_reason: skip_reason_text (junit) agrees with skip_reason_to_string (json) for all 14 enumerators",
+TEST_CASE("skip_reason: skip_reason_text (junit) agrees with skip_reason_to_string (json) for all 15 enumerators",
           "[measurement_provenance]") {
   for (const SkipReasonCase& c : kAllSkipReasons) {
     INFO("reason: " << c.text);

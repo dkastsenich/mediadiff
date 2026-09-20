@@ -96,8 +96,7 @@ void run_content_audio_sample_hash(const ProbeResults& results, Fingerprint& fp)
     // Skip-reason priority (06-01-PLAN.md's own action text): partial_scan
     // first, then requires_decode when the slot is std::nullopt (content
     // decode not requested, or this stream's decoder could not be opened
-    // at all -- doc 05's own class-3 case), then insufficient_data for a
-    // zero-sample stream.
+    // at all), then insufficient_data for a zero-sample stream.
     if (packet_scan.per_stream[i].partial) {
       push_skip(CheckId::content_audio_sample_hash, scope, SkipReason::partial_scan, fp);
       continue;
@@ -107,8 +106,42 @@ void run_content_audio_sample_hash(const ProbeResults& results, Fingerprint& fp)
       continue;
     }
     const StreamAudioDecode& decode = results.audio_decode->per_stream[i];
-    if (!decode.attempted || decode.undecodable) {
+    if (!decode.attempted) {
       push_skip(CheckId::content_audio_sample_hash, scope, SkipReason::requires_decode, fp);
+      continue;
+    }
+
+    // TRUST-01 (06-05-PLAN.md, T-06-15): the class recorded into the
+    // decode_path ledger AND used for this measurement's own
+    // decode_path_class evidence is re-derived from the decoder's own
+    // recorded NAME through determinism_class_for_decoder() -- never
+    // trusted from decode.decoder_class directly, so the SAME single
+    // table governs both. One decode_path record per HASHED (i.e.
+    // attempted) stream, ascending index (this loop's own natural
+    // order), never merged/deduplicated even when two records are
+    // field-for-field identical -- the array is a per-stream ledger, not
+    // a set. No digest field ever rides here (that lives in the
+    // Measurement's own HashChain value below).
+    const int decode_class = determinism_class_for_decoder(decode.decoder_name);
+    nlohmann::ordered_json decode_path_record{
+        {"stream_index", static_cast<std::int64_t>(i)},
+        {"decoder", decode.decoder_name},
+        {"class", decode_class},
+        {"flags", decode.flags_recorded},
+    };
+    if (decode_class == 2) {
+      decode_path_record["path_signature"] = decode.path_signature;
+    }
+    fp.envelope.decode_path.push_back(std::move(decode_path_record));
+
+    if (decode.undecodable) {
+      push_skip(CheckId::content_audio_sample_hash, scope, SkipReason::requires_decode, fp);
+      continue;
+    }
+    if (decode_class == 3) {
+      // D-06: a codec doc 05 section 3 does not list -- not proven
+      // deterministic, hashing disabled rather than an unreviewed digest.
+      push_skip(CheckId::content_audio_sample_hash, scope, SkipReason::hash_disabled, fp);
       continue;
     }
     if (decode.total_samples == 0) {
@@ -136,8 +169,7 @@ void run_content_audio_sample_hash(const ProbeResults& results, Fingerprint& fp)
     // decode_path_class carries D-05's signature as the VALUE of this
     // existing key -- no fourth precondition key added.
     const std::string decode_path_class =
-        decode.decoder_class == 1 ? std::string("class1")
-                                    : fmt::format("class2 {}", compose_decode_path_signature());
+        decode_class == 1 ? std::string("class1") : fmt::format("class2 {}", compose_decode_path_signature());
     measurement.evidence = nlohmann::ordered_json{
         {"decode_path_class", decode_path_class},
         {"sampling_state", "full"},

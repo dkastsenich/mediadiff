@@ -354,6 +354,12 @@ add_executable(mediadiff_unit_tests
   # exported assertion helper 06-05's own class-1 two-build proof calls
   # before comparing anything (06-02-PLAN.md Task 1).
   test_gen_he_aac.cpp
+  # AUDIO-09/TRUST-01 (06-05-PLAN.md Task 2): the per-hashed-stream
+  # decode_path record -- ordering, non-dedup, the empty-array/class-3-
+  # no-signature edges, field shape, the write_snapshot/read_snapshot round
+  # trip (byte identity, encoding preservation, repeat-run determinism),
+  # and the malformed-record rejection (T-06-16).
+  test_decode_path_record.cpp
   # AUDIO-01/AUDIO-02 (06-03-PLAN.md): audio.codec/sample_rate/sample_fmt/
   # bit_depth/channels/layout -- the six header-pass audio stream-parameter
   # checks, exercised directly against audio_stream_params_analyzer()'s own

@@ -76,6 +76,8 @@ std::string_view skip_reason_text(SkipReason reason) {
       return "insufficient_data";
     case SkipReason::no_timing_data:
       return "no_timing_data";
+    case SkipReason::hash_disabled:
+      return "hash_disabled";
   }
   return "none";
 }
