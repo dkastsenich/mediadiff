@@ -223,6 +223,14 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // this phase's own registrations stay grouped and appended in
       // commit order, never interleaved among Phase 5's.
       audio_silence_analyzer(),
+      // 06-10-PLAN.md (AUDIO-08, AUDIO-10, D-09): meta.decode_errors --
+      // the FOURTH and final consumer of the shared decode sweep's own
+      // outputs, and the ONE place Fingerprint::partial is set for the
+      // narrow "wholly undecodable" case (src/analyzers/container/meta.cpp's
+      // own doc comment). Listed directly after audio_silence_analyzer()
+      // so this phase's own registrations stay grouped and appended in
+      // commit order, never interleaved among Phase 5's.
+      container_meta_decode_errors_analyzer(),
   };
   return registry;
 }

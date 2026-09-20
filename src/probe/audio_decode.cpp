@@ -15,6 +15,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/error.h>
 #include <libavutil/samplefmt.h>
 }
 
@@ -238,6 +239,22 @@ std::int64_t quantize_loudness_milli(double value) {
   return static_cast<std::int64_t>(std::llround(value * static_cast<double>(kLoudnessQuantiserDen)));
 }
 
+// 06-10-PLAN.md (AUDIO-08, Test 7): records the FIRST recoverable decode
+// error's own reason into `*out`, if `*out` is still empty -- a later
+// error never overwrites the first (this file's own "first error only"
+// contract). `call` names which libav call failed (a static label, never
+// user-controlled); `averror` is that call's own negative return code,
+// rendered via av_strerror -- the SAME error-text call every project
+// diagnostic path already uses, never a bare numeric code alone.
+void record_first_error(std::string* out, std::string_view call, int averror) {
+  if (!out->empty()) {
+    return;
+  }
+  char buf[AV_ERROR_MAX_STRING_SIZE] = {0};
+  av_strerror(averror, buf, sizeof buf);
+  *out = fmt::format("{}: {}", call, buf);
+}
+
 }  // namespace
 
 int loudness_feed_dispatch_for_sample_fmt(int av_sample_fmt_id) {
@@ -430,10 +447,10 @@ AudioDecodeState::AudioDecodeState(AudioDecodeState&& other) noexcept
     : codec_ctx_(other.codec_ctx_),
       attempted_init_(other.attempted_init_),
       attempted_(other.attempted_),
-      undecodable_(other.undecodable_),
       consecutive_error_limit_hit_(other.consecutive_error_limit_hit_),
       consecutive_errors_(other.consecutive_errors_),
       decode_error_count_(other.decode_error_count_),
+      first_error_reason_(std::move(other.first_error_reason_)),
       decoder_name_(std::move(other.decoder_name_)),
       decoder_class_(other.decoder_class_),
       fallback_reason_(std::move(other.fallback_reason_)),
@@ -484,10 +501,10 @@ AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept
   codec_ctx_ = other.codec_ctx_;
   attempted_init_ = other.attempted_init_;
   attempted_ = other.attempted_;
-  undecodable_ = other.undecodable_;
   consecutive_error_limit_hit_ = other.consecutive_error_limit_hit_;
   consecutive_errors_ = other.consecutive_errors_;
   decode_error_count_ = other.decode_error_count_;
+  first_error_reason_ = std::move(other.first_error_reason_);
   decoder_name_ = std::move(other.decoder_name_);
   decoder_class_ = other.decoder_class_;
   fallback_reason_ = std::move(other.fallback_reason_);
@@ -884,6 +901,9 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
   AVPacket* pkt = av_packet_alloc();
   if (pkt == nullptr) {
     ++decode_error_count_;
+    if (first_error_reason_.empty()) {
+      first_error_reason_ = "av_packet_alloc_failed";
+    }
     return;
   }
   // A non-refcounted reference to the caller's own live packet buffer --
@@ -898,9 +918,16 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
   if (send_rc < 0 && send_rc != AVERROR(EAGAIN)) {
     ++decode_error_count_;
     ++consecutive_errors_;
+    record_first_error(&first_error_reason_, "avcodec_send_packet", send_rc);
+    // 06-10-PLAN.md (D-09): `undecodable` is NEVER decided here -- it is
+    // derived once, at finalize(), from the FINAL total_samples_/
+    // decode_error_count_. Stopping further feeding at the consecutive-
+    // error limit (T-06-01's own DoS mitigation) is orthogonal to whether
+    // this stream turns out undecodable: a stream that already decoded
+    // real samples before hitting this limit is not undecodable, even
+    // though it stops here.
     if (consecutive_errors_ > kMaxAudioDecodeErrorsPerStream) {
       consecutive_error_limit_hit_ = true;
-      undecodable_ = total_samples_ == 0;
     }
     return;
   }
@@ -908,6 +935,9 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
   AVFrame* frame = av_frame_alloc();
   if (frame == nullptr) {
     ++decode_error_count_;
+    if (first_error_reason_.empty()) {
+      first_error_reason_ = "av_frame_alloc_failed";
+    }
     return;
   }
   for (;;) {
@@ -917,6 +947,7 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
     }
     if (recv_rc < 0) {
       ++decode_error_count_;
+      record_first_error(&first_error_reason_, "avcodec_receive_frame", recv_rc);
       break;
     }
     consecutive_errors_ = 0;
@@ -933,10 +964,18 @@ StreamAudioDecode AudioDecodeState::finalize() {
     return result;
   }
 
-  if (codec_ctx_ != nullptr && !undecodable_) {
+  if (codec_ctx_ != nullptr) {
     // Drain: a null-packet avcodec_send_packet, per libav's own flush
     // contract, so any frame the decoder was still buffering internally
-    // is accounted for in the final chain.
+    // is accounted for in the final chain. 06-10-PLAN.md: run this
+    // UNCONDITIONALLY (never gated on an early undecodable guess) --
+    // `undecodable` below is decided AFTER this drain, from the FINAL
+    // total_samples_/decode_error_count_, since a buffered frame the
+    // decoder was still holding can be exactly what turns a
+    // zero-samples-so-far stream into a real, comparable one. A single
+    // bounded flush call on an already-broken codec context is safe
+    // (the receive loop breaks on its first non-success return) and
+    // costs nothing on the common, healthy path.
     avcodec_send_packet(codec_ctx_, nullptr);
     AVFrame* frame = av_frame_alloc();
     if (frame != nullptr) {
@@ -976,12 +1015,18 @@ StreamAudioDecode AudioDecodeState::finalize() {
   result.total_samples = total_samples_;
   result.block_digests = block_digests_;
   result.decode_error_count = decode_error_count_;
-  // Test 5: a stream that decodes to zero samples is NOT undecodable --
-  // it is a real, comparable "nothing decoded" outcome the caller reports
-  // as SkipReason::insufficient_data, never a hard failure. `undecodable`
-  // is reserved for the consecutive-error-limit path with zero samples
-  // ever produced.
-  result.undecodable = undecodable_;
+  result.first_error_reason = first_error_reason_;
+  // 06-10-PLAN.md (D-09): `undecodable` is the narrow case that genuinely
+  // could not run -- ZERO decoded frames across the whole sweep (final,
+  // post-drain total_samples_) WHILE carrying at least one decode error.
+  // Test 5: a stream that decodes to zero samples with ZERO errors (no
+  // packets at all, or a genuinely empty/silent stream) is NOT
+  // undecodable -- it is a real, comparable "nothing decoded" outcome the
+  // caller reports as SkipReason::insufficient_data, never a hard
+  // failure. A non-zero decode_error_count alone (Test 2/3: some frames
+  // still decoded) never sets this either -- that is exactly the
+  // recoverable, GATING case meta.decode_errors reports instead.
+  result.undecodable = total_samples_ == 0 && decode_error_count_ > 0;
 
   if (!block_digests_.empty()) {
     std::string concat;

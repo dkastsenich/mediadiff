@@ -218,6 +218,11 @@ add_executable(mediadiff_integration_tests
   # identity guard, class-2 across differing paths always skips even on
   # equal digests, class-3 never compares a digest at all).
   test_audio_hash_decoder.cpp
+  # AUDIO-08/AUDIO-10 (06-10-PLAN.md, D-09): meta.decode_errors through the
+  # real CLI -- the recoverable-error/undecodable fixture triple, the
+  # narrowed exit-code contract (exit 1 vs exit 66), the
+  # partial_scan/insufficient_data skip ladder, and TRUST-05 determinism.
+  test_audio_decode_errors.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"

@@ -135,7 +135,13 @@ void run_content_audio_sample_hash(const ProbeResults& results, Fingerprint& fp)
     fp.envelope.decode_path.push_back(std::move(decode_path_record));
 
     if (decode.undecodable) {
-      push_skip(CheckId::content_audio_sample_hash, scope, SkipReason::requires_decode, fp);
+      // 06-10-PLAN.md (D-09, Test 4): the narrow "genuinely could not run"
+      // case -- zero decoded frames across the whole sweep -- reports
+      // partial_scan, never requires_decode (which stays reserved for
+      // "content decode wasn't requested/couldn't open at all").
+      // src/analyzers/container/meta.cpp's own meta.decode_errors
+      // analyzer is the ONE place Fingerprint::partial is actually set.
+      push_skip(CheckId::content_audio_sample_hash, scope, SkipReason::partial_scan, fp);
       continue;
     }
     if (decode_class == 3) {

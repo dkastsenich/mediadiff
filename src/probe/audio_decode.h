@@ -186,12 +186,36 @@ struct StreamAudioDecode {
   // while block_digests remains the locator (D-03's divergence-report
   // basis).
   std::string chain_digest;
+  // 06-10-PLAN.md (AUDIO-08, AUDIO-10, D-09): recoverable decode errors --
+  // a negative avcodec_send_packet/avcodec_receive_frame return libav
+  // itself recovers from (never EAGAIN/EOF) -- counted per stream, over
+  // the SAME sweep the hash/loudness/silence sinks above already consume.
+  // Monotonically increasing within one sweep, never reset; a recoverable
+  // error never triggers a decoder re-open or a different decoder (D-07:
+  // selection is a once-before-the-sweep decision). meta.decode_errors
+  // (docs/checks/meta.decode_errors.md) is this field's own registered,
+  // compared check -- a clean stream reports a real 0, never Absent{} and
+  // never a skip.
   std::int64_t decode_error_count = 0;
-  // True only when this stream's decoder could not produce ANY decoded
-  // sample at all due to a hard decode failure (never merely "zero
-  // samples because the stream is silent or empty" -- that case reports
-  // attempted=true, total_samples=0, undecodable=false, and the caller
-  // reports SkipReason::insufficient_data per Test 5).
+  // The first recoverable error's own reason, e.g. "avcodec_send_packet:
+  // <libav's own av_strerror text>" -- recorded ONCE (the first error
+  // only, never overwritten by a later one) so `--explain`/`inspect` can
+  // show what kind of error it was (Test 7). Empty when
+  // decode_error_count is 0.
+  std::string first_error_reason;
+  // True ONLY when this stream produced ZERO decoded frames across its
+  // WHOLE sweep (Task 2's own action text: "the narrow case that
+  // genuinely could not run") while carrying at least one decode error --
+  // i.e. total_samples == 0 AND decode_error_count > 0. Never merely
+  // "zero samples because the stream is silent or empty and never
+  // errored at all" -- that case reports attempted=true, total_samples=0,
+  // decode_error_count=0, undecodable=false, and the caller reports
+  // SkipReason::insufficient_data per Test 5. 06-10-PLAN.md (D-09) wires
+  // this to Fingerprint::partial (src/analyzers/container/meta.cpp) --
+  // the narrow case that still marks the fingerprint partial and reaches
+  // exit 66 through claude_docs/01-core-concepts.md section 11's own
+  // mapping; a non-zero decode_error_count ALONE never does (a baseline
+  // with one known-bad, stable frame must stay a usable baseline).
   bool undecodable = false;
 
   // 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink's own
@@ -416,12 +440,17 @@ class AudioDecodeState {
   // regrouping decoded samples into fixed-length blocks and digesting
   // each full block as it completes. Must only be called when
   // attempted() is true. A negative send/receive return that is not
-  // AVERROR(EAGAIN)/AVERROR_EOF increments decode_error_count and is
+  // AVERROR(EAGAIN)/AVERROR_EOF increments decode_error_count, records the
+  // FIRST such error's own reason (first_error_reason, Test 7), and is
   // otherwise recovered from (D-09) -- never thrown, never surfaced as a
-  // libav error crossing the src/probe/ boundary. Bounded: refuses to
-  // decode past kMaxAudioDecodeErrorsPerStream consecutive errors
-  // (T-06-01's own DoS mitigation), after which this stream stops feeding
-  // further packets and reports `undecodable`.
+  // libav error crossing the src/probe/ boundary, and never a decoder
+  // re-open (D-07). Bounded: refuses to decode past
+  // kMaxAudioDecodeErrorsPerStream consecutive errors (T-06-01's own DoS
+  // mitigation), after which this stream stops feeding further packets --
+  // `undecodable` is decided at finalize() from the FINAL total_samples/
+  // decode_error_count, never eagerly here (06-10-PLAN.md: a stream that
+  // hit this limit after already decoding real samples is not
+  // undecodable).
   void feed_packet(const std::uint8_t* data, int size);
 
   // Flushes the decoder (a null-packet avcodec_send_packet, per libav's
@@ -438,10 +467,17 @@ class AudioDecodeState {
   AVCodecContext* codec_ctx_ = nullptr;
   bool attempted_init_ = false;
   bool attempted_ = false;
-  bool undecodable_ = false;
+  // 06-10-PLAN.md: no longer tracked eagerly -- `undecodable` is derived
+  // at finalize() from the FINAL total_samples_/decode_error_count_
+  // (total_samples_ == 0 && decode_error_count_ > 0), never guessed early
+  // from the consecutive-error-limit path alone (a stream that hits the
+  // limit after already decoding real samples is not undecodable).
   bool consecutive_error_limit_hit_ = false;
   int consecutive_errors_ = 0;
   std::int64_t decode_error_count_ = 0;
+  // The first recoverable error's own reason (Test 7) -- set once, never
+  // overwritten by a later error.
+  std::string first_error_reason_;
 
   std::string decoder_name_;
   int decoder_class_ = 3;

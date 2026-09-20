@@ -1740,3 +1740,28 @@ semantic = "span"
 unit = "ms"
 value_kind = "span_list"
 severity = "fail"
+
+# 06-10-PLAN.md (AUDIO-08, AUDIO-10, D-09), src/analyzers/container/meta.cpp
+# -- the count of RECOVERABLE decode errors (a negative avcodec_send_packet/
+# avcodec_receive_frame return libav itself recovers from, never a decoder
+# re-open, D-07) per audio stream, over the SAME shared decode sweep
+# content.audio.sample_hash/audio.loudness.*/audio.silence.* already
+# consume (AUDIO-10). **The D-09 amendment to claude_docs/
+# 01-core-concepts.md section 11**: a recoverable decode error is a
+# counted, GATING finding at exit 1 rather than "could not run" -- only a
+# WHOLLY undecodable stream (zero decoded frames across the whole sweep)
+# still marks the fingerprint partial and exits 66. `tol`/`count` with
+# tolerance `"0"` -- the same zero-magnitude-tolerance shape
+# `timeline.dts_monotonic` already uses, for the identical reason: this
+# behaves like exact equality while leaving `--tol
+# meta.decode_errors=N` meaningful for a pipeline with known, accepted
+# noise. A clean stream reports a real 0, never `Absent{}` and never a
+# skip.
+[[check]]
+id = "meta.decode_errors"
+group = "meta"
+semantic = "tol"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+tolerance = "0"

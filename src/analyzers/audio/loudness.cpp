@@ -165,11 +165,21 @@ void run_audio_loudness(const ProbeResults& results, Fingerprint& fp) {
       push_skip(CheckId::audio_loudness_true_peak, scope, SkipReason::requires_decode, fp);
       continue;
     }
+    if (decode.undecodable) {
+      // 06-10-PLAN.md (D-09, Test 4): the narrow "genuinely could not
+      // run" case -- zero decoded frames across the whole sweep -- reports
+      // partial_scan, distinct from Test 8's ordinary zero-sample case
+      // below. src/analyzers/container/meta.cpp's own meta.decode_errors
+      // analyzer is the ONE place Fingerprint::partial is actually set.
+      push_skip(CheckId::audio_loudness_integrated, scope, SkipReason::partial_scan, fp);
+      push_skip(CheckId::audio_loudness_true_peak, scope, SkipReason::partial_scan, fp);
+      continue;
+    }
     if (!decode.loudness_measured) {
-      // Test 8: a stream that decoded to zero samples (or never fed the
-      // sink at all -- an undecodable stream with nothing ever produced)
-      // is a real, comparable "nothing to measure" outcome, never a
-      // fabricated 0 LUFS/dBTP reading.
+      // Test 8: a stream that decoded to zero samples with ZERO decode
+      // errors (no packets at all, or a genuinely empty/silent stream --
+      // never undecodable, handled above) is a real, comparable "nothing
+      // to measure" outcome, never a fabricated 0 LUFS/dBTP reading.
       push_skip(CheckId::audio_loudness_integrated, scope, SkipReason::insufficient_data, fp);
       push_skip(CheckId::audio_loudness_true_peak, scope, SkipReason::insufficient_data, fp);
       continue;

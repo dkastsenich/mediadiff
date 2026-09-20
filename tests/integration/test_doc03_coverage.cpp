@@ -52,8 +52,11 @@
 // bringing the total to eighty-six. 06-08-PLAN.md registers
 // audio.loudness.integrated and audio.loudness.true_peak, bringing the
 // total to eighty-eight. 06-09-PLAN.md registers audio.silence.edges and
-// audio.silence.dropouts, bringing the total to ninety. This file is
-// where a gap becomes visible.
+// audio.silence.dropouts, bringing the total to ninety. 06-10-PLAN.md
+// registers meta.decode_errors (D-09's recoverable-decode-error counter),
+// bringing the total to ninety-one -- the full 14-id Phase 6 roster,
+// closing out this phase's own DOC-03 obligation. This file is where a
+// gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -733,6 +736,17 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"audio.silence.dropouts",
        {fixture("audio_dropout_clean.flac"), fixture("audio_dropout.flac"), fixture("audio_dropout_clean.flac"),
         fixture("audio_dropout_clean.flac")}},
+      // meta.decode_errors (06-10-PLAN.md, AUDIO-08, D-09): trigger is
+      // audio_corrupt_clean.mp4 (baseline, 0 decode errors) vs
+      // audio_corrupt_frames.mp4 (candidate, a handful of scattered
+      // byte-corrupted AAC access units) -- verified `fail`, 0 vs 7. Clean
+      // pair is audio_corrupt_frames.mp4 vs itself -- verified `pass`
+      // (Test 5: a baseline with a stable non-zero error count against a
+      // candidate with the SAME count stays comparable, never gating
+      // forever).
+      {"meta.decode_errors",
+       {fixture("audio_corrupt_clean.mp4"), fixture("audio_corrupt_frames.mp4"), fixture("audio_corrupt_frames.mp4"),
+        fixture("audio_corrupt_frames.mp4")}},
   };
   return pairs;
 }

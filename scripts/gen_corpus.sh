@@ -2597,4 +2597,112 @@ PYEOF
 
 rm -rf "$AUDIO_PRIME_FRAG_TMP"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac, audio_stereo_s16.wav, audio_stereo_s24.wav, audio_mono_s16.wav, audio_flt_base.ogg, audio_mp2_base.mpg, audio_51.flac, audio_51_side.flac, audio_prime_base.mp4, audio_prime_roundtrip.mkv, audio_prime_roundtrip2.mp4, audio_prime_copy.ts, audio_prime_multiedit.mp4, audio_prime_fragmented.mp4."
+# --- 06-10-PLAN.md (AUDIO-08, AUDIO-10, D-09): meta.decode_errors' own
+# recoverable-error / undecodable fixture triple ----------------------------
+#
+# `audio_corrupt_clean.mp4`: a plain 6s 44100Hz stereo AAC-in-MP4 payload,
+# long enough (~259 AAC access units) to leave plenty of clean margin on
+# both sides of the perturbed spots below.
+#
+# The other two fixtures are byte-perturbations of THIS SAME carrier's own
+# `mdat` payload -- following the `ts_ccgap.ts` precedent above (python3
+# heredoc, sys.argv paths, every output a literal `$OUT_DIR/<name>` token) --
+# never touching `moov`/`stsz`/`stco` (so every packet's DECLARED size and
+# demux-time boundary stay byte-for-byte identical; only packet CONTENT
+# changes). This is safe because MP4's `mdat` carries the concatenated raw
+# AAC access units with no inline self-framing at all (framing lives
+# entirely in `stsz`, outside `mdat`) -- a byte flip anywhere inside `mdat`
+# corrupts exactly the one access unit it falls within, never resyncs the
+# demuxer, and never changes any box's own declared size.
+#
+# VERIFIED EMPIRICALLY against the real `mediadiff` binary (06-10-SUMMARY.md
+# records the transcript): `audio_corrupt_frames.mp4` (6 scattered 24-byte
+# PRNG-garbage runs) decodes to `meta.decode_errors` = 7 on both sides
+# together in aggregate, `content.audio.sample_hash`/`audio.loudness.*`/
+# `audio.silence.*` all still report real measurements over the frames that
+# DID decode, `Fingerprint::partial` stays false, and
+# `mediadiff compare audio_corrupt_clean.mp4 audio_corrupt_frames.mp4` exits
+# 1 -- the recoverable, GATING case. `audio_undecodable.mp4` (the WHOLE
+# `mdat` replaced with PRNG garbage) decodes ZERO frames while
+# `avcodec_send_packet` errors on every packet, `Fingerprint::partial`
+# becomes true, every decode-dependent audio check reports
+# `skipped:partial_scan`, and `mediadiff compare audio_undecodable.mp4
+# audio_corrupt_clean.mp4` exits 66 -- the narrow "genuinely could not run"
+# case (D-09).
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_corrupt_clean.mp4"
+
+python3 - "$OUT_DIR/audio_corrupt_clean.mp4" "$OUT_DIR/audio_corrupt_frames.mp4" "$OUT_DIR/audio_undecodable.mp4" <<'PYEOF'
+import sys
+
+
+def find_mdat_payload(data):
+    """Locates the top-level `mdat` box's PAYLOAD (offset, size), walking
+    top-level boxes exactly like this script's own read_box_header helpers
+    elsewhere -- never assuming a fixed offset, since box order is an
+    encoder implementation detail this script does not otherwise pin."""
+    pos = 0
+    end = len(data)
+    while pos < end:
+        size = int.from_bytes(data[pos:pos + 4], 'big')
+        typ = data[pos + 4:pos + 8]
+        hdr = 8
+        if size == 1:
+            size = int.from_bytes(data[pos + 8:pos + 16], 'big')
+            hdr = 16
+        if typ == b'mdat':
+            return pos + hdr, size - hdr
+        if size == 0:
+            return pos + hdr, end - (pos + hdr)
+        pos += size
+    raise SystemExit("gen_corpus error: no mdat box found in audio_corrupt_clean.mp4")
+
+
+def prng_bytes(seed, n):
+    """A tiny, dependency-free, fully-specified xorshift32 stream --
+    deterministic on every platform (integer ops only, no floating point,
+    no library-specific PRNG mapping -- the same T-3-52 reproducibility
+    argument tests/support/mutate.h's own top comment makes for why this
+    project never uses std::uniform_int_distribution for a mutation
+    offset)."""
+    x = seed & 0xFFFFFFFF
+    out = bytearray()
+    for _ in range(n):
+        x ^= (x << 13) & 0xFFFFFFFF
+        x ^= (x >> 17)
+        x ^= (x << 5) & 0xFFFFFFFF
+        out.append(x & 0xFF)
+    return bytes(out)
+
+
+clean_path, frames_path, undecodable_path = sys.argv[1], sys.argv[2], sys.argv[3]
+base = bytearray(open(clean_path, 'rb').read())
+mdat_off, mdat_size = find_mdat_payload(bytes(base))
+if mdat_size <= 0:
+    raise SystemExit("gen_corpus error: audio_corrupt_clean.mp4's mdat payload is empty")
+
+# audio_corrupt_frames.mp4: six scattered 24-byte PRNG-garbage runs, spread
+# evenly through mdat -- corrupts a handful of AAC access units (measured:
+# meta.decode_errors = 7, one run happens to straddle two packets) while
+# leaving the great majority of the stream to decode cleanly.
+frames_data = bytearray(base)
+run_len = 24
+spot_count = 6
+for i in range(spot_count):
+    spot = mdat_off + (mdat_size * (i + 1)) // (spot_count + 2)
+    frames_data[spot:spot + run_len] = prng_bytes(0x4D443130 + i, run_len)
+with open(frames_path, 'wb') as fh:
+    fh.write(bytes(frames_data))
+
+# audio_undecodable.mp4: the ENTIRE mdat payload replaced with PRNG
+# garbage -- every AAC access unit fails to decode, so total_samples stays
+# 0 for the whole stream while decode_error_count is non-zero, the exact
+# StreamAudioDecode::undecodable boundary (06-10-PLAN.md).
+undecodable_data = bytearray(base)
+undecodable_data[mdat_off:mdat_off + mdat_size] = prng_bytes(0x4D443130, mdat_size)
+with open(undecodable_path, 'wb') as fh:
+    fh.write(bytes(undecodable_data))
+PYEOF
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac, audio_stereo_s16.wav, audio_stereo_s24.wav, audio_mono_s16.wav, audio_flt_base.ogg, audio_mp2_base.mpg, audio_51.flac, audio_51_side.flac, audio_prime_base.mp4, audio_prime_roundtrip.mkv, audio_prime_roundtrip2.mp4, audio_prime_copy.ts, audio_prime_multiedit.mp4, audio_prime_fragmented.mp4, audio_corrupt_clean.mp4, audio_corrupt_frames.mp4, audio_undecodable.mp4."

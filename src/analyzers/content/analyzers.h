@@ -16,7 +16,10 @@ namespace mediadiff {
 // priority: partial_scan first (a truncated packet scan), then
 // requires_decode when ProbeResults::audio_decode is std::nullopt
 // (content decode was not requested for this invocation), then
-// insufficient_data for a stream that decoded to zero samples. Writes the
+// partial_scan AGAIN when StreamAudioDecode::undecodable is true
+// (06-10-PLAN.md, D-09: the narrow "genuinely could not run" case -- zero
+// decoded frames across the whole sweep), then insufficient_data for a
+// stream that decoded to zero samples with zero decode errors. Writes the
 // three evidence keys src/compare/hash.cpp already reads
 // (decode_path_class, sampling_state, normalization) plus the D-03
 // divergence-locator fields a non-pass finding needs.
