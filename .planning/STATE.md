@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-09-PLAN.md
-last_updated: "2026-09-20T19:56:57.858Z"
+stopped_at: Completed 06-10-PLAN.md
+last_updated: "2026-09-20T21:30:56.112Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 06 plan 07 executed (D-16 av_drift span, WINDOWS.md
-state_head: 87da7ef1c1921d86dbcda98ac6b07074283cc328
+state_head: bfcbaeec1209659c8267d145237f3978c784ef0c
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 100
+  completed_plans: 102
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 10 of 13
+Plan: 11 of 13
 Status: Ready to execute
 Last activity: 2026-09-20 — Completed 06-07-PLAN.md (D-16 av_drift span; WINDOWS.md #32 left open on evidence)
 
@@ -153,6 +153,7 @@ Progress: [█████████░] 94%
 | Phase 06 P07 | ~30min (session resumed after context compaction) | 2 tasks | 11 files |
 | Phase 06 P08 | 60min | 3 tasks | 18 files |
 | Phase 06 P09 | 60 | 2 tasks | 23 files |
+| Phase 06-audio-analysis P10 | 90min | 3 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -374,6 +375,7 @@ Recent decisions affecting current work:
 - [Phase 06]: Silence edges detected via symmetric (open+close) hysteresis debounce on peak amplitude, to avoid a plain sine tone's exact-zero first sample spuriously opening a one-sample leading run
 - [Phase 06]: Dropout detection uses trailing sliding-window sum-of-squares RMS with cross-multiplied integer threshold comparison, discarding runs touching sample 0 or EOF (edge detector's territory)
 - [Phase 06]: audio.silence.edges and audio.silence.dropouts registered as span-semantic checks: introduced spans gate on severity, removed spans are always info
+- [Phase 06]: D-09 amendment (06-10): recoverable decode errors counted as meta.decode_errors gating findings at exit 1; only a wholly undecodable stream (zero decoded frames) marks Fingerprint::partial and exits 66
 
 ### Pending Todos
 
@@ -414,6 +416,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-20T19:56:57.629Z
-Stopped at: Completed 06-09-PLAN.md
+Last session: 2026-09-20T21:30:55.865Z
+Stopped at: Completed 06-10-PLAN.md
 Resume file: None
