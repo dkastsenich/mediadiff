@@ -49,8 +49,9 @@
 // registers audio.profile (the HE-AAC SBR signaling mode check), bringing
 // the total to eighty-five. 06-06-PLAN.md registers audio.priming (the
 // precedence-chain check that makes `unknown` a comparable value),
-// bringing the total to eighty-six. This file is where a gap becomes
-// visible.
+// bringing the total to eighty-six. 06-08-PLAN.md registers
+// audio.loudness.integrated and audio.loudness.true_peak, bringing the
+// total to eighty-eight. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -692,6 +693,25 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"audio.priming",
        {fixture("audio_prime_base.mp4"), fixture("audio_prime_copy.ts"), fixture("audio_prime_base.mp4"),
         fixture("audio_prime_roundtrip.mkv")}},
+      // audio.loudness.integrated (06-08-PLAN.md, AUDIO-05): trigger is
+      // audio_loud_ref.flac vs audio_loud_plus3.flac (the same tone at
+      // +3dB) -- verified `fail`, -21.8 vs -18.8 LUFS, 3.0LU beyond the
+      // 0.5/1.0LU two-threshold tolerance. Clean pair is audio_loud_ref.flac
+      // vs its DOC-03 clean pair audio_loud_ref_copy.flac (a second,
+      // independent encode of the same source) -- verified `pass`.
+      {"audio.loudness.integrated",
+       {fixture("audio_loud_ref.flac"), fixture("audio_loud_plus3.flac"), fixture("audio_loud_ref.flac"),
+        fixture("audio_loud_ref_copy.flac")}},
+      // audio.loudness.true_peak (06-08-PLAN.md, AUDIO-06): trigger is
+      // audio_peak_under.flac (baseline, -2.1 dBTP, under the -1.0 dBTP
+      // ceiling) vs audio_peak_over.flac (candidate, -0.6 dBTP, above it) --
+      // verified `fail` via the asymmetric ceiling escalation (an upward
+      // crossing), not merely the ordinary 0.3dB tolerance. Clean pair
+      // reuses audio_loud_ref.flac vs audio_loud_ref_copy.flac (same
+      // rationale as audio.loudness.integrated above) -- verified `pass`.
+      {"audio.loudness.true_peak",
+       {fixture("audio_peak_under.flac"), fixture("audio_peak_over.flac"), fixture("audio_loud_ref.flac"),
+        fixture("audio_loud_ref_copy.flac")}},
   };
   return pairs;
 }

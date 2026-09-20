@@ -28,9 +28,16 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <optional>
+#include <sstream>
 #include <string>
+#include <vector>
 
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include "cli_harness.h"
@@ -246,4 +253,138 @@ TEST_CASE("audio_loudness - --profile transform still escalates the upward ceili
   REQUIRE(finding != nullptr);
   REQUIRE(finding->at("status").get<std::string>() == "fail");
   REQUIRE(finding->at("message").get<std::string>().find("asymmetric ceiling crossing") != std::string::npos);
+}
+
+// =============================================================================
+// 06-08-PLAN.md Task 3 (AUDIO-05): the +/-0.1 LU reference assertion against
+// tests/golden/AUDIO_EBUR128_REFERENCE.txt (06-02's own committed
+// `ffmpeg -af ebur128` measurement) -- every FLAC/PCM fixture that file
+// names, portable to every CI leg (tests/golden/README.md's own "why every
+// measured fixture here is FLAC" section: lossless carriers are
+// byte-identical across SIMD dispatch levels, so this assertion is never
+// confined to the designated leg the way CORPUS_DIGEST.txt's own five
+// per-fixture hashes are).
+// =============================================================================
+
+namespace {
+
+// One parsed reference line: `<fixture-name> integrated_lufs=<I> `
+// `true_peak_dbtp=<Peak>` -- comment lines (leading '#') and blank lines are
+// skipped. Free of any Catch2 dependency (mirrors tests/support/golden.h's
+// own golden_check_result()/check_golden() split) so the parser itself, and
+// the pure tolerance check below, are both directly unit-testable without
+// triggering a real assertion failure on purpose.
+struct ReferenceLine {
+  std::string fixture_name;
+  double integrated_lufs = 0.0;
+  double true_peak_dbtp = 0.0;
+};
+
+std::vector<ReferenceLine> parse_reference_file(const std::string& path) {
+  std::ifstream stream(path);
+  REQUIRE(stream.is_open());
+  std::vector<ReferenceLine> lines;
+  std::string raw_line;
+  while (std::getline(stream, raw_line)) {
+    if (raw_line.empty() || raw_line[0] == '#') {
+      continue;
+    }
+    std::istringstream tokens(raw_line);
+    std::string name;
+    std::string integrated_token;
+    std::string true_peak_token;
+    tokens >> name >> integrated_token >> true_peak_token;
+    INFO("malformed AUDIO_EBUR128_REFERENCE.txt line: " << raw_line);
+    REQUIRE_FALSE(name.empty());
+    const std::string kIntegratedPrefix = "integrated_lufs=";
+    const std::string kTruePeakPrefix = "true_peak_dbtp=";
+    REQUIRE(integrated_token.rfind(kIntegratedPrefix, 0) == 0);
+    REQUIRE(true_peak_token.rfind(kTruePeakPrefix, 0) == 0);
+    ReferenceLine line;
+    line.fixture_name = name;
+    line.integrated_lufs = std::stod(integrated_token.substr(kIntegratedPrefix.size()));
+    line.true_peak_dbtp = std::stod(true_peak_token.substr(kTruePeakPrefix.size()));
+    lines.push_back(line);
+  }
+  return lines;
+}
+
+// The pure tolerance check test_size_checks.cpp's own numeric-golden
+// convention calls for: a bare boolean failure on a numeric tolerance is a
+// debugging dead end, so this returns a diagnostic message naming BOTH
+// numbers and the fixture name whenever the two are more than `tolerance_lu`
+// apart, and std::nullopt when they are within it. Free of any Catch2
+// dependency so Test 2 below (the deliberately perturbed reference) can
+// call this directly and inspect the returned message without triggering a
+// real test failure.
+std::optional<std::string> check_within_tolerance(const std::string& fixture_name, const std::string& metric_name,
+                                                    double reference_value, double measured_value,
+                                                    double tolerance_lu) {
+  const double diff = std::fabs(reference_value - measured_value);
+  if (diff <= tolerance_lu) {
+    return std::nullopt;
+  }
+  return fmt::format(
+      "{}: {} reference={:.3f} measured={:.3f} diff={:.3f} exceeds the +/-{} LU tolerance", fixture_name,
+      metric_name, reference_value, measured_value, diff, tolerance_lu);
+}
+
+std::string reference_path() { return mediadiff::test::golden_dir() + "/AUDIO_EBUR128_REFERENCE.txt"; }
+
+}  // namespace
+
+// --- Every fixture line in AUDIO_EBUR128_REFERENCE.txt has a matching
+// assertion, within +/-0.1 LU on both integrated loudness and true peak. ---
+
+TEST_CASE("audio_loudness - every AUDIO_EBUR128_REFERENCE.txt fixture matches mediadiff's own measurement within "
+          "+/-0.1 LU",
+          "[integration]") {
+  constexpr double kToleranceLu = 0.1;
+  const std::vector<ReferenceLine> reference_lines = parse_reference_file(reference_path());
+  REQUIRE(reference_lines.size() == 11);  // every fixture 06-02 measured -- a silent drop would hide coverage
+
+  for (const ReferenceLine& line : reference_lines) {
+    require_fixture(fixture(line.fixture_name));
+    const nlohmann::ordered_json report = compare_json(fixture(line.fixture_name), fixture(line.fixture_name));
+
+    const nlohmann::ordered_json* integrated = find_finding(report, "audio.loudness.integrated");
+    REQUIRE(integrated != nullptr);
+    const nlohmann::ordered_json* true_peak = find_finding(report, "audio.loudness.true_peak");
+    REQUIRE(true_peak != nullptr);
+
+    const double measured_integrated = integrated->at("evidence").at("baseline").at("integrated_lufs").get<double>();
+    const double measured_true_peak = true_peak->at("evidence").at("baseline").at("true_peak_dbtp").get<double>();
+
+    const std::optional<std::string> integrated_diag = check_within_tolerance(
+        line.fixture_name, "integrated_lufs", line.integrated_lufs, measured_integrated, kToleranceLu);
+    INFO(integrated_diag.value_or(""));
+    CHECK_FALSE(integrated_diag.has_value());
+
+    const std::optional<std::string> true_peak_diag =
+        check_within_tolerance(line.fixture_name, "true_peak_dbtp", line.true_peak_dbtp, measured_true_peak,
+                                kToleranceLu);
+    INFO(true_peak_diag.value_or(""));
+    CHECK_FALSE(true_peak_diag.has_value());
+  }
+}
+
+// --- A deliberately perturbed reference line makes the assertion fail with
+// both numbers and the fixture name printed -- proven against the pure
+// checker directly (never by actually corrupting the committed golden). ---
+
+TEST_CASE("audio_loudness - check_within_tolerance's own diagnostic names both numbers and the fixture on a "
+          "deliberately perturbed reference value",
+          "[integration]") {
+  const std::optional<std::string> diag =
+      check_within_tolerance("audio_loud_ref.flac", "integrated_lufs", /*reference_value=*/-21.8,
+                              /*measured_value=*/-21.8 + 5.0, /*tolerance_lu=*/0.1);
+  REQUIRE(diag.has_value());
+  CHECK(diag->find("audio_loud_ref.flac") != std::string::npos);
+  CHECK(diag->find("-21.8") != std::string::npos);
+  CHECK(diag->find("-16.8") != std::string::npos);
+
+  // Within tolerance: no diagnostic at all.
+  const std::optional<std::string> clean =
+      check_within_tolerance("audio_loud_ref.flac", "integrated_lufs", -21.8, -21.75, 0.1);
+  CHECK_FALSE(clean.has_value());
 }
