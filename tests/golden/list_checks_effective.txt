@@ -82,3 +82,4 @@ audio.sample_fmt  severity=fail  tolerance=<none>
 audio.bit_depth  severity=fail  tolerance=<none>
 audio.channels  severity=fail  tolerance=<none>
 audio.layout  severity=fail  tolerance=<none>
+audio.profile  severity=fail  tolerance=<none>

@@ -12,6 +12,7 @@
 #include "core/check_id.h"
 #include "core/model.h"
 
+#include "probe/audio_config.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
 #include "probe/pass.h"
@@ -144,15 +145,24 @@ void emit_codec(const StreamInfo& info, Scope scope, Fingerprint& fp) {
 }
 
 // audio.sample_rate: the CORE rate recorded as the compared value, with
-// BOTH a core and an effective rate key in evidence -- equal here, since no
-// analyzer in this plan derives an SBR-doubled effective rate. 06-04
-// (AUDIO-03's HE-AAC implicit-SBR detection) is what makes the two diverge,
-// without changing this check's own value shape (06-CONTEXT.md's own
-// must_have). std::nullopt (a codec that declares no positive sample rate
-// at all, StreamInfo::sample_rate's own absent-vs-zero convention) skips
-// insufficient_data rather than reporting a fabricated rate -- not reached
-// by any fixture in this project's corpus, but a real codecpar can in
-// principle report this.
+// BOTH a core and an effective rate key in evidence. `effective_rate_hz`
+// now rides StreamInfo::effective_sample_rate_hz (06-04-PLAN.md, AUDIO-03)
+// -- doubled relative to the core rate ONLY for an implicitly-decoded
+// HE-AAC stream (the bounded probe's own real finding); equal to the core
+// rate for every other stream, INCLUDING explicit SBR signaling, since
+// `codecpar` itself already carries the doubled rate in that case
+// (StreamInfo::effective_sample_rate_hz's own doc comment has the full
+// empirical citation). The COMPARED value stays the core rate always:
+// 06-RESEARCH.md Q4 proved `codecpar`'s own rate is the undoubled base
+// rate for an implicitly signaled stream, so moving the compared value
+// here would make the same audio report two different sample rates
+// depending on which passes ran (06-CONTEXT.md's own must_have; see
+// docs/checks/audio.sample_rate.md's own D-12 note). std::nullopt (a
+// codec that declares no positive sample rate at all,
+// StreamInfo::sample_rate's own absent-vs-zero convention) skips
+// insufficient_data rather than reporting a fabricated rate -- not
+// reached by any fixture in this project's corpus, but a real codecpar
+// can in principle report this.
 void emit_sample_rate(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   if (!info.sample_rate.has_value()) {
     push_skip(CheckId::audio_sample_rate, scope, SkipReason::insufficient_data, fp);
@@ -164,7 +174,65 @@ void emit_sample_rate(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   measurement.value = *info.sample_rate;
   measurement.evidence = nlohmann::ordered_json{
       {"core_rate_hz", *info.sample_rate},
-      {"effective_rate_hz", *info.sample_rate},
+      {"effective_rate_hz", info.effective_sample_rate_hz},
+  };
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// audio.profile (06-04-PLAN.md, AUDIO-03, D-12): the codec profile's
+// canonical name (render_named_value's own fallback-to-raw-integer rule,
+// VIDEO-01-E2's precedent applied to audio -- an undeclared profile
+// records its own explicit unknown spelling as a real comparable value,
+// never a wildcard) plus the SBR signaling mode from
+// StreamInfo::sbr_signaling, resolved ONCE in the header pass so this
+// value is identical whichever passes ran (D-12's whole point -- see
+// audio.profile.md). The three buckets an HE-AAC stream can land in are
+// spelled so they are distinguishable in the rendered value: an explicit
+// stream carries `(sbr: explicit)`, an implicitly-signaled one carries
+// `(sbr: implicit)`, and a plain stream with no SBR at all (or a non-AAC
+// codec) carries no suffix -- naming neither "implicit" nor "explicit", so
+// the third bucket is visible rather than collapsed into one of the other
+// two. `unknown` (the bounded decode itself failed) carries its own
+// `(sbr: unknown)` suffix rather than silently asserting `none`.
+std::string render_sbr_suffix(SbrSignaling signaling) {
+  switch (signaling) {
+    case SbrSignaling::explicit_asc:
+      return " (sbr: explicit)";
+    case SbrSignaling::implicit_decoded:
+      return " (sbr: implicit)";
+    case SbrSignaling::unknown:
+      return " (sbr: unknown)";
+    case SbrSignaling::none:
+      return "";
+  }
+  return "";
+}
+
+// Evidence-only spelling of StreamInfo::sbr_signaling -- never the
+// compared value itself (that lives in the rendered profile string
+// above), just a stable, greppable name for -v/inspect.
+std::string sbr_signaling_name(SbrSignaling signaling) {
+  switch (signaling) {
+    case SbrSignaling::explicit_asc:
+      return "explicit_asc";
+    case SbrSignaling::implicit_decoded:
+      return "implicit_decoded";
+    case SbrSignaling::unknown:
+      return "unknown";
+    case SbrSignaling::none:
+      return "none";
+  }
+  return "none";
+}
+
+void emit_profile(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::audio_profile);
+  measurement.scope = scope;
+  measurement.value = render_named_value(info.profile_name, info.profile) + render_sbr_suffix(info.sbr_signaling);
+  measurement.evidence = nlohmann::ordered_json{
+      {"profile", info.profile},
+      {"sbr_signaling", sbr_signaling_name(info.sbr_signaling)},
   };
   fp.measurements.push_back(std::move(measurement));
 }
@@ -282,6 +350,7 @@ void run_audio_stream_params(const ProbeResults& results, Fingerprint& fp) {
       push_skip(CheckId::audio_bit_depth, scope, SkipReason::partial_scan, fp);
       push_skip(CheckId::audio_channels, scope, SkipReason::partial_scan, fp);
       push_skip(CheckId::audio_layout, scope, SkipReason::partial_scan, fp);
+      push_skip(CheckId::audio_profile, scope, SkipReason::partial_scan, fp);
       continue;
     }
 
@@ -292,6 +361,7 @@ void run_audio_stream_params(const ProbeResults& results, Fingerprint& fp) {
     emit_bit_depth(info, scope, fp);
     emit_channels(info, scope, fp);
     emit_layout(info, scope, fp);
+    emit_profile(info, scope, fp);
   }
 
   if (!any_audio) {
@@ -303,6 +373,7 @@ void run_audio_stream_params(const ProbeResults& results, Fingerprint& fp) {
     push_skip(CheckId::audio_bit_depth, scope, reason, fp);
     push_skip(CheckId::audio_channels, scope, reason, fp);
     push_skip(CheckId::audio_layout, scope, reason, fp);
+    push_skip(CheckId::audio_profile, scope, reason, fp);
   }
 }
 

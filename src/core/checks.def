@@ -1625,3 +1625,25 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 06-04-PLAN.md (AUDIO-03, D-12), src/analyzers/audio/stream_params.cpp --
+# the codec profile's canonical name (render_named_value's own
+# fallback-to-raw-integer rule, mirroring video.profile's VIDEO-01-E2
+# precedent) plus the HE-AAC SBR signaling mode, resolved ONCE in the
+# header pass (src/probe/demux_session.cpp's compute_sbr_signaling) so
+# this value is IDENTICAL under `snapshot`, `compare --content` and
+# `compare --no-content` -- a check's value must never depend on which
+# passes ran (D-12). Doc 05 section 2.1's literal recipe (compare
+# `codecpar` before decode against the first decoded frame) is amended by
+# D-12/06-RESEARCH.md Q4: against the linked FFmpeg 8.1, `codecpar` never
+# carries the doubled rate or the HE profile for an implicitly-signaled
+# stream, and `avformat_find_stream_info()` may never decode a frame at
+# all -- see docs/checks/audio.profile.md for the full amendment, recorded
+# in the open rather than silently applied.
+[[check]]
+id = "audio.profile"
+group = "audio"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"

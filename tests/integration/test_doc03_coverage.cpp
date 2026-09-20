@@ -45,8 +45,9 @@
 // registers Phase 6's tracer, content.audio.sample_hash, bringing the
 // total to seventy-eight. 06-03-PLAN.md registers the six per-audio-
 // stream identity checks (audio.codec/sample_rate/sample_fmt/bit_depth/
-// channels/layout), bringing the total to eighty-four. This file is
-// where a gap becomes visible.
+// channels/layout), bringing the total to eighty-four. 06-04-PLAN.md
+// registers audio.profile (the HE-AAC SBR signaling mode check), bringing
+// the total to eighty-five. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -645,6 +646,17 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       // `pass`, "5.1" both sides.
       {"audio.layout",
        {fixture("audio_51.flac"), fixture("audio_51_side.flac"), fixture("audio_51.flac"), fixture("audio_51.flac")}},
+      // audio.profile (06-04-PLAN.md, AUDIO-03): trigger is
+      // audio_sbr_explicit.mp4 (explicit AOT_SBR ASC) vs
+      // audio_sbr_implicit.mp4 (bare AAC-LC ASC, SBR only discoverable via
+      // the bounded decode) -- verified `fail`, "HE-AAC (sbr: explicit)"
+      // vs "HE-AAC (sbr: implicit)"; this is also
+      // test_audio_profile_sbr.cpp's own Test 2 pair. Clean pair is
+      // audio_sbr_explicit.mp4 vs audio_sbr_explicit_copy.mp4, both
+      // explicit -- verified `pass`, "HE-AAC (sbr: explicit)" both sides.
+      {"audio.profile",
+       {fixture("audio_sbr_explicit.mp4"), fixture("audio_sbr_implicit.mp4"), fixture("audio_sbr_explicit.mp4"),
+        fixture("audio_sbr_explicit_copy.mp4")}},
   };
   return pairs;
 }

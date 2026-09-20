@@ -187,6 +187,12 @@ add_executable(mediadiff_integration_tests
   # real-value in both directions, and the DOC-04 whole-report no-others
   # count.
   test_audio_stream_params.cpp
+  # AUDIO-03 (06-04-PLAN.md Task 2): audio.profile carrying HE-AAC SBR
+  # signaling mode (explicit/implicit/no-suffix/unknown) proven through the
+  # real CLI -- explicit/implicit bucket distinction, pass-independence
+  # under --content/--no-content and a snapshot round trip, and the
+  # DOC-04 whole-report no-others count for the explicit-vs-implicit pair.
+  test_audio_profile_sbr.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
