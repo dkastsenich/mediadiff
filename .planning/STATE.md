@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-09-20T13:30:51.151Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-09-20T14:07:41.654Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 06 execution started
-state_head: 9e907b1fc541439c19a6833162af11f9eeafb874
+state_head: 83251fe216ea7342d8dd0625664c0e5acc857d78
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 94
+  completed_plans: 95
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 3 of 13
+Plan: 4 of 13
 Status: Ready to execute
 Last activity: 2026-09-20 — Phase 06 execution started
 
@@ -146,6 +146,7 @@ Progress: [█████████░] 92%
 | Phase 05-timeline-analysis P25 | 15min | 2 tasks | 0 files |
 | Phase 06 P01 | 44min | 3 tasks | 46 files |
 | Phase 06 P02 | ~2h | 3 tasks | 11 files |
+| Phase 06 P03 | 50min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -345,6 +346,10 @@ Recent decisions affecting current work:
 - [Phase 06]: NOISE_BT scalefactor bands give a hand-written AAC fixture non-zero PCM with zero spectral bits, enabling a byte-identical-on-every-leg class-1 proof input
 - [Phase 06]: audio_flt_base built as .ogg/native-vorbis instead of the plan's literal .flac, since FLAC's decoder can never emit a float sample format
 - [Phase 06]: New CORPUS_DIGEST.txt fixture hash lines follow the project's own committed provenance policy (never rewriting an existing line) for all three tasks, overriding one plan acceptance-criteria bullet that contradicted its own required verify gate
+- [Phase 06]: checks.def registration sequenced task-by-task (5 ids+docs in Task 1, audio.layout+doc in Task 2) because tools/gen_registry.py hard-fails the build on any registered check missing its docs/checks/<id>.md doc
+- [Phase 06]: GCC 13.3/-O3 -Wmaybe-uninitialized false positive required one pragma bracket around the ENTIRE push_skip-through-run_audio_stream_params block, not a narrow bracket per function -- the warning is a property of the whole merged/inlined function set
+- [Phase 06]: audio.sample_fmt canonicalizes to packed-equivalent via av_get_alt_sample_fmt(fmt, planar=0), mirroring D-02's existing audio_decode.cpp convention, applied identically at the header-pass/codecpar level
+- [Phase 06]: T-06-09 sanitization threat confirmed already mitigated generically: tty_render.cpp routes every finding.baseline/candidate through sanitize_for_display and junit.cpp XML-escapes generically (T-2-33 precedent), so audio.codec/audio.layout needed no per-check sanitization code
 
 ### Pending Todos
 
@@ -384,6 +389,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-20T13:30:50.924Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-09-20T14:07:41.452Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None

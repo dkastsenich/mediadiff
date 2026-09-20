@@ -137,7 +137,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Audio Checks
 
-- [ ] **AUDIO-01**: Stream-parameter checks work: `codec`, `profile`, `sample_rate`, `sample_fmt`/`bit_depth`, `channels`, `layout`
+- [x] **AUDIO-01**: Stream-parameter checks work: `codec`, `profile`, `sample_rate`, `sample_fmt`/`bit_depth`, `channels`, `layout`
 - [x] **AUDIO-02**: `audio.layout` distinguishes `5.1` from `5.1(side)` using the modern `AVChannelLayout` API only, and treats loss of layout as a regression
 - [x] **AUDIO-03**: HE-AAC SBR signaling mode (implicit vs explicit) is detected and carried as part of `audio.profile`'s value
 - [x] **AUDIO-04**: `audio.priming` resolves through the precedence chain `initial_padding` → container mechanism (MP4 elst / iTunSMPB / MKV CodecDelay) → `unknown`, and stays stable across container round-trips
@@ -342,7 +342,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TIME-09 | Phase 5 | Complete |
 | TIME-10 | Phase 5 | Complete |
 | TIME-11 | Phase 5 | Complete |
-| AUDIO-01 | Phase 6 | Pending |
+| AUDIO-01 | Phase 6 | Complete |
 | AUDIO-02 | Phase 6 | Complete |
 | AUDIO-03 | Phase 6 | Complete |
 | AUDIO-04 | Phase 6 | Complete |
