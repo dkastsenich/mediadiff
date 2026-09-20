@@ -72,6 +72,12 @@
 # 06-01-PLAN.md added the nine content.audio.sample_hash tracer fixtures
 # (audio_hash_*, audio_pcm_*) below -- workstation-computed hashes awaiting
 # the same designated-leg transcription a later 06-plan performs.
+#
+# 06-02-PLAN.md Task 1 added the five hand-written HE-AAC/class-1 proof
+# fixtures (audio_sbr_*, audio_aac_handwritten*) below -- also
+# workstation-computed, also awaiting designated-leg transcription.
+audio_aac_handwritten.mp4
+audio_aac_handwritten_copy.mp4
 audio_hash_alt.mp4
 audio_hash_base.mkv
 audio_hash_base.mp4
@@ -81,3 +87,6 @@ audio_pcm_base.mov
 audio_pcm_base.wav
 audio_pcm_flac_large.mkv
 audio_pcm_flac_small.mkv
+audio_sbr_explicit.mp4
+audio_sbr_explicit_copy.mp4
+audio_sbr_implicit.mp4

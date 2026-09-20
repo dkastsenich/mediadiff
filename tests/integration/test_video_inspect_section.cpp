@@ -113,12 +113,14 @@ std::vector<std::string> enumerate_media_fixtures() {
 // scripts/gen_corpus.sh's own recipes to carry no video stream. See the
 // file header for this list's authority, disclosure convention and the
 // report-derived predicate it replaces.
-constexpr std::array<const char*, 8> kNoVideoStreamFixtures = {
+constexpr std::array<const char*, 13> kNoVideoStreamFixtures = {
     // 06-01-PLAN.md: the seven content.audio.sample_hash tracer fixtures
     // whose extension matches has_media_extension() above (.mp4/.mkv/.ts)
     // and which carry an audio-only stream -- audio_pcm_base.wav/.mov are
     // excluded from enumerate_media_fixtures() entirely, since .wav/.mov
     // are not in kExtensions.
+    "audio_aac_handwritten.mp4",
+    "audio_aac_handwritten_copy.mp4",
     "audio_hash_alt.mp4",
     "audio_hash_base.mkv",
     "audio_hash_base.mp4",
@@ -126,6 +128,11 @@ constexpr std::array<const char*, 8> kNoVideoStreamFixtures = {
     "audio_hash_base_copy.mp4",
     "audio_pcm_flac_large.mkv",
     "audio_pcm_flac_small.mkv",
+    // 06-02-PLAN.md Task 1: the hand-written HE-AAC explicit/implicit
+    // signaling pair -- MP4 audio-only, no video stream at all (D-10).
+    "audio_sbr_explicit.mp4",
+    "audio_sbr_explicit_copy.mp4",
+    "audio_sbr_implicit.mp4",
     "tracer_empty.mp4",
 };
 

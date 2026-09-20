@@ -349,6 +349,11 @@ add_executable(mediadiff_unit_tests
   # math, the single-sweep read_frame_call_count proof, and TRUST-05
   # determinism (06-01-PLAN.md Task 2).
   test_audio_decode.cpp
+  # AUDIO-03/D-10/D-11: tools/gen_he_aac.py's hand-written HE-AAC fixtures --
+  # audio_aac_handwritten.mp4's recorded XXH3-128 input identity and the
+  # exported assertion helper 06-05's own class-1 two-build proof calls
+  # before comparing anything (06-02-PLAN.md Task 1).
+  test_gen_he_aac.cpp
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain Threads::Threads)
 mediadiff_apply_warnings(mediadiff_unit_tests)
