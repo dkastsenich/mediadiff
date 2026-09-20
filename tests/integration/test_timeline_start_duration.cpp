@@ -209,17 +209,29 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // as a full `one_tick` regardless of magnitude).
                                    // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the SAME
                                    // MPEG-TS audio-duration disagreement `timeline.
-                                   // duration.coherence` above already documents (3877ms vs
-                                   // 4023ms, a real structural property of this exact
-                                   // container pairing, not per-checkpoint rounding noise)
-                                   // gives the candidate a genuine -122ms accumulated end
-                                   // delta against the clean MP4 baseline's own 0ms -- D-07's
-                                   // dual gate (a delta-based test, the SAME shape as every
-                                   // other magnitude this comparator checks) clears comfortably
-                                   // past its 2ms epsilon, so `timeline.av_drift` (the RATE)
-                                   // genuinely fails, not just `timeline.av_drift.pattern`
-                                   // (which has no tolerance at all by design, D-04, locked
-                                   // one-way, and reports the resulting classification flip).
+                                   // duration.coherence` above already documents is a real
+                                   // structural property of this exact container pairing, not
+                                   // per-checkpoint rounding noise -- D-07's dual gate (a
+                                   // delta-based test, the SAME shape as every other magnitude
+                                   // this comparator checks) clears comfortably past its 2ms
+                                   // epsilon, so `timeline.av_drift` (the RATE) genuinely
+                                   // fails, not just `timeline.av_drift.pattern`. 06-07-PLAN.md
+                                   // (D-16, WINDOWS.md #32) re-measured this pair after
+                                   // extending D-10's shared-basis rule to this span: the
+                                   // candidate's own priming is confirmed genuinely `unknown`
+                                   // after the remux (verified via `audio.priming` evidence --
+                                   // no skip_samples side data, no initial_padding, no edit
+                                   // list survives), so the shared-basis rule correctly falls
+                                   // back to the packet-derived raw span on BOTH sides rather
+                                   // than fabricating a basis (D-11) -- baseline now reports
+                                   // end_delta_ms=0 (its own true zero drift, span_basis=
+                                   // adjusted) and candidate reports end_delta_ms=39,
+                                   // span_basis=raw (the PRE-D-16 declared-basis reading was
+                                   // -122ms; the basis correction moved the classification
+                                   // from `irregular` to `linear-drift`, a SHAPE change, not a
+                                   // resolution -- WINDOWS.md #32 stays open on this evidence,
+                                   // not fixed). Both ids remain genuine, non-pass members of
+                                   // this set.
                                    "timeline.av_drift",
                                    "timeline.av_drift.pattern",
                                    // 06-06-PLAN.md (AUDIO-04, D-14): the SAME `-c copy` MPEG-TS
