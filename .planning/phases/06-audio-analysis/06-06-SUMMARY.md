@@ -214,3 +214,7 @@ None - no external service configuration required.
 ---
 *Phase: 06-audio-analysis*
 *Completed: 2026-09-20*
+
+## Self-Check: PASSED
+
+All 6 claimed files confirmed present on disk (`src/analyzers/audio/priming.cpp`, `docs/checks/audio.priming.md`, `tests/unit/test_priming_resolver.cpp`, `tests/unit/test_audio_priming.cpp`, `tests/integration/test_audio_priming.cpp`, this SUMMARY); all 3 task commit hashes (`5233130`, `728482c`, `a86d1f4`) plus the metadata commit (`82fe1fb`) confirmed present in `git log`.
