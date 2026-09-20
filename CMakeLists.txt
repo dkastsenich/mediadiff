@@ -220,6 +220,10 @@ add_library(libmediadiff STATIC
   # bit_depth/channels/layout -- the six per-audio-stream identity checks,
   # codecpar-only extraction mirroring video/stream_params.cpp's own shape.
   src/analyzers/audio/stream_params.cpp
+  # 06-06-PLAN.md (AUDIO-04): audio.priming -- completes Phase 5's priming
+  # precedence chain, extending src/analyzers/timeline/analyzers.h's own
+  # resolve_priming() in place.
+  src/analyzers/audio/priming.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )

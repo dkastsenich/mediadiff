@@ -199,6 +199,15 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // registrations stay grouped and appended in commit order (06-01
       // then 06-03), never interleaved among Phase 5's.
       audio_stream_params_analyzer(),
+      // 06-06-PLAN.md (AUDIO-04): audio.priming -- completes Phase 5's
+      // priming precedence chain over the shared PacketScan array,
+      // reading results.bmff/results.ebml opportunistically for D-15's
+      // container-mechanism tier (never declaring Pass::bmff_scan/
+      // Pass::ebml_scan itself). Listed directly after
+      // audio_stream_params_analyzer() so this phase's own registrations
+      // stay grouped and appended in commit order, never interleaved among
+      // Phase 5's.
+      audio_priming_analyzer(),
   };
   return registry;
 }

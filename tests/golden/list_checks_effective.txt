@@ -83,3 +83,4 @@ audio.bit_depth  severity=fail  tolerance=<none>
 audio.channels  severity=fail  tolerance=<none>
 audio.layout  severity=fail  tolerance=<none>
 audio.profile  severity=fail  tolerance=<none>
+audio.priming  severity=fail  tolerance=<none>

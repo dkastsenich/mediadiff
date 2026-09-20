@@ -37,4 +37,39 @@ namespace mediadiff {
 // applied here to layout).
 const AnalyzerSpec& audio_stream_params_analyzer();
 
+// audio.priming (06-06-PLAN.md, AUDIO-04, D-14/D-15/D-17): the check that
+// completes the precedence chain Phase 5's `resolve_priming()` (declared in
+// `src/analyzers/timeline/analyzers.h`, extended in place -- this file
+// includes that header and CALLS the shared resolver, never re-derives
+// it). One measurement per audio stream. The compared VALUE is a string:
+// the decimal sample count, or the literal `"unknown"` -- forced, not
+// preferred, since `src/compare/tol.cpp` cannot extract a magnitude from
+// `Absent` and D-14 requires `unknown` to compare as its own value (an MP4
+// compared against its MPEG-TS stream copy must report a real, non-pass
+// finding, never `skipped:insufficient_data`). The evidence object is
+// Phase 5 D-10's `{state, source, samples}` shape extended with `padding`
+// (D-17: trailing padding rides here, never in a second check id) plus the
+// container-mechanism tier's own raw reading and any `conflicting_readings`
+// (D-15).
+//
+// The container-mechanism tier's raw `elst`/`CodecDelay` reading is read
+// OPPORTUNISTICALLY from `results.bmff`/`results.ebml` -- this analyzer
+// declares neither `Pass::bmff_scan` nor `Pass::ebml_scan` itself (scope is
+// `ContainerFamily::other`, every container), mirroring
+// `timeline_start_duration_analyzer()`'s own established precedent
+// (analyzers.h's own doc comment on that analyzer): those two passes only
+// ever enter the union when `container_mp4_analyzer()`/
+// `container_mkv_analyzer()` are ALSO applicable for this exact file (MP4/
+// MKV scope, respectively), so `results.bmff`/`results.ebml` are already
+// populated -- or genuinely absent (any other container) -- by the time
+// this analyzer's own `run()` executes.
+//
+// `required_passes = {Pass::demux_header, Pass::packet_scan}`, `scope =
+// ContainerFamily::other`. Skip-reason priority: `partial_scan` (Phase 3
+// D-02, ahead of everything), then `insufficient_data` for "no audio
+// stream at all" -- mirrors `audio_stream_params_analyzer()`'s own
+// priority exactly. Unknown priming is NEVER a reason to skip (D-14) or to
+// soften severity (Phase 5 D-11 applied here).
+const AnalyzerSpec& audio_priming_analyzer();
+
 }  // namespace mediadiff

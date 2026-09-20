@@ -376,6 +376,13 @@ add_executable(mediadiff_unit_tests
   # checks, exercised directly against audio_stream_params_analyzer()'s own
   # run().
   test_audio_stream_params.cpp
+  # AUDIO-04 (06-06-PLAN.md, Task 2, D-14): audio_priming_analyzer()'s own
+  # partial_scan skip-reason priority -- a Rule 2 addition beyond the
+  # plan's declared files_modified (see 06-06-SUMMARY.md), mirroring
+  # test_audio_stream_params.cpp's own established Test 8 pattern, since
+  # the real CLI has no practical way to force a genuine partial scan
+  # against a corpus-sized fixture.
+  test_audio_priming.cpp
   # AUDIO-03 (06-04-PLAN.md, D-12): resolve_sbr_signaling() -- the
   # no-decode ASC fast path (top-level AOT_SBR / 0x2b7 sync extension) and
   # the bounded one-packet fallback (a call-counting fake proves "at most

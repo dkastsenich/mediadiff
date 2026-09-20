@@ -193,6 +193,14 @@ add_executable(mediadiff_integration_tests
   # under --content/--no-content and a snapshot round trip, and the
   # DOC-04 whole-report no-others count for the explicit-vs-implicit pair.
   test_audio_profile_sbr.cpp
+  # AUDIO-04 (06-06-PLAN.md, D-14/D-15/D-17): audio.priming -- unknown as a
+  # comparable value, the {state, source, samples, padding} evidence
+  # object, and the mechanism-versus-effect layering across an MP4->MKV
+  # hop, proven through the real CLI against the six audio_prime_*
+  # fixtures. Carries a documented deviation from the plan's own literal
+  # acceptance criterion re: audio_prime_roundtrip2.mp4 (see the file's own
+  # top-of-file comment and 06-06-SUMMARY.md).
+  test_audio_priming.cpp
   # AUDIO-09/TRUST-01/TRUST-02 (06-05-PLAN.md Tasks 1/3): --hash-decoder and
   # the determinism-class table's end-to-end consequences, plus the
   # three-way class proof (class-1 equal across builds behind the D-11

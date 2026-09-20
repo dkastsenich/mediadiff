@@ -1647,3 +1647,21 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "fail"
+
+# 06-06-PLAN.md (AUDIO-04, D-14/D-15/D-17), src/analyzers/audio/priming.cpp
+# -- completes the precedence chain Phase 5's resolve_priming() (extended
+# in place, src/analyzers/timeline/analyzers.h) started. `exact` over a
+# `string`, not `+/-samples` over an `int64` -- doc 05 section 2's literal
+# "+/-32 samples warn" wording is NOT expressible under this shape (D-14
+# forces it: src/compare/tol.cpp cannot extract a magnitude from `Absent`,
+# and unknown priming must compare as its OWN value, not a skip). The
+# compared value is the decimal sample count, or the literal "unknown" --
+# see docs/checks/audio.priming.md for the full amendment, recorded in the
+# open per this project's own discipline (Phase 5 D-14's PERF-03 precedent).
+[[check]]
+id = "audio.priming"
+group = "audio"
+semantic = "exact"
+unit = "samples"
+value_kind = "string"
+severity = "fail"
