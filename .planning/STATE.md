@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-09-20T15:51:44.894Z"
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-09-20T16:40:23.588Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 06 execution started
-state_head: 6fa996f941dc038fbc36fe92a7224106b9f27a5b
+state_head: a86d1f4e6591b0678b7364c594a4b931b3ae3667
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 97
+  completed_plans: 98
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 6 of 13
+Plan: 7 of 13
 Status: Ready to execute
 Last activity: 2026-09-20 — Phase 06 execution started
 
@@ -149,6 +149,7 @@ Progress: [█████████░] 92%
 | Phase 06 P03 | 50min | 3 tasks | 19 files |
 | Phase 06 P04 | 39min | 2 tasks | 14 files |
 | Phase 06 P05 | unrecorded | 3 tasks | 33 files |
+| Phase 06 P06 | 47min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -357,6 +358,9 @@ Recent decisions affecting current work:
 - [Phase 06]: By-name-only decoder classification, re-derived from the recorded decoder NAME at measurement time rather than trusted from a stored class integer (T-06-15)
 - [Phase 06]: mp3/mp2 promoted to determinism class 1 (D-06), provisional pending an arm64 CI leg confirming cross-architecture bit-exactness (06-13)
 - [Phase 06]: USAC fallback (Test 6) documented as a known gap -- no USAC bitstream/encoder available in this LGPL decode-only pin to prove end-to-end
+- [Phase 06]: Container-mechanism priming tier is presence-gated (not magnitude-gated): resolved zero and absent priming stay distinguishable end to end.
+- [Phase 06]: audio_prime_multiedit.mp4's libav fold does NOT hold (resolves via mp4_edit_list to a real 0); audio_prime_fragmented.mp4's fold DOES hold (resolves via tier-1 skip_samples directly) -- measured per 06-RESEARCH.md A3, not assumed.
+- [Phase 06]: DEVIATION: substituted audio_prime_roundtrip.mkv for audio_prime_roundtrip2.mp4 as the must-pass round-trip fixture -- the MP4->MKV->MP4 double hop measures a real ~10-sample CodecDelay-ns rounding artifact (1024 vs 1014) that audio.priming's exact-over-string semantics (D-14) cannot tolerance away, and the fixture cannot be regenerated without rewriting an existing CORPUS_DIGEST.txt line.
 
 ### Pending Todos
 
@@ -396,6 +400,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-20T15:51:44.700Z
-Stopped at: Completed 06-05-PLAN.md
+Last session: 2026-09-20T16:40:23.402Z
+Stopped at: Completed 06-06-PLAN.md
 Resume file: None
