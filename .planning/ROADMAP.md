@@ -454,7 +454,61 @@ Plans:
   4. `content.audio.sample_hash` locates the first divergent sample by index and time; the same file hashed via `aac_fixed` on two different builds compares equal; and a float-decoder hash across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail — with decoder name, class, flags and path signature recorded per hashed stream.
   5. Loudness, silence detection and hashing share a single decode sweep per track, and an audio sweep of the 10-minute reference stereo AAC file completes in under 4 s.
 
-**Plans**: TBD
+**Plans**: 13 plans in 13 waves (sequential — nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, so no two plans share a wave)
+
+Plans:
+**Wave 1**
+
+- [ ] 06-01-PLAN.md — Roster checkpoint (14 ids, the D-05 signature format, the D-09 id) plus the TRACER: `Pass::audio_decode`, the untrimmed fixed-block XXH3-128 chain, extended `HashChain` through the snapshot contract, and `content.audio.sample_hash` end to end (AUDIO-08/10, TRUST-01)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 06-02-PLAN.md — Fixture foundry: `tools/gen_he_aac.py` with a decode-round-trip selftest (D-10/D-11), the lossless loudness/true-peak/silence fixtures with their committed `ffmpeg -af ebur128` text reference (D-13), and the layout, parameter and priming fixtures including the multi-edit and fragmented MP4 edge cases (AUDIO-02/03/04/05/06/07)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 06-03-PLAN.md — The six header-pass parameter checks, `5.1` vs `5.1(side)` as a layout regression, and the corpus-wide declared-set re-baselining they cause (AUDIO-01/02)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 06-04-PLAN.md — `audio.profile` carrying the SBR signaling mode: the no-decode ASC fast path plus the bounded one-packet fallback, both in the header pass (AUDIO-01/03, D-12)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 06-05-PLAN.md — `--hash-decoder`, the determinism-class table with D-06's `mp3`/`mp2` promotion, the per-hashed-stream `decode_path` record, and the three-way class proof (AUDIO-08/09, TRUST-01/02)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 06-06-PLAN.md — `audio.priming`: the resolver extended in place with the container-mechanism tier, `unknown` as a comparable value, trailing padding in evidence (AUDIO-04, D-14/D-15/D-17)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 06-07-PLAN.md — D-16: the priming-state-gated `av_drift` checkpoint span through a generalised evidence-shape-gated override, closing `WINDOWS.md` #32 (AUDIO-04)
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 06-08-PLAN.md — libebur128 loudness and true peak in the shared sweep, ±0.1 LU against the committed reference, and the asymmetric −1.0 dBTP ceiling escalation (AUDIO-05/06/10)
+
+**Wave 9** *(blocked on Wave 8)*
+
+- [ ] 06-09-PLAN.md — `audio.silence.edges` / `.dropouts` as spans, with every threshold a named constant echoed in `--explain` (AUDIO-07/10)
+
+**Wave 10** *(blocked on Wave 9)*
+
+- [ ] 06-10-PLAN.md — D-09: `meta.decode_errors` as a counted gating check at exit 1, the narrowed exit-66 path, the amendment recorded in two places, and the decode pass brought inside the byte-flip fuzz smoke (AUDIO-08/10)
+
+**Wave 11** *(blocked on Wave 10)*
+
+- [ ] 06-11-PLAN.md — SC1's `inspect` audio section, registry-enumerated so a later id cannot ship invisible, plus the corpus-wide clean sweep (AUDIO-01/02/03)
+
+**Wave 12** *(blocked on Wave 11)*
+
+- [ ] 06-12-PLAN.md — `PERF-04`'s harness: wall clock measured and printed, the instruction-count ratchet gating, wired into the designated CI leg (PERF-04, AUDIO-10)
+
+**Wave 13** *(blocked on Wave 12)*
+
+- [ ] 06-13-PLAN.md — Designated-leg round trip: transcribe the digest and perf baseline from the real run, and close D-06's cross-architecture claim on an arm64 measurement — confirmed or demoted (AUDIO-09, TRUST-01, PERF-04)
+
 **Source doc**: `claude_docs/05-audio-analysis.md` (design-doc phase 5)
 
 ### Phase 7: Content & Quality
@@ -487,7 +541,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
-| 6. Audio Analysis | 0/TBD | Not started | - |
+| 6. Audio Analysis | 0/13 | Planned | - |
 | 7. Content & Quality | 0/TBD | Not started | - |
 
 ## Coverage
