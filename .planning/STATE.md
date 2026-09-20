@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-09-20T14:07:41.654Z"
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-09-20T14:48:56.768Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 06 execution started
-state_head: 83251fe216ea7342d8dd0625664c0e5acc857d78
+state_head: 29dd738faf3401d40ad53f7b15e039fbd1cb46e2
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 95
+  completed_plans: 96
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 4 of 13
+Plan: 5 of 13
 Status: Ready to execute
 Last activity: 2026-09-20 — Phase 06 execution started
 
@@ -147,6 +147,7 @@ Progress: [█████████░] 92%
 | Phase 06 P01 | 44min | 3 tasks | 46 files |
 | Phase 06 P02 | ~2h | 3 tasks | 11 files |
 | Phase 06 P03 | 50min | 3 tasks | 19 files |
+| Phase 06 P04 | 39min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -350,6 +351,8 @@ Recent decisions affecting current work:
 - [Phase 06]: GCC 13.3/-O3 -Wmaybe-uninitialized false positive required one pragma bracket around the ENTIRE push_skip-through-run_audio_stream_params block, not a narrow bracket per function -- the warning is a property of the whole merged/inlined function set
 - [Phase 06]: audio.sample_fmt canonicalizes to packed-equivalent via av_get_alt_sample_fmt(fmt, planar=0), mirroring D-02's existing audio_decode.cpp convention, applied identically at the header-pass/codecpar level
 - [Phase 06]: T-06-09 sanitization threat confirmed already mitigated generically: tty_render.cpp routes every finding.baseline/candidate through sanitize_for_display and junit.cpp XML-escapes generically (T-2-33 precedent), so audio.codec/audio.layout needed no per-check sanitization code
+- [Phase 06]: 06-04: SBR signaling resolved entirely in DemuxSession's header pass via a no-decode ASC fast path plus a bounded one-packet decode fallback, keeping audio.profile pass-independent (D-12).
+- [Phase 06]: 06-04: effective_sample_rate_hz caches the bounded probe's own directly-observed decoded rate rather than a formulaic core_rate*2, since avformat_find_stream_info() can already resolve codecpar->sample_rate to the SBR-doubled value for a short implicit stream.
 
 ### Pending Todos
 
@@ -389,6 +392,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-20T14:07:41.452Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-09-20T14:48:56.569Z
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None
