@@ -38,6 +38,38 @@ class AscBitReader {
     return value;
   }
 
+  // 06-04-PLAN.md (D-12): a non-consuming look-ahead, used ONLY by the
+  // 0x2b7 sync-extension scan below to test for the marker before
+  // deciding whether to consume it. Never marks `overflowed_` -- a peek
+  // past the buffer's end reads as zero bits, exactly mirroring
+  // read_bit()'s own past-end behaviour, but without side effects, so a
+  // failed peek can never corrupt state a caller might still want to use
+  // for something else.
+  std::uint32_t peek(int n) const {
+    std::uint32_t value = 0;
+    std::size_t pos = bit_pos_;
+    for (int i = 0; i < n; ++i) {
+      const std::size_t byte_index = pos / 8;
+      std::uint32_t bit = 0;
+      if (byte_index < data_.size()) {
+        const int bit_index = 7 - static_cast<int>(pos % 8);
+        bit = (data_[byte_index] >> bit_index) & 1U;
+      }
+      value = (value << 1) | bit;
+      ++pos;
+    }
+    return value;
+  }
+
+  // Bits remaining in the buffer from the current position -- the sync-
+  // extension scan's own bound (mirrors ff_mpeg4audio_get_config_gb's
+  // `get_bits_left(gb) > 15` loop guard) so a buffer with no room left for
+  // a full sync-extension marker is never scanned at all.
+  std::size_t bits_left() const {
+    const std::size_t total_bits = data_.size() * 8;
+    return bit_pos_ >= total_bits ? 0 : total_bits - bit_pos_;
+  }
+
  private:
   std::uint32_t read_bit() {
     const std::size_t byte_index = bit_pos_ / 8;
@@ -55,6 +87,36 @@ class AscBitReader {
   bool overflowed_ = false;
 };
 
+// Reads a 5-bit object type with the ISO/IEC 14496-3 section 1.6.2.1
+// escape (31 means "the real object type is 32 plus the following 6-bit
+// field", RESEARCH.md Q4) -- shared by the top-level object-type read and
+// the sync-extension's own inner object-type read below, both of which use
+// the identical grammar.
+std::int32_t read_object_type(AscBitReader& reader) {
+  std::int32_t object_type = static_cast<std::int32_t>(reader.u(5));
+  if (object_type == 31) {
+    object_type = 32 + static_cast<std::int32_t>(reader.u(6));
+  }
+  return object_type;
+}
+
+// Reads a 4-bit samplingFrequencyIndex with the standard's own 24-bit
+// escape (index 15 means "the real rate follows as a raw 24-bit value") --
+// shared by the base rate, the AOT_SBR wrapper's own extension rate, and
+// the sync-extension's own extension rate, all of which use the identical
+// grammar. Indices 13/14 are reserved -- the returned Hz stays 0, an
+// honest "not resolvable" rather than a fabricated rate.
+std::int64_t read_sampling_frequency(AscBitReader& reader, std::int32_t& index_out) {
+  index_out = static_cast<std::int32_t>(reader.u(4));
+  if (index_out == 15) {
+    return static_cast<std::int64_t>(reader.u(24));
+  }
+  if (index_out >= 0 && static_cast<std::size_t>(index_out) < kSamplingFrequencyTable.size()) {
+    return kSamplingFrequencyTable[static_cast<std::size_t>(index_out)];
+  }
+  return 0;
+}
+
 }  // namespace
 
 std::optional<AudioSpecificConfig> parse_audio_specific_config(std::span<const std::uint8_t> extradata) {
@@ -64,33 +126,67 @@ std::optional<AudioSpecificConfig> parse_audio_specific_config(std::span<const s
 
   AscBitReader reader(extradata);
 
-  // 5-bit object type, with the ISO/IEC 14496-3 section 1.6.2.1 escape:
-  // a value of 31 means "the real object type is 32 plus the following
-  // 6-bit field" (RESEARCH.md Q4).
-  std::int32_t object_type = static_cast<std::int32_t>(reader.u(5));
-  if (object_type == 31) {
-    object_type = 32 + static_cast<std::int32_t>(reader.u(6));
-  }
-
-  // 4-bit samplingFrequencyIndex, with the standard's own 24-bit escape
-  // (index 15 means "the real rate follows as a raw 24-bit value").
-  const std::int32_t sampling_frequency_index = static_cast<std::int32_t>(reader.u(4));
-  std::int64_t sampling_frequency_hz = 0;
-  if (sampling_frequency_index == 15) {
-    sampling_frequency_hz = static_cast<std::int64_t>(reader.u(24));
-  } else if (sampling_frequency_index >= 0 &&
-             static_cast<std::size_t>(sampling_frequency_index) < kSamplingFrequencyTable.size()) {
-    sampling_frequency_hz = kSamplingFrequencyTable[static_cast<std::size_t>(sampling_frequency_index)];
-  }
-  // Indices 13/14 are reserved -- sampling_frequency_hz stays 0, an
-  // honest "not resolvable" rather than a fabricated rate; this reader's
-  // only caller (audio_decode.cpp) does not depend on this field for
-  // USAC detection, which is object_type-only.
-
+  const std::int32_t object_type = read_object_type(reader);
+  std::int32_t sampling_frequency_index = 0;
+  const std::int64_t sampling_frequency_hz = read_sampling_frequency(reader, sampling_frequency_index);
   const std::int32_t channel_configuration = static_cast<std::int32_t>(reader.u(4));
 
+  // The fixed 5+4+4-bit prefix (plus either escape) must be fully present
+  // before anything below is attempted -- a short buffer here is
+  // unconditionally malformed (T-06-02).
   if (reader.overflowed()) {
     return std::nullopt;
+  }
+
+  bool has_explicit_sbr = false;
+  std::int64_t extension_sampling_frequency_hz = 0;
+
+  if (object_type == static_cast<std::int32_t>(AudioObjectType::sbr)) {
+    // 06-04-PLAN.md (D-12): the EXPLICIT top-level AOT_SBR wrapper --
+    // ff_mpeg4audio_get_config_gb's own layout (mpeg4audio.c) reads the
+    // SBR/doubled sampling-frequency index next, then the inner
+    // (backward-compatible core) object type. The inner object type is
+    // consumed but not separately retained -- callers that pre-date this
+    // extension (D-07's is_usac check) key off the OUTER object_type
+    // field, which AOT_SBR itself already satisfies as "not USAC".
+    extension_sampling_frequency_hz = read_sampling_frequency(reader, sampling_frequency_index);
+    read_object_type(reader);
+    // AOT_SBR REQUIRES both of the fields just read -- a buffer claiming
+    // this object type but truncated before completing them is malformed,
+    // not merely "no extension present" (T-06-02).
+    if (reader.overflowed()) {
+      return std::nullopt;
+    }
+    has_explicit_sbr = true;
+  } else {
+    // 06-04-PLAN.md (D-12, Test 2): the legacy 0x2b7 backward-compatible
+    // sync-extension tail -- ff_mpeg4audio_get_config_gb's own
+    // `sync_extension` scan (mpeg4audio.c), bounded to `bits_left() > 15`
+    // exactly as that function bounds it, so a crafted or simply short
+    // tail can never scan unboundedly. This is a best-effort, OPTIONAL
+    // scan: a truncated or malformed tail degrades to "no extension
+    // found" (has_explicit_sbr stays false) rather than invalidating an
+    // otherwise well-formed base ASC -- only the mandatory AOT_SBR fields
+    // above are allowed to turn a short buffer into std::nullopt.
+    while (reader.bits_left() > 15) {
+      if (reader.peek(11) == 0x2b7) {
+        reader.u(11);
+        const std::int32_t ext_object_type = read_object_type(reader);
+        if (ext_object_type == static_cast<std::int32_t>(AudioObjectType::sbr) && reader.bits_left() >= 1) {
+          const bool sbr_present = reader.u(1) != 0;
+          if (sbr_present) {
+            std::int32_t ext_index = 0;
+            const std::int64_t ext_hz = read_sampling_frequency(reader, ext_index);
+            if (!reader.overflowed()) {
+              has_explicit_sbr = true;
+              extension_sampling_frequency_hz = ext_hz;
+            }
+          }
+        }
+        break;
+      }
+      reader.u(1);
+    }
   }
 
   AudioSpecificConfig config;
@@ -98,8 +194,48 @@ std::optional<AudioSpecificConfig> parse_audio_specific_config(std::span<const s
   config.sampling_frequency_index = sampling_frequency_index;
   config.sampling_frequency_hz = sampling_frequency_hz;
   config.channel_configuration = channel_configuration;
-  config.has_explicit_sbr = (object_type == static_cast<std::int32_t>(AudioObjectType::sbr));
+  config.has_explicit_sbr = has_explicit_sbr;
+  config.extension_sampling_frequency_hz = extension_sampling_frequency_hz;
   return config;
+}
+
+// 06-04-PLAN.md (AUDIO-03, D-12): see this function's own declaration
+// comment in audio_config.h for the full contract. kMaxSbrProbePackets's
+// own value is pinned by the static_assert below -- this function's
+// structure (a single, non-looping call to `probe_decode`) is what
+// actually enforces "at most once", the constant documents that
+// structural fact for the real decode loop in
+// src/probe/demux_session.cpp to read and mirror rather than re-derive.
+static_assert(kMaxSbrProbePackets == 1,
+              "resolve_sbr_signaling calls probe_decode at most once per invocation, by construction");
+
+SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<AudioSpecificConfig>& asc,
+                                    const SbrProbeFn& probe_decode) {
+  if (!codec_id_is_aac) {
+    // Test 7: a non-AAC stream never even reaches an ASC-shaped decision --
+    // the caller is not expected to have attempted a parse at all.
+    return SbrSignaling::none;
+  }
+  if (!asc.has_value()) {
+    return SbrSignaling::unknown;
+  }
+  if (asc->has_explicit_sbr) {
+    // D-12's no-decode fast path -- probe_decode is never called.
+    return SbrSignaling::explicit_asc;
+  }
+  if (!probe_decode) {
+    return SbrSignaling::unknown;
+  }
+  const std::optional<SbrProbeDecodeResult> probe = probe_decode();
+  if (!probe.has_value()) {
+    return SbrSignaling::unknown;
+  }
+  const bool doubled_rate =
+      probe->declared_sample_rate_hz > 0 && probe->decoded_sample_rate_hz == probe->declared_sample_rate_hz * 2;
+  if (doubled_rate || probe->he_profile) {
+    return SbrSignaling::implicit_decoded;
+  }
+  return SbrSignaling::none;
 }
 
 }  // namespace mediadiff

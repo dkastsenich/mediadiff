@@ -61,6 +61,7 @@
 
 #include "core/error.h"
 #include "core/rational.h"
+#include "probe/audio_config.h"
 #include "util/expected.h"
 
 // Opaque forward declaration -- demux_session.cpp is the only translation
@@ -525,6 +526,30 @@ struct StreamInfo {
   std::optional<std::int64_t> bits_per_raw_sample;
   std::int64_t channels = 0;
   std::string channel_layout;
+
+  // 06-04-PLAN.md (AUDIO-03, D-12): HE-AAC SBR signaling mode, resolved
+  // ONCE in the header pass (DemuxSession::open(), never re-derived per
+  // call to stream_info()) so this value is identical whichever passes
+  // ran afterward -- the whole point of D-12 (see audio.profile.md and
+  // resolve_sbr_signaling()'s own doc comment in probe/audio_config.h).
+  // `SbrSignaling::none` for every non-audio and every non-AAC stream.
+  SbrSignaling sbr_signaling = SbrSignaling::none;
+  // The effective (SBR-decoded) rate. For `implicit_decoded`, this is the
+  // bounded probe's OWN directly-observed decoded rate (never a formulaic
+  // "double the declared rate" -- see DemuxSession::implicit_probe_rate_hz_'s
+  // own doc comment for why: `codecpar->sample_rate` can ALREADY carry the
+  // doubled value for a short stream, in which case doubling it again
+  // would fabricate a false, quadrupled rate). For `explicit_asc`, this
+  // equals `sample_rate` unchanged: 06-RESEARCH.md Q4 confirmed
+  // `codecpar->sample_rate` is set to the ALREADY-DOUBLED `ext_sample_rate`
+  // directly by the MP4 demuxer for explicit signaling (isom.c), so
+  // `sample_rate` above already carries the effective rate in that case.
+  // For `none`, `unknown`, and every non-audio/non-AAC stream this equals
+  // `sample_rate` unchanged (0 when that is absent). audio.sample_rate's
+  // own COMPARED value stays `sample_rate` always -- this field exists so
+  // the effective rate is visible in evidence without changing that
+  // check's value shape.
+  std::int64_t effective_sample_rate_hz = 0;
 };
 
 // One chapter's raw fields, straight off AVChapter -- start/end share ONE
@@ -689,6 +714,42 @@ class DemuxSession {
   // overflow-corrected reprobe, std::nullopt for that stream's own
   // AV_NOPTS_VALUE.
   std::vector<std::optional<std::int64_t>> reprobed_stream_duration_ticks_;
+
+  // 06-04-PLAN.md (AUDIO-03, D-12): index-aligned with ctx_->streams,
+  // computed ONCE by compute_sbr_signaling() during open() -- see
+  // StreamInfo::sbr_signaling's own doc comment for why this is cached
+  // rather than re-derived on every stream_info() call (the ambiguous case
+  // costs a bounded decode; re-doing that per call would be wasteful and
+  // is unnecessary since the header pass never changes underneath a live
+  // session).
+  std::vector<SbrSignaling> sbr_signaling_;
+
+  // 06-04-PLAN.md (AUDIO-03, D-12): index-aligned with ctx_->streams, the
+  // bounded probe's OWN observed decoded sample rate -- populated ONLY for
+  // a stream whose sbr_signaling_ resolved to implicit_decoded, 0
+  // otherwise. Deliberately NOT derived by doubling `sample_rate` after
+  // the fact: empirically (audio_sbr_implicit.mp4, this project's own
+  // hand-written fixture), `avformat_find_stream_info()`'s own internal
+  // probing can ALREADY resolve the doubled rate into `codecpar->
+  // sample_rate` for a short enough stream, in which case doubling it
+  // again here would fabricate a false, quadrupled rate. Reading the
+  // probe's own directly-observed rate is correct whether or not
+  // `codecpar` already reflects the doubling.
+  std::vector<std::int64_t> implicit_probe_rate_hz_;
+
+  // Populates sbr_signaling_ for every stream, called once from open()
+  // right after the primary avformat_open_input/avformat_find_stream_info
+  // sequence completes. `utf8_path` is open()'s own parameter, threaded
+  // through here (and no further) so the bounded one-packet decode
+  // fallback (the ambiguous, bare-LC-ASC case only) can open a SECOND,
+  // throwaway AVFormatContext against the SAME bytes -- mirroring
+  // reprobe_ts_declared_durations' own isolation precedent above, so this
+  // session's own ctx_/read position is never touched by the fallback
+  // probe (PROBE-08's "no analyzer re-reads the file" invariant is about
+  // THIS session's own sweep; a second, independent open+close for a
+  // narrow header-pass decision is the same isolation mechanism this file
+  // already established for TS duration reprobing).
+  void compute_sbr_signaling(const std::string& utf8_path);
 };
 
 }  // namespace mediadiff

@@ -359,6 +359,13 @@ add_executable(mediadiff_unit_tests
   # checks, exercised directly against audio_stream_params_analyzer()'s own
   # run().
   test_audio_stream_params.cpp
+  # AUDIO-03 (06-04-PLAN.md, D-12): resolve_sbr_signaling() -- the
+  # no-decode ASC fast path (top-level AOT_SBR / 0x2b7 sync extension) and
+  # the bounded one-packet fallback (a call-counting fake proves "at most
+  # once, only when genuinely ambiguous"), plus StreamInfo::sbr_signaling/
+  # effective_sample_rate_hz through a real DemuxSession against 06-02's
+  # hand-written HE-AAC fixture pair.
+  test_audio_config.cpp
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain Threads::Threads)
 mediadiff_apply_warnings(mediadiff_unit_tests)

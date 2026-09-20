@@ -17,8 +17,24 @@
 // included by this translation unit at all, matching
 // src/probe/parser_scan.cpp's own RbspBitReader precedent for a
 // structurally similar (but grammatically distinct) bitstream.
+//
+// 06-04-PLAN.md (AUDIO-03, D-12): resolve_sbr_signaling() below extends
+// this same libav-free discipline to the HE-AAC SBR signaling decision --
+// the explicit case (a top-level AOT_SBR object type, or a 0x2b7
+// backward-compatible sync extension) is decided ENTIRELY from the parsed
+// AudioSpecificConfig, no decode attempted. The genuinely ambiguous case
+// (a bare AOT_AAC_LC ASC, indistinguishable from "no SBR at all" without
+// decoding) is resolved through an INJECTED probe callback
+// (SbrProbeFn) rather than this file opening a decoder itself -- this
+// keeps this translation unit libav-free and independently unit-testable
+// (tests/unit/test_audio_config.cpp injects a call-counting fake in place
+// of a real decode) while src/probe/demux_session.cpp (the only place
+// this project opens an audio decoder for this purpose) supplies the real
+// callback: a short-lived AVCodecContext, AV_CODEC_FLAG_BITEXACT, exactly
+// one packet sent, at most one frame received.
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <span>
 
@@ -56,7 +72,23 @@ struct AudioSpecificConfig {
   std::int32_t sampling_frequency_index = 0;
   std::int64_t sampling_frequency_hz = 0;
   std::int32_t channel_configuration = 0;
+  // True when this ASC signals SBR EXPLICITLY -- either a top-level
+  // AOT_SBR (5) object type (06-01's original detection) or, per
+  // 06-04-PLAN.md's extension, a legacy 0x2b7 backward-compatible sync
+  // extension tail carrying its own `sbr_present_flag=1` -- both are the
+  // "no decode needed" case D-12's fast path covers. `false` covers both
+  // "genuinely no SBR" and "implicit SBR, ambiguous without a decode" --
+  // resolve_sbr_signaling() below is what tells those two apart.
   bool has_explicit_sbr = false;
+  // The doubled (SBR) sampling frequency this ASC itself declares --
+  // populated only when `has_explicit_sbr` is true (from either the
+  // AOT_SBR wrapper's own extensionSamplingFrequencyIndex field or the
+  // sync-extension's own escape-widened rate); 0 otherwise. Evidence-only
+  // today (06-04's own compared-value shape uses the doubled CORE rate,
+  // not this field, per audio.sample_rate.md's own D-12 note) -- carried
+  // here because it falls out of the same bit-parse at zero extra cost and
+  // a future consumer should read it from here rather than re-deriving it.
+  std::int64_t extension_sampling_frequency_hz = 0;
 };
 
 // Parses `extradata` (codecpar->extradata, handed in by
@@ -66,5 +98,71 @@ struct AudioSpecificConfig {
 // declared escape extension runs past the buffer's own end -- never a
 // value read past `extradata`'s declared size (T-06-02).
 std::optional<AudioSpecificConfig> parse_audio_specific_config(std::span<const std::uint8_t> extradata);
+
+// 06-04-PLAN.md (D-12): the bounded one-packet decode's OWN report, built
+// entirely by the caller's injected SbrProbeFn (this file never touches
+// libav types) -- `declared_sample_rate_hz` is the header-pass core rate
+// (codecpar->sample_rate, undoubled per RESEARCH.md Q4's own finding),
+// `decoded_sample_rate_hz` is the ACTUAL decoded frame's own reported rate,
+// and `he_profile` is true when the decoder's own AVCodecContext::profile
+// resolved to an AV_PROFILE_AAC_HE-class value during that one decode.
+struct SbrProbeDecodeResult {
+  std::int64_t declared_sample_rate_hz = 0;
+  std::int64_t decoded_sample_rate_hz = 0;
+  bool he_profile = false;
+};
+
+// A caller-supplied, at-most-once-invoked bounded decode attempt.
+// std::nullopt means "no decode was possible at all" (the target stream's
+// first packet could not be obtained or decoded within budget) --
+// resolve_sbr_signaling() maps that to SbrSignaling::unknown, never a
+// guess. src/probe/demux_session.cpp is the only real implementation of
+// this callback in the shipped binary; tests/unit/test_audio_config.cpp
+// injects a call-counting fake to prove the "at most once, only when
+// genuinely ambiguous" contract below without opening a real file.
+using SbrProbeFn = std::function<std::optional<SbrProbeDecodeResult>()>;
+
+// The one-packet decode `resolve_sbr_signaling()` itself never performs
+// more than -- this file stays libav-free (the real decode loop enforcing
+// this bound lives in src/probe/demux_session.cpp, which reads this same
+// named constant rather than a bare literal); pinned here as the single
+// source of truth for "how many packets does the bounded fallback ever
+// send to a decoder" (T-06-13's own DoS mitigation).
+inline constexpr int kMaxSbrProbePackets = 1;
+
+// HE-AAC SBR signaling mode (AUDIO-03). `none`: not AAC, or an AAC stream
+// that genuinely carries no SBR at all. `explicit_asc`: the ASC itself
+// says so (D-12's no-decode fast path, the common case). `implicit_decoded`:
+// a bare, ambiguous ASC resolved by the bounded one-packet decode finding a
+// doubled rate or an AV_PROFILE_AAC_HE-class profile. `unknown`: the
+// ambiguous case could not be resolved at all (no ASC, or the bounded
+// decode itself failed) -- never collapsed into `none`, since that would
+// silently assert "no SBR" on a stream this project genuinely could not
+// determine.
+enum class SbrSignaling : std::uint8_t {
+  none,
+  explicit_asc,
+  implicit_decoded,
+  unknown,
+};
+
+// 06-04-PLAN.md (AUDIO-03, D-12): resolves SBR signaling in the header
+// pass so `audio.profile`'s value is identical whichever passes ran (D-12's
+// whole point -- see audio.profile.md). `codec_id_is_aac` gates the WHOLE
+// function: a non-AAC stream returns `none` immediately (Test 7) without
+// this function ever inspecting `asc` (the caller is not even expected to
+// have attempted a parse in that case). When `asc` has a value and
+// `has_explicit_sbr` is true, returns `explicit_asc` with NO call to
+// `probe_decode` at all -- the cheaper-middle-path 06-RESEARCH.md Q4
+// recommends, covering the common case for free. Only when `asc` parses as
+// a bare, non-explicit-SBR object type does this function invoke
+// `probe_decode` -- AT MOST ONCE (kMaxSbrProbePackets's own contract,
+// enforced here structurally: there is exactly one call site) -- and maps
+// a doubled decoded rate or an HE-class profile to `implicit_decoded`,
+// anything else to `none`. A missing `asc`, an empty `probe_decode`, or a
+// probe that itself returns std::nullopt all resolve to `unknown` -- never
+// a guess.
+SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<AudioSpecificConfig>& asc,
+                                    const SbrProbeFn& probe_decode);
 
 }  // namespace mediadiff

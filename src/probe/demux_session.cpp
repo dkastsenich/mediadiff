@@ -11,6 +11,11 @@
 #include <utility>
 
 extern "C" {
+// 06-04-PLAN.md (AUDIO-03, D-12): avcodec.h itself (send/receive, codec
+// open/close, AV_CODEC_FLAG_BITEXACT, AV_PROFILE_AAC_HE*) -- the bounded
+// one-packet SBR probe decode's own decoder-open/send/receive block below
+// mirrors src/probe/audio_decode.cpp's identical include and usage.
+#include <libavcodec/avcodec.h>
 #include <libavcodec/codec_id.h>
 #include <libavcodec/codec_par.h>
 #include <libavformat/avformat.h>
@@ -40,6 +45,7 @@ extern "C" {
 #include <vector>
 
 #include "core/container_family.h"
+#include "probe/audio_config.h"
 #include "probe/pass.h"
 
 namespace mediadiff {
@@ -127,8 +133,19 @@ struct OpenedContext {
   std::unique_ptr<detail::InterruptState> interrupt_state;
 };
 
+// 06-04-PLAN.md (AUDIO-03, D-12): `disarm_interrupt_after_open` defaults to
+// true, preserving every pre-existing call site's exact behavior (the Rule
+// 1 fix below is only safe for a session whose OWN later reads must never
+// be aborted by a stale "budget already exceeded" reading). The bounded
+// SBR probe decode below is the one caller that passes `false`: it keeps
+// its own SECOND, throwaway AVFormatContext's interrupt budget ARMED for
+// the whole of that function's own short-lived av_read_frame/decode work,
+// so a hostile stream genuinely cannot stall the header pass -- "respect
+// DemuxSession's existing wall-clock interrupt budget" (06-04-PLAN.md's
+// own acceptance criterion), not merely reuse its open-time behavior.
 mediadiff::expected<OpenedContext, Error> open_context(const std::string& utf8_path, const DemuxOptions& options,
-                                                          bool correct_ts_overflow, ProbeDiagnostics& diagnostics) {
+                                                          bool correct_ts_overflow, ProbeDiagnostics& diagnostics,
+                                                          bool disarm_interrupt_after_open = true) {
   AVFormatContext* ctx = avformat_alloc_context();
   if (ctx == nullptr) {
     return mediadiff::unexpected(
@@ -213,12 +230,132 @@ mediadiff::expected<OpenedContext, Error> open_context(const std::string& utf8_p
   // representable value makes every future `elapsed_ms >= budget_ms`
   // check false forever, i.e. "never interrupt again" without ever
   // reading freed/dangling memory.
-  interrupt_state->budget_ms = std::numeric_limits<std::int64_t>::max();
+  if (disarm_interrupt_after_open) {
+    interrupt_state->budget_ms = std::numeric_limits<std::int64_t>::max();
+  }
 
   OpenedContext result;
   result.ctx = ctx;
   result.interrupt_state = std::move(interrupt_state);
   return result;
+}
+
+// T-06-13's own DoS mitigation, the SECOND of two independent bounds on
+// the SBR probe below (the first is the wall-clock interrupt budget kept
+// armed via `disarm_interrupt_after_open=false` above): the maximum number
+// of container packets this probe will read looking for the TARGET
+// stream's own first packet before giving up as `std::nullopt` -- a
+// hostile file with the ambiguous audio stream positioned deep behind many
+// packets of other streams (or none at all matching) cannot make this
+// probe scan indefinitely even within the wall-clock budget's own window.
+constexpr int kMaxSbrProbeContainerPacketsScanned = 64;
+
+// 06-04-PLAN.md (AUDIO-03, D-12): the real SbrProbeFn implementation --
+// the ONLY place this project opens a second, throwaway AVFormatContext
+// purely to resolve implicit SBR signaling. Mirrors
+// DemuxSession::reprobe_ts_declared_durations' own isolation precedent
+// (a second, independent open+close against the SAME path; this session's
+// own ctx_/read position is never touched) and
+// src/probe/audio_decode.cpp's own decoder-open/send/receive block
+// (AV_CODEC_FLAG_BITEXACT, expected-mapped libav errors). Sends AT MOST
+// kMaxSbrProbePackets (1) packet to the decoder and receives at most one
+// frame from it -- the loop below reads container packets looking for the
+// target stream's first one (bounded by
+// kMaxSbrProbeContainerPacketsScanned above), but stops immediately, via
+// `break`, the instant it has fed the decoder its one allowed packet,
+// whether or not that packet produced a frame.
+mediadiff::expected<SbrProbeDecodeResult, Error> probe_implicit_sbr_via_second_open(const std::string& utf8_path,
+                                                                                       int target_stream_index) {
+  ProbeDiagnostics throwaway_diagnostics;
+  auto opened =
+      open_context(utf8_path, DemuxOptions{}, /*correct_ts_overflow=*/false, throwaway_diagnostics,
+                   /*disarm_interrupt_after_open=*/false);
+  if (!opened) {
+    return mediadiff::unexpected(opened.error());
+  }
+  AVFormatContext* probe_ctx = opened->ctx;
+  struct CtxCloser {
+    AVFormatContext* ctx;
+    ~CtxCloser() { avformat_close_input(&ctx); }
+  } ctx_closer{probe_ctx};
+
+  if (target_stream_index < 0 || static_cast<unsigned>(target_stream_index) >= probe_ctx->nb_streams) {
+    return mediadiff::unexpected(Error{ErrorKind::internal, "SBR probe: stream index out of range on second open"});
+  }
+  const AVStream* stream = probe_ctx->streams[target_stream_index];
+  const AVCodecParameters* codecpar = stream->codecpar;
+  const std::int64_t declared_rate = codecpar->sample_rate > 0 ? codecpar->sample_rate : 0;
+
+  const AVCodec* decoder = avcodec_find_decoder(codecpar->codec_id);
+  if (decoder == nullptr) {
+    return mediadiff::unexpected(Error{ErrorKind::internal, "SBR probe: no decoder available"});
+  }
+  AVCodecContext* codec_ctx = avcodec_alloc_context3(decoder);
+  if (codec_ctx == nullptr) {
+    return mediadiff::unexpected(Error{ErrorKind::internal, "SBR probe: could not allocate AVCodecContext"});
+  }
+  struct CodecCtxFree {
+    AVCodecContext* ctx;
+    ~CodecCtxFree() { avcodec_free_context(&ctx); }
+  } codec_closer{codec_ctx};
+
+  if (avcodec_parameters_to_context(codec_ctx, codecpar) < 0) {
+    return mediadiff::unexpected(Error{ErrorKind::internal, "SBR probe: avcodec_parameters_to_context failed"});
+  }
+  // Same bitexact discipline as audio_decode.cpp's own decode sweep --
+  // this probe's output must be reproducible across runs/machines.
+  codec_ctx->flags |= AV_CODEC_FLAG_BITEXACT;
+  if (avcodec_open2(codec_ctx, decoder, nullptr) < 0) {
+    return mediadiff::unexpected(Error{ErrorKind::internal, "SBR probe: avcodec_open2 failed"});
+  }
+
+  AVPacket* pkt = av_packet_alloc();
+  if (pkt == nullptr) {
+    return mediadiff::unexpected(Error{ErrorKind::internal, "SBR probe: av_packet_alloc failed"});
+  }
+  struct PktFree {
+    AVPacket* p;
+    ~PktFree() { av_packet_free(&p); }
+  } pkt_free{pkt};
+
+  std::optional<SbrProbeDecodeResult> result;
+  for (int packets_scanned = 0; packets_scanned < kMaxSbrProbeContainerPacketsScanned; ++packets_scanned) {
+    if (av_read_frame(probe_ctx, pkt) < 0) {
+      break;
+    }
+    if (pkt->stream_index != target_stream_index) {
+      av_packet_unref(pkt);
+      continue;
+    }
+
+    const int send_rc = avcodec_send_packet(codec_ctx, pkt);
+    av_packet_unref(pkt);
+    if (send_rc < 0 && send_rc != AVERROR(EAGAIN)) {
+      break;
+    }
+
+    AVFrame* frame = av_frame_alloc();
+    if (frame != nullptr) {
+      if (avcodec_receive_frame(codec_ctx, frame) >= 0) {
+        SbrProbeDecodeResult r;
+        r.declared_sample_rate_hz = declared_rate;
+        r.decoded_sample_rate_hz = frame->sample_rate > 0 ? frame->sample_rate : 0;
+        r.he_profile =
+            codec_ctx->profile == AV_PROFILE_AAC_HE || codec_ctx->profile == AV_PROFILE_AAC_HE_V2;
+        result = r;
+      }
+      av_frame_free(&frame);
+    }
+    // kMaxSbrProbePackets (1): exactly one packet is ever sent to the
+    // decoder, whether or not it produced a frame.
+    break;
+  }
+
+  if (!result.has_value()) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::internal, "SBR probe: no packet decoded for target stream within budget"});
+  }
+  return *result;
 }
 
 }  // namespace
@@ -318,7 +455,9 @@ DemuxSession::DemuxSession(DemuxSession&& other) noexcept
       interrupt_state_(std::move(other.interrupt_state_)),
       declared_duration_source_(other.declared_duration_source_),
       reprobed_container_duration_ticks_(other.reprobed_container_duration_ticks_),
-      reprobed_stream_duration_ticks_(std::move(other.reprobed_stream_duration_ticks_)) {
+      reprobed_stream_duration_ticks_(std::move(other.reprobed_stream_duration_ticks_)),
+      sbr_signaling_(std::move(other.sbr_signaling_)),
+      implicit_probe_rate_hz_(std::move(other.implicit_probe_rate_hz_)) {
   other.ctx_ = nullptr;
 }
 
@@ -334,6 +473,8 @@ DemuxSession& DemuxSession::operator=(DemuxSession&& other) noexcept {
     declared_duration_source_ = other.declared_duration_source_;
     reprobed_container_duration_ticks_ = other.reprobed_container_duration_ticks_;
     reprobed_stream_duration_ticks_ = std::move(other.reprobed_stream_duration_ticks_);
+    sbr_signaling_ = std::move(other.sbr_signaling_);
+    implicit_probe_rate_hz_ = std::move(other.implicit_probe_rate_hz_);
     other.ctx_ = nullptr;
   }
   return *this;
@@ -363,6 +504,11 @@ mediadiff::expected<DemuxSession, Error> DemuxSession::open(const std::string& u
   std::string fmt_name = first_token(opened->ctx->iformat != nullptr ? opened->ctx->iformat->name : nullptr);
   DemuxSession session(opened->ctx, std::move(fmt_name), std::move(opened->interrupt_state));
   session.diagnostics_ = diagnostics;
+  // 06-04-PLAN.md (AUDIO-03, D-12): resolved ONCE here, in the header
+  // pass, before this session is ever handed to PacketScan or any
+  // analyzer -- see StreamInfo::sbr_signaling's own doc comment for why
+  // this must not depend on which later passes run.
+  session.compute_sbr_signaling(utf8_path);
   return session;
 }
 
@@ -677,9 +823,91 @@ StreamInfo DemuxSession::stream_info(int index) const {
     if (layout_len > 0) {
       info.channel_layout = layout_buf;
     }
+
+    // 06-04-PLAN.md (AUDIO-03, D-12): read from the cache compute_sbr_signaling()
+    // populated once in open() -- never re-derived here, so the value is
+    // pass-independent (StreamInfo::sbr_signaling's own doc comment).
+    if (static_cast<std::size_t>(index) < sbr_signaling_.size()) {
+      info.sbr_signaling = sbr_signaling_[static_cast<std::size_t>(index)];
+    }
   }
 
+  // 06-04-PLAN.md (AUDIO-03, D-12): effective (SBR-decoded) rate. NOT a
+  // formulaic doubling -- confirmed empirically (audio_sbr_implicit.mp4,
+  // this project's own hand-written fixture) that
+  // `avformat_find_stream_info()`'s own internal probing can ALREADY
+  // resolve the doubled rate into `codecpar->sample_rate` for a short
+  // enough stream (both WITH and WITHOUT `--content`, since this happens
+  // during the header pass itself, before any decode-pass distinction
+  // exists) -- doubling an already-doubled value would fabricate a false,
+  // quadrupled rate, exactly the P0 class this project exists to prevent.
+  // For `implicit_decoded`, this reads the bounded probe's OWN directly-
+  // observed decoded rate (implicit_probe_rate_hz_, cached by
+  // compute_sbr_signaling) instead, which is correct whether or not
+  // `codecpar` already reflects the doubling. For `explicit_asc`,
+  // `codecpar->sample_rate` is set to the ALREADY-DOUBLED
+  // `ext_sample_rate` directly by the MP4 demuxer (06-RESEARCH.md Q4,
+  // isom.c), so it is used unchanged.
+  const std::int64_t core_rate = info.sample_rate.value_or(0);
+  std::int64_t effective_rate = core_rate;
+  if (info.sbr_signaling == SbrSignaling::implicit_decoded &&
+      static_cast<std::size_t>(index) < implicit_probe_rate_hz_.size() &&
+      implicit_probe_rate_hz_[static_cast<std::size_t>(index)] > 0) {
+    effective_rate = implicit_probe_rate_hz_[static_cast<std::size_t>(index)];
+  }
+  info.effective_sample_rate_hz = effective_rate;
+
   return info;
+}
+
+// 06-04-PLAN.md (AUDIO-03, D-12): see this method's own doc comment in
+// demux_session.h. Iterates every stream ONCE via the already-open ctx_,
+// parsing each AAC stream's ASC (mediadiff's own libav-free bit reader,
+// probe/audio_config.h) and calling resolve_sbr_signaling() with a real
+// SbrProbeFn that opens the SECOND, throwaway context ONLY when the ASC
+// parse itself did not already resolve the explicit case -- D-12's
+// "explicit costs no decode" contract holds at this call site exactly as
+// it holds inside resolve_sbr_signaling() itself.
+void DemuxSession::compute_sbr_signaling(const std::string& utf8_path) {
+  sbr_signaling_.clear();
+  implicit_probe_rate_hz_.clear();
+  if (ctx_ == nullptr) {
+    return;
+  }
+  sbr_signaling_.reserve(ctx_->nb_streams);
+  implicit_probe_rate_hz_.reserve(ctx_->nb_streams);
+  for (unsigned i = 0; i < ctx_->nb_streams; ++i) {
+    const AVCodecParameters* codecpar = ctx_->streams[i]->codecpar;
+    const bool is_aac = codecpar->codec_type == AVMEDIA_TYPE_AUDIO && codecpar->codec_id == AV_CODEC_ID_AAC;
+
+    std::optional<AudioSpecificConfig> asc;
+    if (is_aac && codecpar->extradata != nullptr && codecpar->extradata_size > 0) {
+      asc = parse_audio_specific_config(
+          std::span<const std::uint8_t>(codecpar->extradata, static_cast<std::size_t>(codecpar->extradata_size)));
+    }
+
+    const int stream_index = static_cast<int>(i);
+    // Captured here (a side effect of the at-most-once probe call inside
+    // resolve_sbr_signaling) so this session can cache the probe's OWN
+    // directly-observed decoded rate for effective_sample_rate_hz -- see
+    // implicit_probe_rate_hz_'s own doc comment for why this must never be
+    // re-derived by doubling `sample_rate` after the fact.
+    std::optional<SbrProbeDecodeResult> captured_probe;
+    const SbrProbeFn probe_fn = [&utf8_path, stream_index, &captured_probe]() -> std::optional<SbrProbeDecodeResult> {
+      auto probe = probe_implicit_sbr_via_second_open(utf8_path, stream_index);
+      if (!probe) {
+        return std::nullopt;
+      }
+      captured_probe = *probe;
+      return *probe;
+    };
+    const SbrSignaling signaling = resolve_sbr_signaling(is_aac, asc, probe_fn);
+    sbr_signaling_.push_back(signaling);
+    implicit_probe_rate_hz_.push_back(
+        (signaling == SbrSignaling::implicit_decoded && captured_probe.has_value())
+            ? captured_probe->decoded_sample_rate_hz
+            : 0);
+  }
 }
 
 std::vector<ChapterInfo> DemuxSession::chapters() const {
