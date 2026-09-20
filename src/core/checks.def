@@ -1597,12 +1597,31 @@ value_kind = "int64"
 severity = "fail"
 
 # codecpar->ch_layout.nb_channels -- the count alone, never the layout
-# (audio.layout, registered in this same plan's Task 2, never reads this
-# field to derive its own string).
+# (audio.layout below never reads this field to derive its own string).
 [[check]]
 id = "audio.channels"
 group = "audio"
 semantic = "exact"
 unit = "count"
 value_kind = "int64"
+severity = "fail"
+
+# 06-03-PLAN.md Task 2 (AUDIO-02), src/analyzers/audio/stream_params.cpp --
+# av_channel_layout_describe on the stream's own modern channel-layout
+# struct only (the legacy integer channel-mask field and its named bitmask
+# constants are absent from the linked headers this build compiles
+# against). An unspecified layout records its own canonical spelling ("N
+# channels") as a REAL, comparable value -- never Absent{} and never a
+# skip -- so a candidate that LOSES its layout reports a regression rather
+# than matching a wildcard (D-14 of 06-CONTEXT.md, applied here to layout;
+# mirrors src/analyzers/video/color.cpp's established treatment of
+# `unspecified` as a value). This is what makes `5.1` and `5.1(side)`
+# compare as DIFFERENT values on an equal channel count (AUDIO-02's
+# headline war story).
+[[check]]
+id = "audio.layout"
+group = "audio"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
 severity = "fail"

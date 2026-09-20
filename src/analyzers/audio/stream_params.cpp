@@ -216,6 +216,34 @@ void emit_channels(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
+// audio.layout: av_channel_layout_describe on the stream's own channel
+// layout, resolved at the src/probe/ boundary (StreamInfo::channel_layout)
+// -- the modern per-stream layout struct only, never a channel-count-
+// derived guess and never the legacy integer channel-mask field (this
+// project's own prohibition; see 06-03-PLAN.md). An UNSPECIFIED layout is
+// still described as a REAL, comparable string ("N channels", libav's own
+// spelling for that case) -- never `Absent{}` and never a skip, so a
+// candidate that LOSES its layout reports a genuine regression rather than
+// matching a wildcard (D-14 of 06-CONTEXT.md, mirroring
+// src/analyzers/video/color.cpp's established treatment of `unspecified`
+// as a value in its own right). `info.channel_layout` is only ever empty
+// when libav's own describe call itself failed (not observed for a real
+// codecpar, since even the UNSPECIFIED case always renders "N channels")
+// -- falls through to the literal "unknown" defensively, mirroring
+// render_named_value's identical defensive fallback elsewhere in this
+// file, so this check never emits a truly empty string as a compared
+// value. Evidence carries the channel count alongside the layout string
+// (never used to DERIVE it -- audio.channels above is the count's own,
+// separately registered check).
+void emit_layout(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::audio_layout);
+  measurement.scope = scope;
+  measurement.value = info.channel_layout.empty() ? std::string("unknown") : info.channel_layout;
+  measurement.evidence = nlohmann::ordered_json{{"channels", info.channels}};
+  fp.measurements.push_back(std::move(measurement));
+}
+
 // audio_stream_params_analyzer's run(): D-14/D-15 (06-CONTEXT.md's own
 // "every file with no audio stream at all emits skipped:insufficient_data
 // for every one of the six ids rather than emitting nothing" must_have --
@@ -253,6 +281,7 @@ void run_audio_stream_params(const ProbeResults& results, Fingerprint& fp) {
       push_skip(CheckId::audio_sample_fmt, scope, SkipReason::partial_scan, fp);
       push_skip(CheckId::audio_bit_depth, scope, SkipReason::partial_scan, fp);
       push_skip(CheckId::audio_channels, scope, SkipReason::partial_scan, fp);
+      push_skip(CheckId::audio_layout, scope, SkipReason::partial_scan, fp);
       continue;
     }
 
@@ -262,6 +291,7 @@ void run_audio_stream_params(const ProbeResults& results, Fingerprint& fp) {
     emit_sample_fmt(info, scope, fp);
     emit_bit_depth(info, scope, fp);
     emit_channels(info, scope, fp);
+    emit_layout(info, scope, fp);
   }
 
   if (!any_audio) {
@@ -272,6 +302,7 @@ void run_audio_stream_params(const ProbeResults& results, Fingerprint& fp) {
     push_skip(CheckId::audio_sample_fmt, scope, reason, fp);
     push_skip(CheckId::audio_bit_depth, scope, reason, fp);
     push_skip(CheckId::audio_channels, scope, reason, fp);
+    push_skip(CheckId::audio_layout, scope, reason, fp);
   }
 }
 

@@ -181,6 +181,12 @@ add_executable(mediadiff_integration_tests
   # equality, D-03's divergence-locator report (media and snapshot baselines
   # alike), D-04's snapshot round trip, and --no-content's requires_decode skip.
   test_audio_sample_hash.cpp
+  # AUDIO-01/AUDIO-02 (06-03-PLAN.md Task 2): audio.codec/sample_rate/
+  # sample_fmt/bit_depth/channels/layout proven through the real CLI --
+  # 5.1 vs 5.1(side) on an equal channel count, unspecified-layout-as-a-
+  # real-value in both directions, and the DOC-04 whole-report no-others
+  # count.
+  test_audio_stream_params.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"

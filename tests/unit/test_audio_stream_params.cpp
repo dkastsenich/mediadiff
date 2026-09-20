@@ -341,3 +341,139 @@ TEST_CASE("audio_stream_params - audio_stereo_s16.wav produces byte-identical me
     REQUIRE(m1->evidence == m2->evidence);
   }
 }
+
+// ===========================================================================
+// Task 2 (AUDIO-02): audio.layout -- canonical AVChannelLayout description,
+// 5.1 versus 5.1(side), loss of layout as a regression. The whole-report
+// declared-set assertions (Test 1/2/6) live in
+// tests/integration/test_audio_stream_params.cpp, where a real `compare`
+// through the CLI can prove pass/non-pass status; the tests below drive the
+// analyzer directly, proving the underlying VALUES (this project's own
+// "proxy" convention, mirrored from test_video_stream_params.cpp's Test 6).
+// ===========================================================================
+
+// --- Test 1: audio_51.flac and audio_51_side.flac report the SAME
+// audio.channels value and DIFFERENT audio.layout values ------------------
+
+TEST_CASE("audio_stream_params - audio_51.flac and audio_51_side.flac agree on audio.channels but differ on "
+          "audio.layout",
+          "[unit]") {
+  ScanBundle a = scan_or_fail(fixture("audio_51.flac"));
+  ProbeResults results_a;
+  results_a.demux = &a.session;
+  results_a.packet_scan = a.packets;
+  const Fingerprint fp_a = run_analyzer(results_a);
+
+  ScanBundle b = scan_or_fail(fixture("audio_51_side.flac"));
+  ProbeResults results_b;
+  results_b.demux = &b.session;
+  results_b.packet_scan = b.packets;
+  const Fingerprint fp_b = run_analyzer(results_b);
+
+  const Measurement* channels_a = find(fp_a, CheckId::audio_channels);
+  const Measurement* channels_b = find(fp_b, CheckId::audio_channels);
+  REQUIRE(channels_a != nullptr);
+  REQUIRE(channels_b != nullptr);
+  REQUIRE(channels_a->value == channels_b->value);
+  REQUIRE(std::get<std::int64_t>(channels_a->value) == 6);
+
+  const Measurement* layout_a = find(fp_a, CheckId::audio_layout);
+  const Measurement* layout_b = find(fp_b, CheckId::audio_layout);
+  REQUIRE(layout_a != nullptr);
+  REQUIRE(layout_b != nullptr);
+  REQUIRE(std::get<std::string>(layout_a->value) == "5.1");
+  REQUIRE(std::get<std::string>(layout_b->value) == "5.1(side)");
+  REQUIRE_FALSE(layout_a->value == layout_b->value);
+}
+
+// --- Test 3/4: unspecified compares as its own value -- against a real
+// layout it differs (in both directions); against another unspecified
+// layout of the same channel count it agrees ------------------------------
+
+TEST_CASE("audio_stream_params - an unspecified layout (audio_stereo_s16.wav) differs from a real one "
+          "(audio_stereo_s24.wav), and agrees with another unspecified one (audio_pcm_base.wav)",
+          "[unit]") {
+  ScanBundle unspec_a = scan_or_fail(fixture("audio_stereo_s16.wav"));
+  ProbeResults results_unspec_a;
+  results_unspec_a.demux = &unspec_a.session;
+  results_unspec_a.packet_scan = unspec_a.packets;
+  const Fingerprint fp_unspec_a = run_analyzer(results_unspec_a);
+
+  ScanBundle real = scan_or_fail(fixture("audio_stereo_s24.wav"));
+  ProbeResults results_real;
+  results_real.demux = &real.session;
+  results_real.packet_scan = real.packets;
+  const Fingerprint fp_real = run_analyzer(results_real);
+
+  ScanBundle unspec_b = scan_or_fail(fixture("audio_pcm_base.wav"));
+  ProbeResults results_unspec_b;
+  results_unspec_b.demux = &unspec_b.session;
+  results_unspec_b.packet_scan = unspec_b.packets;
+  const Fingerprint fp_unspec_b = run_analyzer(results_unspec_b);
+
+  const Measurement* layout_unspec_a = find(fp_unspec_a, CheckId::audio_layout);
+  const Measurement* layout_real = find(fp_real, CheckId::audio_layout);
+  const Measurement* layout_unspec_b = find(fp_unspec_b, CheckId::audio_layout);
+  REQUIRE(layout_unspec_a != nullptr);
+  REQUIRE(layout_real != nullptr);
+  REQUIRE(layout_unspec_b != nullptr);
+
+  REQUIRE(std::get<std::string>(layout_unspec_a->value) == "2 channels");
+  REQUIRE(std::get<std::string>(layout_real->value) == "stereo");
+  REQUIRE_FALSE(layout_unspec_a->value == layout_real->value);
+
+  REQUIRE(std::get<std::string>(layout_unspec_b->value) == "2 channels");
+  REQUIRE(layout_unspec_a->value == layout_unspec_b->value);
+}
+
+// --- Test 5: the layout string is produced by describing the channel
+// layout, so a mono file reports the canonical mono spelling rather than a
+// count-derived guess ("1 channels") ---------------------------------------
+
+TEST_CASE("audio_stream_params - audio_aac_handwritten.mp4 (mono) reports the canonical 'mono' spelling, not "
+          "a count-derived guess",
+          "[unit]") {
+  ScanBundle bundle = scan_or_fail(fixture("audio_aac_handwritten.mp4"));
+  ProbeResults results;
+  results.demux = &bundle.session;
+  results.packet_scan = bundle.packets;
+  const Fingerprint fp = run_analyzer(results);
+
+  const Measurement* layout = find(fp, CheckId::audio_layout);
+  REQUIRE(layout != nullptr);
+  REQUIRE(std::get<std::string>(layout->value) == "mono");
+}
+
+// --- audio.layout also participates in the partial_scan / no-audio-stream
+// skip vocabulary, exactly like the other five ids -------------------------
+
+TEST_CASE("audio_stream_params - audio.layout skips insufficient_data when no audio stream exists, and "
+          "partial_scan when the packet scan truncated",
+          "[unit]") {
+  {
+    ScanBundle bundle = scan_or_fail(fixture("video_base.mp4"));
+    ProbeResults results;
+    results.demux = &bundle.session;
+    results.packet_scan = bundle.packets;
+    const Fingerprint fp = run_analyzer(results);
+    const Measurement* layout = find(fp, CheckId::audio_layout);
+    REQUIRE(layout != nullptr);
+    REQUIRE(layout->skip_reason == SkipReason::insufficient_data);
+  }
+  {
+    DemuxSession session = open_or_fail(fixture("audio_stereo_s16.wav"));
+    PacketScanLimits limits;
+    limits.max_bytes = 5 * static_cast<std::int64_t>(sizeof(mediadiff::PacketRecord));
+    auto scan_result = mediadiff::run_packet_scan(session, limits);
+    REQUIRE(scan_result.has_value());
+    REQUIRE(scan_result->partial);
+
+    ProbeResults results;
+    results.demux = &session;
+    results.packet_scan = *scan_result;
+    const Fingerprint fp = run_analyzer(results);
+    const Measurement* layout = find(fp, CheckId::audio_layout);
+    REQUIRE(layout != nullptr);
+    REQUIRE(layout->skip_reason == SkipReason::partial_scan);
+  }
+}
