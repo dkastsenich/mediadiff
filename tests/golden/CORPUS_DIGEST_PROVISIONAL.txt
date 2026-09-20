@@ -81,10 +81,19 @@
 # FLAC fixtures (audio_dropout*, audio_loud_*, audio_peak_*,
 # audio_silence_*) below -- also workstation-computed, also awaiting
 # designated-leg transcription.
+#
+# 06-02-PLAN.md Task 3 added the thirteen stream-parameter, layout and
+# priming fixtures below (audio_51*, audio_flt_base.ogg, audio_mono_s16.wav,
+# audio_mp2_base.mpg, audio_prime_*, audio_stereo_*), including the
+# multi-edit and fragmented MP4 container-mechanism edge cases -- also
+# workstation-computed, also awaiting designated-leg transcription.
+audio_51.flac
+audio_51_side.flac
 audio_aac_handwritten.mp4
 audio_aac_handwritten_copy.mp4
 audio_dropout.flac
 audio_dropout_clean.flac
+audio_flt_base.ogg
 audio_hash_alt.mp4
 audio_hash_base.mkv
 audio_hash_base.mp4
@@ -94,15 +103,25 @@ audio_loud_floor.flac
 audio_loud_plus3.flac
 audio_loud_ref.flac
 audio_loud_ref_copy.flac
+audio_mono_s16.wav
+audio_mp2_base.mpg
 audio_pcm_base.mov
 audio_pcm_base.wav
 audio_pcm_flac_large.mkv
 audio_pcm_flac_small.mkv
 audio_peak_over.flac
 audio_peak_under.flac
+audio_prime_base.mp4
+audio_prime_copy.ts
+audio_prime_fragmented.mp4
+audio_prime_multiedit.mp4
+audio_prime_roundtrip.mkv
+audio_prime_roundtrip2.mp4
 audio_sbr_explicit.mp4
 audio_sbr_explicit_copy.mp4
 audio_sbr_implicit.mp4
 audio_silence_lead.flac
 audio_silence_none.flac
 audio_silence_trail.flac
+audio_stereo_s16.wav
+audio_stereo_s24.wav

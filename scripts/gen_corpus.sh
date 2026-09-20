@@ -2334,4 +2334,259 @@ for f in audio_dropout.flac audio_dropout_clean.flac audio_loud_floor.flac audio
   capture_ebur128_reference "$f"
 done
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac."
+# --- 06-02-PLAN.md Task 3 (AUDIO-01/02/03/04, D-15): stream-parameter,
+# layout and priming fixtures, including the two container-mechanism edge
+# cases 06-RESEARCH.md Q7 names. `pan`/`channelmap` are native libavfilter
+# filters (never GPL-gated); the `vorbis` encoder used below is FFmpeg's
+# own NATIVE encoder (distinct from `libvorbis`, already used elsewhere in
+# this script for decoding), needing no external library at all -- both
+# confirmed present against `ffmpeg -h filter=pan`/`-h filter=channelmap`/
+# `-h encoder=vorbis` on this workstation's pinned build, and safe for the
+# win64-lgpl Windows pin the same way the existing `libopus` recipes are
+# (T-06-08).
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 2 \
+  -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_stereo_s16.wav"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 2 \
+  -c:a pcm_s24le -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_stereo_s24.wav"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 1 \
+  -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_mono_s16.wav"
+
+# `audio_flt_base.ogg` (D-GAP: the plan's own action text names this fixture
+# `audio_flt_base.flac`, but FLAC's bitstream format has no float sample
+# representation at all -- confirmed directly against the linked FFmpeg
+# 8.1 `flacdec.c`, whose decoder only ever sets AV_SAMPLE_FMT_S16(P) or
+# S32(P) -- so a `.flac` file can never be the "float-format sibling"
+# audio.sample_fmt needs; a genuinely float-native decode path requires a
+# codec whose OWN decoder emits AV_SAMPLE_FMT_FLT(P), which FLAC
+# structurally cannot. Extension corrected to `.ogg`/Vorbis, whose native
+# decoder unconditionally sets AV_SAMPLE_FMT_FLTP (confirmed directly
+# against `vorbisdec.c`, and empirically: this fixture's own
+# `content.audio.sample_hash` evidence reports
+# `normalization":"untrimmed;fmt=flt;...`). `-strict -2` is required only
+# because the native `vorbis` ENCODER (not the always-stable decoder) is
+# still marked experimental by FFmpeg's own quality classification; the
+# fixture's correctness here rests on the DECODE side, which carries no
+# such caveat.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 2 \
+  -c:a vorbis -strict -2 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_flt_base.ogg"
+
+# `audio_mp2_base.mpg`: the existing `-c:a mp2` recipe (already used
+# elsewhere in this script for TS/size fixtures) reused audio-only, in the
+# MPEG-PS container the `.mpg` extension autodetects -- audio.codec's
+# non-AAC trigger.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 2 \
+  -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_mp2_base.mpg"
+
+# `audio_51.flac`/`audio_51_side.flac` (AUDIO-02's own headline war story):
+# the same mono tone panned to 6 real channels under the `5.1` layout
+# (FL/FR/FC/LFE/BL/BR), then the SECOND fixture built FROM that file's own
+# samples via `channelmap=channel_layout=5.1(side)` -- an identity channel
+# map that only re-declares which nominal layout the SAME six channels
+# belong to (BL/BR reinterpreted as SL/SR), never touching a PCM sample.
+# Confirmed via direct ffmpeg probe: both report 6 channels, `5.1` vs
+# `5.1(side)` respectively -- same count, different canonical layout, the
+# exact pair AUDIO-02 is judged on.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" \
+  -af "pan=5.1|FL=c0|FR=c0|FC=c0|LFE=c0|BL=c0|BR=c0" \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_51.flac"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_51.flac" \
+  -af "channelmap=channel_layout=5.1(side)" \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_51_side.flac"
+
+# `audio_prime_base.mp4` / `audio_prime_roundtrip.mkv` /
+# `audio_prime_roundtrip2.mp4` / `audio_prime_copy.ts` (AUDIO-04, D-15 §6's
+# mp4 -> mkv -> mp4 priming round trip): a real AAC encoder-priming chain,
+# confirmed via direct inspection at every leg --
+# `audio_prime_base.mp4`'s own `container.mp4.edit_list` reports
+# `media_time=1024` (the native AAC encoder's own priming, captured by
+# ffmpeg's iTunSMPB/elst fold per 06-RESEARCH.md Q7); the `-c copy` remux
+# to Matroska turns that into a `container.mkv.codec_delay` of `1024`
+# samples (`codec_delay_ns=23219955`, exactly 1024/44100 s); the `-c copy`
+# remux back to MP4 shows an edit list again, this time `media_time=1014`
+# -- confirmed empirically, NOT assumed identical to the original 1024:
+# the ~10-sample discrepancy is an authentic property of the MKV
+# CodecDelay intermediate's own ns-granularity rounding on the trip back,
+# not a fixture defect, and is exactly the kind of stability question this
+# pair exists to let 06-06 measure rather than assume. `audio_prime_copy.ts`
+# (`-c copy` to MPEG-TS from the base) carries NEITHER mechanism at all
+# (both `container.mp4.edit_list` and `container.mkv.codec_delay` report
+# `not_applicable_container`) -- the `unknown` side D-14 compares against
+# a known one.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=3:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_base.mp4"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_prime_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_roundtrip.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_prime_roundtrip.mkv" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_roundtrip2.mp4"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_prime_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_copy.ts"
+
+# `audio_prime_multiedit.mp4` (06-RESEARCH.md Q7's `multiple_edits` case,
+# `mov.c:4341-4351`): the pinned ffmpeg CAN express a genuinely non-empty,
+# multi-entry MP4 audio edit list directly, with no byte-level patch
+# needed -- `-itsoffset` at a value that does not land on an AAC frame
+# boundary (0.3s against 1024-sample/44100Hz ~= 0.02322s frames) makes the
+# muxer split the resulting edit into TWO entries rather than one.
+# Confirmed via direct `container.mp4.edit_list` inspection: this fixture's
+# audio track carries exactly two entries,
+# `{"type":"empty_edit","segment_duration":12206,"media_time":-1}` followed
+# by `{"type":"trim","segment_duration":120094,"media_time":0}` -- a real
+# `multiple_edits` case (entry_count > 1), not a hand-crafted one.
+"$FFMPEG_BIN" -itsoffset 0.3 -f lavfi -i "sine=frequency=220:duration=2.7:sample_rate=44100" \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_multiedit.mp4"
+
+# `audio_prime_fragmented.mp4` (06-RESEARCH.md Q7: `advanced_editlist`
+# auto-disables itself for a fragmented file with no populated `stts`,
+# `mov.c:5231-5236`): the pinned ffmpeg's own `frag_keyframe+empty_moov`
+# path never writes an `elst` at all (confirmed empirically: an
+# `-itsoffset` + `frag_keyframe+empty_moov` combination produces zero
+# `edts`/`elst` bytes), so this fixture is built by patching a plain
+# fragmented, audio-only MP4 with a hand-crafted single-entry edit list
+# (`media_time=1024`, mirroring `audio_prime_base.mp4`'s own real AAC
+# priming length) -- the same "patch an already-generated carrier with a
+# python3 heredoc" precedent `mkv_tscale_a.mkv`/`mkv_tscale_b.mkv` already
+# uses. The base encode is written to a scratch directory, never under
+# $OUT_DIR, so scripts/check_corpus.sh's textual `$OUT_DIR/<name>`
+# extraction never mistakes it for a fixture of its own (the
+# `timeline_dts_backward.ts` precedent above).
+AUDIO_PRIME_FRAG_TMP="$(mktemp -d)"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=3:sample_rate=44100" \
+  -c:a aac -movflags frag_keyframe+empty_moov -frag_duration 500000 \
+  -flags +bitexact -fflags +bitexact -y \
+  "$AUDIO_PRIME_FRAG_TMP/audio_frag_base.mp4"
+
+python3 - "$AUDIO_PRIME_FRAG_TMP/audio_frag_base.mp4" "$OUT_DIR/audio_prime_fragmented.mp4" <<'PYEOF'
+import struct
+import sys
+
+
+def read_box_header(data, pos):
+    size = int.from_bytes(data[pos:pos + 4], 'big')
+    typ = data[pos + 4:pos + 8]
+    hdr = 8
+    if size == 1:
+        size = int.from_bytes(data[pos + 8:pos + 16], 'big')
+        hdr = 16
+    return typ, size, hdr
+
+
+def find_child(data, start, end, want):
+    pos = start
+    while pos < end:
+        typ, size, hdr = read_box_header(data, pos)
+        if typ == want:
+            return pos, size, hdr
+        pos += size if size > 0 else (end - pos)
+    raise SystemExit("gen_corpus error: box not found: " + want.decode())
+
+
+src, dst = sys.argv[1], sys.argv[2]
+data = bytearray(open(src, 'rb').read())
+
+moov_off, moov_size, moov_hdr = find_child(data, 0, len(data), b'moov')
+trak_off, trak_size, trak_hdr = find_child(data, moov_off + moov_hdr, moov_off + moov_size, b'trak')
+tkhd_off, tkhd_size, tkhd_hdr = find_child(data, trak_off + trak_hdr, trak_off + trak_size, b'tkhd')
+insert_at = tkhd_off + tkhd_size  # right after tkhd, before mdia -- the standard edts position.
+
+# Single non-empty trim entry: skip the first 1024 samples (this file's
+# own encoder priming length, mirroring audio_prime_base.mp4's real
+# value), in this file's mdhd/mvhd timescale (44100, confirmed equal).
+media_time = 1024
+segment_duration = 132300 - media_time
+elst_entry = struct.pack('>ii hh', segment_duration, media_time, 1, 0)
+elst_payload = b'\x00\x00\x00\x00' + struct.pack('>I', 1) + elst_entry
+elst_box = struct.pack('>I', 8 + len(elst_payload)) + b'elst' + elst_payload
+edts_box = struct.pack('>I', 8 + len(elst_box)) + b'edts' + elst_box
+inserted_len = len(edts_box)
+
+data[insert_at:insert_at] = edts_box
+
+
+def rewrite_size(data, box_off, delta):
+    size = int.from_bytes(data[box_off:box_off + 4], 'big')
+    assert size != 1
+    data[box_off:box_off + 4] = struct.pack('>I', size + delta)
+
+
+rewrite_size(data, trak_off, inserted_len)
+rewrite_size(data, moov_off, inserted_len)
+
+# Every moof's tfhd carries an ABSOLUTE base_data_offset (tfhd flag 0x1)
+# equal to that moof's OWN start offset in the file ffmpeg just wrote
+# (confirmed empirically against this exact recipe's output) -- inserting
+# bytes earlier in the file (inside moov, which precedes every moof/mdat
+# pair here) shifts every subsequent moof/mdat pair's absolute position,
+# so each tfhd's stored base_data_offset must be advanced by the SAME
+# inserted_len to keep pointing at its own (now-shifted) moof. This is the
+# one absolute-offset table this fragmented layout actually has (stco
+# itself carries zero entries, confirmed empirically) -- left unpatched,
+# it breaks decode silently (ffmpeg exits 0 but emits zero decoded
+# samples), never a loud parse failure.
+pos = 0
+end = len(data)
+patched_moof_count = 0
+while pos < end:
+    typ, size, hdr = read_box_header(data, pos)
+    if typ == b'moof':
+        p = pos + hdr
+        while p < pos + size:
+            t2, s2, h2 = read_box_header(data, p)
+            if t2 == b'traf':
+                q = p + h2
+                while q < p + s2:
+                    t3, s3, h3 = read_box_header(data, q)
+                    if t3 == b'tfhd':
+                        flags = int.from_bytes(data[q + 8:q + 12], 'big') & 0xFFFFFF
+                        if flags & 0x000001:
+                            bdo_off = q + 16
+                            old_bdo = int.from_bytes(data[bdo_off:bdo_off + 8], 'big')
+                            data[bdo_off:bdo_off + 8] = struct.pack('>Q', old_bdo + inserted_len)
+                            patched_moof_count += 1
+                    q += s3
+            p += s2
+    pos += size if size > 0 else (end - pos)
+
+if patched_moof_count == 0:
+    raise SystemExit("gen_corpus error: expected to patch at least one tfhd base_data_offset, patched zero")
+
+# Drop the trailing mfra box: growing moov shifts every subsequent
+# moof/mdat pair, which would leave mfra's own tfra entries (absolute
+# moof offsets, used only for optional random-access seeking) stale.
+# mfra is not walked by mediadiff's bmff_scan (top-level box list only
+# records it as an opaque, unwalked entry) or read by ffmpeg's own linear
+# demux path, so dropping it is a safe, well-understood choice mirroring
+# how many from-scratch/streamed muxers never emit one at all.
+pos = 0
+mfra_off = None
+while pos < end:
+    typ, size, hdr = read_box_header(data, pos)
+    if typ == b'mfra':
+        mfra_off = pos
+        break
+    pos += size if size > 0 else (end - pos)
+if mfra_off is not None:
+    data = data[:mfra_off]
+
+with open(dst, 'wb') as fh:
+    fh.write(bytes(data))
+PYEOF
+
+rm -rf "$AUDIO_PRIME_FRAG_TMP"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac, audio_stereo_s16.wav, audio_stereo_s24.wav, audio_mono_s16.wav, audio_flt_base.ogg, audio_mp2_base.mpg, audio_51.flac, audio_51_side.flac, audio_prime_base.mp4, audio_prime_roundtrip.mkv, audio_prime_roundtrip2.mp4, audio_prime_copy.ts, audio_prime_multiedit.mp4, audio_prime_fragmented.mp4."
