@@ -176,6 +176,58 @@ int ebur128_role_for_channel(AVChannel channel, int position_index) {
   }
 }
 
+// 06-09-PLAN.md (AUDIO-07): normalizes ONE decoded sample (at byte offset
+// `ptr` within the SAME interleaved scratch buffer the hash/loudness sinks
+// already read) to a common Q15-scaled fixed-point amplitude -- full scale
+// +/-32768, matching a native s16 sample's own range. s32 is right-shifted
+// by 16 (coarser than s32's own noise floor, but ample resolution for a
+// coarse dBFS threshold comparison); a native float/double sample is
+// scaled by 32768.0 and rounded via std::llround (ties away from zero,
+// the SAME determinism argument quantize_loudness_milli below already
+// relies on -- deterministic on any IEEE-754 conformant toolchain, per
+// TRUST-05). This is FORMAT NORMALIZATION, not the RMS/peak DERIVATION
+// itself (this file's own acceptance criterion targets the latter): every
+// windowed-sum, threshold comparison and run-length decision downstream of
+// this call is plain int64 arithmetic, never floating point -- the
+// conversion step alone cannot avoid interpreting a genuinely
+// floating-point native sample format (AAC/Opus/Vorbis all decode to
+// planar float), exactly the same unavoidable boundary
+// `loudness_feed_dispatch_for_sample_fmt`'s own four native formats cross.
+// Dispatches on the SAME `Ebur128Feed` identity the loudness sink already
+// resolved (never a second, independent format table) -- `none` (a native
+// format none of the four accept) returns 0, unreachable in practice since
+// the silence detector is gated on `feed_kind != Ebur128Feed::none`
+// exactly like the loudness sink.
+std::int64_t normalize_amplitude_q15(Ebur128Feed feed_kind, const std::uint8_t* ptr) {
+  switch (feed_kind) {
+    case Ebur128Feed::short_fmt:
+      return static_cast<std::int64_t>(*reinterpret_cast<const std::int16_t*>(ptr));
+    case Ebur128Feed::int_fmt:
+      return static_cast<std::int64_t>(*reinterpret_cast<const std::int32_t*>(ptr)) >> 16;
+    case Ebur128Feed::float_fmt: {
+      const float v = *reinterpret_cast<const float*>(ptr);
+      return static_cast<std::int64_t>(std::llround(static_cast<double>(v) * 32768.0));
+    }
+    case Ebur128Feed::double_fmt: {
+      const double v = *reinterpret_cast<const double*>(ptr);
+      return static_cast<std::int64_t>(std::llround(v * 32768.0));
+    }
+    case Ebur128Feed::none:
+      return 0;
+  }
+  return 0;
+}
+
+// dBFS -> a Q15-scale linear amplitude, computed ONCE per stream (never
+// per sample) -- kEdgeSilenceThresholdDbfs/kDropoutThresholdDbfs are the
+// only two callers, both at first-frame lazy-init. `std::pow` here is a
+// one-time SETUP computation, not part of the per-sample RMS/peak
+// derivation loop this file's own acceptance criterion targets (which
+// stays plain int64 comparisons throughout).
+std::int64_t dbfs_to_q15_linear(double dbfs) {
+  return static_cast<std::int64_t>(std::llround(std::pow(10.0, dbfs / 20.0) * 32768.0));
+}
+
 // Ties away from zero, at kLoudnessQuantiserDen -- std::llround is
 // specified (since C++11) to round half away from zero unconditionally,
 // independent of the current floating-point rounding mode, so this is
@@ -194,6 +246,18 @@ int loudness_feed_dispatch_for_sample_fmt(int av_sample_fmt_id) {
 
 int loudness_channel_role_for_avchannel(int av_channel_id, int position_index) {
   return ebur128_role_for_channel(static_cast<AVChannel>(av_channel_id), position_index);
+}
+
+std::vector<SampleSpan> merge_touching_sample_spans(std::vector<SampleSpan> spans) {
+  std::vector<SampleSpan> merged;
+  for (const SampleSpan& span : spans) {
+    if (!merged.empty() && merged.back().end_sample == span.start_sample) {
+      merged.back().end_sample = span.end_sample;
+      continue;
+    }
+    merged.push_back(span);
+  }
+  return merged;
 }
 
 int determinism_class_for_decoder(std::string_view decoder_name) {
@@ -386,7 +450,25 @@ AudioDecodeState::AudioDecodeState(AudioDecodeState&& other) noexcept
       pending_block_(std::move(other.pending_block_)),
       block_digests_(std::move(other.block_digests_)),
       interleave_scratch_(std::move(other.interleave_scratch_)),
-      loudness_sink_(std::move(other.loudness_sink_)) {
+      loudness_sink_(std::move(other.loudness_sink_)),
+      silence_supported_(other.silence_supported_),
+      silence_feed_kind_(other.silence_feed_kind_),
+      any_sample_consumed_(other.any_sample_consumed_),
+      next_sample_index_(other.next_sample_index_),
+      edge_hysteresis_samples_(other.edge_hysteresis_samples_),
+      edge_in_run_(other.edge_in_run_),
+      edge_run_start_(other.edge_run_start_),
+      edge_below_streak_(other.edge_below_streak_),
+      edge_candidate_start_(other.edge_candidate_start_),
+      edge_above_streak_(other.edge_above_streak_),
+      edge_spans_(std::move(other.edge_spans_)),
+      dropout_window_samples_(other.dropout_window_samples_),
+      dropout_threshold_sq_(other.dropout_threshold_sq_),
+      dropout_sum_sq_(other.dropout_sum_sq_),
+      dropout_window_(std::move(other.dropout_window_)),
+      dropout_in_run_(other.dropout_in_run_),
+      dropout_run_start_(other.dropout_run_start_),
+      dropout_spans_(std::move(other.dropout_spans_)) {
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -423,6 +505,24 @@ AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept
   block_digests_ = std::move(other.block_digests_);
   interleave_scratch_ = std::move(other.interleave_scratch_);
   loudness_sink_ = std::move(other.loudness_sink_);
+  silence_supported_ = other.silence_supported_;
+  silence_feed_kind_ = other.silence_feed_kind_;
+  any_sample_consumed_ = other.any_sample_consumed_;
+  next_sample_index_ = other.next_sample_index_;
+  edge_hysteresis_samples_ = other.edge_hysteresis_samples_;
+  edge_in_run_ = other.edge_in_run_;
+  edge_run_start_ = other.edge_run_start_;
+  edge_below_streak_ = other.edge_below_streak_;
+  edge_candidate_start_ = other.edge_candidate_start_;
+  edge_above_streak_ = other.edge_above_streak_;
+  edge_spans_ = std::move(other.edge_spans_);
+  dropout_window_samples_ = other.dropout_window_samples_;
+  dropout_threshold_sq_ = other.dropout_threshold_sq_;
+  dropout_sum_sq_ = other.dropout_sum_sq_;
+  dropout_window_ = std::move(other.dropout_window_);
+  dropout_in_run_ = other.dropout_in_run_;
+  dropout_run_start_ = other.dropout_run_start_;
+  dropout_spans_ = std::move(other.dropout_spans_);
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -581,6 +681,28 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
       sink->set_channel_map(frame.ch_layout);
       loudness_sink_ = std::move(sink);
     }
+
+    // 06-09-PLAN.md (AUDIO-07, AUDIO-10): the silence/dropout detector's
+    // own one-time setup, on the SAME lazy-init block -- gated on the
+    // IDENTICAL Ebur128Feed dispatch the loudness sink above just
+    // resolved (never a second, independent format table: a native
+    // format none of the four feed functions accept leaves silence
+    // detection permanently unmeasured for this stream, exactly like
+    // `loudness_sink_` staying null for the same reason). The two
+    // threshold-linear constants and the RMS window/hysteresis lengths
+    // are derived ONCE here, from the resolved sample rate -- never
+    // per-sample, and never a bare literal at any later call site.
+    const Ebur128Feed silence_feed = ebur128_feed_for_format(name_fmt);
+    silence_feed_kind_ = static_cast<int>(silence_feed);
+    silence_supported_ = silence_feed != Ebur128Feed::none && sample_rate_ > 0;
+    if (silence_supported_) {
+      edge_hysteresis_samples_ = std::max<std::int64_t>(1, sample_rate_ * kEdgeSilenceHysteresisMs / 1000);
+      edge_threshold_linear_ = dbfs_to_q15_linear(kEdgeSilenceThresholdDbfs);
+      dropout_window_samples_ = std::max<std::int64_t>(1, sample_rate_ * kDropoutRmsWindowMs / 1000);
+      dropout_min_span_samples_ = std::max<std::int64_t>(1, sample_rate_ * kDropoutMinSpanMs / 1000);
+      const std::int64_t dropout_threshold_linear = dbfs_to_q15_linear(kDropoutThresholdDbfs);
+      dropout_threshold_sq_ = dropout_threshold_linear * dropout_threshold_linear;
+    }
   }
 
   total_samples_ += nb_samples;
@@ -628,6 +750,119 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
   // hash is comparable.
   if (loudness_sink_) {
     loudness_sink_->feed(scratch, nb_samples);
+  }
+
+  // 06-09-PLAN.md (AUDIO-07, AUDIO-10): the silence/dropout detector, fed
+  // from the SAME interleaved scratch buffer, independent of
+  // hash_enabled_ -- every successfully decoded stream's silence is
+  // measured, whether or not its hash is comparable (mirrors the loudness
+  // sink's own independence immediately above).
+  if (silence_supported_) {
+    any_sample_consumed_ = true;
+    const auto feed_kind = static_cast<Ebur128Feed>(silence_feed_kind_);
+    for (int s = 0; s < nb_samples; ++s) {
+      std::int64_t peak = 0;
+      for (int c = 0; c < channels; ++c) {
+        const std::uint8_t* sample_ptr =
+            scratch + (static_cast<std::size_t>(s) * static_cast<std::size_t>(channels) +
+                       static_cast<std::size_t>(c)) *
+                          static_cast<std::size_t>(bytes_per_sample);
+        const std::int64_t amplitude = normalize_amplitude_q15(feed_kind, sample_ptr);
+        const std::int64_t abs_amplitude = amplitude < 0 ? -amplitude : amplitude;
+        if (abs_amplitude > peak) {
+          peak = abs_amplitude;
+        }
+      }
+      observe_silence_sample(peak);
+      ++next_sample_index_;
+    }
+  }
+}
+
+void AudioDecodeState::observe_silence_sample(std::int64_t peak_q15) {
+  const std::int64_t i = next_sample_index_;
+
+  // -- Edge (peak) detector: a Schmitt-trigger-style symmetric hysteresis
+  // debounce -- see audio_decode.h's own doc comment on
+  // kEdgeSilenceThresholdDbfs for why the OPEN side needs the same
+  // debounce as the close side (a plain tone's own exactly-zero first
+  // sample would otherwise open a spurious one-sample "leading" run). --
+  const bool below_edge = peak_q15 < edge_threshold_linear_;
+  if (!edge_in_run_) {
+    if (below_edge) {
+      if (edge_below_streak_ == 0) {
+        edge_candidate_start_ = i;
+      }
+      ++edge_below_streak_;
+      if (edge_below_streak_ >= edge_hysteresis_samples_) {
+        edge_in_run_ = true;
+        edge_run_start_ = edge_candidate_start_;
+        edge_above_streak_ = 0;
+      }
+    } else {
+      edge_below_streak_ = 0;
+    }
+  } else {
+    if (below_edge) {
+      edge_above_streak_ = 0;
+    } else {
+      ++edge_above_streak_;
+      if (edge_above_streak_ >= edge_hysteresis_samples_) {
+        const std::int64_t run_end = i - edge_above_streak_ + 1;
+        // Emit only the LEADING run here (starts at sample 0) -- an
+        // interior peak-silent run is discarded outright (this project's
+        // own must_have: "an interior run is the dropout detector's
+        // business"); TRAILING is handled at finalize() for a run still
+        // open when the stream ends (Test 5: closed, never dropped).
+        if (edge_run_start_ == 0) {
+          edge_spans_.push_back(SampleSpan{edge_run_start_, run_end});
+        }
+        edge_in_run_ = false;
+        edge_below_streak_ = 0;
+      }
+    }
+  }
+
+  // -- Dropout (RMS) detector: a trailing sliding window of squared,
+  // Q15-normalized peak amplitude. The running sum is bounded by
+  // construction (at most `dropout_window_samples_` terms, each at most
+  // (2^15)^2, itself bounded by Phase 3 D-01's own per-file memory-budget-
+  // scale sample rates) -- comfortably inside int64_t with no checked
+  // arithmetic needed, mirroring D-04's own "block math is bounded,
+  // checked_mul not required" precedent. --
+  const std::int64_t sq = peak_q15 * peak_q15;
+  dropout_window_.push_back(sq);
+  dropout_sum_sq_ += sq;
+  if (static_cast<std::int64_t>(dropout_window_.size()) > dropout_window_samples_) {
+    dropout_sum_sq_ -= dropout_window_.front();
+    dropout_window_.pop_front();
+  }
+  if (static_cast<std::int64_t>(dropout_window_.size()) == dropout_window_samples_) {
+    // mean_square < threshold^2  <=>  sum_sq < threshold^2 * window_samples
+    // -- cross-multiplied to avoid a division, this file's own established
+    // convention for a threshold comparison against a running sum.
+    const bool below_dropout = dropout_sum_sq_ < dropout_threshold_sq_ * dropout_window_samples_;
+    if (below_dropout) {
+      if (!dropout_in_run_) {
+        dropout_in_run_ = true;
+        dropout_run_start_ = i - dropout_window_samples_ + 1;
+      }
+    } else if (dropout_in_run_) {
+      const std::int64_t run_end = i - dropout_window_samples_ + 1;
+      // A run starting at sample 0 is LEADING silence, not an interior
+      // dropout -- edge_spans_' own territory (docs/checks/audio.silence.
+      // dropouts.md's own stated exclusion, proven by Test 6). A run
+      // shorter than kDropoutMinSpanMs is doc 05 §4's own minimum-span
+      // gate (Test 6's own "100ms hole produces NONE" claim) -- computed
+      // AFTER the trailing-window's own boundary-shrinkage (this file's
+      // own documented property: the reported span is systematically
+      // shorter than the true silent duration by roughly one window
+      // width), never before it.
+      if (dropout_run_start_ != 0 && (run_end - dropout_run_start_) >= dropout_min_span_samples_) {
+        dropout_spans_.push_back(SampleSpan{dropout_run_start_, run_end});
+      }
+      dropout_in_run_ = false;
+    }
   }
 }
 
@@ -791,6 +1026,33 @@ StreamAudioDecode AudioDecodeState::finalize() {
           quantize_loudness_milli(result.loudness_below_floor ? kLoudnessGatingFloorLufs : integrated);
       result.true_peak_dbtp_milli = quantize_loudness_milli(true_peak);
     }
+  }
+
+  // 06-09-PLAN.md (AUDIO-07, AUDIO-10): the silence/dropout detector's own
+  // finalize -- `any_sample_consumed_` stays false for Test 10's own case
+  // (a stream that decodes to zero samples, or a native format none of
+  // the four feed functions accept), leaving `silence_measured` false and
+  // both span lists at their default-constructed empty state, which the
+  // analyzer (silence.cpp) must read as "not measured" (SkipReason::
+  // insufficient_data), never as "measured, found nothing".
+  if (any_sample_consumed_) {
+    result.silence_measured = true;
+    // Test 5: a run still open when the stream ends is CLOSED here,
+    // never dropped -- it touches the final sample by definition
+    // (`total_samples_`), so it is always TRAILING (regardless of where
+    // it started, even if that start is also 0, in which case it is
+    // simultaneously leading+trailing -- the whole stream is silent, and
+    // this single emitted span already covers that correctly with no
+    // separate merge needed).
+    if (edge_in_run_) {
+      edge_spans_.push_back(SampleSpan{edge_run_start_, total_samples_});
+    }
+    // A dropout run still open at end-of-stream is TRAILING silence, not
+    // an interior dropout -- discarded here for the SAME reason a
+    // sample-0-starting run is discarded in observe_silence_sample above
+    // (edge_spans_' own territory, Test 6).
+    result.edge_silence_spans = merge_touching_sample_spans(std::move(edge_spans_));
+    result.dropout_spans = merge_touching_sample_spans(std::move(dropout_spans_));
   }
 
   return result;

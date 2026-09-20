@@ -365,6 +365,12 @@ add_executable(mediadiff_unit_tests
   # the gating-floor sentinel, quantiser determinism, and the zero-sample
   # not-measured state.
   test_loudness_sink.cpp
+  # 06-09-PLAN.md Task 1 (AUDIO-07, AUDIO-10): the silence/dropout span
+  # detector fused into the same decode sweep -- the symmetric-hysteresis
+  # peak detector's boundary-safe leading/trailing runs, the trailing-RMS-
+  # window dropout detector's minimum-span gate, the exact-touch merge
+  # rule, and the zero-sample not-measured state.
+  test_silence_sink.cpp
   # AUDIO-03/D-10/D-11: tools/gen_he_aac.py's hand-written HE-AAC fixtures --
   # audio_aac_handwritten.mp4's recorded XXH3-128 input identity and the
   # exported assertion helper 06-05's own class-1 two-build proof calls

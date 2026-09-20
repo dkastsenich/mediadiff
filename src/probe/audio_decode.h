@@ -29,6 +29,7 @@
 // branches when it is set.
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -85,6 +86,47 @@ inline constexpr std::int64_t kLoudnessQuantiserDen = 1000;
 // second one -- it has no gating-floor concept of its own, only a "there
 // was truly nothing to measure" edge case this constant exists to name.
 inline constexpr double kNonFiniteLoudnessReadoutSentinel = kLoudnessGatingFloorLufs;
+
+// 06-09-PLAN.md (AUDIO-07, AUDIO-10, Phase 5 D-08): the five named
+// detection constants `--explain` echoes for `audio.silence.edges`/
+// `.dropouts` -- doc 05 §4's exact normative values, never a bare literal
+// at any detection-loop call site. `audio.silence.edges` tracks the
+// per-sample-frame PEAK (max abs amplitude across channels) against
+// kEdgeSilenceThresholdDbfs, debounced by kEdgeSilenceHysteresisMs on BOTH
+// the open and close transition (a Schmitt-trigger-style symmetric
+// hysteresis, not merely a close-side debounce): the open-side debounce is
+// what keeps a plain sine tone's own single exactly-zero first sample (or
+// an interior zero-crossing landing within one output sample of the
+// mathematical crossing) from registering as a spurious one-sample
+// "silence" run -- confirmed empirically against this project's own
+// `sine=` lavfi fixtures before this constant was chosen, not assumed.
+// `audio.silence.dropouts` tracks a sliding `kDropoutRmsWindowMs` RMS
+// window against `kDropoutThresholdDbfs`, reporting a run only once it
+// reaches `kDropoutMinSpanMs`.
+inline constexpr double kEdgeSilenceThresholdDbfs = -60.0;
+inline constexpr std::int64_t kEdgeSilenceHysteresisMs = 5;
+inline constexpr std::int64_t kDropoutRmsWindowMs = 100;
+inline constexpr double kDropoutThresholdDbfs = -70.0;
+inline constexpr std::int64_t kDropoutMinSpanMs = 150;
+
+// One detected silence/dropout span, in the stream's OWN sample-index
+// domain -- a half-open range `[start_sample, end_sample)` of decoded
+// audio frames (one frame = one sample instant across every channel).
+// Deliberately NOT `core/value.h`'s `Span`/`RationalValue` -- this header,
+// like every other probe/ header (`probe/cadence.h`, `probe/packet_scan.h`),
+// never names a core/value.h analyzer-layer type; `src/analyzers/audio/
+// silence.cpp` (06-09-PLAN.md Task 2) converts each boundary to the
+// compared millisecond `RationalValue` via `detail::ticks_to_ms(sample,
+// Rational{1, sample_rate})` -- `src/analyzers/timeline/analyzers.h`'s own
+// checked-rational helper every other `unit = "ms"` span check in this
+// project already uses (`timeline.gaps`/`timeline.discontinuities`
+// precedent) -- the ONLY place floating milliseconds would ever appear,
+// which never happens because that helper stays integer/rational
+// throughout (PROJECT.md's rational-everywhere rule).
+struct SampleSpan {
+  std::int64_t start_sample = 0;
+  std::int64_t end_sample = 0;
+};
 
 // One audio stream's own decode-sink outputs. `attempted` is false for
 // every non-audio stream and for an audio stream this build's linked
@@ -185,6 +227,40 @@ struct StreamAudioDecode {
   // non-finite, since JSON cannot round-trip an infinity.
   double integrated_lufs_raw = 0.0;
   double true_peak_dbtp_raw = 0.0;
+
+  // 06-09-PLAN.md (AUDIO-07, AUDIO-10): the silence/dropout span
+  // detector's own outputs, fed from the SAME decoded frames as the hash
+  // and loudness sinks above -- the third and final sink sharing this
+  // sweep. `silence_measured` is false whenever this stream never fed the
+  // detector at all (a zero-sample stream, Test 10) -- `edge_silence_spans`
+  // and `dropout_spans` stay at their default-constructed (empty) state in
+  // that case, which the analyzer (silence.cpp) must never present as "no
+  // silence found" (`SkipReason::insufficient_data` instead). When
+  // `silence_measured` is true, an EMPTY `edge_silence_spans`/
+  // `dropout_spans` IS the real measured value (Test 1: a continuous tone
+  // has none) -- never conflated with the unmeasured case.
+  bool silence_measured = false;
+  // Leading (starts at sample 0) and/or trailing (reaches `total_samples`,
+  // closed at finalize() rather than dropped -- Test 5) peak-below-
+  // `kEdgeSilenceThresholdDbfs` runs, hysteresis-debounced by
+  // `kEdgeSilenceHysteresisMs` on both the open and close transition. An
+  // interior peak-silent run (neither leading nor trailing) is discarded
+  // here entirely -- it is `dropout_spans`' own business, per its
+  // independent RMS-window criteria, never forwarded between the two.
+  // Never more than 2 elements; exact-touch adjacency is merged (only
+  // reachable in practice when the whole stream is one continuous silent
+  // run, which naturally emits as a single leading+trailing span).
+  std::vector<SampleSpan> edge_silence_spans;
+  // Interior (properly closed before EOF, not starting at sample 0) runs
+  // where the sliding `kDropoutRmsWindowMs` RMS window stays below
+  // `kDropoutThresholdDbfs` for at least `kDropoutMinSpanMs`. A candidate
+  // run that starts at sample 0, or is still open at finalize() (reaches
+  // `total_samples`), is discarded here -- that physical region is
+  // `edge_silence_spans`' own territory (docs/checks/audio.silence.
+  // dropouts.md's own stated exclusion), never double-reported. Exact-touch
+  // adjacent runs are merged into one (mirrors `timeline.discontinuities`'
+  // own merge convention).
+  std::vector<SampleSpan> dropout_spans;
 };
 
 // One decode sweep's whole result: index-aligned with AVStream (mirrors
@@ -258,6 +334,21 @@ int loudness_feed_dispatch_for_sample_fmt(int av_sample_fmt_id);
 // content this project's corpus actually carries (an unspecified stereo/
 // mono layout, never an exotic > 6-channel one with no identity at all).
 int loudness_channel_role_for_avchannel(int av_channel_id, int position_index);
+
+// 06-09-PLAN.md (AUDIO-07): merges exact-touch adjacent spans
+// (`end[i] == start[i+1]`) into one, mirroring `src/analyzers/timeline/
+// discontinuities.cpp`'s own merge convention -- applied at the
+// SAMPLE-INDEX level, ahead of `src/compare/span.cpp`'s own (redundant
+// but harmless) tick-level merge, so a single decode's own measured span
+// list already satisfies the "two spans that touch exactly are one span"
+// rule (must_have, Test 7) rather than relying solely on the compare-time
+// merge. Exposed here (rather than staying file-local to audio_decode.cpp)
+// so `tests/unit/test_silence_sink.cpp` can assert the merge rule directly
+// against hand-built spans, mirroring `loudness_feed_dispatch_for_sample_fmt`'s
+// own reason for being exported. Assumes `spans` is already in ascending,
+// non-overlapping start order (both silence/dropout detectors emit runs in
+// strictly increasing sample-index order by construction).
+std::vector<SampleSpan> merge_touching_sample_spans(std::vector<SampleSpan> spans);
 
 namespace detail {
 
@@ -391,8 +482,54 @@ class AudioDecodeState {
   // finalize() reports loudness_measured=false in either case.
   std::unique_ptr<LoudnessSink> loudness_sink_;
 
+  // 06-09-PLAN.md (AUDIO-07, AUDIO-10): the silence/dropout detector's own
+  // running state, updated once per decoded sample-frame (a time instant
+  // across every channel) from the SAME `interleave_scratch_` bytes the
+  // hash/loudness sinks already read -- no second decode, no retained PCM
+  // beyond the two small bounded buffers below. Gated on the SAME
+  // `Ebur128Feed` dispatch the loudness sink already resolves (never a
+  // second, independent format table): a native format none of the four
+  // feed functions accept leaves `silence_supported_` false, and this
+  // stream's silence detection stays permanently unmeasured (mirrors
+  // `loudness_sink_` staying null for the same reason).
+  bool silence_supported_ = false;
+  int silence_feed_kind_ = -1;  // detail::Ebur128Feed's own int identity.
+  bool any_sample_consumed_ = false;
+  std::int64_t next_sample_index_ = 0;
+
+  // Edge (peak) detector: a Schmitt-trigger-style symmetric hysteresis
+  // over the per-frame peak (max abs amplitude across channels),
+  // debounced by `kEdgeSilenceHysteresisMs` on BOTH the open and close
+  // transition (this header's own doc comment on `kEdgeSilenceThresholdDbfs`
+  // explains why the open side needs debouncing too).
+  std::int64_t edge_hysteresis_samples_ = 0;
+  std::int64_t edge_threshold_linear_ = 0;  // kEdgeSilenceThresholdDbfs, Q15-scaled linear amplitude.
+  bool edge_in_run_ = false;
+  std::int64_t edge_run_start_ = 0;
+  std::int64_t edge_below_streak_ = 0;      // consecutive below-threshold frames while NOT in a run.
+  std::int64_t edge_candidate_start_ = 0;   // where the current below-streak began.
+  std::int64_t edge_above_streak_ = 0;      // consecutive above-threshold frames while IN a run (close debounce).
+  std::vector<SampleSpan> edge_spans_;
+
+  // Dropout (RMS) detector: a trailing sliding window of squared,
+  // Q15-normalized per-frame peak amplitude (never a bare literal
+  // threshold -- `kDropoutThresholdDbfs`'s own linear-squared form is
+  // computed once, at first-frame lazy-init, via `dropout_threshold_sq_`).
+  // A run is reported only when it neither starts at sample 0 nor is still
+  // open at finalize() -- both of those are `edge_spans_`' own territory
+  // (this header's own doc comment on `StreamAudioDecode::dropout_spans`).
+  std::int64_t dropout_window_samples_ = 0;
+  std::int64_t dropout_min_span_samples_ = 0;
+  std::int64_t dropout_threshold_sq_ = 0;
+  std::int64_t dropout_sum_sq_ = 0;
+  std::deque<std::int64_t> dropout_window_;  // trailing squared amplitudes, size <= dropout_window_samples_.
+  bool dropout_in_run_ = false;
+  std::int64_t dropout_run_start_ = 0;
+  std::vector<SampleSpan> dropout_spans_;
+
   void consume_frame(const AVFrame& frame);
   void digest_full_blocks();
+  void observe_silence_sample(std::int64_t peak_q15);
 };
 
 }  // namespace detail
