@@ -38,6 +38,26 @@ conversion) -- so this check's own timeline is rebased by 23 ticks on a
 Matroska stream where `timeline.av_offset` converts 1024 samples to 23
 ticks, never by the raw 1024.
 
+**The checkpoint SPAN follows a shared-basis rule (D-16), the same
+mechanism D-10 built for the offset, extended from the anchor to the
+extent the 32 checkpoints are spread across.** Each audio stream's own
+span is measured on the TRIMMED (priming- and padding-excluded) basis
+only when THAT stream's own priming AND padding are both known and
+convertible -- evidence `span_basis` reads `"adjusted"` in that case, and
+the trimmed span is reconstructed directly from the packet-derived extent
+(never trusted from a container's own declared-duration field, which on a
+container with no true edit list, such as MPEG-TS, is itself an untrimmed
+PTS-range estimate). When either is unknown, the span is measured on the
+packet-derived RAW extent instead -- `span_basis` reads `"raw"` -- and the
+video side (which never carries priming) follows the SAME shared decision,
+so the two halves of one measurement never mix bases. A generic,
+evidence-shape-gated comparator override (never keyed on this check's own
+id) swaps the compared rate to a shared `adjusted_magnitude` evidence key
+only when BOTH sides of a pair agree on `span_basis: "adjusted"`; any
+other combination compares the raw rate already in `Measurement::value`.
+Unknown priming is never a reason to soften this check's severity or
+widen its tolerance (D-11) -- only the basis changes, never the gate.
+
 No audio stream, no video stream, or too few usable checkpoints to fit a
 line: `skipped:insufficient_data` -- never a fabricated rate.
 

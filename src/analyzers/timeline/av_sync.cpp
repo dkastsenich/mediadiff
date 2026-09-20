@@ -322,6 +322,96 @@ std::optional<std::int64_t> priming_samples_to_ticks(std::int64_t samples, std::
   return ticks;
 }
 
+// D-16 (06-07-PLAN.md, WINDOWS.md #32): see this function's own doc
+// comment in analyzers.h for the full worked rationale. `pts_span.has_span`
+// already encodes "at least 2 valid pts entries with an overflow-free
+// positive span" (`sorted_pts_with_span`'s own contract). `priming_ticks`/
+// `padding_ticks` are read, never mutated -- this function performs no
+// sample-to-tick conversion of its own (that already happened at the call
+// site, via `detail::priming_samples_to_ticks`, in the SAME native
+// timebase as `pts_span`), only the reconstruction-or-fallback span-basis
+// decision this file's two call sites (video, audio) now share instead of
+// duplicating.
+//
+// Reconstruction (the "adjusted"/trimmed candidate): only attempted when
+// BOTH tick counts are known -- subtract each from the packet-derived raw
+// span, in order, via checked arithmetic. A non-positive or overflowing
+// result is treated as "reconstruction unavailable", falling through to
+// the container-field branch below rather than reporting a fabricated
+// non-positive span.
+//
+// Fallback (the ONLY branch video ever reaches, since its caller always
+// supplies `std::nullopt` for both tick arguments): the container's own
+// `declared_duration_ticks` field, when positive -- exactly this file's
+// pre-D-16 selection for both video and (priming-unaware) audio callers.
+SpanBasisCandidates span_ticks_for_basis(std::optional<std::int64_t> declared_duration_ticks, const PtsSpan& pts_span,
+                                          std::optional<std::int64_t> priming_ticks,
+                                          std::optional<std::int64_t> padding_ticks) {
+  SpanBasisCandidates result;
+  if (pts_span.has_span) {
+    result.has_raw_span = true;
+    result.raw_span_ticks = pts_span.span_ticks;
+  }
+  result.prefers_declared = priming_ticks.has_value() && padding_ticks.has_value();
+  if (result.prefers_declared && result.has_raw_span) {
+    std::int64_t trimmed = result.raw_span_ticks;
+    const bool reconstruction_ok =
+        checked_sub(trimmed, *priming_ticks, &trimmed) && checked_sub(trimmed, *padding_ticks, &trimmed);
+    if (reconstruction_ok && trimmed > 0) {
+      result.has_declared_span = true;
+      result.declared_span_ticks = trimmed;
+    }
+  }
+  if (!result.has_declared_span && declared_duration_ticks.has_value() && *declared_duration_ticks > 0) {
+    result.has_declared_span = true;
+    result.declared_span_ticks = *declared_duration_ticks;
+  }
+  return result;
+}
+
+// D-16 (06-07-PLAN.md): rescales `rate_num/rate_den` (an arbitrary,
+// already-reduced ms/min rational from `fit_drift` -- `DriftFit::
+// rate_ms_per_min_den` varies per fit, unlike `timeline.av_offset`'s own
+// always-den-1 millisecond values) onto the FIXED `kDriftAdjustedMagnitudeDen`
+// denominator, so `src/compare/tol.cpp`'s generic override can read it
+// back as a plain integer numerator against a denominator BOTH sides
+// share by construction. Rounds to the nearest integer, ties away from
+// zero -- the SAME convention `priming_samples_to_ticks` above already
+// uses. Returns std::nullopt on a non-positive `rate_den` or on ANY
+// overflow (CR-03's own "never a fabricated verdict" discipline, applied
+// here to an evidence value rather than a comparator delta) -- never a
+// wrapped or silently truncated value. The caller (av_sync.cpp's own
+// `run_timeline_av_sync`) treats std::nullopt as "omit the
+// `adjusted_magnitude` evidence key entirely", the same safe degrade as a
+// check that never declared this evidence shape at all.
+std::optional<std::int64_t> rescale_rate_to_fixed_den(std::int64_t rate_num, std::int64_t rate_den) {
+  if (rate_den <= 0) {
+    return std::nullopt;
+  }
+  std::int64_t scaled_numerator = 0;
+  if (!checked_mul(rate_num, kDriftAdjustedMagnitudeDen, &scaled_numerator)) {
+    return std::nullopt;
+  }
+  const bool negative = scaled_numerator < 0;
+  std::int64_t abs_scaled_numerator = scaled_numerator;
+  if (negative && !checked_negate(abs_scaled_numerator, &abs_scaled_numerator)) {
+    return std::nullopt;
+  }
+  const std::int64_t half_den = rate_den / 2;  // rate_den > 0, so this never divides by zero.
+  std::int64_t rounded_numerator = 0;
+  if (!checked_add(abs_scaled_numerator, half_den, &rounded_numerator)) {
+    return std::nullopt;
+  }
+  std::int64_t magnitude = 0;
+  if (!checked_div(rounded_numerator, rate_den, &magnitude)) {
+    return std::nullopt;
+  }
+  if (negative && !checked_negate(magnitude, &magnitude)) {
+    return std::nullopt;
+  }
+  return magnitude;
+}
+
 }  // namespace detail
 
 namespace {
@@ -676,34 +766,30 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
   const PtsSpan video_pts_span = detail::sorted_pts_with_span(video_packets);
   const std::vector<std::int64_t>& video_pts_ticks = video_pts_span.pts;
 
-  // The SPAN each side's fraction is measured against prefers
-  // `StreamInfo::declared_duration_ticks` (AVStream->duration, the SAME
-  // "stream-declared" value `timeline.duration`'s own triple already
-  // treats as authoritative) over the packet-derived `PtsSpan` above.
-  // This task's own worked finding, confirmed against tests/fixtures/
-  // timeline_start_base.mp4 via ffprobe: a stream's OWN raw packet
-  // timestamps commonly cover a few tens of ms MORE than its declared
-  // duration (AAC's frame-boundary rounding -- e.g. 4.0s at 44100Hz needs
-  // 172.27 1024-sample frames, so the encoder emits 174 and the container
-  // trims the true trailing padding via a signal this project's
-  // PacketScan does not currently capture); using the RAW packet span for
-  // audio while video's own packet span happens to land closer to its
-  // declared duration fabricates a spurious, perfectly linear apparent
-  // drift on a file with no real drift at all. The declared duration
-  // already accounts for this trim; the packet-derived span above is kept
-  // ONLY as a fallback for the (T-05-* class) case where the demuxer
-  // reports no declared duration at all.
+  // The SPAN each side's fraction is measured against has two candidate
+  // bases -- `StreamInfo::declared_duration_ticks` (AVStream->duration,
+  // the SAME "stream-declared" value `timeline.duration`'s own triple
+  // already treats as authoritative) and the packet-derived `PtsSpan`
+  // above. This task's own worked finding, confirmed against
+  // tests/fixtures/timeline_start_base.mp4 via ffprobe: a stream's OWN
+  // raw packet timestamps commonly cover a few tens of ms MORE than its
+  // declared duration (AAC's frame-boundary rounding -- e.g. 4.0s at
+  // 44100Hz needs 172.27 1024-sample frames, so the encoder emits 174 and
+  // the container trims the true trailing padding via a signal this
+  // project's PacketScan does not currently capture); using the RAW
+  // packet span for audio while video's own packet span happens to land
+  // closer to its declared duration fabricates a spurious, perfectly
+  // linear apparent drift on a file with no real drift at all. D-16
+  // (06-07-PLAN.md, WINDOWS.md #32) extends this: MPEG-TS's own
+  // "declared" duration is itself an ESTIMATE from raw PTS range that
+  // still includes AAC priming/padding, so comparing MP4's trimmed
+  // declared span against TS's untrimmed one compares two different
+  // bases for the same payload. WHICH basis each side prefers is decided
+  // per audio stream (below, from that stream's own resolved priming) --
+  // only the two raw candidate ingredients are computed once here, since
+  // they do not themselves depend on priming.
   const std::optional<std::int64_t> video_declared_duration_ticks =
       demux.stream_info(static_cast<int>(*primary_video)).declared_duration_ticks;
-  bool video_has_span = false;
-  std::int64_t video_span_ticks = 0;
-  if (video_declared_duration_ticks.has_value() && *video_declared_duration_ticks > 0) {
-    video_span_ticks = *video_declared_duration_ticks;
-    video_has_span = true;
-  } else if (video_pts_span.has_span) {
-    video_span_ticks = video_pts_span.span_ticks;
-    video_has_span = true;
-  }
 
   for (std::size_t audio_idx : audio_indices) {
     const Scope scope = *scopes[audio_idx];
@@ -733,9 +819,16 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
     }
 
     // D-09: packet-level skip_samples first, codecpar->initial_padding as
-    // fallback -- see resolve_priming's own doc comment above.
-    const PrimingResult priming =
-        resolve_priming(audio_stream.first_packet_skip_samples.value_or(0), audio_stream.initial_padding);
+    // fallback -- see resolve_priming's own doc comment above. D-16
+    // (06-07-PLAN.md): also carries `last_packet_discard_padding` (D-17,
+    // 06-06-PLAN.md) through, so `priming.padding_samples` is populated
+    // here exactly as it already is for `audio.priming`
+    // (src/analyzers/audio/priming.cpp) -- this call site never supplies
+    // a `container_reading` (this analyzer's own `required_passes` has no
+    // `bmff_scan`/`ebml_scan`, unchanged), so the container-mechanism tier
+    // stays unreachable from here, same as before this task.
+    const PrimingResult priming = resolve_priming(audio_stream.first_packet_skip_samples.value_or(0),
+                                                   audio_stream.initial_padding, audio_stream.last_packet_discard_padding);
     const StreamInfo audio_info = demux.stream_info(static_cast<int>(audio_idx));
     const bool priming_known = priming.source != PrimingResult::Source::unknown;
 
@@ -768,6 +861,24 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
     // THIS side, exactly like `priming: unknown` -- never adjusted by an
     // unconverted sample count, and severity is never softened.
     const bool priming_adjusted = priming_ticks.has_value();
+
+    // D-16 (06-07-PLAN.md): the SAME conversion, applied to the trailing
+    // padding sample count (D-17) this stream's own `PrimingResult`
+    // carries -- feeds `detail::span_ticks_for_basis`'s own trimmed-span
+    // reconstruction below (raw span minus priming minus padding). A
+    // GENUINELY known-and-zero padding count (`*priming.padding_samples ==
+    // 0`, e.g. `timeline_start_base.mp4`'s own audio stream, 06-06-SUMMARY.md)
+    // is still KNOWN -- converting it produces exactly 0 ticks, a real
+    // value, not an absence -- so this must NOT be gated on `> 0`: an
+    // earlier draft of this task gated the conversion on a positive sample
+    // count, which silently treated every "known, zero" padding side as
+    // "padding unknown", permanently disqualifying it from ever preferring
+    // the trimmed basis and defeating D-16's own fix. `std::nullopt` only
+    // when padding itself is unresolved or the conversion overflows.
+    std::optional<std::int64_t> padding_ticks;
+    if (priming.padding_samples.has_value() && audio_info.sample_rate.has_value()) {
+      padding_ticks = detail::priming_samples_to_ticks(*priming.padding_samples, *audio_info.sample_rate, audio_stream.tb);
+    }
 
     // The first audible sample: the first packet's PRESENTATION time plus
     // its resolved, CONVERTED priming tick count -- composes correctly
@@ -854,184 +965,277 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
     // id surfacing end delta/step time/residual max as COMPARED values
     // would turn one drift report into three findings a reader has to
     // reconcile by hand -- those three stay evidence-only instead (A1).
-    if (!video_has_span) {
+    // D-16 (06-07-PLAN.md, WINDOWS.md #32): the video-side call NEVER
+    // receives a tick-based reconstruction hint -- `priming_ticks`/
+    // `padding_ticks` are expressed in AUDIO's own native timebase
+    // (`audio_stream.tb`), and subtracting them from a span expressed in
+    // VIDEO's own native timebase would silently mix units. Video's own
+    // call therefore always falls through to `span_ticks_for_basis`'s
+    // container-field branch (its own doc comment in analyzers.h has the
+    // full rationale) -- exactly this file's pre-D-16 video-side
+    // selection, unchanged. The SHARED basis decision below is read from
+    // the AUDIO call's own `prefers_declared` alone (see
+    // `span_prefers_declared` further down), never from video's.
+    const detail::SpanBasisCandidates video_span_candidates =
+        detail::span_ticks_for_basis(video_declared_duration_ticks, video_pts_span, std::nullopt, std::nullopt);
+    if (!video_span_candidates.has_declared_span && !video_span_candidates.has_raw_span) {
       push_skip(CheckId::timeline_av_drift, scope, SkipReason::insufficient_data,
                  nlohmann::ordered_json{{"reason", "insufficient_video_frames"}}, fp);
       push_skip(CheckId::timeline_av_drift_pattern, scope, SkipReason::insufficient_data,
                  nlohmann::ordered_json{{"reason", "insufficient_video_frames"}}, fp);
     } else {
       const PtsSpan audio_pts_span = detail::sorted_pts_with_span(audio_packets);
-      // Prefers the declared duration for the SAME reason as the video
-      // span immediately above (this file's own worked finding) -- falls
-      // back to the packet-derived span only when the demuxer reports no
-      // declared duration for this stream at all.
       const std::optional<std::int64_t> audio_declared_duration_ticks =
           demux.stream_info(static_cast<int>(audio_idx)).declared_duration_ticks;
-      std::int64_t audio_span_ticks = 0;
-      bool audio_has_span = false;
-      if (audio_declared_duration_ticks.has_value() && *audio_declared_duration_ticks > 0) {
-        audio_span_ticks = *audio_declared_duration_ticks;
-        audio_has_span = true;
-      } else if (audio_pts_span.has_span) {
-        audio_span_ticks = audio_pts_span.span_ticks;
-        audio_has_span = true;
-      }
-      if (!audio_has_span) {
+      // The audio call DOES receive this stream's own resolved
+      // `priming_ticks`/`padding_ticks` (already converted to audio's own
+      // native timebase above) -- when both are known, the helper
+      // reconstructs a trimmed span directly from the packet-derived raw
+      // extent rather than trusting `audio_declared_duration_ticks`, which
+      // on a container with no true edit list (MPEG-TS) is itself an
+      // untrimmed PTS-range estimate (WINDOWS.md #32's own root cause).
+      const detail::SpanBasisCandidates audio_span_candidates =
+          detail::span_ticks_for_basis(audio_declared_duration_ticks, audio_pts_span, priming_ticks, padding_ticks);
+      if (!audio_span_candidates.has_declared_span && !audio_span_candidates.has_raw_span) {
         push_skip(CheckId::timeline_av_drift, scope, SkipReason::insufficient_data,
                    nlohmann::ordered_json{{"reason", "insufficient_audio_frames"}}, fp);
         push_skip(CheckId::timeline_av_drift_pattern, scope, SkipReason::insufficient_data,
                    nlohmann::ordered_json{{"reason", "insufficient_audio_frames"}}, fp);
       } else {
-        // D-10: the SAME raw-versus-adjusted basis `timeline.av_offset`
-        // chose for THIS side, immediately above -- drift is never fitted
-        // between an adjusted timeline on one side and a raw one on the
-        // other (05-10-PLAN.md Task 2's own explicit requirement).
-        // Priming is a CONSTANT shift, so it cancels out of
-        // `audio_span_ticks` (a difference of two positions) exactly --
-        // only the anchor (`audio_start_ticks`) below needs it applied.
-        const std::int64_t audio_start_ticks = priming_adjusted ? adjusted_audio_ticks : *audio_first_pts_ticks;
+        // D-16: ONE shared basis decision (from the audio call's own
+        // `prefers_declared`, which is true only when THIS stream's
+        // priming AND padding are both known and convertible), applied
+        // symmetrically to select both the video-side and the audio-side
+        // span -- never decided per-side, which would let video and audio
+        // (or, across a pair, baseline and candidate) disagree about which
+        // basis a single measurement reports. `span_for_basis` falls back
+        // to a side's OTHER candidate only when the preferred one is
+        // itself unavailable (e.g. a side with no container-declared
+        // duration at all when raw is preferred) -- the same graceful
+        // degrade this file's own pre-D-16 selection already had.
+        const bool span_prefers_declared = audio_span_candidates.prefers_declared;
+        const auto span_for_basis = [](const detail::SpanBasisCandidates& c, bool prefer_declared) {
+          if (prefer_declared) {
+            return c.has_declared_span ? c.declared_span_ticks : c.raw_span_ticks;
+          }
+          return c.has_raw_span ? c.raw_span_ticks : c.declared_span_ticks;
+        };
+        const std::int64_t video_span_ticks = span_for_basis(video_span_candidates, span_prefers_declared);
+        const std::int64_t audio_span_ticks = span_for_basis(audio_span_candidates, span_prefers_declared);
+
+        // D-10: the video anchor never carries priming (video has none) --
+        // unaffected by which span basis is chosen.
         const std::int64_t video_start_ticks = video_pts_ticks.front();
+        // D-16: the audio ANCHOR (and the priming shift the checkpoint
+        // loop rebases through) must stay on the SAME trim basis as the
+        // SPAN it is paired with, or the fit mixes a priming-EXCLUDED
+        // start with a priming-INCLUDED span (or vice versa), fabricating
+        // a spurious drift purely from the mismatch -- confirmed
+        // empirically during this task's own execution: pairing the RAW
+        // span with the priming-ADJUSTED anchor produced a false ~22ms
+        // linear ramp on `timeline_start_base.mp4` compared against ITSELF
+        // (no candidate involved at all). `span_prefers_declared` (the
+        // SAME shared decision the span itself uses) therefore also gates
+        // the anchor and the priming shift -- when it is false, the
+        // anchor is the RAW (unadjusted) first pts and the shift is zero,
+        // exactly D-10's own `raw_offset_ms` definition, extended to the
+        // span; when true, `priming_ticks` is guaranteed to hold a value
+        // (that is what makes `span_prefers_declared` true), so
+        // `.value_or(0)` below always resolves to the real conversion.
+        const std::int64_t audio_start_ticks =
+            span_prefers_declared ? adjusted_audio_ticks : *audio_first_pts_ticks;
+        const std::int64_t priming_shift = span_prefers_declared ? priming_ticks.value_or(0) : 0;
 
-        bool checkpoint_arithmetic_ok = true;
-        std::vector<DriftCheckpoint> checkpoints;
-        checkpoints.reserve(static_cast<std::size_t>(kDriftCheckpointCount));
-        nlohmann::ordered_json trajectory = nlohmann::ordered_json::array();
+        // D-16: the K=32 checkpoint construction (doc 04 section 3.1),
+        // extracted into a function of the span-basis and anchor-basis
+        // parameters this task adds -- every OTHER input (the packet
+        // arrays, the video anchor) is independent of which basis is
+        // chosen, unchanged from Task 2's own construction. Called once
+        // per basis (`compute_checkpoint_fit` below), never duplicated
+        // by hand -- a single implementation, parameterised by basis.
+        struct CheckpointFitResult {
+          bool checkpoint_arithmetic_ok = true;
+          std::optional<DriftFit> fit;
+        };
+        const auto compute_checkpoint_fit = [&](std::int64_t video_span_ticks, std::int64_t audio_span_ticks,
+                                                 std::int64_t audio_start_ticks, std::int64_t priming_shift,
+                                                 nlohmann::ordered_json* out_trajectory) -> CheckpointFitResult {
+          CheckpointFitResult result;
+          std::vector<DriftCheckpoint> checkpoints;
+          checkpoints.reserve(static_cast<std::size_t>(kDriftCheckpointCount));
+          nlohmann::ordered_json trajectory = nlohmann::ordered_json::array();
 
-        for (int k = 0; k < kDriftCheckpointCount && checkpoint_arithmetic_ok; ++k) {
-          // Video half of doc 04 section 3.1: `t_v(k)` is the ACTUAL
-          // video frame nearest video-timeline fraction k/(K-1) -- found
-          // by BINARY SEARCH (nearest_tick above), never a linear scan,
-          // over `video_pts_ticks`, itself bounded by
-          // `kMaxPacketsPerStream` (src/probe/packet_scan.h).
-          std::int64_t video_numerator = 0;
-          std::int64_t video_delta_ticks = 0;
-          if (!detail::checked_mul(static_cast<std::int64_t>(k), video_span_ticks, &video_numerator) ||
-              !detail::checked_div(video_numerator, static_cast<std::int64_t>(kDriftCheckpointCount - 1),
-                                     &video_delta_ticks)) {
-            checkpoint_arithmetic_ok = false;
-            break;
-          }
-          std::int64_t target_v_ticks = 0;
-          if (!detail::checked_add(video_start_ticks, video_delta_ticks, &target_v_ticks)) {
-            checkpoint_arithmetic_ok = false;
-            break;
-          }
-          const std::int64_t t_v_ticks = nearest_tick(video_pts_ticks, target_v_ticks);
+          for (int k = 0; k < kDriftCheckpointCount && result.checkpoint_arithmetic_ok; ++k) {
+            // Video half of doc 04 section 3.1: `t_v(k)` is the ACTUAL
+            // video frame nearest video-timeline fraction k/(K-1) -- found
+            // by BINARY SEARCH (nearest_tick above), never a linear scan,
+            // over `video_pts_ticks`, itself bounded by
+            // `kMaxPacketsPerStream` (src/probe/packet_scan.h).
+            std::int64_t video_numerator = 0;
+            std::int64_t video_delta_ticks = 0;
+            if (!detail::checked_mul(static_cast<std::int64_t>(k), video_span_ticks, &video_numerator) ||
+                !detail::checked_div(video_numerator, static_cast<std::int64_t>(kDriftCheckpointCount - 1),
+                                       &video_delta_ticks)) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+            std::int64_t target_v_ticks = 0;
+            if (!detail::checked_add(video_start_ticks, video_delta_ticks, &target_v_ticks)) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+            const std::int64_t t_v_ticks = nearest_tick(video_pts_ticks, target_v_ticks);
 
-          // Audio half: doc 04 section 3's own "audio granularity << 1ms
-          // makes interpolation unnecessary" -- unlike the video side, no
-          // search against real packet boundaries is needed. The
-          // checkpoint's fractional position on VIDEO's own (real,
-          // frame-snapped) span, applied to AUDIO's own (real, measured)
-          // span, is already sample-accurate: a genuine rate mismatch
-          // between the two streams' own declared durations is exactly
-          // what makes `audio_span_ticks` differ proportionally from
-          // `video_span_ticks`, which is what makes `offset(k)` grow
-          // increasingly nonzero as k grows -- this concretisation of
-          // "nearest audio sample boundary" is this task's own reading
-          // (mirrors A3's own posture), recorded here for a future reader
-          // to find and revisit.
-          std::int64_t delta_from_video_start_ticks = 0;
-          if (!detail::checked_sub(t_v_ticks, video_start_ticks, &delta_from_video_start_ticks)) {
-            checkpoint_arithmetic_ok = false;
-            break;
-          }
-          std::int64_t audio_numerator = 0;
-          std::int64_t audio_delta_ticks = 0;
-          if (!detail::checked_mul(delta_from_video_start_ticks, audio_span_ticks, &audio_numerator) ||
-              !detail::checked_div(audio_numerator, video_span_ticks, &audio_delta_ticks)) {
-            checkpoint_arithmetic_ok = false;
-            break;
-          }
-          std::int64_t target_a_ticks = 0;
-          if (!detail::checked_add(audio_start_ticks, audio_delta_ticks, &target_a_ticks)) {
-            checkpoint_arithmetic_ok = false;
-            break;
-          }
-          // clamp_into_nearest_packet operates on `audio_pts_span`'s own
-          // RAW (unadjusted) packet positions -- rebase `target_a_ticks`
-          // out of the priming-ADJUSTED domain before searching, then
-          // rebase the result back, so the search always compares like
-          // with like (priming is a CONSTANT shift, D-10, so rebasing
-          // both directions is exact and lossless). 05-14-PLAN.md (Gap 3):
-          // the SAME converted-ticks variable `timeline.av_offset` used
-          // above, never a second conversion or the raw sample count.
-          const std::int64_t priming_shift = priming_adjusted ? *priming_ticks : 0;
-          std::int64_t raw_target_a_ticks = 0;
-          if (!detail::checked_sub(target_a_ticks, priming_shift, &raw_target_a_ticks)) {
-            checkpoint_arithmetic_ok = false;
-            break;
-          }
-          std::int64_t raw_t_a_ticks = clamp_into_nearest_packet(
-              audio_pts_span.pts, audio_pts_span.durations, audio_pts_span.nominal_duration_ticks, raw_target_a_ticks);
-          // Structural (ordinal) cross-check -- 05-10-SUMMARY.md's own
-          // worked finding that the TIME-proportional value above can
-          // never, by construction, diverge from a smooth affine
-          // function of `t_v(k)` for a pure PTS relabelling (a splice).
-          // When the two candidates disagree by more than
-          // `kNominalDurationCapMultiplier` nominal packet widths --
-          // far beyond ordinary quantization between neighbouring
-          // packets -- the ordinal (packet-COUNT-proportional) value is
-          // trusted instead, since it alone is immune to a PTS-only
-          // relabelling. Guarded by `size() >= 2` (this function's own
-          // precondition) and a valid nominal duration (0 means no
-          // reliable per-packet width to cap against, so the TIME-based
-          // value is kept unconditionally, unchanged from Task 2).
-          if (audio_pts_span.pts.size() >= 2 && audio_pts_span.nominal_duration_ticks > 0) {
-            const std::int64_t index_based_raw_ticks = index_proportional_raw_ticks(
-                audio_pts_span.pts, delta_from_video_start_ticks, video_span_ticks);
-            std::int64_t divergence_ticks = 0;
-            if (detail::checked_sub(raw_t_a_ticks, index_based_raw_ticks, &divergence_ticks)) {
-              std::int64_t abs_divergence_ticks = divergence_ticks;
-              bool abs_ok = true;
-              if (abs_divergence_ticks < 0) {
-                abs_ok = detail::checked_negate(abs_divergence_ticks, &abs_divergence_ticks);
-              }
-              std::int64_t divergence_cap = 0;
-              if (abs_ok &&
-                  detail::checked_mul(audio_pts_span.nominal_duration_ticks, kNominalDurationCapMultiplier,
-                                        &divergence_cap) &&
-                  abs_divergence_ticks > divergence_cap) {
-                raw_t_a_ticks = index_based_raw_ticks;
+            // Audio half: doc 04 section 3's own "audio granularity << 1ms
+            // makes interpolation unnecessary" -- unlike the video side, no
+            // search against real packet boundaries is needed. The
+            // checkpoint's fractional position on VIDEO's own (real,
+            // frame-snapped) span, applied to AUDIO's own (real, measured)
+            // span, is already sample-accurate: a genuine rate mismatch
+            // between the two streams' own spans is exactly what makes
+            // `audio_span_ticks` differ proportionally from
+            // `video_span_ticks`, which is what makes `offset(k)` grow
+            // increasingly nonzero as k grows -- this concretisation of
+            // "nearest audio sample boundary" is this task's own reading
+            // (mirrors A3's own posture), recorded here for a future reader
+            // to find and revisit.
+            std::int64_t delta_from_video_start_ticks = 0;
+            if (!detail::checked_sub(t_v_ticks, video_start_ticks, &delta_from_video_start_ticks)) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+            std::int64_t audio_numerator = 0;
+            std::int64_t audio_delta_ticks = 0;
+            if (!detail::checked_mul(delta_from_video_start_ticks, audio_span_ticks, &audio_numerator) ||
+                !detail::checked_div(audio_numerator, video_span_ticks, &audio_delta_ticks)) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+            std::int64_t target_a_ticks = 0;
+            if (!detail::checked_add(audio_start_ticks, audio_delta_ticks, &target_a_ticks)) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+            // clamp_into_nearest_packet operates on `audio_pts_span`'s own
+            // RAW (unadjusted) packet positions -- rebase `target_a_ticks`
+            // out of the priming-ADJUSTED domain before searching, then
+            // rebase the result back, so the search always compares like
+            // with like (priming is a CONSTANT shift, D-10, so rebasing
+            // both directions is exact and lossless). 05-14-PLAN.md (Gap 3):
+            // the SAME converted-ticks variable `timeline.av_offset` used
+            // above, never a second conversion or the raw sample count.
+            std::int64_t raw_target_a_ticks = 0;
+            if (!detail::checked_sub(target_a_ticks, priming_shift, &raw_target_a_ticks)) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+            std::int64_t raw_t_a_ticks = clamp_into_nearest_packet(
+                audio_pts_span.pts, audio_pts_span.durations, audio_pts_span.nominal_duration_ticks, raw_target_a_ticks);
+            // Structural (ordinal) cross-check -- 05-10-SUMMARY.md's own
+            // worked finding that the TIME-proportional value above can
+            // never, by construction, diverge from a smooth affine
+            // function of `t_v(k)` for a pure PTS relabelling (a splice).
+            // When the two candidates disagree by more than
+            // `kNominalDurationCapMultiplier` nominal packet widths --
+            // far beyond ordinary quantization between neighbouring
+            // packets -- the ordinal (packet-COUNT-proportional) value is
+            // trusted instead, since it alone is immune to a PTS-only
+            // relabelling. Guarded by `size() >= 2` (this function's own
+            // precondition) and a valid nominal duration (0 means no
+            // reliable per-packet width to cap against, so the TIME-based
+            // value is kept unconditionally, unchanged from Task 2).
+            if (audio_pts_span.pts.size() >= 2 && audio_pts_span.nominal_duration_ticks > 0) {
+              const std::int64_t index_based_raw_ticks = index_proportional_raw_ticks(
+                  audio_pts_span.pts, delta_from_video_start_ticks, video_span_ticks);
+              std::int64_t divergence_ticks = 0;
+              if (detail::checked_sub(raw_t_a_ticks, index_based_raw_ticks, &divergence_ticks)) {
+                std::int64_t abs_divergence_ticks = divergence_ticks;
+                bool abs_ok = true;
+                if (abs_divergence_ticks < 0) {
+                  abs_ok = detail::checked_negate(abs_divergence_ticks, &abs_divergence_ticks);
+                }
+                std::int64_t divergence_cap = 0;
+                if (abs_ok &&
+                    detail::checked_mul(audio_pts_span.nominal_duration_ticks, kNominalDurationCapMultiplier,
+                                          &divergence_cap) &&
+                    abs_divergence_ticks > divergence_cap) {
+                  raw_t_a_ticks = index_based_raw_ticks;
+                }
               }
             }
-          }
-          std::int64_t t_a_ticks = 0;
-          if (!detail::checked_add(raw_t_a_ticks, priming_shift, &t_a_ticks)) {
-            checkpoint_arithmetic_ok = false;
-            break;
+            std::int64_t t_a_ticks = 0;
+            if (!detail::checked_add(raw_t_a_ticks, priming_shift, &t_a_ticks)) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+
+            const std::optional<RationalValue> t_v_ms = detail::ticks_to_ms(t_v_ticks, video_stream.tb);
+            const std::optional<RationalValue> t_a_ms = detail::ticks_to_ms(t_a_ticks, audio_stream.tb);
+            if (!t_v_ms.has_value() || !t_a_ms.has_value()) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+            const std::optional<RationalValue> checkpoint_offset_ms = detail::subtract_ms(*t_a_ms, *t_v_ms);
+            if (!checkpoint_offset_ms.has_value()) {
+              result.checkpoint_arithmetic_ok = false;
+              break;
+            }
+
+            checkpoints.push_back(DriftCheckpoint{t_v_ms->num, checkpoint_offset_ms->num});
+            trajectory.push_back(nlohmann::ordered_json{
+                {"k", k},
+                {"t_v_ms", t_v_ms->num},
+                {"offset_ms", checkpoint_offset_ms->num},
+            });
           }
 
-          const std::optional<RationalValue> t_v_ms = detail::ticks_to_ms(t_v_ticks, video_stream.tb);
-          const std::optional<RationalValue> t_a_ms = detail::ticks_to_ms(t_a_ticks, audio_stream.tb);
-          if (!t_v_ms.has_value() || !t_a_ms.has_value()) {
-            checkpoint_arithmetic_ok = false;
-            break;
+          if (result.checkpoint_arithmetic_ok) {
+            result.fit = fit_drift(checkpoints, Rational{1, 1000});
           }
-          const std::optional<RationalValue> checkpoint_offset_ms = detail::subtract_ms(*t_a_ms, *t_v_ms);
-          if (!checkpoint_offset_ms.has_value()) {
-            checkpoint_arithmetic_ok = false;
-            break;
+          if (out_trajectory != nullptr) {
+            *out_trajectory = std::move(trajectory);
           }
+          return result;
+        };
 
-          checkpoints.push_back(DriftCheckpoint{t_v_ms->num, checkpoint_offset_ms->num});
-          trajectory.push_back(nlohmann::ordered_json{
-              {"k", k},
-              {"t_v_ms", t_v_ms->num},
-              {"offset_ms", checkpoint_offset_ms->num},
-          });
-        }
+        // D-16: this measurement REPORTS the fit computed on the ONE
+        // shared basis decided above -- `Measurement::value`, `end_delta_ms`/
+        // `residual_max_ms`, the stored trajectory, and
+        // `timeline.av_drift.pattern`'s own classification all come from
+        // this SINGLE fit. Earlier in this task's own execution, an
+        // UNCONDITIONALLY raw-forced span (ignoring the shared preference
+        // entirely) was prototyped and rejected: the K=32 proportional-
+        // checkpoint algorithm requires video's and audio's spans to
+        // represent the SAME real-world elapsed window, and an untrimmed
+        // (priming-inclusive) audio span paired against a video span with
+        // no equivalent extension manufactures a spurious linear-drift
+        // proportional to the priming duration -- measured regression:
+        // `timeline_start_base.mp4` vs `timeline_avoffset_video_shift.mp4`
+        // (a currently-clean constant-offset pair with real, KNOWN leading
+        // priming on both sides -- `span_prefers_declared` is true here,
+        // so the reconstructed trimmed span is what this fit now uses,
+        // exactly as it should) flipped to `linear-drift` under that
+        // earlier, unconditional design. The RECONSTRUCTED trimmed span
+        // (`detail::span_ticks_for_basis` above) is what makes the shared
+        // basis safe to use unconditionally here: `span_prefers_declared`
+        // is decided from the audio stream's OWN priming/padding knowledge
+        // (not from whether the CANDIDATE happens to agree), so a genuine
+        // mismatch (WINDOWS.md #32's MP4-to-TS pairs, where the TS side's
+        // priming/padding are not both known) still falls back to
+        // comparing both sides raw-to-raw, exactly D-11's unsoftened-gate
+        // requirement.
+        nlohmann::ordered_json trajectory;
+        const CheckpointFitResult fit_result =
+            compute_checkpoint_fit(video_span_ticks, audio_span_ticks, audio_start_ticks, priming_shift, &trajectory);
 
-        const std::optional<DriftFit> fit =
-            checkpoint_arithmetic_ok ? fit_drift(checkpoints, Rational{1, 1000}) : std::nullopt;
-
-        if (!fit.has_value()) {
-          const char* reason = checkpoint_arithmetic_ok ? "fit_failed" : "checkpoint_overflow";
+        if (!fit_result.fit.has_value()) {
+          const char* reason = fit_result.checkpoint_arithmetic_ok ? "fit_failed" : "checkpoint_overflow";
           push_skip(CheckId::timeline_av_drift, scope, SkipReason::insufficient_data,
                      nlohmann::ordered_json{{"reason", std::string(reason)}}, fp);
           push_skip(CheckId::timeline_av_drift_pattern, scope, SkipReason::insufficient_data,
                      nlohmann::ordered_json{{"reason", std::string(reason)}}, fp);
         } else {
+          const DriftFit& fit = *fit_result.fit;
           // D-07's dual condition (src/compare/tol.cpp's own evidence-
           // shape-driven override, mirroring D-10's `timeline.av_offset`
           // precedent immediately above): `end_delta_ms` rides in
@@ -1045,24 +1249,54 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
           // `compare` against a stored snapshot retains full trajectory
           // fidelity (doc 04 section 3 step 5).
           nlohmann::ordered_json drift_evidence{
-              {"end_delta_ms", fit->end_delta_ms},
-              {"residual_max_ms", fit->residual_max_ms},
+              {"end_delta_ms", fit.end_delta_ms},
+              {"residual_max_ms", fit.residual_max_ms},
               {"comparison_basis", std::string(comparison_basis)},
-              {"checkpoint_count", static_cast<std::int64_t>(checkpoints.size())},
+              {"span_basis", std::string(span_prefers_declared ? "adjusted" : "raw")},
+              {"checkpoint_count", static_cast<std::int64_t>(kDriftCheckpointCount)},
               {"trajectory", trajectory},
           };
+          // D-16: `adjusted_magnitude` is written only when THIS side
+          // itself prefers the trimmed basis (`span_basis == "adjusted"`)
+          // and its reported fit's rate rescales onto
+          // `kDriftAdjustedMagnitudeDen` without overflow. Since each side
+          // only ever computes and reports its OWN shared-preference fit
+          // (never a second, alternate-basis fit -- see the comment above
+          // `compute_checkpoint_fit`'s own call), `adjusted_magnitude`
+          // here is simply that SAME reported rate re-expressed at a fixed
+          // denominator: `src/compare/tol.cpp`'s generic override swaps to
+          // it only when BOTH sides agree on "adjusted", which is exactly
+          // when both sides already compared the same trimmed basis --
+          // the swap is then a numerically-safe no-op, by construction.
+          // Gated on `span_prefers_declared` (rather than written
+          // unconditionally the way D-10's own always-both-computed
+          // `adjusted_offset_ms` is) because there is only ONE fit here,
+          // not two -- writing a "raw" side's fit under the "adjusted" key
+          // name would mislabel it even though the override itself would
+          // never read it (it only fires when THIS side's own
+          // `span_basis` already reads "adjusted"). Omitted entirely on
+          // rescale failure -- `src/compare/tol.cpp`'s override then
+          // simply never matches this side, the same safe degrade as a
+          // check that declares no such evidence at all.
+          if (span_prefers_declared) {
+            const std::optional<std::int64_t> adjusted_magnitude =
+                detail::rescale_rate_to_fixed_den(fit.rate_ms_per_min_num, fit.rate_ms_per_min_den);
+            if (adjusted_magnitude.has_value()) {
+              drift_evidence["adjusted_magnitude"] = *adjusted_magnitude;
+            }
+          }
 
           Measurement drift_measurement;
           drift_measurement.check_index = static_cast<std::uint32_t>(CheckId::timeline_av_drift);
           drift_measurement.scope = scope;
-          drift_measurement.value = RationalValue{fit->rate_ms_per_min_num, fit->rate_ms_per_min_den, Rational{1, 1}};
+          drift_measurement.value = RationalValue{fit.rate_ms_per_min_num, fit.rate_ms_per_min_den, Rational{1, 1}};
           drift_measurement.evidence = drift_evidence;
           fp.measurements.push_back(std::move(drift_measurement));
 
           Measurement pattern_measurement;
           pattern_measurement.check_index = static_cast<std::uint32_t>(CheckId::timeline_av_drift_pattern);
           pattern_measurement.scope = scope;
-          pattern_measurement.value = std::string(drift_pattern_to_string(fit->pattern));
+          pattern_measurement.value = std::string(drift_pattern_to_string(fit.pattern));
           pattern_measurement.evidence = std::move(drift_evidence);
           fp.measurements.push_back(std::move(pattern_measurement));
         }

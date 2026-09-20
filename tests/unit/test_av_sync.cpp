@@ -29,6 +29,8 @@ using mediadiff::Scope;
 using mediadiff::detail::primary_video_stream;
 using mediadiff::detail::priming_samples_to_ticks;
 using mediadiff::detail::sorted_pts_with_span;
+using mediadiff::detail::span_ticks_for_basis;
+using mediadiff::detail::SpanBasisCandidates;
 
 // --- Test 1: MP4's own case -- skip_samples present and nonzero,
 // initial_padding zero -----------------------------------------------------
@@ -240,4 +242,84 @@ TEST_CASE("av_sync - sorted_pts_with_span sorts unsorted input into ascending pt
   };
   const PtsSpan result = sorted_pts_with_span(std::span<const PacketRecord>(packets));
   REQUIRE(result.pts == (std::vector<std::int64_t>{0, 1024}));
+}
+
+// --- detail::span_ticks_for_basis (06-07-PLAN.md Task 1, D-16, WINDOWS.md
+// #32) -- Test 1/Test 2 from this task's own <behavior> block, transcribed
+// verbatim, never captured from the implementation. A hand-built PtsSpan
+// with `has_span == true` stands in for a real packet-derived span --
+// `sorted_pts_with_span`'s own contract is already covered above, so these
+// cases only need a PLAUSIBLE raw span to exercise the basis decision.
+// -------------------------------------------------------------------------
+
+TEST_CASE("av_sync - span_ticks_for_basis prefers the RECONSTRUCTED trimmed span when priming AND padding are "
+          "both known (Test 1)",
+          "[unit]") {
+  // Raw (packet-derived) span 4040 ticks; priming 23 ticks, padding 17
+  // ticks both known and convertible -- Test 1's "both sides' priming and
+  // padding are known" case reconstructs 4040 - 23 - 17 = 4000 directly
+  // from the raw extent, never from `declared_duration_ticks` (here
+  // deliberately a DIFFERENT value, 4010, standing in for a container
+  // field that would be the wrong answer if trusted).
+  const PtsSpan pts_span{.pts = {0, 4040}, .durations = {0, 0}, .span_ticks = 4040, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(4010, pts_span, 23, 17);
+  REQUIRE(result.prefers_declared);
+  REQUIRE(result.has_declared_span);
+  REQUIRE(result.declared_span_ticks == 4000);
+  REQUIRE(result.has_raw_span);
+  REQUIRE(result.raw_span_ticks == 4040);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis falls back to raw when priming is unknown, even with padding known "
+          "(Test 2, shared-basis rule)",
+          "[unit]") {
+  const PtsSpan pts_span{.pts = {0, 4040}, .durations = {0, 0}, .span_ticks = 4040, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(4010, pts_span, std::nullopt, 17);
+  REQUIRE_FALSE(result.prefers_declared);
+  REQUIRE(result.has_raw_span);
+  REQUIRE(result.raw_span_ticks == 4040);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis falls back to raw when padding is unknown, even with priming known "
+          "(Test 2, shared-basis rule)",
+          "[unit]") {
+  const PtsSpan pts_span{.pts = {0, 4040}, .durations = {0, 0}, .span_ticks = 4040, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(4010, pts_span, 23, std::nullopt);
+  REQUIRE_FALSE(result.prefers_declared);
+  REQUIRE(result.has_raw_span);
+  REQUIRE(result.raw_span_ticks == 4040);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis falls back to the container's declared field when no reconstruction "
+          "is possible (the ONLY branch a video call, which never supplies priming/padding, ever reaches)",
+          "[unit]") {
+  const PtsSpan pts_span{.pts = {0, 4040}, .durations = {0, 0}, .span_ticks = 4040, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(4010, pts_span, std::nullopt, std::nullopt);
+  REQUIRE_FALSE(result.prefers_declared);
+  REQUIRE(result.has_declared_span);
+  REQUIRE(result.declared_span_ticks == 4010);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis treats a genuinely known, ZERO padding count as known, not absent",
+          "[unit]") {
+  // The exact bug an earlier draft of this task shipped: gating the
+  // padding conversion on `> 0` silently treated every known-and-zero
+  // padding side (e.g. `timeline_start_base.mp4`'s own audio stream,
+  // 06-06-SUMMARY.md) as "padding unknown", permanently disqualifying it
+  // from ever preferring the trimmed basis.
+  const PtsSpan pts_span{.pts = {0, 4023}, .durations = {0, 0}, .span_ticks = 4023, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(4000, pts_span, 23, 0);
+  REQUIRE(result.prefers_declared);
+  REQUIRE(result.has_declared_span);
+  REQUIRE(result.declared_span_ticks == 4000);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis falls back to the container field when reconstruction underflows to "
+          "a non-positive span",
+          "[unit]") {
+  const PtsSpan pts_span{.pts = {0, 100}, .durations = {0, 0}, .span_ticks = 100, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(90, pts_span, 60, 60);
+  REQUIRE(result.prefers_declared);
+  REQUIRE(result.has_declared_span);
+  REQUIRE(result.declared_span_ticks == 90);
 }

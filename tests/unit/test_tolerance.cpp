@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 
+#include "analyzers/timeline/analyzers.h"
 #include "compare/semantics.h"
 #include "core/error.h"
 #include "core/model.h"
@@ -492,4 +493,102 @@ TEST_CASE("compare_tol D-10 override: a check with no comparison_basis/adjusted_
   auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
   REQUIRE(finding.has_value());
   CHECK(finding->status == Status::warn);  // ordinary raw-value comparison, unaffected
+}
+
+// --- 06-07-PLAN.md Task 1 (D-16, WINDOWS.md #32): the GENERALISED override
+// -- Test 8 and Test 9 from this task's own <behavior> block, exercised
+// against `make_tol_check`'s own SYNTHETIC "t.synthetic_tol_widen" id
+// (neither `timeline.av_drift` nor `timeline.av_offset`), which is what
+// makes "never gated on check.id" testable rather than merely asserted. ---
+
+namespace {
+
+// A Measurement carrying the SECOND (generic) evidence shape the
+// generalised override reads -- raw value as Measurement::value (always
+// `raw_ms`), `span_basis`/`adjusted_magnitude` in evidence, mirroring
+// av_sync.cpp's own `timeline.av_drift` construction exactly, but declared
+// against a synthetic, non-`av_drift` check id. `adjusted_magnitude` is
+// passed as a raw JSON value so Test 9 can supply a non-numeric one
+// without this helper coercing it.
+Measurement span_basis_measurement(std::int64_t raw_ms, const nlohmann::ordered_json& adjusted_magnitude,
+                                    const std::string& basis) {
+  Measurement m = measurement_at(raw_ms, /*estimated=*/false);
+  m.evidence = nlohmann::ordered_json{
+      {"span_basis", basis},
+      {"adjusted_magnitude", adjusted_magnitude},
+  };
+  return m;
+}
+
+}  // namespace
+
+TEST_CASE("compare_tol D-16 generalised override: both sides declaring span_basis=adjusted on a SYNTHETIC "
+          "non-av_drift, non-av_offset check id swaps the compared magnitude to adjusted_magnitude on both sides "
+          "(Test 8)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Raw values differ by 20ms (would fail the declared 5ms tolerance);
+  // adjusted_magnitude values, both expressed over the SAME
+  // kDriftAdjustedMagnitudeDen convention av_sync.cpp writes, are
+  // identical -- proving the OVERRIDE, not the raw value, decided the
+  // verdict, on a check id that is neither `timeline.av_drift` nor
+  // `timeline.av_offset`.
+  const Measurement baseline =
+      span_basis_measurement(/*raw_ms=*/-20, mediadiff::kDriftAdjustedMagnitudeDen * 5, "adjusted");
+  const Measurement candidate =
+      span_basis_measurement(/*raw_ms=*/0, mediadiff::kDriftAdjustedMagnitudeDen * 5, "adjusted");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+}
+
+TEST_CASE("compare_tol D-16 generalised override: EITHER side declaring span_basis=raw (or omitting the keys "
+          "entirely) falls back to the raw magnitude on BOTH sides, on the SAME synthetic check id (Test 8's "
+          "negative half)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Raw values are identical (0ms delta, would pass); adjusted_magnitude
+  // values differ hugely -- proving the candidate's own "raw" preference
+  // forced the WHOLE comparison to raw-to-raw, exactly D-16's own
+  // extension of D-10's rule.
+  const Measurement baseline = span_basis_measurement(/*raw_ms=*/0, mediadiff::kDriftAdjustedMagnitudeDen * 5,
+                                                       "adjusted");
+  const Measurement candidate =
+      span_basis_measurement(/*raw_ms=*/0, mediadiff::kDriftAdjustedMagnitudeDen * 500, "raw");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+
+  // No evidence at all, on the same synthetic id: unaffected, ordinary
+  // raw-value comparison (mirrors D-10's own "opt-in via evidence shape"
+  // test immediately above, repeated here against the generic key's own
+  // check id to prove the override is not somehow keyed on `av_offset`
+  // specifically).
+  const Measurement plain_baseline = measurement_at(0, /*estimated=*/false);
+  const Measurement plain_candidate = measurement_at(6, /*estimated=*/false);
+  auto plain_finding = compare_tol(check, plain_baseline, plain_candidate, kWidenPolicy);
+  REQUIRE(plain_finding.has_value());
+  CHECK(plain_finding->status == Status::fail);  // 6ms past the declared 5ms, unwidened (neither side estimated)
+}
+
+TEST_CASE("compare_tol D-16 generalised override: a non-numeric adjusted_magnitude leaves the raw magnitude in "
+          "place rather than throwing or coercing (Test 9)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Both sides declare span_basis=adjusted, but the candidate's own
+  // adjusted_magnitude is a STRING, not a number -- CR-03's own "never a
+  // fabricated verdict" discipline, applied to a crafted/malformed
+  // snapshot's evidence rather than its Measurement::value.
+  const Measurement baseline =
+      span_basis_measurement(/*raw_ms=*/0, mediadiff::kDriftAdjustedMagnitudeDen * 5, "adjusted");
+  const Measurement candidate = span_basis_measurement(/*raw_ms=*/6, nlohmann::ordered_json("not-a-number"), "adjusted");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  // The override never fires (candidate's own preference does not parse),
+  // so this is an ordinary raw-value comparison: 6ms past the declared
+  // 5ms, unwidened -- never a crash, never a coerced 0.
+  CHECK(finding->status == Status::fail);
 }

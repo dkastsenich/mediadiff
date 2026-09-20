@@ -121,14 +121,60 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   // side missing the keys, or either side reporting `"raw"`) leaves the RAW
   // magnitude from Measurement::value in place, which is exactly
   // raw-to-raw.
-  const auto side_prefers_adjusted_magnitude = [](const Measurement& side) {
-    return side.evidence.is_object() && side.evidence.value("comparison_basis", std::string()) == "adjusted" &&
-           side.evidence.contains("adjusted_offset_ms") &&
-           side.evidence.at("adjusted_offset_ms").is_number_integer();
+  //
+  // D-16 (06-07-PLAN.md, WINDOWS.md #32) -- GENERALISES this override to a
+  // SECOND evidence-shape pair, rather than adding a second, independently
+  // written override: `timeline.av_drift`'s own span-basis rule
+  // (`"span_basis": "adjusted"` + a numeric `"adjusted_magnitude"`) is
+  // recognised alongside the ORIGINAL `"comparison_basis"` +
+  // `"adjusted_offset_ms"` pair above -- still never gated on `check.id`,
+  // still requiring BOTH sides to agree before anything swaps. The two
+  // pairs differ in one respect: `adjusted_offset_ms` is always a plain
+  // millisecond integer (den=1 by construction, matching `Measurement::
+  // value`'s own den for every av_offset-shaped check), so swapping only
+  // `.num` while leaving `.den` untouched keeps `timeline.av_offset`
+  // working BYTE-FOR-BYTE (unchanged from D-10). `adjusted_magnitude`
+  // instead carries `timeline.av_drift`'s own rate, which has an
+  // arbitrary, per-fit REDUCED denominator (`DriftFit::
+  // rate_ms_per_min_den`) that a bare `.num` swap could not represent --
+  // it is written by `av_sync.cpp` (`detail::rescale_rate_to_fixed_den`)
+  // against the FIXED `kDriftAdjustedMagnitudeDen` denominator instead, so
+  // this override swaps BOTH `.num` and `.den` for that shape, keeping the
+  // magnitude exact on both sides.
+  struct AdjustedMagnitudePreference {
+    bool prefers_adjusted = false;
+    std::int64_t num = 0;
+    // nullopt => leave Magnitude::den untouched (the `adjusted_offset_ms`
+    // shape, always den=1 by construction); a value overwrites BOTH num
+    // and den together (the generic `adjusted_magnitude` shape, whose
+    // implied denominator is `kDriftAdjustedMagnitudeDen`, not 1).
+    std::optional<std::int64_t> den;
   };
-  if (side_prefers_adjusted_magnitude(baseline) && side_prefers_adjusted_magnitude(candidate)) {
-    baseline_mag->num = baseline.evidence.at("adjusted_offset_ms").get<std::int64_t>();
-    candidate_mag->num = candidate.evidence.at("adjusted_offset_ms").get<std::int64_t>();
+  const auto side_adjusted_preference = [](const Measurement& side) -> AdjustedMagnitudePreference {
+    if (!side.evidence.is_object()) {
+      return {};
+    }
+    if (side.evidence.value("comparison_basis", std::string()) == "adjusted" &&
+        side.evidence.contains("adjusted_offset_ms") && side.evidence.at("adjusted_offset_ms").is_number_integer()) {
+      return {true, side.evidence.at("adjusted_offset_ms").get<std::int64_t>(), std::nullopt};
+    }
+    if (side.evidence.value("span_basis", std::string()) == "adjusted" &&
+        side.evidence.contains("adjusted_magnitude") && side.evidence.at("adjusted_magnitude").is_number_integer()) {
+      return {true, side.evidence.at("adjusted_magnitude").get<std::int64_t>(), kDriftAdjustedMagnitudeDen};
+    }
+    return {};
+  };
+  const AdjustedMagnitudePreference baseline_adjusted_preference = side_adjusted_preference(baseline);
+  const AdjustedMagnitudePreference candidate_adjusted_preference = side_adjusted_preference(candidate);
+  if (baseline_adjusted_preference.prefers_adjusted && candidate_adjusted_preference.prefers_adjusted) {
+    baseline_mag->num = baseline_adjusted_preference.num;
+    candidate_mag->num = candidate_adjusted_preference.num;
+    if (baseline_adjusted_preference.den.has_value()) {
+      baseline_mag->den = *baseline_adjusted_preference.den;
+    }
+    if (candidate_adjusted_preference.den.has_value()) {
+      candidate_mag->den = *candidate_adjusted_preference.den;
+    }
   }
 
   // Sign only, purely for rendering "+"/"-" on the delta -- the magnitude
