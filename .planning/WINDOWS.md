@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 16
 waived_count: 1
 fixed_count: 18
-total_count: 33
-last_updated: 2026-09-20T17:44:37.086Z
+total_count: 35
+last_updated: 2026-09-20T22:06:57.072Z
 ---
 
 # Broken Windows Ledger
@@ -48,6 +48,8 @@ last_updated: 2026-09-20T17:44:37.086Z
 | 31 | 05 | deviation | src/analyzers/timeline/av_sync.cpp |  | timeline.av_offset/timeline.av_drift/timeline.av_drift.pattern read raw, un-unwrapped PTS on MPEG-TS, the same root cause as WINDOWS.md #26, found by 05-VERIFICATION.md Gap 2 and not previously filed. libavformat's declared durations were also corrupted under correct_ts_overflow=0 on a wrapping file, fixed by 05-17's overflow-corrected re-probe. Both are fixed by 05-16/05-17/05-18, and the whole-report wrap assertion (tests/integration/test_timeline_structure.cpp) guards them. | fixed |  | 2026-09-18T17:29:06.380Z | 2026-09-18T17:29:10.070Z |
 | 32 | 05 | deviation | src/analyzers/timeline/av_sync.cpp |  | On the lossless MP4-to-TS remux pairs (timeline_start_base.mp4 vs timeline_start_shift.ts, and vs timeline_avoffset_unknown.ts), timeline.av_drift reports fail and timeline.av_drift.pattern reports fail (pattern=irregular, residual_max_ms=42). Cause: the checkpoint span uses libavformat's ESTIMATED TS audio stream duration -- MPEG-TS does not declare a per-stream duration the way MP4 does. Observed TS packet extents include AAC priming/padding samples with no edit list to exclude them, so neither span source removes the residual by itself: span:observed only swaps this reading for a different, still-wrong 39ms false linear-drift on the TS side (05-STEP-DESIGN.md Orchestrator note, 2026-09-18 -- the earlier span:observed MP4-side regression this research first reported was a harness-variant artifact, not evidence against span:observed as the plan actually scoped it). The human kept span:declared, today's shipped checkpoint span source, at the 05-21 blocking-human checkpoint. Closing this residual needs a priming/padding-aware span, filed as a follow-up. -- 06-07-PLAN.md (D-16) update, 2026-09-20: implemented a generic, evidence-shape-gated shared-basis span (src/analyzers/timeline/av_sync.cpp's detail::span_ticks_for_basis, src/compare/tol.cpp's generalised Rule 2 override) that reconstructs the trimmed span directly from the packet-derived extent whenever a stream's own priming AND padding are both known/convertible -- verified FIXED for real MP4-vs-MP4 priming pairs (timeline_start_base.mp4 vs timeline_avoffset_video_shift.mp4 now shares span_basis=adjusted on both sides and stays clean). For the two target MP4-to-TS pairs specifically, audio.priming's own evidence confirms the TS side's priming is genuinely unknown (source=unknown, samples=0, padding=null -- no skip_samples side data, no initial_padding, no edit list survives the remux), not merely unread by this analyzer, so the shared-basis rule correctly falls back to raw-to-raw on both sides per D-11 rather than fabricating a basis. Post-fix measured evidence: baseline (MP4) now reports span_basis=adjusted, end_delta_ms=0, residual_max_ms=0 (its own true zero drift); candidate (TS) reports span_basis=raw, end_delta_ms=39 (previously residual_max_ms=42 under pattern=irregular -- now pattern=linear-drift, a SHAPE change, not a resolution). timeline.av_drift and timeline.av_drift.pattern both still fail on both target pairs (verified fixtures: timeline_start_base.mp4 vs timeline_start_shift.ts, and vs timeline_avoffset_unknown.ts). Left OPEN, not fixed, per this plan's own A2 fallback: closing this fully needs a decode-based priming-detection mechanism this plan does not build, filed as a follow-up. | open |  | 2026-09-18T19:55:05.254Z |  |
 | 33 | 06 | deviation | src/probe/audio_decode.cpp |  | Task 1 Test 6 (--hash-decoder aac_fixed falls back on USAC content) not exercised end-to-end -- hand-built USAC ASC rejected by avcodec_open2 for all candidate decoders in this env; steering code reviewed by inspection only, see 06-05-SUMMARY.md Known Stubs | open |  | 2026-09-20T15:50:55.876Z |  |
+| 34 | 06 | deviation | src/analyzers/timeline/start_duration.cpp |  | 06-11-PLAN.md Task 2's corpus-wide clean sweep (tests/integration/test_audio_corpus_sweep.cpp) surfaces one pre-existing, non-audio artifact: timeline_ts_nowrap.ts vs its own byte-identical copy timeline_ts_nowrap_copy.ts reports timeline.duration.coherence status=info 'both values are flagged' -- a Phase 5 (D-02) known fact, already documented and independently asserted by tests/integration/test_timeline_structure.cpp's own Test 5 ('the wrap fixture's own byte-identical clean pair declares only the pre-existing TS-audio-duration artifact'). Root cause: timeline.duration.coherence is a state semantic (src/core/checks.def, flagged_values=[container_vs_stream,...]) whose own registered comment states 'there is no way to make a state-semantic pair with BOTH sides flagged report pass' -- this specific TS fixture's own container-vs-stream duration disagreement (a genuine MPEG-TS audio-duration-bookkeeping quirk, not a diff) is present on BOTH sides of any comparison involving it, including against itself. Not fixed within 06-11-PLAN.md's own file scope (fixing it is Phase 5 (timeline) analyzer/semantic work, out of scope for the audio inspect-section plan). tests/integration/test_audio_corpus_sweep.cpp records this ONE pair as a named, cited exception (expected non-pass set = {timeline.duration.coherence}, matching test_timeline_structure.cpp's own declared set exactly) rather than filtering the whole-report counter -- every OTHER declared clean pair in the corpus (90+ ids) reports zero non-pass findings. | open |  | 2026-09-20T22:02:22.475Z |  |
+| 35 | 06 | deviation | src/analyzers/timeline/start_duration.cpp |  | Second instance of WINDOWS.md #34's same root cause, found by the SAME 06-11-PLAN.md Task 2 corpus-wide clean sweep: topo_subs.mp4 vs its own byte-identical copy topo_subs_copy.mp4 (container.track_count/container.track_types's own declared clean pair, test_doc03_coverage.cpp/coverage_pairs.h) reports timeline.duration.coherence status=info 'both values are flagged' at scope subtitle[0] this time (a mov_text subtitle track's own container-vs-stream duration bookkeeping disagreement, not audio). Same state-semantic limitation as #34 (src/core/checks.def's own registered comment: 'there is no way to make a state-semantic pair with BOTH sides flagged report pass') -- an inherent per-file property, not something a fixture swap can dodge while keeping subtitle-track coverage, and Phase 5 (timeline) analyzer/semantic work is out of scope for 06-11-PLAN.md. tests/integration/test_audio_corpus_sweep.cpp records this as a second named, cited exception (expected non-pass set = {timeline.duration.coherence} at scope subtitle[0]) alongside #34's TS-audio instance. | open |  | 2026-09-20T22:06:57.072Z |  |
 
 ````json
 [
@@ -445,6 +447,30 @@ last_updated: 2026-09-20T17:44:37.086Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-20T15:50:55.876Z",
+    "resolved_at": null
+  },
+  {
+    "id": 34,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/analyzers/timeline/start_duration.cpp",
+    "line": null,
+    "description": "06-11-PLAN.md Task 2's corpus-wide clean sweep (tests/integration/test_audio_corpus_sweep.cpp) surfaces one pre-existing, non-audio artifact: timeline_ts_nowrap.ts vs its own byte-identical copy timeline_ts_nowrap_copy.ts reports timeline.duration.coherence status=info 'both values are flagged' -- a Phase 5 (D-02) known fact, already documented and independently asserted by tests/integration/test_timeline_structure.cpp's own Test 5 ('the wrap fixture's own byte-identical clean pair declares only the pre-existing TS-audio-duration artifact'). Root cause: timeline.duration.coherence is a state semantic (src/core/checks.def, flagged_values=[container_vs_stream,...]) whose own registered comment states 'there is no way to make a state-semantic pair with BOTH sides flagged report pass' -- this specific TS fixture's own container-vs-stream duration disagreement (a genuine MPEG-TS audio-duration-bookkeeping quirk, not a diff) is present on BOTH sides of any comparison involving it, including against itself. Not fixed within 06-11-PLAN.md's own file scope (fixing it is Phase 5 (timeline) analyzer/semantic work, out of scope for the audio inspect-section plan). tests/integration/test_audio_corpus_sweep.cpp records this ONE pair as a named, cited exception (expected non-pass set = {timeline.duration.coherence}, matching test_timeline_structure.cpp's own declared set exactly) rather than filtering the whole-report counter -- every OTHER declared clean pair in the corpus (90+ ids) reports zero non-pass findings.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T22:02:22.475Z",
+    "resolved_at": null
+  },
+  {
+    "id": 35,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/analyzers/timeline/start_duration.cpp",
+    "line": null,
+    "description": "Second instance of WINDOWS.md #34's same root cause, found by the SAME 06-11-PLAN.md Task 2 corpus-wide clean sweep: topo_subs.mp4 vs its own byte-identical copy topo_subs_copy.mp4 (container.track_count/container.track_types's own declared clean pair, test_doc03_coverage.cpp/coverage_pairs.h) reports timeline.duration.coherence status=info 'both values are flagged' at scope subtitle[0] this time (a mov_text subtitle track's own container-vs-stream duration bookkeeping disagreement, not audio). Same state-semantic limitation as #34 (src/core/checks.def's own registered comment: 'there is no way to make a state-semantic pair with BOTH sides flagged report pass') -- an inherent per-file property, not something a fixture swap can dodge while keeping subtitle-track coverage, and Phase 5 (timeline) analyzer/semantic work is out of scope for 06-11-PLAN.md. tests/integration/test_audio_corpus_sweep.cpp records this as a second named, cited exception (expected non-pass set = {timeline.duration.coherence} at scope subtitle[0]) alongside #34's TS-audio instance.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T22:06:57.072Z",
     "resolved_at": null
   }
 ]

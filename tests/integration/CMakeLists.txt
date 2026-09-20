@@ -223,6 +223,13 @@ add_executable(mediadiff_integration_tests
   # narrowed exit-code contract (exit 1 vs exit 66), the
   # partial_scan/insufficient_data skip ladder, and TRUST-05 determinism.
   test_audio_decode_errors.cpp
+  # ROADMAP SC1's corpus-wide clean sweep (06-11-PLAN.md Task 2): every
+  # clean pair coverage_pairs.h's declared_pairs() table already declares,
+  # deduplicated by (baseline, candidate), asserted to a zero non-pass
+  # count across the WHOLE report -- the phase's own proof that adding
+  # nine audio checks to a corpus mostly carrying AAC audio created no
+  # false positive on an unchanged pair.
+  test_audio_corpus_sweep.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"
