@@ -454,7 +454,7 @@ Plans:
   4. `content.audio.sample_hash` locates the first divergent sample by index and time; the same file hashed via `aac_fixed` on two different builds compares equal; and a float-decoder hash across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail — with decoder name, class, flags and path signature recorded per hashed stream.
   5. Loudness, silence detection and hashing share a single decode sweep per track, and an audio sweep of the 10-minute reference stereo AAC file completes in under 4 s.
 
-**Plans**: 6/13 plans executed in 13 waves (sequential — nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, so no two plans share a wave)
+**Plans**: 7/13 plans executed in 13 waves (sequential — nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, so no two plans share a wave)
 
 Plans:
 **Wave 1**
@@ -483,7 +483,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 06-07-PLAN.md — D-16: the priming-state-gated `av_drift` checkpoint span through a generalised evidence-shape-gated override, closing `WINDOWS.md` #32 (AUDIO-04)
+- [x] 06-07-PLAN.md — D-16: the priming-state-gated `av_drift` checkpoint span through a generalised evidence-shape-gated override; MP4-vs-MP4 priming pairs now share the trimmed basis and stay clean, but the MP4-to-TS `WINDOWS.md` #32 pairs stay open (TS priming confirmed genuinely unrecoverable after remux) (AUDIO-04)
 
 **Wave 8** *(blocked on Wave 7)*
 
@@ -541,7 +541,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
-| 6. Audio Analysis | 6/13 | In Progress|  |
+| 6. Audio Analysis | 7/13 | In Progress|  |
 | 7. Content & Quality | 0/TBD | Not started | - |
 
 ## Coverage

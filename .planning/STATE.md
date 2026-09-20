@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-06-PLAN.md
-last_updated: "2026-09-20T16:40:23.588Z"
+stopped_at: Completed 06-07-PLAN.md
+last_updated: "2026-09-20T17:51:36.798Z"
 last_activity: 2026-09-20
-last_activity_desc: Phase 06 execution started
-state_head: a86d1f4e6591b0678b7364c594a4b931b3ae3667
+last_activity_desc: Phase 06 plan 07 executed (D-16 av_drift span, WINDOWS.md #32 left open on evidence)
+state_head: f00e54de4daa3d6e169d2d03b4799939a327c665
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 98
+  completed_plans: 99
 milestone_name: milestone
 ---
 
@@ -29,17 +29,17 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 7 of 13
+Plan: 8 of 13
 Status: Ready to execute
-Last activity: 2026-09-20 — Phase 06 execution started
+Last activity: 2026-09-20 — Completed 06-07-PLAN.md (D-16 av_drift span; WINDOWS.md #32 left open on evidence)
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 68
+- Total plans completed: 69
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -150,6 +150,7 @@ Progress: [█████████░] 92%
 | Phase 06 P04 | 39min | 2 tasks | 14 files |
 | Phase 06 P05 | unrecorded | 3 tasks | 33 files |
 | Phase 06 P06 | 47min | 3 tasks | 21 files |
+| Phase 06 P07 | ~30min (session resumed after context compaction) | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -361,6 +362,10 @@ Recent decisions affecting current work:
 - [Phase 06]: Container-mechanism priming tier is presence-gated (not magnitude-gated): resolved zero and absent priming stay distinguishable end to end.
 - [Phase 06]: audio_prime_multiedit.mp4's libav fold does NOT hold (resolves via mp4_edit_list to a real 0); audio_prime_fragmented.mp4's fold DOES hold (resolves via tier-1 skip_samples directly) -- measured per 06-RESEARCH.md A3, not assumed.
 - [Phase 06]: DEVIATION: substituted audio_prime_roundtrip.mkv for audio_prime_roundtrip2.mp4 as the must-pass round-trip fixture -- the MP4->MKV->MP4 double hop measures a real ~10-sample CodecDelay-ns rounding artifact (1024 vs 1014) that audio.priming's exact-over-string semantics (D-14) cannot tolerance away, and the fixture cannot be regenerated without rewriting an existing CORPUS_DIGEST.txt line.
+- [Phase 06]: 06-07: D-16 extends D-10's shared-basis rule from timeline.av_offset's offset to timeline.av_drift's checkpoint span -- detail::span_ticks_for_basis() reconstructs a trimmed span directly from the packet-derived raw extent (raw minus priming minus padding ticks) rather than trusting a container's own declared-duration field, since MPEG-TS's own field is itself an untrimmed PTS-range estimate (WINDOWS.md #32's own root cause). src/compare/tol.cpp's D-10 override generalised to a second evidence shape (span_basis/adjusted_magnitude), still never gated on check.id.
+- [Phase 06]: 06-07: Rejected an unconditional raw-forced Measurement::value design after it regressed a currently-clean, real-priming MP4-vs-MP4 constant-offset pair to a spurious linear-drift -- kept a single fit per measurement, computed on the audio stream's own shared basis preference.
+- [Phase 06]: 06-07: Fixed a real gap -- resolve_priming()'s call site in av_sync.cpp was missing the D-17 last_packet_discard_padding argument, and padding-tick conversion was gated on `> 0`, silently treating a genuinely known, zero padding count as unknown.
+- [Phase 06]: 06-07: WINDOWS.md #32 moved from waived to OPEN (not fixed) on new measured evidence -- audio.priming's own evidence confirms the MP4-to-TS pairs' TS-side priming is genuinely unrecoverable after remux (no skip_samples, no initial_padding, no edit list survives), a structural limitation this plan's own A2 flagged_assumption explicitly sanctions leaving open rather than closing on an assumption.
 
 ### Pending Todos
 
@@ -370,6 +375,7 @@ None yet.
 
 - **VIDEO-11 placement is a judgment call.** `video.closed_captions` is mapped to Phase 7 (needs the decode pass) rather than Phase 4 where its namespace lives. Phase 4 still registers the check and ships the `skipped:requires_decode` path. Revisit if Phase 4 planning finds a parser-level detection route.
 - **Priming extraction spike is open.** Research flagged (v2 EXT-05) whether lightweight audio-priming extraction from container metadata is feasible ahead of the Phase 6 decode path. Until answered, Phase 5's `timeline.av_offset`/`av_drift` ship with `priming: unknown` on the common case — covered by TIME-10 fixtures, not closed.
+- **WINDOWS.md #32 remains open after 06-07.** The MP4-to-TS `timeline.av_drift`/`.pattern` false-positive-class residual is confirmed structurally unrecoverable within 06-07's scope: `audio.priming` evidence shows the TS side's priming is genuinely unknown after a `-c copy` remux (no `skip_samples`, no `initial_padding`, no edit list survives). Closing it fully needs a decode-based priming-discovery mechanism, out of scope for Phase 6's remaining plans (none of which touch `timeline.av_drift`/`av_sync.cpp`).
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
 - **RESOLVED by 03-14 (real CI evidence, PR #3, run 33951407521; WINDOWS.md #8 marked fixed).** `scripts/gen_corpus.sh` is now invoked, unconditionally, before `Configure` on every matrix leg. **Correction to the original scope:** the gap covered all 5 legs, not 4 — the Windows leg's `gen_corpus.ps1` generated zero fixtures and ran after `Test`, so the `Test` step ran without media fixtures on every leg, not just Linux/macOS. The real run confirmed the corpus steps execute in the correct order on all five legs; the macOS legs' only failure was `check_corpus.sh`'s own bash-3.2 incompatibility (`mapfile`), fixed same-plan (`91d9d2f`). Full five-leg green is **not yet achieved**: x64-windows-static-md and x64-linux both fail for reasons unrelated to the corpus (WINDOWS.md #9: `ebml_scan.cpp:348` NOMINMAX/`std::max` macro clash on MSVC; WINDOWS.md #10: committed byte-level goldens generated against a different ffmpeg build than CI's installed 9.0.1). arm64-linux's non-blocking `Register vcpkg NuGet feed` credentials failure is WINDOWS.md #11. BUILD-01/BUILD-05/BUILD-06 (below) remain unproven pending a fully green run.
@@ -400,6 +406,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-20T16:40:23.402Z
-Stopped at: Completed 06-06-PLAN.md
+Last session: 2026-09-20T17:51:36.798Z
+Stopped at: Completed 06-07-PLAN.md
 Resume file: None
