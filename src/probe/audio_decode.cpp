@@ -19,6 +19,7 @@ extern "C" {
 #include "probe/audio_config.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
+#include "util/version.h"
 
 namespace mediadiff {
 
@@ -37,52 +38,22 @@ std::string digest_bytes(const void* data, std::size_t size) {
   return render_xxh3_128(h.high64, h.low64);
 }
 
-// PCM codecs are bit-exact by construction (there is no algorithm to
-// diverge across SIMD levels or architectures -- the decoder is a
-// straight byte reshuffle) -- treated as decoder_class 1 regardless of
-// doc 05's determinism-class table, which does not enumerate PCM at all
-// (06-CHECK-ROSTER.md's own recorded reading).
-bool is_pcm_codec_id(AVCodecID id) {
-  switch (id) {
-    case AV_CODEC_ID_PCM_S16LE:
-    case AV_CODEC_ID_PCM_S16BE:
-    case AV_CODEC_ID_PCM_U8:
-    case AV_CODEC_ID_PCM_S8:
-    case AV_CODEC_ID_PCM_S24LE:
-    case AV_CODEC_ID_PCM_S24BE:
-    case AV_CODEC_ID_PCM_S32LE:
-    case AV_CODEC_ID_PCM_S32BE:
-    case AV_CODEC_ID_PCM_U16LE:
-    case AV_CODEC_ID_PCM_U16BE:
-    case AV_CODEC_ID_PCM_U24LE:
-    case AV_CODEC_ID_PCM_U24BE:
-    case AV_CODEC_ID_PCM_U32LE:
-    case AV_CODEC_ID_PCM_U32BE:
-    case AV_CODEC_ID_PCM_F32LE:
-    case AV_CODEC_ID_PCM_F32BE:
-    case AV_CODEC_ID_PCM_F64LE:
-    case AV_CODEC_ID_PCM_F64BE:
-    case AV_CODEC_ID_PCM_S64LE:
-    case AV_CODEC_ID_PCM_S64BE:
-    case AV_CODEC_ID_PCM_ALAW:
-    case AV_CODEC_ID_PCM_MULAW:
-      return true;
-    default:
-      return false;
-  }
-}
-
-// D-06's fixed-point sibling table (AAC/AC-3 today; 06-05 extends this
-// with mp3/mp2 once cross-architecture bit-exactness is proven for those
-// two). Selected by NAME, never by AV_CODEC_ID (D-07's own requirement).
+// D-06's fixed-point sibling table, now including mp3/mp2 (06-05-PLAN.md:
+// both proved SIMD-stable in 06-CONTEXT.md's own recorded check). Selected
+// by NAME, never by AV_CODEC_ID (D-07's own requirement) -- FFmpeg
+// registers the fixed MP3/MP2 decoders under the plain names "mp3"/"mp2"
+// while the float ones are the separately-named "mp3float"/"mp2float", and
+// an ID-based lookup resolves to whichever decoder is registered first.
 struct FixedSibling {
   AVCodecID id;
   const char* fixed_decoder_name;
 };
 
-constexpr std::array<FixedSibling, 2> kFixedSiblings = {{
+constexpr std::array<FixedSibling, 4> kFixedSiblings = {{
     {AV_CODEC_ID_AAC, "aac_fixed"},
     {AV_CODEC_ID_AC3, "ac3_fixed"},
+    {AV_CODEC_ID_MP3, "mp3"},
+    {AV_CODEC_ID_MP2, "mp2"},
 }};
 
 const char* fixed_sibling_name(AVCodecID id) {
@@ -94,7 +65,46 @@ const char* fixed_sibling_name(AVCodecID id) {
   return nullptr;
 }
 
+// 06-05-PLAN.md: the flags actually set on every decode context this file
+// opens (TRUST-01's own `flags` record) -- constant today since both flags
+// are set unconditionally (this file's own top comment), recorded as text
+// rather than re-derived from AVCodecContext at record-construction time.
+constexpr std::string_view kDecodeFlagsRecorded = "bitexact,skip_manual";
+
 }  // namespace
+
+int determinism_class_for_decoder(std::string_view decoder_name) {
+  // Every PCM decoder is bit-exact by construction (a straight byte
+  // reshuffle -- no algorithm to diverge across SIMD levels or
+  // architectures) and FFmpeg names every one of them with this prefix
+  // (pcm_s16le, pcm_alaw, ...).
+  if (decoder_name.rfind("pcm_", 0) == 0) {
+    return 1;
+  }
+  static constexpr std::array<std::string_view, 6> kClass1Names = {
+      "flac", "alac", "aac_fixed", "ac3_fixed", "mp3", "mp2",
+  };
+  for (std::string_view name : kClass1Names) {
+    if (decoder_name == name) {
+      return 1;
+    }
+  }
+  static constexpr std::array<std::string_view, 6> kClass2Names = {
+      "aac", "ac3", "eac3", "opus", "mp3float", "mp2float",
+  };
+  for (std::string_view name : kClass2Names) {
+    if (decoder_name == name) {
+      return 2;
+    }
+  }
+  // doc 05 section 3's own class-3 case: a codec the table does not list --
+  // not proven deterministic, hashing disabled (D-06).
+  return 3;
+}
+
+bool hash_decoder_name_exists(std::string_view name) {
+  return avcodec_find_decoder_by_name(std::string(name).c_str()) != nullptr;
+}
 
 namespace detail {
 
@@ -117,6 +127,9 @@ AudioDecodeState::AudioDecodeState(AudioDecodeState&& other) noexcept
       decoder_name_(std::move(other.decoder_name_)),
       decoder_class_(other.decoder_class_),
       fallback_reason_(std::move(other.fallback_reason_)),
+      hash_enabled_(other.hash_enabled_),
+      flags_recorded_(std::move(other.flags_recorded_)),
+      path_signature_(std::move(other.path_signature_)),
       sample_format_packed_(std::move(other.sample_format_packed_)),
       sample_rate_(other.sample_rate_),
       channels_(other.channels_),
@@ -148,6 +161,9 @@ AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept
   decoder_name_ = std::move(other.decoder_name_);
   decoder_class_ = other.decoder_class_;
   fallback_reason_ = std::move(other.fallback_reason_);
+  hash_enabled_ = other.hash_enabled_;
+  flags_recorded_ = std::move(other.flags_recorded_);
+  path_signature_ = std::move(other.path_signature_);
   sample_format_packed_ = std::move(other.sample_format_packed_);
   sample_rate_ = other.sample_rate_;
   channels_ = other.channels_;
@@ -163,7 +179,7 @@ AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept
   return *this;
 }
 
-bool AudioDecodeState::ensure_initialized(const AVCodecParameters& codecpar) {
+bool AudioDecodeState::ensure_initialized(const AVCodecParameters& codecpar, std::string_view hash_decoder_preference) {
   if (attempted_init_) {
     return attempted_;
   }
@@ -174,21 +190,28 @@ bool AudioDecodeState::ensure_initialized(const AVCodecParameters& codecpar) {
   }
 
   const AVCodec* decoder = nullptr;
-  decoder_class_ = 2;
-
-  if (is_pcm_codec_id(codecpar.codec_id)) {
-    decoder = avcodec_find_decoder(codecpar.codec_id);
-    decoder_class_ = 1;
-  } else {
-    const char* fixed_name = fixed_sibling_name(codecpar.codec_id);
-    bool is_usac = false;
-    if (codecpar.codec_id == AV_CODEC_ID_AAC && codecpar.extradata != nullptr && codecpar.extradata_size > 0) {
-      const auto asc = parse_audio_specific_config(
-          std::span<const std::uint8_t>(codecpar.extradata, static_cast<std::size_t>(codecpar.extradata_size)));
-      if (asc.has_value() && asc->object_type == static_cast<std::int32_t>(AudioObjectType::usac)) {
-        is_usac = true;
-      }
+  const char* fixed_name = fixed_sibling_name(codecpar.codec_id);
+  bool is_usac = false;
+  if (codecpar.codec_id == AV_CODEC_ID_AAC && codecpar.extradata != nullptr && codecpar.extradata_size > 0) {
+    const auto asc = parse_audio_specific_config(
+        std::span<const std::uint8_t>(codecpar.extradata, static_cast<std::size_t>(codecpar.extradata_size)));
+    if (asc.has_value() && asc->object_type == static_cast<std::int32_t>(AudioObjectType::usac)) {
+      is_usac = true;
     }
+  }
+
+  // 06-05-PLAN.md (AUDIO-09, D-06/D-07/D-08): decoder SELECTION is now
+  // entirely driven by hash_decoder_preference -- "auto" is the pre-06-05
+  // fixed-sibling/USAC-steering path unchanged, "default" opts out
+  // unconditionally (doc 05 section 3's own opt-out), and any other text
+  // forces that NAME explicitly. D-07's fallback-to-default-on-open-
+  // failure rule applies identically to an explicitly forced name that
+  // turns out to be the USAC-incompatible fixed sibling (Test 6) -- the
+  // decoder is still chosen once, before the sweep, from what the
+  // selected preference can actually open.
+  if (hash_decoder_preference == "default") {
+    decoder = avcodec_find_decoder(codecpar.codec_id);
+  } else if (hash_decoder_preference == "auto") {
     if (is_usac) {
       // D-07: avcodec_open2() succeeds unconditionally for aac_fixed on
       // USAC content -- open success is not a capability signal, so this
@@ -197,21 +220,31 @@ bool AudioDecodeState::ensure_initialized(const AVCodecParameters& codecpar) {
       fallback_reason_ = "usac_unsupported";
     } else if (fixed_name != nullptr) {
       decoder = avcodec_find_decoder_by_name(fixed_name);
-      if (decoder != nullptr) {
-        decoder_class_ = 1;
-      } else {
+      if (decoder == nullptr) {
         fallback_reason_ = "fixed_decoder_unavailable";
       }
     }
     if (decoder == nullptr) {
       decoder = avcodec_find_decoder(codecpar.codec_id);
-      decoder_class_ = 2;
+    }
+  } else {
+    // An explicitly forced NAME (AUDIO-09's third accepted value form) --
+    // decoder-name existence for a forced preference is already validated
+    // once, at CLI-parse time, by resolve_hash_decoder (src/cli/options.cpp)
+    // via hash_decoder_name_exists() (this file's own exported helper).
+    if (is_usac && fixed_name != nullptr && hash_decoder_preference == fixed_name) {
+      fallback_reason_ = "usac_unsupported";
+      decoder = avcodec_find_decoder(codecpar.codec_id);
+    } else {
+      decoder = avcodec_find_decoder_by_name(std::string(hash_decoder_preference).c_str());
     }
   }
 
   if (decoder == nullptr) {
-    // doc 05's own class-3 case: no decoder registered for this codec at
-    // all in this build -- hashing is not attempted for this stream.
+    // No decoder resolves at all for this codec in this build (or the
+    // forced name genuinely does not exist, which resolve_hash_decoder
+    // should already have rejected at parse time -- guarded here anyway,
+    // never a crash) -- this stream is never attempted.
     return false;
   }
 
@@ -236,6 +269,17 @@ bool AudioDecodeState::ensure_initialized(const AVCodecParameters& codecpar) {
 
   decoder_name_ = decoder->name != nullptr ? decoder->name : "";
   sample_rate_ = codecpar.sample_rate > 0 ? static_cast<std::int64_t>(codecpar.sample_rate) : 0;
+  // 06-05-PLAN.md (D-06, T-06-15): CLASSIFICATION is derived from the
+  // decoder's own recorded NAME through the single normative table,
+  // regardless of which of the three selection paths above chose it --
+  // never trusted from is_pcm_codec_id or the fixed-sibling table's own
+  // membership, both of which only inform SELECTION.
+  decoder_class_ = determinism_class_for_decoder(decoder_name_);
+  hash_enabled_ = decoder_class_ != 3;
+  flags_recorded_ = std::string(kDecodeFlagsRecorded);
+  if (decoder_class_ == 2) {
+    path_signature_ = compose_decode_path_signature();
+  }
   attempted_ = true;
   return true;
 }
@@ -271,7 +315,20 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
     const int layout_len = av_channel_layout_describe(&frame.ch_layout, layout_buf, sizeof(layout_buf));
     layout_string_ = layout_len > 0 ? std::string(layout_buf) : std::string();
 
-    pending_block_.reserve(static_cast<std::size_t>(std::max<std::int64_t>(block_stride_bytes_, 0)));
+    if (hash_enabled_) {
+      pending_block_.reserve(static_cast<std::size_t>(std::max<std::int64_t>(block_stride_bytes_, 0)));
+    }
+  }
+
+  total_samples_ += nb_samples;
+
+  // 06-05-PLAN.md (D-06): a class-3 stream (doc 05 section 3 does not list
+  // its decoder) still decodes in full -- other audio.* checks need the
+  // real sample count/format/layout above -- but no PCM byte is ever
+  // copied into pending_block_ and no digest is ever computed for it,
+  // "hashing disabled" rather than "decoding disabled".
+  if (!hash_enabled_) {
+    return;
   }
 
   const std::size_t frame_bytes =
@@ -295,7 +352,6 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
     std::memcpy(out, frame.extended_data[0], frame_bytes);
   }
 
-  total_samples_ += nb_samples;
   digest_full_blocks();
 }
 
@@ -386,7 +442,10 @@ StreamAudioDecode AudioDecodeState::finalize() {
   }
 
   // D-04: the trailing partial block -- never zero-padded, never dropped
-  // (Test 4).
+  // (Test 4). pending_block_ only ever accumulates bytes when
+  // hash_enabled_ is true (consume_frame's own early return above), so
+  // this naturally stays empty -- and block_digests_/chain_digest below
+  // stay empty -- for a class-3 stream without a separate branch here.
   if (!pending_block_.empty()) {
     block_digests_.push_back(digest_bytes(pending_block_.data(), pending_block_.size()));
     pending_block_.clear();
@@ -395,6 +454,8 @@ StreamAudioDecode AudioDecodeState::finalize() {
   result.decoder_name = decoder_name_;
   result.decoder_class = decoder_class_;
   result.fallback_reason = fallback_reason_;
+  result.flags_recorded = flags_recorded_;
+  result.path_signature = path_signature_;
   result.sample_format_packed = sample_format_packed_;
   result.sample_rate = sample_rate_;
   result.channels = channels_;

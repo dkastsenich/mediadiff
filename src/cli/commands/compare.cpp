@@ -124,6 +124,10 @@ void register_compare_command(CLI::App& app) {
   CLI::Option* content_flag = cmp->add_flag("--content", "Enable the decode-pass content checks (compare's own default)");
   CLI::Option* no_content_flag =
       cmp->add_flag("--no-content", "Disable the decode-pass content checks for this run");
+  // 06-05-PLAN.md (AUDIO-09): registered identically on every command that
+  // decodes -- see options.h's add_hash_decoder_flag for the shared help
+  // text and resolution contract.
+  HashDecoderArgs hash_decoder_args = add_hash_decoder_flag(*cmp);
 
   ReportArgs report_args = add_report_flags(*cmp);
   PolicyArgs policy_args = add_policy_flags(*cmp);
@@ -134,14 +138,21 @@ void register_compare_command(CLI::App& app) {
   // they replace (D-05): the App owns every Option for the whole program
   // lifetime, and this callback only runs during app.parse().
   cmp->callback([baseline_path, candidate_path, strict_flag, verbose_flag, quiet_flag, content_flag,
-                 no_content_flag, report_args, policy_args, color_args, probe_args]() {
+                 no_content_flag, hash_decoder_args, report_args, policy_args, color_args, probe_args]() {
     if (opt_flag(content_flag) && opt_flag(no_content_flag)) {
       report_cli_error("--content and --no-content cannot both be given");
       std::exit(kExitUsage);
     }
     const bool content_enabled = !opt_flag(no_content_flag);
+    auto hash_decoder_result = resolve_hash_decoder(hash_decoder_args);
+    if (!hash_decoder_result) {
+      const Error& err = hash_decoder_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
     run_compare(opt_string(baseline_path), opt_string(candidate_path), opt_flag(strict_flag), opt_flag(verbose_flag),
-                opt_flag(quiet_flag), content_enabled, report_args, policy_args, color_args, probe_args);
+                opt_flag(quiet_flag), content_enabled, *hash_decoder_result, report_args, policy_args, color_args,
+                probe_args);
   });
 }
 
@@ -153,8 +164,8 @@ void register_compare_command(CLI::App& app) {
 // two-positional dispatch (CLI-01) -- see this function's own declaration
 // comment in compare.h.
 void run_compare(const std::string& baseline_path, const std::string& candidate_path, bool strict, bool verbose,
-                  bool quiet, bool content_enabled, const ReportArgs& report_args, const PolicyArgs& policy_args,
-                  const ColorArgs& color_args, const ProbeArgs& probe_args) {
+                  bool quiet, bool content_enabled, const std::string& hash_decoder, const ReportArgs& report_args,
+                  const PolicyArgs& policy_args, const ColorArgs& color_args, const ProbeArgs& probe_args) {
   const CheckRegistry& registry = builtin_registry();
 
   // Doc 01 section 6: mediadiff.toml is read exactly once here, before
@@ -196,7 +207,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   }
   set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
 
-  const ProbeOptions probe_options{/*content_enabled=*/content_enabled};
+  const ProbeOptions probe_options{/*content_enabled=*/content_enabled, /*hash_decoder=*/hash_decoder};
   auto baseline = fingerprint_input(baseline_path, registry, probe_options);
   if (!baseline) {
     const Error& err = baseline.error();

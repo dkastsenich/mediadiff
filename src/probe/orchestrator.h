@@ -24,9 +24,11 @@ namespace mediadiff {
 // governs whether `Pass::audio_decode` enters the pass union at all --
 // false leaves `ProbeResults::audio_decode` `std::nullopt` and every
 // decode-consuming analyzer reports `skipped:requires_decode`, never a
-// fabricated value. `hash_decoder` is registered for `--hash-decoder`
-// (06-05-PLAN.md's own flag) and is accepted here now, unconsumed, so
-// this struct's shape does not change again when that flag lands.
+// fabricated value. `hash_decoder` is AUDIO-09's own `--hash-decoder`
+// value (06-05-PLAN.md), threaded into the once-per-stream decoder
+// selection via `PacketScanRequest::hash_decoder` -- `--hash-decoder` is
+// the ONLY thing that changes it (D-08): a profile never reaches
+// selection.
 struct ProbeOptions {
   bool content_enabled = true;
   std::string hash_decoder = "auto";

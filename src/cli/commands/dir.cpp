@@ -149,6 +149,11 @@ void register_dir_command(CLI::App& app) {
   CLI::Option* content_flag = cmd->add_flag("--content", "Enable the decode-pass content checks (opt-in for dir mode)");
   CLI::Option* no_content_flag = cmd->add_flag(
       "--no-content", "Explicitly disable the decode-pass content checks (dir mode's own default)");
+  // 06-05-PLAN.md (AUDIO-09): one --hash-decoder preference governs the
+  // whole corpus pass, resolved once below alongside content_enabled --
+  // mirrors that field's own "resolved once, read many times across
+  // worker threads" pattern.
+  HashDecoderArgs hash_decoder_args = add_hash_decoder_flag(*cmd);
 
   CliOptions options = add_common_options(*cmd);
 
@@ -158,7 +163,8 @@ void register_dir_command(CLI::App& app) {
   // safe as the shared_ptrs they replace (D-05): the App owns every
   // Option for the whole program lifetime, and this callback only runs
   // during app.parse().
-  cmd->callback([baseline_dir, candidate_dir, threads, threads_opt, content_flag, no_content_flag, options]() {
+  cmd->callback([baseline_dir, candidate_dir, threads, threads_opt, content_flag, no_content_flag, hash_decoder_args,
+                 options]() {
     const CheckRegistry& registry = builtin_registry();
 
     // Materialized once, here, rather than called repeatedly at each of
@@ -184,6 +190,13 @@ void register_dir_command(CLI::App& app) {
       std::exit(exit_code_for(err.kind));
     }
     const bool content_enabled = *content_enabled_result;
+    auto hash_decoder_result = resolve_hash_decoder(hash_decoder_args);
+    if (!hash_decoder_result) {
+      const Error& err = hash_decoder_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const std::string hash_decoder = *hash_decoder_result;
     const bool strict = opt_flag(options.strict);
     const bool quiet = opt_flag(options.quiet);
     const bool verbose = opt_flag(options.verbose);
@@ -386,7 +399,7 @@ void register_dir_command(CLI::App& app) {
         // the SAME content-decode preference, the same "resolved once,
         // read many times across worker threads" pattern this command
         // already applies to the base Policy and the probe-memory budget.
-        const ProbeOptions probe_options{/*content_enabled=*/content_enabled};
+        const ProbeOptions probe_options{/*content_enabled=*/content_enabled, /*hash_decoder=*/hash_decoder};
         auto baseline_fp = fingerprint_input(baseline_path, registry, probe_options);
         if (!baseline_fp) {
           outcomes[i].hard_error = baseline_fp.error();

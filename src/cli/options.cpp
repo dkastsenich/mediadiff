@@ -20,6 +20,7 @@
 #include "core/glob.h"
 #include "core/rational.h"
 #include "core/registry.h"
+#include "probe/audio_decode.h"
 #include "probe/packet_scan.h"
 #include "util/fs.h"
 
@@ -427,6 +428,35 @@ mediadiff::expected<bool, Error> resolve_content_enabled(const ContentArgs& args
     return false;
   }
   return command_default == ContentCommandDefault::decode_by_default;
+}
+
+// 06-05-PLAN.md (AUDIO-09): see options.h's own doc comment for the full
+// contract.
+HashDecoderArgs add_hash_decoder_flag(CLI::App& cmd) {
+  HashDecoderArgs args;
+  args.hash_decoder_flag =
+      cmd.add_option("--hash-decoder",
+                      "Audio hash decoder preference: 'auto' (default -- prefer the class-1 "
+                      "fixed-point sibling), 'default' (use the codec's own default decoder, "
+                      "recording class 2), or a decoder NAME to force explicitly")
+          ->type_name("TEXT");
+  return args;
+}
+
+mediadiff::expected<std::string, Error> resolve_hash_decoder(const HashDecoderArgs& args) {
+  const std::string text = opt_string(args.hash_decoder_flag);
+  if (text.empty() || text == "auto") {
+    return std::string("auto");
+  }
+  if (text == "default") {
+    return std::string("default");
+  }
+  if (!hash_decoder_name_exists(text)) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, "'--hash-decoder " + text +
+                                     "' does not name a decoder registered in this build's linked FFmpeg"});
+  }
+  return text;
 }
 
 PolicyArgs default_policy_args() { return {}; }

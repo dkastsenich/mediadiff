@@ -36,6 +36,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -301,6 +302,13 @@ struct PacketScanRequest {
   PacketScanLimits limits{};
   bool parse_access_units = false;
   bool decode_audio = false;
+  // 06-05-PLAN.md (AUDIO-09): AUDIO-09's own `--hash-decoder` value
+  // (ProbeOptions::hash_decoder, D-08), threaded straight through to every
+  // stream's AudioDecodeState::ensure_initialized call below -- "auto"
+  // (the default) prefers the class-1 fixed-point sibling, "default" opts
+  // out, any other text forces that decoder NAME. Ignored entirely when
+  // `decode_audio` is false.
+  std::string hash_decoder = "auto";
 };
 
 struct PacketScanOutputs {

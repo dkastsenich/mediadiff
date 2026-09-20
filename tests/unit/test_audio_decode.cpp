@@ -6,6 +6,15 @@
 // the divergence report (D-03) are covered at the CLI level by
 // tests/integration/test_audio_sample_hash.cpp instead, since those
 // properties are only meaningful compared across two files.
+//
+// 06-05-PLAN.md Task 1 (AUDIO-09, D-06/D-07): extends this file with
+// determinism_class_for_decoder()'s own normative-table coverage and the
+// USAC steering predicate exercised directly against a hand-built
+// AVCodecParameters (no fixture generator can produce a USAC bitstream in
+// this LGPL decode-only pin) -- --hash-decoder's CLI-level behavior
+// (Tests 2/3/5/7/8) is covered instead by
+// tests/integration/test_audio_hash_decoder.cpp, which drives the real
+// CLI end to end.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,14 +22,22 @@
 #include <optional>
 #include <string>
 
+extern "C" {
+#include <libavcodec/avcodec.h>
+}
+
+#include "probe/audio_config.h"
 #include "probe/audio_decode.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
 #include "support/fixture_paths.h"
 
 using mediadiff::AudioDecodeResult;
+using mediadiff::AudioObjectType;
 using mediadiff::DemuxOptions;
 using mediadiff::DemuxSession;
+using mediadiff::determinism_class_for_decoder;
+using mediadiff::hash_decoder_name_exists;
 using mediadiff::PacketScanLimits;
 using mediadiff::PacketScanRequest;
 using mediadiff::StreamAudioDecode;
@@ -32,6 +49,8 @@ namespace {
 
 std::string audio_hash_base_mp4() { return mediadiff::test::fixture_dir() + "/audio_hash_base.mp4"; }
 std::string audio_pcm_base_wav() { return mediadiff::test::fixture_dir() + "/audio_pcm_base.wav"; }
+std::string audio_mp2_base_mpg() { return mediadiff::test::fixture_dir() + "/audio_mp2_base.mpg"; }
+std::string mkv_opus_a_webm() { return mediadiff::test::fixture_dir() + "/mkv_opus_a.webm"; }
 
 std::optional<StreamAudioDecode> first_attempted(const AudioDecodeResult& result) {
   for (const StreamAudioDecode& stream : result.per_stream) {
@@ -40,6 +59,30 @@ std::optional<StreamAudioDecode> first_attempted(const AudioDecodeResult& result
     }
   }
   return std::nullopt;
+}
+
+// Decodes `path`'s audio with `hash_decoder` as the resolved
+// --hash-decoder preference (06-05-PLAN.md), mirroring run_audio_decode's
+// own PacketScanRequest construction but with the preference threaded
+// through -- the public run_audio_decode() entry point intentionally
+// carries no such parameter (it is a convenience wrapper for the "auto"
+// default only), so this helper builds the request directly, exactly as
+// this file's own "read_frame_call_count" test already does.
+std::optional<StreamAudioDecode> first_attempted_with_preference(const std::string& path,
+                                                                    const std::string& hash_decoder) {
+  auto session = DemuxSession::open(path, DemuxOptions{});
+  if (!session.has_value()) {
+    return std::nullopt;
+  }
+  PacketScanRequest request;
+  request.limits = PacketScanLimits{};
+  request.decode_audio = true;
+  request.hash_decoder = hash_decoder;
+  auto outputs = run_packet_scan(*session, request);
+  if (!outputs.has_value() || !outputs->audio_decode.has_value()) {
+    return std::nullopt;
+  }
+  return first_attempted(*outputs->audio_decode);
 }
 
 }  // namespace
@@ -161,3 +204,111 @@ TEST_CASE("audio_decode - a video-only file attempts no stream", "[unit]") {
   REQUIRE(result.has_value());
   CHECK(!first_attempted(*result).has_value());
 }
+
+// 06-05-PLAN.md Task 1 (D-06, AUDIO-09): determinism_class_for_decoder()'s
+// own normative table, exercised directly -- pure, allocation-light,
+// requires no decode at all. Every name doc 05 section 3 lists (D-06's
+// mp3/mp2 promotion included) plus the class-3 "not listed" fallback.
+TEST_CASE("audio_decode - determinism_class_for_decoder covers the whole normative table", "[unit]") {
+  // Class 1: every pcm_* decoder (by prefix), plus the named fixed-point
+  // siblings and empirically-stable codecs.
+  CHECK(determinism_class_for_decoder("pcm_s16le") == 1);
+  CHECK(determinism_class_for_decoder("pcm_f32le") == 1);
+  CHECK(determinism_class_for_decoder("flac") == 1);
+  CHECK(determinism_class_for_decoder("alac") == 1);
+  CHECK(determinism_class_for_decoder("aac_fixed") == 1);
+  CHECK(determinism_class_for_decoder("ac3_fixed") == 1);
+  CHECK(determinism_class_for_decoder("mp3") == 1);
+  CHECK(determinism_class_for_decoder("mp2") == 1);
+
+  // Class 2: SIMD-dependent but decodable, comparable only within one
+  // machine class.
+  CHECK(determinism_class_for_decoder("aac") == 2);
+  CHECK(determinism_class_for_decoder("ac3") == 2);
+  CHECK(determinism_class_for_decoder("eac3") == 2);
+  CHECK(determinism_class_for_decoder("opus") == 2);
+  CHECK(determinism_class_for_decoder("mp3float") == 2);
+  CHECK(determinism_class_for_decoder("mp2float") == 2);
+
+  // Class 3: a codec doc 05 section 3 does not list at all (D-06's
+  // "extend only where proven" rule) -- hashing disabled rather than an
+  // unreviewed digest. "vorbis" is deliberately not on either class list.
+  CHECK(determinism_class_for_decoder("vorbis") == 3);
+  CHECK(determinism_class_for_decoder("made_up_decoder_name") == 3);
+}
+
+// Test 2 (06-05-PLAN.md Task 1): `--hash-decoder default` opts out of the
+// fixed-point-sibling preference unconditionally -- the AAC fixture that
+// Test 1 above proves auto-selects aac_fixed here selects the codec's own
+// plain default (native "aac", class 2) instead.
+TEST_CASE("audio_decode - --hash-decoder default opts out of the fixed-point sibling", "[unit]") {
+  const std::optional<StreamAudioDecode> stream = first_attempted_with_preference(audio_hash_base_mp4(), "default");
+  REQUIRE(stream.has_value());
+  CHECK(stream->decoder_name == "aac");
+  CHECK(stream->decoder_class == 2);
+  CHECK(!stream->path_signature.empty());
+}
+
+// Test 3 (06-05-PLAN.md Task 1): an explicit decoder NAME forces that
+// exact decoder, independent of "auto"'s own fixed-sibling preference --
+// forcing "aac_fixed" by name on non-USAC content reaches the identical
+// class-1 outcome "auto" already reaches for this fixture (Test 1), proving
+// the forced-name path and the auto path converge when there is nothing to
+// steer away from.
+TEST_CASE("audio_decode - --hash-decoder <name> forces that exact decoder", "[unit]") {
+  const std::optional<StreamAudioDecode> stream =
+      first_attempted_with_preference(audio_hash_base_mp4(), "aac_fixed");
+  REQUIRE(stream.has_value());
+  CHECK(stream->decoder_name == "aac_fixed");
+  CHECK(stream->decoder_class == 1);
+  CHECK(stream->fallback_reason.empty());
+}
+
+// Test 7 (06-05-PLAN.md Task 1, D-06): the mp3/mp2 promotion end to end --
+// audio_mp2_base.mpg's MP2 stream auto-selects the fixed-point "mp2"
+// decoder over "mp2float", landing on class 1. (MP3 has no analogous
+// end-to-end fixture in this LGPL decode-only pin -- no MP3 *encoder*
+// exists to synthesize one bitexactly; MP3's own table entry is covered by
+// the pure determinism_class_for_decoder assertions above instead.)
+TEST_CASE("audio_decode - MP2 auto-selects the fixed-point sibling (D-06 promotion)", "[unit]") {
+  const std::optional<StreamAudioDecode> stream = first_attempted_with_preference(audio_mp2_base_mpg(), "auto");
+  REQUIRE(stream.has_value());
+  CHECK(stream->decoder_name == "mp2");
+  CHECK(stream->decoder_class == 1);
+  CHECK(stream->fallback_reason.empty());
+}
+
+// Test 8 (06-05-PLAN.md Task 1): a codec with no fixed-point sibling at
+// all (Opus) is unaffected by "auto"'s own steering -- it always selects
+// the one decoder doc 05 section 3 lists for it, landing on class 2 with a
+// path_signature recorded.
+TEST_CASE("audio_decode - Opus has no fixed-point sibling, always class 2", "[unit]") {
+  const std::optional<StreamAudioDecode> stream = first_attempted_with_preference(mkv_opus_a_webm(), "auto");
+  REQUIRE(stream.has_value());
+  CHECK(stream->decoder_name == "opus");
+  CHECK(stream->decoder_class == 2);
+  CHECK(!stream->path_signature.empty());
+}
+
+// Test 6 (06-05-PLAN.md Task 1, D-07) -- DOCUMENTED GAP, not a passing
+// assertion: `--hash-decoder aac_fixed` forced on a USAC stream should
+// steer away from aac_fixed (fallback_reason == "usac_unsupported") and
+// fall back to the codec's own default. This project's LGPL decode-only
+// FFmpeg pin has no USAC *encoder*, so proving this end to end requires a
+// hand-built AudioSpecificConfig (mirroring tools/gen_he_aac.py's approach
+// for HE-AAC, D-10). A hand-built ASC declaring object_type 42 (verified
+// correct in isolation by test_audio_config.cpp's own "object type 31
+// escapes ... AOT_USAC round-trips" case) was built and fed directly to
+// avcodec_open2() against BOTH "aac_fixed" and native "aac" in this
+// environment's linked FFmpeg -- both rejected it with EINVAL (-22),
+// contradicting 06-RESEARCH.md Q3's claim that avcodec_open2() "succeeds
+// unconditionally" for aac_fixed on USAC content. A bare AOT_AAC_LC ASC
+// built the identical way opened successfully (rc=0) against "aac" in the
+// same test harness, confirming the harness itself is sound -- real
+// UsacConfig() syntax diverges from audioSpecificConfig() beyond the
+// object_type field, so a hand-crafted ASC cannot stand in for a genuine
+// USAC bitstream the way it could for HE-AAC's simpler SBR signaling. The
+// steering CODE PATH itself (src/probe/audio_decode.cpp's is_usac check,
+// set before either open attempt) is reviewed by inspection instead; this
+// gap is recorded in 06-05-SUMMARY.md's Known Stubs / deviations section
+// rather than asserted here as tested behavior it is not.

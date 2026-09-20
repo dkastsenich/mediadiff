@@ -193,8 +193,8 @@ int run(int argc, char** argv) {
     // behaving exactly like "mediadiff compare a b" with none of them
     // given.
     run_compare(opt_string(implicit_baseline_opt), opt_string(implicit_candidate_opt), /*strict=*/false,
-                /*verbose=*/false, /*quiet=*/false, /*content_enabled=*/true, default_report_args(),
-                default_policy_args(), default_color_args(), default_probe_args());
+                /*verbose=*/false, /*quiet=*/false, /*content_enabled=*/true, /*hash_decoder=*/"auto",
+                default_report_args(), default_policy_args(), default_color_args(), default_probe_args());
   }
 
   // Fewer than two positionals (including bare `mediadiff` with none):

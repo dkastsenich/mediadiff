@@ -43,7 +43,7 @@ mediadiff <BASELINE> <CANDIDATE> [flags]        # implicit compare
 mediadiff compare|snapshot|dir|inspect|list-checks|explain ...
 ```
 
-Flags: `--profile --config --set --tol --no-content --content --ssim --psnr --vmaf
+Flags: `--profile --config --set --tol --no-content --content --hash-decoder auto|default|NAME --ssim --psnr --vmaf
 --sample N --first-divergence --hwaccel auto|none|cuda --threads N
 --json[=path] --report md=path --report junit=path --strict -q -v --no-color --ascii`
 
@@ -55,7 +55,7 @@ Exit codes: `0` clean · `1` fail findings · `2` warn + `--strict` · `64` usag
   - `dir`: opt-in — decode stays off unless `--content` is given (corpus-speed default).
   - `inspect`: opt-in — decodes on request, matching `dir`'s own default.
 
-`--hash-decoder` (06-05-PLAN.md) is added to `ProbeOptions` as a sibling flag once that plan lands; not yet present as of 06-01.
+**`--hash-decoder <auto|default|NAME>` (06-05-PLAN.md Task 1, AUDIO-09, D-06/D-07/D-08):** registered on `compare`, `snapshot`, `dir` and `inspect` (`resolve_hash_decoder`, `src/cli/options.{h,cpp}`), resolved into `ProbeOptions::hash_decoder` and threaded through to the once-per-stream audio decoder selection (`src/probe/audio_decode.{h,cpp}`) -- fingerprint-time only, D-08's own rule that a profile never reaches this selection. Three accepted values: `auto` (the default) prefers the class-1 fixed-point sibling decoder (`aac_fixed`, `ac3_fixed`, `mp3`, `mp2`) when one exists and can open the stream; `default` opts out unconditionally and always records class 2; a decoder NAME forces that exact decoder, falling back to the codec's own default (recorded as class 2 with a `fallback_reason`) if the named decoder cannot open the stream. A NAME `avcodec_find_decoder_by_name` cannot resolve is `ErrorKind::usage` (exit 64), naming the value -- never a silent fall back to `auto`.
 
 ### 3.2 Parsing design — CLI11
 

@@ -301,7 +301,7 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     // attempted_init_ guard.
     if (request.decode_audio) {
       detail::AudioDecodeState& astate = audio_decode_states[stream_index];
-      astate.ensure_initialized(*ctx->streams[stream_index]->codecpar);
+      astate.ensure_initialized(*ctx->streams[stream_index]->codecpar, request.hash_decoder);
       if (astate.attempted()) {
         astate.feed_packet(pkt.get()->data, pkt.get()->size);
       }

@@ -243,6 +243,35 @@ enum class ContentCommandDefault { decode_by_default, opt_in, must_decode };
 mediadiff::expected<bool, Error> resolve_content_enabled(const ContentArgs& args,
                                                             ContentCommandDefault command_default);
 
+// 06-05-PLAN.md (AUDIO-09, D-06/D-07/D-08): shared option storage for
+// `--hash-decoder`, mirroring ContentArgs/ProbeArgs's own borrowed-
+// `CLI::Option*` shape (D-05). Unlike `--content`/`--no-content`, every
+// command shares the SAME help text and the SAME resolution contract, so
+// this one flag is registered via a single add_hash_decoder_flag helper
+// (mirroring add_probe_flags) rather than one per-command registration
+// site.
+struct HashDecoderArgs {
+  CLI::Option* hash_decoder_flag = nullptr;
+};
+
+// Registers `--hash-decoder <auto|default|NAME>` on `cmd`.
+HashDecoderArgs add_hash_decoder_flag(CLI::App& cmd);
+
+// Resolves and re-validates `--hash-decoder`'s text (D-05's own
+// "re-validate, don't trust blindly" convention, mirroring
+// resolve_profile_selection/resolve_probe_timeout_ms): absent or `auto`
+// resolves to `"auto"` (the default -- prefer the class-1 fixed-point
+// sibling automatically); `default` resolves to `"default"` (doc 05
+// section 3's own opt-out, records class 2); any other text is re-checked
+// against `avcodec_find_decoder_by_name` via
+// `hash_decoder_name_exists()` (src/probe/audio_decode.h) -- a name this
+// build's linked FFmpeg does not register is `ErrorKind::usage` naming
+// the value verbatim, never a silent fall back to `"auto"` (D-06's own
+// by-name-only rule: this is the one CLI-facing existence check, so a
+// slopsquatted or mistyped decoder name fails loudly at parse time rather
+// than silently degrading a whole stream to class 3 inside the probe).
+mediadiff::expected<std::string, Error> resolve_hash_decoder(const HashDecoderArgs& args);
+
 // All-null PolicyArgs/ReportArgs/ColorArgs, with no CLI11 flags registered
 // on any App -- used by main.cpp's implicit two-positional dispatch
 // (CLI-01), which intentionally carries none of `compare`'s own optional

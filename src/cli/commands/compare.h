@@ -31,9 +31,14 @@ void register_compare_command(CLI::App& app);
 // `compare`'s own default is true (main.cpp's implicit two-positional
 // route passes true unconditionally, matching the `compare` subcommand's
 // own unflagged default).
+// 06-05-PLAN.md (AUDIO-09): `hash_decoder` is the already-resolved
+// `--hash-decoder` value ("auto", "default", or a decoder NAME --
+// src/cli/options.h's resolve_hash_decoder) -- main.cpp's implicit
+// two-positional route passes "auto" unconditionally, matching the
+// `compare` subcommand's own unflagged default.
 [[noreturn]] void run_compare(const std::string& baseline_path, const std::string& candidate_path, bool strict,
-                               bool verbose, bool quiet, bool content_enabled, const ReportArgs& report_args,
-                               const PolicyArgs& policy_args, const ColorArgs& color_args,
-                               const ProbeArgs& probe_args);
+                               bool verbose, bool quiet, bool content_enabled, const std::string& hash_decoder,
+                               const ReportArgs& report_args, const PolicyArgs& policy_args,
+                               const ColorArgs& color_args, const ProbeArgs& probe_args);
 
 }  // namespace mediadiff

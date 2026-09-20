@@ -353,6 +353,10 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
       request.limits = PacketScanLimits{};
       request.parse_access_units = union_passes.test(Pass::parser_scan);
       request.decode_audio = union_passes.test(Pass::audio_decode);
+      // 06-05-PLAN.md (AUDIO-09, D-08): the ONLY input to decoder
+      // selection -- never a profile (this invocation's own resolved
+      // Policy is not even in scope here).
+      request.hash_decoder = options.hash_decoder;
       auto scan_result = run_packet_scan(session, request);
       if (scan_result) {
         results.packet_scan = std::move(scan_result->packets);

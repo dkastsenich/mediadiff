@@ -193,6 +193,12 @@ add_executable(mediadiff_integration_tests
   # under --content/--no-content and a snapshot round trip, and the
   # DOC-04 whole-report no-others count for the explicit-vs-implicit pair.
   test_audio_profile_sbr.cpp
+  # AUDIO-09/TRUST-01/TRUST-02 (06-05-PLAN.md Tasks 1/3): --hash-decoder and
+  # the determinism-class table's end-to-end consequences, plus the
+  # three-way class proof (class-1 equal across builds behind the D-11
+  # identity guard, class-2 across differing paths always skips even on
+  # equal digests, class-3 never compares a digest at all).
+  test_audio_hash_decoder.cpp
   # tests/support/ (02-03-PLAN.md Tasks 1/3): shared with mediadiff_unit_tests.
   "${CMAKE_SOURCE_DIR}/tests/support/stub_analyzer.cpp"
   "${CMAKE_SOURCE_DIR}/tests/support/golden.cpp"

@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/error.h"
@@ -78,6 +79,18 @@ struct StreamAudioDecode {
   // "fixed_decoder_unavailable" (the named fixed-point decoder is not
   // registered in this build), or empty for the ordinary case.
   std::string fallback_reason;
+  // TRUST-01 (06-05-PLAN.md): the bitexact/skip-manual decode-context
+  // flags actually set on this stream (kDecodeFlagsRecorded below) --
+  // recorded verbatim into Envelope::decode_path, never re-derived from
+  // any other field. Empty when `attempted` is false.
+  std::string flags_recorded;
+  // D-05's class-2 path signature (compose_decode_path_signature(),
+  // src/util/version.h), populated ONLY when `decoder_class == 2` -- a
+  // class-1 record deliberately carries none, since class 1 means
+  // path-independent by definition and attaching a signature would make
+  // two class-1 fingerprints from different machines skip when they
+  // should compare.
+  std::string path_signature;
   // The decoder's native output sample format, resolved to its PACKED
   // equivalent spelling (av_get_alt_sample_fmt(fmt, /*planar=*/false)) so
   // a planar/packed pair of the same underlying format record identically
@@ -129,6 +142,31 @@ struct AudioDecodeResult {
 // implement its own loop.
 mediadiff::expected<AudioDecodeResult, Error> run_audio_decode(DemuxSession& session);
 
+// 06-05-PLAN.md (D-06, AUDIO-09, TRUST-01/TRUST-02): doc 05 section 3's
+// normative determinism-class table, extended by D-06's mp3/mp2 promotion --
+// the SINGLE place this table is encoded. Classifies by the decoder's own
+// NAME (never by AV_CODEC_ID, D-06's own by-name-only rule; never by
+// trusting a separately-computed class integer, T-06-15's own mitigation):
+// every `pcm_*` decoder, `flac` and `alac` are class 1 (bit-exact by
+// construction or empirically proven stable); `aac_fixed`, `ac3_fixed`,
+// `mp3` and `mp2` are class 1 (the fixed-point siblings, D-06); `aac`,
+// `ac3`, `eac3`, `opus`, `mp3float` and `mp2float` are class 2 (SIMD-
+// dependent but decodable, comparable only within one machine class); every
+// other name -- a codec doc 05 section 3 does not list -- is class 3: not
+// proven deterministic, hashing disabled rather than an unreviewed digest
+// (D-06's "extend only where proven" rule). Pure and allocation-light so it
+// is directly unit-testable without a real decode.
+int determinism_class_for_decoder(std::string_view decoder_name);
+
+// 06-05-PLAN.md (AUDIO-09): a `--hash-decoder <name>` existence check for
+// src/cli/options.cpp's own resolve_hash_decoder, exposed here rather than
+// letting src/cli/ touch libav directly (this project's own libav-
+// confinement convention, applied to the CLI boundary the way core/ already
+// applies it to analyzer-facing code). True iff
+// `avcodec_find_decoder_by_name(name)` resolves to a decoder registered in
+// this build's linked FFmpeg.
+bool hash_decoder_name_exists(std::string_view name);
+
 namespace detail {
 
 // One stream's own decode lifetime, fused into probe/packet_scan.cpp's
@@ -152,10 +190,23 @@ class AudioDecodeState {
   // call on the same object is a no-op that returns the already-resolved
   // outcome. `codec_type`/`extradata` are read directly from `codecpar`
   // (AVMEDIA_TYPE_AUDIO gates whether this stream is even a decode
-  // candidate). Initialization failure (not an audio stream, no decoder
-  // registered for this codec_id, avcodec_open2 failing) sets
-  // `attempted_` false permanently -- doc 05's own class-3 case.
-  bool ensure_initialized(const AVCodecParameters& codecpar);
+  // candidate). Initialization failure (not an audio stream, or no
+  // decoder at all resolves for this codec_id/name in this build) sets
+  // `attempted_` false permanently.
+  //
+  // `hash_decoder_preference` is AUDIO-09's own `--hash-decoder` value
+  // (ProbeOptions::hash_decoder, D-08: a fingerprint-time-only input,
+  // never a profile): "auto" prefers the fixed-point sibling table (D-06/
+  // D-07's own USAC steering applies); "default" opts out and opens the
+  // codec's plain default decoder unconditionally; any other text is a
+  // decoder NAME forced explicitly via avcodec_find_decoder_by_name --
+  // D-07's fallback-to-default-on-open-failure rule applies identically
+  // to a forced name that turns out to be the USAC-incompatible fixed
+  // sibling (Test 6). The resolved decoder's own NAME then drives
+  // `determinism_class_for_decoder()` regardless of which of the three
+  // paths chose it -- selection and classification are deliberately
+  // separate steps (D-06's by-name classification applies uniformly).
+  bool ensure_initialized(const AVCodecParameters& codecpar, std::string_view hash_decoder_preference);
 
   bool attempted() const { return attempted_; }
 
@@ -194,6 +245,14 @@ class AudioDecodeState {
   std::string decoder_name_;
   int decoder_class_ = 3;
   std::string fallback_reason_;
+  // 06-05-PLAN.md (D-06): false once decoder_class_ resolves to 3 (a codec
+  // doc 05 section 3 does not list) -- decode still runs in full (other
+  // audio.* checks need the samples), but no PCM byte is ever copied into
+  // pending_block_ and no digest is ever computed, per "hashing disabled"
+  // rather than "decoding disabled".
+  bool hash_enabled_ = true;
+  std::string flags_recorded_;
+  std::string path_signature_;
   std::string sample_format_packed_;
   std::int64_t sample_rate_ = 0;
   std::int64_t channels_ = 0;
