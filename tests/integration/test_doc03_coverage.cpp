@@ -43,7 +43,10 @@
 // bringing the total to seventy-seven -- the full 16-id Phase 5 timeline
 // roster, closing out this phase's own DOC-03 obligation. 06-01-PLAN.md
 // registers Phase 6's tracer, content.audio.sample_hash, bringing the
-// total to seventy-eight. This file is where a gap becomes visible.
+// total to seventy-eight. 06-03-PLAN.md registers the six per-audio-
+// stream identity checks (audio.codec/sample_rate/sample_fmt/bit_depth/
+// channels/layout), bringing the total to eighty-four. This file is
+// where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -584,6 +587,64 @@ const std::map<std::string, CoveragePair>& declared_pairs() {
       {"content.audio.sample_hash",
        {fixture("audio_hash_base.mp4"), fixture("audio_hash_alt.mp4"), fixture("audio_hash_base.mp4"),
         fixture("audio_hash_base_copy.mp4")}},
+
+      // --- 06-03-PLAN.md (AUDIO-01, AUDIO-02): the six per-audio-stream
+      // header-pass identity checks -- codec/sample_rate/sample_fmt/
+      // bit_depth/channels/layout. Every pair below was run through the
+      // real `mediadiff compare --profile sw-encoder --json` binary and
+      // its finding's `status`/`baseline`/`candidate` fields inspected
+      // directly before being committed here. ---
+      // audio.codec: trigger is aac (audio_hash_base.mp4) vs mp2
+      // (audio_mp2_base.mpg) -- verified `fail`, baseline "aac" vs
+      // candidate "mp2". Clean pair reuses content.audio.sample_hash's own
+      // clean pair (two independent bitexact aac encodes of the same
+      // signal) -- verified `pass`, "aac" both sides.
+      {"audio.codec",
+       {fixture("audio_hash_base.mp4"), fixture("audio_mp2_base.mpg"), fixture("audio_hash_base.mp4"),
+        fixture("audio_hash_base_copy.mp4")}},
+      // audio.sample_rate: trigger is audio_hash_base.mp4 (44100 Hz) vs
+      // audio_sbr_implicit.mp4 (88200 Hz, SBR-implicit doubling) --
+      // verified `fail`, 44100 vs 88200. Clean pair reuses the same
+      // independent-bitexact-encode pair as audio.codec above -- verified
+      // `pass`, 44100 both sides.
+      {"audio.sample_rate",
+       {fixture("audio_hash_base.mp4"), fixture("audio_sbr_implicit.mp4"), fixture("audio_hash_base.mp4"),
+        fixture("audio_hash_base_copy.mp4")}},
+      // audio.sample_fmt: trigger is audio_stereo_s16.wav (s16) vs
+      // audio_stereo_s24.wav (s32, since s24 canonicalizes to its packed
+      // 32-bit container per D-02) -- verified `fail`, "s16" vs "s32".
+      // Clean pair is audio_stereo_s16.wav vs audio_pcm_base.wav, both s16
+      // -- verified `pass`, "s16" both sides.
+      {"audio.sample_fmt",
+       {fixture("audio_stereo_s16.wav"), fixture("audio_stereo_s24.wav"), fixture("audio_stereo_s16.wav"),
+        fixture("audio_pcm_base.wav")}},
+      // audio.bit_depth: trigger is audio_51.flac (16-bit) vs
+      // audio_dropout.flac (24-bit), both genuinely declaring
+      // bits_per_raw_sample so the finding reports a real `fail` rather
+      // than an Absent-driven `skipped` -- verified `fail`, 16 vs 24.
+      // Clean pair is audio_51.flac vs audio_51_side.flac, both 16-bit --
+      // verified `pass`, 16 both sides.
+      {"audio.bit_depth",
+       {fixture("audio_51.flac"), fixture("audio_dropout.flac"), fixture("audio_51.flac"),
+        fixture("audio_51_side.flac")}},
+      // audio.channels: trigger is audio_stereo_s16.wav (2ch) vs
+      // audio_mono_s16.wav (1ch) -- verified `fail`, 2 vs 1. Clean pair is
+      // audio_stereo_s16.wav vs audio_stereo_s24.wav, both 2ch -- verified
+      // `pass`, 2 both sides (this pair simultaneously triggers
+      // audio.sample_fmt above, which is fine -- DOC-03 only requires THIS
+      // check to be clean on the declared clean pair, not that the pair be
+      // clean everywhere).
+      {"audio.channels",
+       {fixture("audio_stereo_s16.wav"), fixture("audio_mono_s16.wav"), fixture("audio_stereo_s16.wav"),
+        fixture("audio_stereo_s24.wav")}},
+      // audio.layout: trigger is audio_51.flac (5.1) vs
+      // audio_51_side.flac (5.1(side)) -- the headline "same channel
+      // count, different layout" story -- verified `fail`, "5.1" vs
+      // "5.1(side)"; this is also test_audio_stream_params.cpp's own Test
+      // 1/2 pair. Clean pair is audio_51.flac against itself -- verified
+      // `pass`, "5.1" both sides.
+      {"audio.layout",
+       {fixture("audio_51.flac"), fixture("audio_51_side.flac"), fixture("audio_51.flac"), fixture("audio_51.flac")}},
   };
   return pairs;
 }
