@@ -401,6 +401,15 @@ add_executable(mediadiff_unit_tests
   # effective_sample_rate_hz through a real DemuxSession against 06-02's
   # hand-written HE-AAC fixture pair.
   test_audio_config.cpp
+  # ROADMAP SC1 (06-11-PLAN.md, AUDIO-01/02/03): the `inspect` audio
+  # section -- one block per audio stream in ascending stream-index
+  # order, the six header-pass parameters plus profile/SBR always real
+  # (even under --no-content), decode-dependent rows explicitly never
+  # blank, an explicit no-audio-streams line, a registry-enumerated
+  # coverage assertion, a byte-stable golden and control-byte
+  # sanitization -- driven through src/cli/commands/inspect_render.h
+  # directly, mirroring test_inspect_container_section.cpp's own shape.
+  test_inspect_audio_section.cpp
 )
 target_link_libraries(mediadiff_unit_tests PRIVATE libmediadiff Catch2::Catch2WithMain Threads::Threads)
 mediadiff_apply_warnings(mediadiff_unit_tests)

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -89,16 +90,14 @@ inline std::string evidence_to_text(const nlohmann::ordered_json& evidence) {
   return evidence.dump();
 }
 
-// Renders every Group in kGroupOrder order: a heading, then either an
-// explicit no-measurements line or one line per measurement (check id,
-// scope, value, and -- when the analyzer recorded any -- its evidence),
-// and -- under `verbose` -- the resolved severity chain for that check via
-// the SAME shared renderer `list-checks --effective -v` and
-// `compare --json -v` use (src/cli/provenance_render.h), never a second
-// formatter written here. `policy.per_check` is indexed by registry
-// declaration index by construction (core/policy.h's own resolve_policy
-// comment), so `policy.per_check[check_index]` is a direct lookup, no
-// linear scan needed.
+// Renders ONE measurement row (check id, scope, value or skip reason, its
+// evidence line when present, and -- under `verbose` -- its resolved
+// severity chain) at the given left-hand indent. Extracted out of
+// render_inspect_text's own per-group loop (06-11-PLAN.md, Task 1) so the
+// generic per-group renderer below and render_audio_group_text's own
+// per-stream blocks share EXACTLY one sanitization/formatting path -- a
+// second, independently-written row formatter is exactly how one of the
+// two paths could silently stop sanitizing a value (T-2-33's own point).
 //
 // T-2-33 (03-11-PLAN.md Task 2): the check id, scope text, value text and
 // evidence text are all routed through sanitize_for_display before they
@@ -113,11 +112,145 @@ inline std::string evidence_to_text(const nlohmann::ordered_json& evidence) {
 // matching src/report/json.cpp's own established reasoning: JSON already
 // escapes control bytes at the wire level via core/serializer.cpp's
 // serialize_document, and a second pass here would double-escape.
+inline std::string render_group_entry_text(const CheckRegistry& registry, const GroupEntry& entry,
+                                            const Policy& policy, bool verbose, int indent) {
+  std::string out;
+  const std::string pad(static_cast<std::size_t>(indent), ' ');
+  const CheckDef& check = registry.at(entry.check_index);
+  const std::string sanitized_id = sanitize_for_display(check.id);
+  const std::string sanitized_scope = sanitize_for_display(scope_to_text(entry.measurement->scope));
+  // 03-04-PLAN.md Task 1: a measurement the analyzer explicitly marked
+  // as not applicable here (Measurement::skip_reason != none, e.g.
+  // container.chapters on an MPEG-TS input) renders its skip reason
+  // instead of the (Absent -> "null") value text, so `inspect`'s
+  // single-file view can distinguish "measured nothing" from "this
+  // check does not apply to this file" without going through
+  // compare_fingerprints at all. This is also 06-11-PLAN.md's own
+  // "never blank, always an explicit reason" contract for a
+  // decode-dependent row under `--no-content` (SkipReason::requires_decode
+  // renders identically to every other skip reason here -- a decode row
+  // that was never attempted is exactly as informative as any other
+  // "measured nothing, and here is why" row this renderer already prints).
+  if (entry.measurement->skip_reason != SkipReason::none) {
+    out += fmt::format("{}{} {}: (skipped: {})\n", pad, sanitized_id, sanitized_scope,
+                        skip_reason_to_string(entry.measurement->skip_reason));
+  } else {
+    const std::string sanitized_value = sanitize_for_display(value_to_text(entry.measurement->value));
+    out += fmt::format("{}{} {}: {}\n", pad, sanitized_id, sanitized_scope, sanitized_value);
+  }
+  const std::string evidence_text = evidence_to_text(entry.measurement->evidence);
+  if (!evidence_text.empty()) {
+    out += fmt::format("{}    evidence: {}\n", pad, sanitize_for_display(evidence_text));
+  }
+  if (verbose && entry.check_index < policy.per_check.size()) {
+    out += render_provenance_chain(policy.per_check[entry.check_index].chain, indent + 2);
+  }
+  return out;
+}
+
+// The audio group's own bespoke TEXT rendering (06-11-PLAN.md, Task 1,
+// ROADMAP SC1): one block per audio STREAM in ascending stream-index
+// order -- every check id at that scope index, in registry order -- rather
+// than the generic per-group loop's check-major ordering (every group's id
+// across every stream first, then the next id). SC1 is written in terms of
+// what a user SEES on one audio track at a time, and the sanitize/skip
+// mechanics are identical to the generic loop (render_group_entry_text is
+// the SAME function both paths call) -- only the GROUPING differs here.
+//
+// content.audio.sample_hash deliberately stays OUT of this block: it
+// belongs to Group::content by group_for's own first-dot-segment rule
+// (`content.audio.sample_hash`, not `audio.*`), renders in its own
+// `content:` section exactly as it always has, and Test 6's own
+// registry-enumerated coverage assertion only requires it to appear
+// SOMEWHERE in the rendered output -- which it already does, unchanged.
+//
+// The "no audio stream at all" case (Test 5) is detected from the
+// MEASUREMENTS THEMSELVES, never from a hand-maintained fixture/id list:
+// every audio.* analyzer's own `!any_audio` branch (stream_params.cpp,
+// priming.cpp, loudness.cpp, silence.cpp) emits exactly one
+// SkipReason::insufficient_data measurement per id at Scope{audio, 0} when
+// no real audio stream exists -- a genuinely different skip reason from
+// SkipReason::partial_scan (a truncated scan, which stays visible as
+// per-id skip lines rather than being folded into this single line, since
+// "the scan didn't finish" is a different fact from "there is no audio
+// here"). If every entry in the group carries that ONE sentinel skip
+// reason, this renders a single explicit line instead of one skip line per
+// id -- and a FUTURE audio id that forgets its own !any_audio sentinel (or
+// uses a different skip reason for it) simply falls through to the normal
+// per-stream block rendering instead of silently joining this line, which
+// is the fail-visible direction.
+inline std::string render_audio_group_text(const Fingerprint& fp, const CheckRegistry& registry, const Policy& policy,
+                                            bool verbose) {
+  std::string out;
+  const std::vector<GroupEntry> entries = entries_for_group(fp, registry, Group::audio);
+  if (entries.empty()) {
+    // Matches every other group's own "(no measurements)" convention
+    // (see render_inspect_text below) for the case this group has no
+    // registered ids at all reporting anything -- distinct from the
+    // "no audio streams" sentinel below, which requires every id to be
+    // PRESENT and uniformly skipped, not simply absent.
+    out += "  (no measurements)\n";
+    return out;
+  }
+
+  bool all_no_audio_sentinel = true;
+  for (const GroupEntry& entry : entries) {
+    if (entry.measurement->skip_reason != SkipReason::insufficient_data) {
+      all_no_audio_sentinel = false;
+      break;
+    }
+  }
+  if (all_no_audio_sentinel) {
+    out += "  (no audio streams)\n";
+    return out;
+  }
+
+  // Group by stream index (Scope::index), preserving `entries`' own
+  // check-index-ascending order within each bucket -- entries_for_group
+  // already sorts (check_index, scope.kind, scope.index), so pushing into
+  // per-index buckets IN THAT ITERATION ORDER yields check-index-ascending
+  // rows inside each bucket for free, with no secondary sort needed.
+  // std::map keeps the buckets themselves in ascending stream-index order.
+  std::map<int, std::vector<GroupEntry>> by_index;
+  for (const GroupEntry& entry : entries) {
+    by_index[entry.measurement->scope.index].push_back(entry);
+  }
+
+  for (const auto& [index, stream_entries] : by_index) {
+    out += fmt::format("  audio[{}]:\n", index);
+    for (const GroupEntry& entry : stream_entries) {
+      out += render_group_entry_text(registry, entry, policy, verbose, /*indent=*/4);
+    }
+  }
+  return out;
+}
+
+// Renders every Group in kGroupOrder order: a heading, then either an
+// explicit no-measurements line or one line per measurement (check id,
+// scope, value, and -- when the analyzer recorded any -- its evidence),
+// and -- under `verbose` -- the resolved severity chain for that check via
+// the SAME shared renderer `list-checks --effective -v` and
+// `compare --json -v` use (src/cli/provenance_render.h), never a second
+// formatter written here. `policy.per_check` is indexed by registry
+// declaration index by construction (core/policy.h's own resolve_policy
+// comment), so `policy.per_check[check_index]` is a direct lookup, no
+// linear scan needed.
+//
+// Group::audio is the one exception (06-11-PLAN.md, ROADMAP SC1): it
+// renders through render_audio_group_text's own per-stream blocks instead
+// of this loop's check-major ordering -- see that function's own comment.
+// Every other group's rendering, sanitization and skip-reason handling is
+// completely unchanged.
 inline std::string render_inspect_text(const Fingerprint& fp, const CheckRegistry& registry, const Policy& policy,
                                         bool verbose) {
   std::string out;
   for (Group group : kGroupOrder) {
     out += fmt::format("{}:\n", group_to_string(group));
+
+    if (group == Group::audio) {
+      out += render_audio_group_text(fp, registry, policy, verbose);
+      continue;
+    }
 
     const std::vector<GroupEntry> entries = entries_for_group(fp, registry, group);
     if (entries.empty()) {
@@ -126,30 +259,7 @@ inline std::string render_inspect_text(const Fingerprint& fp, const CheckRegistr
     }
 
     for (const GroupEntry& entry : entries) {
-      const CheckDef& check = registry.at(entry.check_index);
-      const std::string sanitized_id = sanitize_for_display(check.id);
-      const std::string sanitized_scope = sanitize_for_display(scope_to_text(entry.measurement->scope));
-      // 03-04-PLAN.md Task 1: a measurement the analyzer explicitly marked
-      // as not applicable here (Measurement::skip_reason != none, e.g.
-      // container.chapters on an MPEG-TS input) renders its skip reason
-      // instead of the (Absent -> "null") value text, so `inspect`'s
-      // single-file view can distinguish "measured nothing" from "this
-      // check does not apply to this file" without going through
-      // compare_fingerprints at all.
-      if (entry.measurement->skip_reason != SkipReason::none) {
-        out += fmt::format("  {} {}: (skipped: {})\n", sanitized_id, sanitized_scope,
-                            skip_reason_to_string(entry.measurement->skip_reason));
-      } else {
-        const std::string sanitized_value = sanitize_for_display(value_to_text(entry.measurement->value));
-        out += fmt::format("  {} {}: {}\n", sanitized_id, sanitized_scope, sanitized_value);
-      }
-      const std::string evidence_text = evidence_to_text(entry.measurement->evidence);
-      if (!evidence_text.empty()) {
-        out += fmt::format("      evidence: {}\n", sanitize_for_display(evidence_text));
-      }
-      if (verbose && entry.check_index < policy.per_check.size()) {
-        out += render_provenance_chain(policy.per_check[entry.check_index].chain, 4);
-      }
+      out += render_group_entry_text(registry, entry, policy, verbose, /*indent=*/2);
     }
   }
   return out;
