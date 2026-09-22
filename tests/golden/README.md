@@ -262,6 +262,19 @@ never-enters-`tests/fixtures/`/never-hashed-into-`CORPUS_DIGEST.txt` rule
 (D-12, Phase 4) as every other on-demand benchmark input in this
 directory.
 
+**STATUS: PROVISIONAL.** Unlike the two timeline lines above this section
+(`plain_instructions`/`full_instructions`, transcribed from a real
+designated-leg CI run), the two audio lines were measured LOCALLY —
+`06-12-PLAN.md`'s own workstation lacked both `valgrind` and passwordless
+root, so the measurement ran inside an `ubuntu:24.04` container instead of
+the designated `x64-linux` CI leg. `06-13-PLAN.md` transcribes the real
+designated-leg numbers over these two lines, exactly as the timeline lines
+were transcribed in `05-12`/`05-13`. Until that transcription lands, the
+`.github/workflows/ci.yml` audio ratchet step runs and self-consistency
+checks on every push, but a real regression on the designated leg is not
+yet provably caught — the provisional baseline is this workstation's own
+number, not that leg's.
+
 
 
 These three (`ts_scan_ts_single.txt`, `ts_scan_ts_multiprogram.txt`,
