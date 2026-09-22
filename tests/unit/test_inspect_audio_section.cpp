@@ -133,13 +133,32 @@ TEST_CASE("inspect_audio - a stereo AAC fixture renders codec, profile with its 
   CHECK(audio_section.find("audio.sample_fmt audio[0]:") != std::string::npos);
   CHECK(audio_section.find("audio.channels audio[0]: 2") != std::string::npos);
   CHECK(audio_section.find("audio.layout audio[0]: \"stereo\"") != std::string::npos);
-  // audio.profile carries the SBR signaling mode as a `(sbr: ...)` suffix
-  // on the SAME rendered value -- ROADMAP SC1's own "profile carrying the
-  // ... SBR signaling mode" wording, never a second row.
+  // audio.profile carries the SBR signaling mode on the SAME rendered
+  // value -- ROADMAP SC1's own "profile carrying the ... SBR signaling
+  // mode" wording, never a second row. 06-13-PLAN.md: audio_hash_base.mp4
+  // is an ordinary AAC-LC file with NO SBR, and `none` deliberately
+  // renders NO suffix so the third bucket stays visible rather than
+  // collapsing into "implicit" or "explicit" (render_sbr_suffix's own
+  // contract). This assertion previously required a literal "(sbr:" here
+  // and passed only because the file was mis-resolved as `unknown`; the
+  // suffix-on-the-same-row claim is now proven where there IS a mode to
+  // name, against audio_sbr_implicit.mp4 below.
   const std::size_t profile_pos = audio_section.find("audio.profile audio[0]:");
   REQUIRE(profile_pos != std::string::npos);
   const std::size_t profile_line_end = audio_section.find('\n', profile_pos);
-  CHECK(audio_section.substr(profile_pos, profile_line_end - profile_pos).find("(sbr:") != std::string::npos);
+  const std::string profile_line = audio_section.substr(profile_pos, profile_line_end - profile_pos);
+  CHECK(profile_line.find("\"LC\"") != std::string::npos);
+  CHECK(profile_line.find("(sbr:") == std::string::npos);
+
+  const std::string sbr_section = extract_group_section(
+      render_inspect_text(probe(fixture("audio_sbr_implicit.mp4")), builtin_registry(), default_policy(),
+                          /*verbose=*/false),
+      "audio");
+  const std::size_t sbr_profile_pos = sbr_section.find("audio.profile audio[0]:");
+  REQUIRE(sbr_profile_pos != std::string::npos);
+  const std::size_t sbr_line_end = sbr_section.find('\n', sbr_profile_pos);
+  CHECK(sbr_section.substr(sbr_profile_pos, sbr_line_end - sbr_profile_pos).find("(sbr: implicit)") !=
+        std::string::npos);
 }
 
 // --- Test 2: 5.1 vs 5.1(side) distinct spelling -------------------------

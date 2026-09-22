@@ -1,18 +1,24 @@
-// 06-04-PLAN.md Task 1 (AUDIO-03, D-12): resolve_sbr_signaling() -- the
-// no-decode ASC fast path (a top-level AOT_SBR object type, or a 0x2b7
-// backward-compatible sync extension) and the bounded one-packet fallback
-// (only when the ASC parses as a bare, ambiguous object type), both
-// exercised directly against mediadiff::resolve_sbr_signaling() with a
-// call-counting fake SbrProbeFn -- no file, no real decoder, mirroring
-// tests/unit/test_gop_classification.cpp's own SpsBitWriter-plus-synthetic-
-// buffer convention for a small, hand-verified bitstream grammar.
+// 06-04-PLAN.md Task 1 / 06-13-PLAN.md (AUDIO-03, D-12):
+// resolve_sbr_signaling() -- the no-decode ASC fast path (a top-level
+// AOT_SBR object type, or a 0x2b7 backward-compatible sync extension),
+// D-12's PRIMARY header-pass mechanism (the post-find_stream_info
+// `codecpar` evidence, passed in as HeaderPassSbrEvidence), and the
+// bounded one-packet FALLBACK (reached only when the header pass resolved
+// no profile at all) -- all exercised directly against
+// mediadiff::resolve_sbr_signaling() with a call-counting fake
+// SbrProbeFn, so a test can prove the probe is NOT called in the cases
+// the header pass already answers. No file, no real decoder, mirroring
+// tests/unit/test_gop_classification.cpp's own SpsBitWriter-plus-
+// synthetic-buffer convention for a small, hand-verified bitstream
+// grammar.
 //
 // A second block of tests (marked "real fixture" below) exercises
 // StreamInfo::sbr_signaling/effective_sample_rate_hz end to end through a
 // real DemuxSession opened against 06-02's hand-written HE-AAC fixture
-// pair, proving the REAL bounded decode (src/probe/demux_session.cpp's
-// own probe_implicit_sbr_via_second_open) actually distinguishes implicit
-// SBR from plain LC.
+// pair, plus a NORMALLY-ENCODED AAC-LC fixture -- the case 06-04's
+// implementation reported `unknown` for, because its one-packet fallback
+// cannot decode a frame from a stream whose first packet is consumed
+// entirely as encoder-delay priming (06-13-PLAN.md, .planning/WINDOWS.md).
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -29,6 +35,8 @@ using mediadiff::AudioObjectType;
 using mediadiff::AudioSpecificConfig;
 using mediadiff::DemuxOptions;
 using mediadiff::DemuxSession;
+using mediadiff::HeaderPassSbrEvidence;
+using mediadiff::implicit_sbr_is_possible;
 using mediadiff::parse_audio_specific_config;
 using mediadiff::resolve_sbr_signaling;
 using mediadiff::SbrProbeDecodeResult;
@@ -155,6 +163,44 @@ TEST_CASE("audio_config - a truncated ASC (one byte, zero bytes, and a buffer sh
   REQUIRE_FALSE(short_escape.has_value());
 }
 
+// --- Shared helpers for the resolve_sbr_signaling block ------------------
+
+namespace {
+
+// A probe that must never be called: every test below asserts its own
+// call count explicitly, so a regression that reintroduces 06-04's
+// "probe first, ask questions later" ordering fails HERE by name rather
+// than only showing up as an instruction-count ratchet failure in CI.
+struct CountingProbe {
+  int calls = 0;
+  std::optional<SbrProbeDecodeResult> result;
+
+  mediadiff::SbrProbeFn fn() {
+    return [this]() -> std::optional<SbrProbeDecodeResult> {
+      ++calls;
+      return result;
+    };
+  }
+};
+
+// What the header pass reports for an ordinary AAC-LC stream: libav
+// decoded frames inside avformat_find_stream_info and resolved
+// AV_PROFILE_AAC_LOW at the stream's own declared rate.
+HeaderPassSbrEvidence header_resolved_lc(std::int64_t rate_hz) {
+  HeaderPassSbrEvidence h;
+  h.profile_resolved = true;
+  h.profile_is_he_aac = false;
+  h.resolved_sample_rate_hz = rate_hz;
+  return h;
+}
+
+// What the header pass reports when it could not decode a single frame --
+// codecpar->profile is still AV_PROFILE_UNKNOWN. This is the ONLY state
+// in which D-12's bounded fallback probe is reachable.
+HeaderPassSbrEvidence header_resolved_nothing() { return HeaderPassSbrEvidence{}; }
+
+}  // namespace
+
 // --- Test 1: explicit top-level AOT_SBR -> explicit_asc, NO decode -------
 
 TEST_CASE("audio_config - resolve_sbr_signaling: a top-level AOT_SBR ASC resolves to explicit_asc with no decode",
@@ -163,14 +209,19 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a top-level AOT_SBR ASC resolve
   REQUIRE(asc.has_value());
   REQUIRE(asc->has_explicit_sbr);
 
-  int probe_calls = 0;
-  const mediadiff::SbrProbeFn probe = [&probe_calls]() -> std::optional<SbrProbeDecodeResult> {
-    ++probe_calls;
-    return std::nullopt;
-  };
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, probe);
+  CountingProbe probe;
+  // Deliberately hand it header evidence that WOULD read as implicit if
+  // consulted (an HE profile at a doubled rate) -- explicit signaling is
+  // decided from the ASC alone and must outrank it, since explicit-versus-
+  // implicit is exactly what audio.profile exists to carry.
+  HeaderPassSbrEvidence header;
+  header.profile_resolved = true;
+  header.profile_is_he_aac = true;
+  header.resolved_sample_rate_hz = 44100;
+
+  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
   REQUIRE(result == SbrSignaling::explicit_asc);
-  REQUIRE(probe_calls == 0);
+  REQUIRE(probe.calls == 0);
 }
 
 // --- Test 2: a 0x2b7 backward-compatible sync extension -> explicit_asc,
@@ -184,59 +235,139 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a 0x2b7 sync-extension SBR mark
   REQUIRE(asc->has_explicit_sbr);
   REQUIRE(asc->extension_sampling_frequency_hz == 44100);
 
-  int probe_calls = 0;
-  const mediadiff::SbrProbeFn probe = [&probe_calls]() -> std::optional<SbrProbeDecodeResult> {
-    ++probe_calls;
-    return std::nullopt;
-  };
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, probe);
+  CountingProbe probe;
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_lc(22050), probe.fn());
   REQUIRE(result == SbrSignaling::explicit_asc);
-  REQUIRE(probe_calls == 0);
+  REQUIRE(probe.calls == 0);
 }
 
-// --- Test 3/4: a bare, ambiguous LC ASC -- the bounded probe is called
-// EXACTLY ONCE, and its result distinguishes implicit_decoded from none ---
+// --- D-12's PRIMARY mechanism: the header pass's own post-
+// find_stream_info codecpar, at zero additional cost, with the bounded
+// fallback probe never invoked -------------------------------------------
 
-TEST_CASE("audio_config - resolve_sbr_signaling: a bare AOT_AAC_LC ASC over a genuinely SBR stream resolves to "
-          "implicit_decoded via exactly one bounded probe call",
+TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header pass resolved an HE-AAC profile "
+          "resolves to implicit_decoded WITHOUT calling the bounded probe",
           "[unit]") {
   const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
   REQUIRE(asc.has_value());
   REQUIRE_FALSE(asc->has_explicit_sbr);
 
-  int probe_calls = 0;
-  const mediadiff::SbrProbeFn probe = [&probe_calls]() -> std::optional<SbrProbeDecodeResult> {
-    ++probe_calls;
-    SbrProbeDecodeResult r;
-    r.declared_sample_rate_hz = 44100;
-    r.decoded_sample_rate_hz = 88200;  // doubled -- genuinely implicit SBR
-    r.he_profile = false;
-    return r;
-  };
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, probe);
+  CountingProbe probe;
+  HeaderPassSbrEvidence header;
+  header.profile_resolved = true;
+  header.profile_is_he_aac = true;
+  header.resolved_sample_rate_hz = 88200;
+
+  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
   REQUIRE(result == SbrSignaling::implicit_decoded);
-  REQUIRE(probe_calls == 1);
+  REQUIRE(probe.calls == 0);
 }
 
-TEST_CASE("audio_config - resolve_sbr_signaling: a bare AOT_AAC_LC ASC over a stream with NO SBR at all resolves "
-          "to none via exactly one bounded probe call",
+TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header pass resolved exactly DOUBLE the "
+          "declared rate resolves to implicit_decoded WITHOUT calling the bounded probe",
+          "[unit]") {
+  const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
+  REQUIRE(asc.has_value());
+  REQUIRE(asc->sampling_frequency_hz == 44100);
+
+  CountingProbe probe;
+  HeaderPassSbrEvidence header;
+  header.profile_resolved = true;
+  header.profile_is_he_aac = false;  // profile alone would say LC
+  header.resolved_sample_rate_hz = 88200;  // but the rate was doubled
+
+  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
+  REQUIRE(result == SbrSignaling::implicit_decoded);
+  REQUIRE(probe.calls == 0);
+}
+
+// This is the regression test for 06-13's own quality defect: an ordinary
+// AAC-LC stream whose header pass resolved a real LC profile at the
+// declared (undoubled) rate is a POSITIVE "no SBR" determination.
+// Reporting `unknown` here is a latent false finding, because D-14 makes
+// `unknown` compare as its own value -- so a later build that learns the
+// answer turns an unchanged file into a finding.
+TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header pass resolved a plain LC profile "
+          "at the declared rate resolves to none, NOT unknown, and never calls the bounded probe",
+          "[unit]") {
+  const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
+  REQUIRE(asc.has_value());
+
+  CountingProbe probe;
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_lc(44100), probe.fn());
+  REQUIRE(result == SbrSignaling::none);
+  REQUIRE(probe.calls == 0);
+}
+
+// The ADTS/MPEG-TS shape: no extradata at all, so no ASC -- but the header
+// pass still resolved a real profile by decoding, which is enough to
+// determine there is no SBR.
+TEST_CASE("audio_config - resolve_sbr_signaling: no ASC at all but a header-pass-resolved LC profile resolves to "
+          "none, not unknown",
+          "[unit]") {
+  CountingProbe probe;
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, header_resolved_lc(44100), probe.fn());
+  REQUIRE(result == SbrSignaling::none);
+  REQUIRE(probe.calls == 0);
+}
+
+TEST_CASE("audio_config - resolve_sbr_signaling: no ASC at all but a header-pass-resolved HE-AAC profile resolves "
+          "to implicit_decoded",
+          "[unit]") {
+  CountingProbe probe;
+  HeaderPassSbrEvidence header;
+  header.profile_resolved = true;
+  header.profile_is_he_aac = true;
+  header.resolved_sample_rate_hz = 44100;
+
+  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, header, probe.fn());
+  REQUIRE(result == SbrSignaling::implicit_decoded);
+  REQUIRE(probe.calls == 0);
+}
+
+// --- D-12's FALLBACK: reachable ONLY when the header pass resolved no
+// profile at all (libav could not decode a single frame) -----------------
+
+TEST_CASE("audio_config - resolve_sbr_signaling: with NO header-pass profile, a bare AOT_AAC_LC ASC over a "
+          "genuinely SBR stream resolves to implicit_decoded via exactly one bounded probe call",
           "[unit]") {
   const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
   REQUIRE(asc.has_value());
   REQUIRE_FALSE(asc->has_explicit_sbr);
 
-  int probe_calls = 0;
-  const mediadiff::SbrProbeFn probe = [&probe_calls]() -> std::optional<SbrProbeDecodeResult> {
-    ++probe_calls;
-    SbrProbeDecodeResult r;
-    r.declared_sample_rate_hz = 44100;
-    r.decoded_sample_rate_hz = 44100;  // NOT doubled -- plain LC, no SBR
-    r.he_profile = false;
-    return r;
-  };
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, probe);
+  CountingProbe probe;
+  SbrProbeDecodeResult r;
+  r.declared_sample_rate_hz = 44100;
+  r.decoded_sample_rate_hz = 88200;  // doubled -- genuinely implicit SBR
+  r.he_profile = false;
+  probe.result = r;
+
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
+  REQUIRE(result == SbrSignaling::implicit_decoded);
+  REQUIRE(probe.calls == 1);
+}
+
+TEST_CASE("audio_config - resolve_sbr_signaling: with NO header-pass profile, a bare AOT_AAC_LC ASC over a stream "
+          "with NO SBR at all resolves to none via exactly one bounded probe call",
+          "[unit]") {
+  const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
+  REQUIRE(asc.has_value());
+
+  CountingProbe probe;
+  SbrProbeDecodeResult r;
+  r.declared_sample_rate_hz = 44100;
+  r.decoded_sample_rate_hz = 44100;  // NOT doubled -- plain LC, no SBR
+  r.he_profile = false;
+  probe.result = r;
+
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
   REQUIRE(result == SbrSignaling::none);
-  REQUIRE(probe_calls == 1);
+  REQUIRE(probe.calls == 1);
 }
 
 TEST_CASE("audio_config - resolve_sbr_signaling: the bounded probe itself failing (std::nullopt) resolves to "
@@ -245,14 +376,66 @@ TEST_CASE("audio_config - resolve_sbr_signaling: the bounded probe itself failin
   const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
   REQUIRE(asc.has_value());
 
-  int probe_calls = 0;
-  const mediadiff::SbrProbeFn probe = [&probe_calls]() -> std::optional<SbrProbeDecodeResult> {
-    ++probe_calls;
-    return std::nullopt;
-  };
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, probe);
+  CountingProbe probe;  // probe.result stays std::nullopt
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
   REQUIRE(result == SbrSignaling::unknown);
-  REQUIRE(probe_calls == 1);
+  REQUIRE(probe.calls == 1);
+}
+
+// --- The fallback's own gate: it cannot fire on a stream whose declared
+// config rules implicit SBR out ------------------------------------------
+
+TEST_CASE("audio_config - resolve_sbr_signaling: with NO header-pass profile, an ASC declaring a non-AAC-LC "
+          "object type resolves to none WITHOUT calling the bounded probe",
+          "[unit]") {
+  AscBitWriter w;
+  w.u(5, 23);  // AOT_AAC_LD -- not a candidate for IMPLICIT SBR signaling
+  w.u(4, 4);   // 44100
+  w.u(4, 2);   // stereo
+  const auto asc = parse_audio_specific_config(w.to_bytes());
+  REQUIRE(asc.has_value());
+  REQUIRE(asc->object_type == 23);
+
+  CountingProbe probe;
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
+  REQUIRE(result == SbrSignaling::none);
+  REQUIRE(probe.calls == 0);
+}
+
+// implicit_sbr_is_possible() directly -- including the explicit record
+// that the plausible-sounding "44100 is too high to be an SBR core rate"
+// gate is FALSE for this project, whose own audio_sbr_implicit.mp4
+// fixture is exactly a 44100 Hz core decoding at 88200 Hz.
+TEST_CASE("audio_config - implicit_sbr_is_possible: a 44100 Hz AAC-LC core IS a candidate (88200 is a legal "
+          "Table 1.16 rate, and audio_sbr_implicit.mp4 is exactly that case)",
+          "[unit]") {
+  const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
+  REQUIRE(asc.has_value());
+  REQUIRE(asc->sampling_frequency_hz == 44100);
+  REQUIRE(implicit_sbr_is_possible(*asc));
+}
+
+TEST_CASE("audio_config - implicit_sbr_is_possible: a 96000 Hz core is NOT a candidate (192000 is not an "
+          "expressible AAC rate)",
+          "[unit]") {
+  AscBitWriter w;
+  w.u(5, 2);  // AOT_AAC_LC
+  w.u(4, 0);  // 96000
+  w.u(4, 2);  // stereo
+  const auto asc = parse_audio_specific_config(w.to_bytes());
+  REQUIRE(asc.has_value());
+  REQUIRE(asc->sampling_frequency_hz == 96000);
+  REQUIRE_FALSE(implicit_sbr_is_possible(*asc));
+}
+
+TEST_CASE("audio_config - implicit_sbr_is_possible: an explicitly-SBR ASC is not an IMPLICIT candidate",
+          "[unit]") {
+  const auto asc = parse_audio_specific_config(explicit_sbr_asc_bytes());
+  REQUIRE(asc.has_value());
+  REQUIRE(asc->has_explicit_sbr);
+  REQUIRE_FALSE(implicit_sbr_is_possible(*asc));
 }
 
 // --- Test 7: a non-AAC codec resolves to none WITHOUT attempting any ASC
@@ -262,28 +445,23 @@ TEST_CASE("audio_config - resolve_sbr_signaling: the bounded probe itself failin
 TEST_CASE("audio_config - resolve_sbr_signaling: a non-AAC codec resolves to none without any ASC parse or probe "
           "call",
           "[unit]") {
-  int probe_calls = 0;
-  const mediadiff::SbrProbeFn probe = [&probe_calls]() -> std::optional<SbrProbeDecodeResult> {
-    ++probe_calls;
-    return std::nullopt;
-  };
+  CountingProbe probe;
   // Even an ASC that WOULD resolve explicit if consulted must not change
   // the outcome -- codec_id_is_aac=false gates the whole decision.
   const auto asc = parse_audio_specific_config(explicit_sbr_asc_bytes());
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/false, asc, probe);
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/false, asc, header_resolved_lc(44100), probe.fn());
   REQUIRE(result == SbrSignaling::none);
-  REQUIRE(probe_calls == 0);
+  REQUIRE(probe.calls == 0);
 }
 
-TEST_CASE("audio_config - resolve_sbr_signaling: a missing ASC (no extradata) resolves to unknown", "[unit]") {
-  int probe_calls = 0;
-  const mediadiff::SbrProbeFn probe = [&probe_calls]() -> std::optional<SbrProbeDecodeResult> {
-    ++probe_calls;
-    return std::nullopt;
-  };
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, probe);
+TEST_CASE("audio_config - resolve_sbr_signaling: a missing ASC AND no header-pass profile resolves to unknown",
+          "[unit]") {
+  CountingProbe probe;
+  const SbrSignaling result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, header_resolved_nothing(), probe.fn());
   REQUIRE(result == SbrSignaling::unknown);
-  REQUIRE(probe_calls == 0);
+  REQUIRE(probe.calls == 0);
 }
 
 // ===========================================================================
@@ -305,20 +483,18 @@ TEST_CASE("audio_config - audio_sbr_explicit.mp4: sbr_signaling is explicit_asc,
   REQUIRE(info.effective_sample_rate_hz == *info.sample_rate);
 }
 
-TEST_CASE("audio_config - audio_sbr_implicit.mp4: sbr_signaling is implicit_decoded via the REAL bounded decode, "
-          "effective rate is the probe's own decoded rate (not a formulaic doubling of the core rate)",
+TEST_CASE("audio_config - audio_sbr_implicit.mp4: sbr_signaling is implicit_decoded from the HEADER PASS's own "
+          "post-find_stream_info codecpar, effective rate is that resolved rate (never a formulaic doubling)",
           "[unit]") {
-  // 06-04-PLAN.md deviation (Rule 1): empirically, avformat_find_stream_info()'s
-  // own internal probing already resolves codecpar->sample_rate to the
-  // SBR-doubled value for this fixture (88200, not the ASC-declared 44100) --
-  // reproducible identically with and without --content, i.e. entirely
-  // within the header pass. A formulaic `core_rate * 2` here would therefore
-  // fabricate a false, quadrupled 176400 Hz. DemuxSession::compute_sbr_signaling()
-  // instead caches the bounded probe's OWN directly-observed decoded rate
-  // (implicit_probe_rate_hz_), so effective_sample_rate_hz is provably
-  // correct regardless of whether codecpar already carries the doubled
-  // value. For this fixture the probe's own decode and codecpar's own
-  // already-resolved rate agree, so effective equals core here too.
+  // 06-13-PLAN.md (D-12 as DECIDED): verified against THIS project's
+  // linked FFmpeg 8.1 -- for this fixture avformat_find_stream_info()
+  // resolves codecpar->sample_rate to the SBR-doubled 88200 (the ASC
+  // declares 44100) AND codecpar->profile to AV_PROFILE_AAC_HE. Either
+  // signal alone identifies implicit SBR, so D-12's primary mechanism
+  // answers here with no second open and no bounded fallback decode.
+  // A formulaic `core_rate * 2` would fabricate a false, quadrupled
+  // 176400 Hz -- which is exactly why the effective rate is read, never
+  // computed.
   auto session = DemuxSession::open(fixture("audio_sbr_implicit.mp4"), DemuxOptions{});
   REQUIRE(session.has_value());
   const StreamInfo info = session->stream_info(0);
@@ -337,6 +513,41 @@ TEST_CASE("audio_config - audio_aac_handwritten.mp4: a plain AAC-LC stream with 
   REQUIRE(info.sbr_signaling == SbrSignaling::none);
   REQUIRE(info.sample_rate.has_value());
   REQUIRE(info.effective_sample_rate_hz == *info.sample_rate);
+}
+
+// 06-13-PLAN.md: the regression test for the defect 06-04's
+// implementation shipped. audio_hash_base.mp4 is an ORDINARY
+// encoder-produced AAC-LC file, and its first packet is consumed entirely
+// as 1024-sample encoder-delay priming (AV_PKT_DATA_SKIP_SAMPLES
+// start_skip=1024) -- so the bounded one-packet fallback probe gets
+// EAGAIN from avcodec_receive_frame and can never resolve it, which is
+// why this file reported `unknown` before this fix. It must report
+// `none`: the header pass resolved AV_PROFILE_AAC_LOW at the undoubled
+// declared rate, which IS a determination. `unknown` here would be a
+// latent false finding, since D-14 makes `unknown` compare as its own
+// value.
+TEST_CASE("audio_config - audio_hash_base.mp4 (a NORMALLY-ENCODED AAC-LC file whose first packet is entirely "
+          "encoder-delay priming) resolves to none, never unknown",
+          "[unit]") {
+  auto session = DemuxSession::open(fixture("audio_hash_base.mp4"), DemuxOptions{});
+  REQUIRE(session.has_value());
+  const StreamInfo info = session->stream_info(0);
+  REQUIRE(info.sbr_signaling == SbrSignaling::none);
+  REQUIRE(info.sample_rate.has_value());
+  REQUIRE(*info.sample_rate == 44100);
+  REQUIRE(info.effective_sample_rate_hz == 44100);
+}
+
+// The same determination for an MPEG-TS stream copy, which carries ADTS
+// and therefore no ASC extradata at all -- the header pass's own resolved
+// profile is the whole basis for the answer there.
+TEST_CASE("audio_config - audio_hash_base.ts (ADTS, no ASC extradata at all) resolves to none from the header "
+          "pass's own resolved profile",
+          "[unit]") {
+  auto session = DemuxSession::open(fixture("audio_hash_base.ts"), DemuxOptions{});
+  REQUIRE(session.has_value());
+  const StreamInfo info = session->stream_info(0);
+  REQUIRE(info.sbr_signaling == SbrSignaling::none);
 }
 
 // --- A non-audio stream never attempts any SBR resolution -----------------

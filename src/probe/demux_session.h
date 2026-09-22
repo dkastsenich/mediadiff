@@ -534,12 +534,14 @@ struct StreamInfo {
   // resolve_sbr_signaling()'s own doc comment in probe/audio_config.h).
   // `SbrSignaling::none` for every non-audio and every non-AAC stream.
   SbrSignaling sbr_signaling = SbrSignaling::none;
-  // The effective (SBR-decoded) rate. For `implicit_decoded`, this is the
-  // bounded probe's OWN directly-observed decoded rate (never a formulaic
-  // "double the declared rate" -- see DemuxSession::implicit_probe_rate_hz_'s
-  // own doc comment for why: `codecpar->sample_rate` can ALREADY carry the
-  // doubled value for a short stream, in which case doubling it again
-  // would fabricate a false, quadrupled rate). For `explicit_asc`, this
+  // The effective (SBR-decoded) rate -- NEVER a formulaic "double the
+  // declared rate". `codecpar->sample_rate` normally ALREADY carries the
+  // doubled value (that is precisely what D-12's primary mechanism reads
+  // to identify implicit SBR at all), so doubling it again here would
+  // fabricate a false, quadrupled rate. For an `implicit_decoded` stream
+  // resolved by the bounded FALLBACK probe instead, this is that probe's
+  // OWN directly-observed decoded rate -- see
+  // DemuxSession::implicit_probe_rate_hz_'s own doc comment. For `explicit_asc`, this
   // equals `sample_rate` unchanged: 06-RESEARCH.md Q4 confirmed
   // `codecpar->sample_rate` is set to the ALREADY-DOUBLED `ext_sample_rate`
   // directly by the MP4 demuxer for explicit signaling (isom.c), so
@@ -721,13 +723,19 @@ class DemuxSession {
   // rather than re-derived on every stream_info() call (the ambiguous case
   // costs a bounded decode; re-doing that per call would be wasteful and
   // is unnecessary since the header pass never changes underneath a live
-  // session).
+  // session). 06-13-PLAN.md: since D-12's primary mechanism now answers
+  // from the header pass's own already-paid find_stream_info, populating
+  // this vector normally costs NOTHING beyond an ASC bit-parse per AAC
+  // stream.
   std::vector<SbrSignaling> sbr_signaling_;
 
   // 06-04-PLAN.md (AUDIO-03, D-12): index-aligned with ctx_->streams, the
-  // bounded probe's OWN observed decoded sample rate -- populated ONLY for
-  // a stream whose sbr_signaling_ resolved to implicit_decoded, 0
-  // otherwise. Deliberately NOT derived by doubling `sample_rate` after
+  // bounded FALLBACK probe's OWN observed decoded sample rate -- populated
+  // ONLY for a stream whose sbr_signaling_ resolved to implicit_decoded
+  // THROUGH THAT FALLBACK, 0 otherwise (06-13-PLAN.md: including every
+  // stream resolved by D-12's primary header-pass mechanism, whose
+  // effective rate is `codecpar->sample_rate` itself and so needs no
+  // separate cache). Deliberately NOT derived by doubling `sample_rate` after
   // the fact: empirically (audio_sbr_implicit.mp4, this project's own
   // hand-written fixture), `avformat_find_stream_info()`'s own internal
   // probing can ALREADY resolve the doubled rate into `codecpar->
@@ -739,9 +747,14 @@ class DemuxSession {
 
   // Populates sbr_signaling_ for every stream, called once from open()
   // right after the primary avformat_open_input/avformat_find_stream_info
-  // sequence completes. `utf8_path` is open()'s own parameter, threaded
+  // sequence completes -- which is also what makes D-12's primary
+  // mechanism free here: the profile and sample rate that sequence
+  // resolved are read straight off `codecpar` (06-13-PLAN.md).
+  // `utf8_path` is open()'s own parameter, threaded
   // through here (and no further) so the bounded one-packet decode
-  // fallback (the ambiguous, bare-LC-ASC case only) can open a SECOND,
+  // fallback (reached only when find_stream_info resolved no profile at
+  // all for an AAC stream -- no fixture in this corpus does) can open a
+  // SECOND,
   // throwaway AVFormatContext against the SAME bytes -- mirroring
   // reprobe_ts_declared_durations' own isolation precedent above, so this
   // session's own ctx_/read position is never touched by the fallback

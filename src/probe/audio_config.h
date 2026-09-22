@@ -112,6 +112,41 @@ struct SbrProbeDecodeResult {
   bool he_profile = false;
 };
 
+// 06-13-PLAN.md (AUDIO-03, D-12 as DECIDED): what the HEADER PASS itself
+// already established for one stream -- `codecpar` AFTER
+// `avformat_find_stream_info()`, which libav populates by opening a
+// decoder and decoding the stream's own first frames. This is D-12's own
+// PRIMARY mechanism, verbatim: "SBR signaling mode is detected in the
+// header pass, by comparing the declared ASC/ADTS against `codecpar`
+// after `avformat_find_stream_info`". The `SbrProbeFn` bounded decode
+// above is its FALLBACK, reached only when the header pass resolved
+// nothing at all -- 06-04's implementation inverted that order and made
+// the fallback the primary path, which cost one whole extra
+// `avformat_open_input` per AAC file (see the ledger entry in
+// .planning/WINDOWS.md).
+//
+// Plain scalars only: this translation unit never sees an
+// AVCodecParameters (the libav-free discipline this header's own top
+// comment establishes). src/probe/demux_session.cpp maps
+// AV_PROFILE_UNKNOWN / AV_PROFILE_AAC_HE / AV_PROFILE_AAC_HE_V2 into
+// these fields at the libav edge (D-07: libav only at the edge).
+struct HeaderPassSbrEvidence {
+  // `codecpar->profile != AV_PROFILE_UNKNOWN`. libav can only resolve a
+  // real AAC profile by DECODING, so a resolved non-HE profile is a
+  // POSITIVE "there is no SBR here" determination -- not an absence of
+  // information, and therefore never `unknown` (D-14: `unknown` must keep
+  // meaning "could not be determined").
+  bool profile_resolved = false;
+  // `codecpar->profile` is AV_PROFILE_AAC_HE or AV_PROFILE_AAC_HE_V2.
+  bool profile_is_he_aac = false;
+  // `codecpar->sample_rate` as it stands AFTER find_stream_info. For an
+  // implicitly-signalled SBR stream libav reports the DOUBLED rate here:
+  // verified against THIS project's linked FFmpeg 8.1 (never the system
+  // ffmpeg) on tests/fixtures/audio_sbr_implicit.mp4 -- the ASC declares
+  // 44100, codecpar reports 88200 and profile 4 (AV_PROFILE_AAC_HE).
+  std::int64_t resolved_sample_rate_hz = 0;
+};
+
 // A caller-supplied, at-most-once-invoked bounded decode attempt.
 // std::nullopt means "no decode was possible at all" (the target stream's
 // first packet could not be obtained or decoded within budget) --
@@ -131,14 +166,24 @@ using SbrProbeFn = std::function<std::optional<SbrProbeDecodeResult>()>;
 inline constexpr int kMaxSbrProbePackets = 1;
 
 // HE-AAC SBR signaling mode (AUDIO-03). `none`: not AAC, or an AAC stream
-// that genuinely carries no SBR at all. `explicit_asc`: the ASC itself
-// says so (D-12's no-decode fast path, the common case). `implicit_decoded`:
-// a bare, ambiguous ASC resolved by the bounded one-packet decode finding a
-// doubled rate or an AV_PROFILE_AAC_HE-class profile. `unknown`: the
-// ambiguous case could not be resolved at all (no ASC, or the bounded
-// decode itself failed) -- never collapsed into `none`, since that would
-// silently assert "no SBR" on a stream this project genuinely could not
-// determine.
+// this project DETERMINED carries no SBR -- either the header pass
+// resolved a non-HE profile at the undoubled declared rate, or the
+// declared ASC cannot describe implicit SBR at all. `explicit_asc`: the
+// ASC itself says so (D-12's no-decode fast path). `implicit_decoded`: a
+// bare, ambiguous AAC-LC ASC resolved by an actual decode -- the header
+// pass's own (`avformat_find_stream_info`, D-12's primary mechanism) or,
+// failing that, the bounded one-packet fallback -- finding a doubled rate
+// or an AV_PROFILE_AAC_HE-class profile. `unknown`: the ambiguous case
+// could not be resolved AT ALL (the header pass resolved no profile AND
+// there is no ASC to reason from, or the bounded fallback itself failed)
+// -- never collapsed into `none`, since that would silently assert "no
+// SBR" on a stream this project genuinely could not determine.
+//
+// 06-13-PLAN.md: the converse trap is equally real and is what this
+// phase's own ledger entry records -- reporting `unknown` where the
+// answer WAS determinable is a latent false finding, because D-14 makes
+// `unknown` compare as its own value. Until 06-13, every ordinary
+// encoder-produced AAC file reported `unknown` for exactly that reason.
 enum class SbrSignaling : std::uint8_t {
   none,
   explicit_asc,
@@ -146,23 +191,57 @@ enum class SbrSignaling : std::uint8_t {
   unknown,
 };
 
-// 06-04-PLAN.md (AUDIO-03, D-12): resolves SBR signaling in the header
-// pass so `audio.profile`'s value is identical whichever passes ran (D-12's
-// whole point -- see audio.profile.md). `codec_id_is_aac` gates the WHOLE
-// function: a non-AAC stream returns `none` immediately (Test 7) without
-// this function ever inspecting `asc` (the caller is not even expected to
-// have attempted a parse in that case). When `asc` has a value and
-// `has_explicit_sbr` is true, returns `explicit_asc` with NO call to
-// `probe_decode` at all -- the cheaper-middle-path 06-RESEARCH.md Q4
-// recommends, covering the common case for free. Only when `asc` parses as
-// a bare, non-explicit-SBR object type does this function invoke
-// `probe_decode` -- AT MOST ONCE (kMaxSbrProbePackets's own contract,
-// enforced here structurally: there is exactly one call site) -- and maps
-// a doubled decoded rate or an HE-class profile to `implicit_decoded`,
-// anything else to `none`. A missing `asc`, an empty `probe_decode`, or a
-// probe that itself returns std::nullopt all resolve to `unknown` -- never
-// a guess.
+// 06-13-PLAN.md (AUDIO-03, D-12 as DECIDED): the fallback probe's own
+// precondition -- can this ASC describe an IMPLICITLY-signalled SBR
+// stream at all? Implicit signaling is, by definition, an AAC-LC (AOT 2)
+// stream whose SBR payload rides in an extension the ASC never mentions;
+// an ASC that names any other object type is not a candidate, and one
+// that already names SBR explicitly is decided without a decode. The
+// doubled rate must also be a rate AAC can actually express (ISO/IEC
+// 14496-3 Table 1.16), so a 96000 Hz core -- which would have to double
+// to 192000 -- is not a candidate either.
+//
+// VERIFIED, and one plausible-sounding gate DISPROVEN: "a 44100 or 48000
+// Hz core rate cannot be implicit SBR" is FALSE for this project. Its own
+// tests/fixtures/audio_sbr_implicit.mp4 declares a 44100 Hz core and
+// decodes at 88200 Hz, and 88200 is a legal Table 1.16 rate. Gating on
+// the core rate being "low" would therefore have silently broken this
+// project's own implicit-SBR fixture -- checked against the linked
+// FFmpeg 8.1, never the system ffmpeg.
+bool implicit_sbr_is_possible(const AudioSpecificConfig& asc);
+
+// 06-04-PLAN.md / 06-13-PLAN.md (AUDIO-03, D-12): resolves SBR signaling
+// in the header pass so `audio.profile`'s value is identical whichever
+// passes ran (D-12's whole point -- see audio.profile.md).
+//
+// Decision order, highest-confidence first:
+//   1. `codec_id_is_aac == false` -> `none`, without consulting `asc` at
+//      all (Test 7).
+//   2. An ASC that signals SBR EXPLICITLY (top-level AOT_SBR, or a 0x2b7
+//      backward-compatible sync extension) -> `explicit_asc`, with NO
+//      decode and no look at `header` -- D-12's no-decode fast path.
+//      Deliberately ahead of the header-pass tests below: an explicit
+//      stream's `codecpar` also reports an HE profile AND a doubled rate,
+//      and the explicit/implicit distinction is exactly what
+//      `audio.profile` exists to carry.
+//   3. D-12's PRIMARY mechanism -- `header.profile_resolved`. libav
+//      already decoded this stream's first frames inside
+//      `avformat_find_stream_info()`, so:
+//        - an HE-class profile, or a `codecpar` rate that is exactly
+//          twice the ASC's declared core rate, -> `implicit_decoded`;
+//        - anything else -> `none`, a REAL determination ("the decoder
+//          resolved AAC-LC at the declared rate"), never `unknown`.
+//   4. D-12's FALLBACK -- only when the header pass resolved nothing
+//      (`profile_resolved == false`, i.e. libav could not decode a single
+//      frame). A missing ASC is `unknown` (nothing to reason from). An
+//      ASC that cannot be implicit SBR (`implicit_sbr_is_possible`) is
+//      `none`, decided from the declared config alone. Otherwise
+//      `probe_decode` is invoked -- AT MOST ONCE, enforced structurally
+//      by there being exactly one call site -- and a doubled decoded rate
+//      or an HE-class profile maps to `implicit_decoded`, anything else
+//      to `none`. An empty `probe_decode`, or a probe that returns
+//      std::nullopt, resolves to `unknown` -- never a guess.
 SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<AudioSpecificConfig>& asc,
-                                    const SbrProbeFn& probe_decode);
+                                    const HeaderPassSbrEvidence& header, const SbrProbeFn& probe_decode);
 
 }  // namespace mediadiff

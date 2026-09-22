@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -216,4 +217,39 @@ TEST_CASE("audio_profile_sbr - audio_sbr_explicit.mp4 vs audio_sbr_implicit.mp4'
           "[integration]") {
   const nlohmann::ordered_json report = compare_json(fixture("audio_sbr_explicit.mp4"), fixture("audio_sbr_implicit.mp4"));
   expect_declared_set(report, {"audio.profile", "audio.sample_rate"});
+}
+
+// --- 06-13-PLAN.md: the regression test for the value defect 06-04
+// shipped. An ordinary, encoder-produced AAC-LC file must report a bare
+// `LC` -- the third bucket, naming neither signaling mode -- and must NOT
+// report `(sbr: unknown)`.
+//
+// It did report `(sbr: unknown)` until this fix, because 06-04 resolved
+// SBR through a bounded ONE-packet decode whose single allowed packet is
+// consumed entirely as encoder-delay priming on any real AAC encode
+// (AV_PKT_DATA_SKIP_SAMPLES start_skip=1024), so avcodec_receive_frame
+// returned EAGAIN and nothing was ever decoded. Only the priming-free
+// hand-written fixtures resolved, which is exactly why 06-04's own tests
+// (all of which use those fixtures) passed. D-14 makes `unknown` compare
+// as its own value, so this was a latent false finding: a later build
+// that learned the answer would turn an unchanged file into a diff.
+//
+// audio_hash_base.mp4 (MP4/ASC) and audio_hash_base.ts (MPEG-TS/ADTS, no
+// ASC extradata at all) are both asserted, because the two reach the same
+// determination by different routes -- the TS side has no ASC to reason
+// from and rests entirely on the header pass's own resolved profile.
+
+TEST_CASE("audio_profile_sbr - an ordinary encoder-produced AAC-LC file reports a bare 'LC', never '(sbr: "
+          "unknown)' (MP4 and MPEG-TS)",
+          "[integration]") {
+  for (const std::string& name : {std::string("audio_hash_base.mp4"), std::string("audio_hash_base.ts")}) {
+    INFO("fixture: " << name);
+    const nlohmann::ordered_json report = compare_json(fixture(name), fixture(name));
+    const nlohmann::ordered_json* profile = find_finding(report, "audio.profile");
+    REQUIRE(profile != nullptr);
+    const std::string value = profile->at("baseline").get<std::string>();
+    REQUIRE(value == "LC");
+    REQUIRE(value.find("sbr:") == std::string::npos);
+    REQUIRE(profile->at("evidence").at("baseline").at("sbr_signaling").get<std::string>() == "none");
+  }
 }

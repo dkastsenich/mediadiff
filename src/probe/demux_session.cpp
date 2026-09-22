@@ -252,7 +252,16 @@ constexpr int kMaxSbrProbeContainerPacketsScanned = 64;
 
 // 06-04-PLAN.md (AUDIO-03, D-12): the real SbrProbeFn implementation --
 // the ONLY place this project opens a second, throwaway AVFormatContext
-// purely to resolve implicit SBR signaling. Mirrors
+// purely to resolve implicit SBR signaling. 06-13-PLAN.md: this is D-12's
+// FALLBACK, not its primary mechanism (see compute_sbr_signaling below),
+// and is reached only when avformat_find_stream_info resolved no profile
+// for the stream at all. TWO known limits, recorded rather than papered
+// over (.planning/WINDOWS.md): its cost is a whole extra container open,
+// which neither bound below constrains; and kMaxSbrProbePackets == 1
+// cannot yield a frame from an encoder-primed AAC stream, whose first
+// packet is consumed entirely as encoder-delay priming -- such a stream
+// resolves to `unknown`, which is honest (nothing was decoded) but is a
+// fallback that cannot help the case it would most often be asked about. Mirrors
 // DemuxSession::reprobe_ts_declared_durations' own isolation precedent
 // (a second, independent open+close against the SAME path; this session's
 // own ctx_/read position is never touched) and
@@ -841,10 +850,15 @@ StreamInfo DemuxSession::stream_info(int index) const {
   // during the header pass itself, before any decode-pass distinction
   // exists) -- doubling an already-doubled value would fabricate a false,
   // quadrupled rate, exactly the P0 class this project exists to prevent.
-  // For `implicit_decoded`, this reads the bounded probe's OWN directly-
-  // observed decoded rate (implicit_probe_rate_hz_, cached by
-  // compute_sbr_signaling) instead, which is correct whether or not
-  // `codecpar` already reflects the doubling. For `explicit_asc`,
+  // For an `implicit_decoded` stream that D-12's FALLBACK probe resolved,
+  // this reads that probe's OWN directly-observed decoded rate
+  // (implicit_probe_rate_hz_, cached by compute_sbr_signaling) instead,
+  // which is correct whether or not `codecpar` already reflects the
+  // doubling. 06-13-PLAN.md: a stream resolved by D-12's PRIMARY
+  // header-pass mechanism leaves that cache at 0 and keeps
+  // `codecpar->sample_rate` -- which, for that path, is the doubled rate
+  // BY CONSTRUCTION, since noticing the doubling is how the primary
+  // mechanism identified implicit SBR in the first place. For `explicit_asc`,
   // `codecpar->sample_rate` is set to the ALREADY-DOUBLED
   // `ext_sample_rate` directly by the MP4 demuxer (06-RESEARCH.md Q4,
   // isom.c), so it is used unchanged.
@@ -860,14 +874,23 @@ StreamInfo DemuxSession::stream_info(int index) const {
   return info;
 }
 
-// 06-04-PLAN.md (AUDIO-03, D-12): see this method's own doc comment in
-// demux_session.h. Iterates every stream ONCE via the already-open ctx_,
-// parsing each AAC stream's ASC (mediadiff's own libav-free bit reader,
-// probe/audio_config.h) and calling resolve_sbr_signaling() with a real
-// SbrProbeFn that opens the SECOND, throwaway context ONLY when the ASC
-// parse itself did not already resolve the explicit case -- D-12's
-// "explicit costs no decode" contract holds at this call site exactly as
-// it holds inside resolve_sbr_signaling() itself.
+// 06-04-PLAN.md / 06-13-PLAN.md (AUDIO-03, D-12): see this method's own
+// doc comment in demux_session.h. Iterates every stream ONCE via the
+// already-open ctx_, parsing each AAC stream's ASC (mediadiff's own
+// libav-free bit reader, probe/audio_config.h), reading the header pass's
+// OWN post-find_stream_info codecpar evidence, and handing BOTH to
+// resolve_sbr_signaling().
+//
+// 06-13: the SbrProbeFn below is now what D-12 always called it -- a
+// FALLBACK. It is constructed on every stream (an empty std::function
+// costs nothing to build) but resolve_sbr_signaling() only INVOKES it
+// when the header pass resolved no profile at all for that stream, which
+// no fixture in this project's own corpus does. 06-04's implementation
+// invoked it for every AAC stream whose ASC lacked EXPLICIT SBR -- i.e.
+// every ordinary AAC-LC file -- costing one whole extra
+// avformat_open_input + avformat_find_stream_info per file (measured:
+// 53,343,680 retired instructions on the 600 s PERF-03 reference, 17% of
+// that whole leg, of which 95.5% was the second container open).
 void DemuxSession::compute_sbr_signaling(const std::string& utf8_path) {
   sbr_signaling_.clear();
   implicit_probe_rate_hz_.clear();
@@ -886,6 +909,20 @@ void DemuxSession::compute_sbr_signaling(const std::string& utf8_path) {
           std::span<const std::uint8_t>(codecpar->extradata, static_cast<std::size_t>(codecpar->extradata_size)));
     }
 
+    // 06-13-PLAN.md (D-12 as DECIDED): the header pass's OWN evidence,
+    // read from the codecpar this session's single avformat_open_input +
+    // avformat_find_stream_info already produced. libav resolves an AAC
+    // profile only by decoding, so `profile_resolved` distinguishes "the
+    // decoder looked and found plain LC" from "nothing was decoded at
+    // all" -- the distinction that keeps `unknown` meaning "could not be
+    // determined". The AV_PROFILE_* mapping happens HERE, at the libav
+    // edge, because probe/audio_config.cpp is libav-free (D-07).
+    HeaderPassSbrEvidence header_evidence;
+    header_evidence.profile_resolved = codecpar->profile != AV_PROFILE_UNKNOWN;
+    header_evidence.profile_is_he_aac =
+        codecpar->profile == AV_PROFILE_AAC_HE || codecpar->profile == AV_PROFILE_AAC_HE_V2;
+    header_evidence.resolved_sample_rate_hz = codecpar->sample_rate > 0 ? codecpar->sample_rate : 0;
+
     const int stream_index = static_cast<int>(i);
     // Captured here (a side effect of the at-most-once probe call inside
     // resolve_sbr_signaling) so this session can cache the probe's OWN
@@ -901,7 +938,7 @@ void DemuxSession::compute_sbr_signaling(const std::string& utf8_path) {
       captured_probe = *probe;
       return *probe;
     };
-    const SbrSignaling signaling = resolve_sbr_signaling(is_aac, asc, probe_fn);
+    const SbrSignaling signaling = resolve_sbr_signaling(is_aac, asc, header_evidence, probe_fn);
     sbr_signaling_.push_back(signaling);
     implicit_probe_rate_hz_.push_back(
         (signaling == SbrSignaling::implicit_decoded && captured_probe.has_value())
