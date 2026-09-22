@@ -1,9 +1,9 @@
 ---
 slug: true-peak-cross-platform
-status: awaiting_human_verify
+status: resolved
 trigger: "audio.loudness.true_peak reports a different value on arm64-osx and x64-windows-static-md than on x64-linux for the same file, despite bit-exact class-1 decode, failing integration.timeline_av_sync on two blocking CI legs"
 created: 2026-09-22
-updated: 2026-09-22T12:00:00Z
+updated: 2026-09-22T12:30:00Z
 phase: "06"
 ---
 
@@ -323,8 +323,10 @@ reasoning_checkpoint:
     and the resampler's perturbation is provably too small to move the peak until the lossy
     encoder amplifies it (Experiment 3: lossless capture, delta exactly 0)."
 
-next_action: awaiting human verification on CI (arm64-osx + x64-windows-static-md);
-  plus a decision on whether to revert commit f7ce12d.
+next_action: NONE -- session closed. Both human-verify decisions answered and carried
+  out (commits 476f4c5 and ab9e908). Not pushed; the user owns the push. The only
+  residual is the ordinary designated-leg transcription of the new
+  timeline_drift_linear.mp4 hash, tracked on CORPUS_DIGEST_PROVISIONAL.txt.
 
 ## Resolution
 
@@ -399,3 +401,69 @@ side_findings:
     true_peak). The same fix removes it.
   - commit f7ce12d's causal premise is DISPROVEN -- see the Eliminated section. Judgement
     and recommendation carried to the human-verify checkpoint.
+
+## Human verification (2026-09-22) -- both decisions answered, carried out
+
+DECISION 1 -- commit the fixture fix. APPROVED. Committed as **476f4c5**
+`fix(06-13): remove the resampler from timeline_drift_linear.mp4's recipe`,
+staging only the six approved paths. `.planning/config.json` (a pre-existing
+`_auto_chain_active` toggle) and `tests/fixtures/GENERATOR_MANIFEST.json` (a
+pre-existing `generated_at` bump) were deliberately EXCLUDED and left unstaged
+in the working tree -- neither is a product of this session.
+`timeline_drift_linear.mp4` is confirmed on `tests/golden/CORPUS_DIGEST_PROVISIONAL.txt`
+(line 168, under a new STATUS header explaining that it is listed because its
+RECIPE changed, not because it is new), since its new hash
+`d59149df1cccf06bb6ba95cefcf44ae8331c138fd59abcd13b5d8b6df20506c4` is locally
+PREDICTED under `TZ=UTC taskset -c 0-3`, not transcribed from a designated leg.
+
+DECISION 2 -- revert f7ce12d. APPROVED. `git revert f7ce12d` applied cleanly
+against this branch, but was intentionally NOT taken as a plain revert: one
+hunk was kept. Committed as **ab9e908**
+`revert(06-13): remove the loudness decode-class gate, its premise was disproven`.
+
+  REMOVED: the class-gated override + `kCrossPlatformDecodeNoiseFactor`
+  (`src/compare/tol.cpp`); `SkipReason::cross_platform_decode_noise` and every
+  thread of it (`src/core/model.h` enum/to_string/from_string,
+  `src/report/junit.cpp`'s `skip_reason_text`, `docs/schema/report-1.0.json`'s
+  closed enum, `tests/unit/test_measurement_provenance.cpp`'s exhaustive table
+  AND its three hardcoded enumerator counts, 16 -> 15); the class-gate
+  paragraphs in `docs/checks/audio.loudness.true_peak.md` and
+  `docs/checks/audio.loudness.integrated.md`.
+
+  KEPT, deliberately: the `decode_path_class` evidence key on both loudness
+  checks, per the checkpoint's own "keep it and say so" clause. It was
+  introduced to feed the gate, but it earned INDEPENDENT diagnostic value in
+  this very investigation -- reading `class1` on all six measurements is what
+  eliminated decoder nondeterminism as a hypothesis and forced the search
+  upstream into fixture provenance. It is inert at comparison time: the key is
+  one of `src/compare/hash.cpp`'s `kPreconditionKeys`, but that table is
+  consulted only by `compare_hash()`, and both loudness checks are
+  `tol`-semantic, so nothing reads it to decide a verdict. Its comment and both
+  check docs were rewritten to state that it changes no verdict and to record
+  why the gate built on it was reverted. `tests/golden/inspect_audio.txt`
+  therefore stays as f7ce12d refreshed it (restored from HEAD after the revert).
+
+  NOT reverted: `2f2d013` (the additive `inspect_container` golden amendment),
+  confirmed correct by CI run 35713912901 where x64-linux's Test step passed.
+
+  `.planning/WINDOWS.md` #37 marked fixed and its description REWRITTEN, so the
+  ledger no longer preserves the wrong explanation: it now records the disproven
+  premise, the real AND-gate root cause, that `audio.loudness.true_peak` was
+  correct throughout, and that 476f4c5 is the commit that actually fixed it.
+
+POST-REVERT PRE-FLIGHT (full, re-run after both commits):
+  - `scripts/gen_corpus.sh` -- exit 0, 196 fixtures regenerated
+  - `scripts/check_corpus.sh` -- exit 0
+  - `scripts/lint_bash4_builtins.sh` -- exit 0
+  - `scripts/lint_corpus_digest_provenance.sh` -- exit 0 (all 4 clauses)
+  - `scripts/lint_eng16.sh` -- exit 0
+  - `cmake --build --preset x64-linux` -- clean, warnings-as-errors
+  - `ctest --preset x64-linux` -- **1195/1195 pass**, 0 failed, with the same 6
+    pre-existing skips (unit.console_vt + the five designated-leg goldens)
+  - `check verify.schema-drift 06` -- **block: false**, drift_detected: false
+
+NOT PUSHED. The user owns the push. Still outstanding for the designated leg:
+transcribe the real `timeline_drift_linear.mp4` hash and clear its provisional
+ledger entry, and confirm arm64-osx + x64-windows-static-md go green (the local
+`-cpuflags 0` reproduction is a proxy for a foreign DSP path, not aarch64 NEON
+itself -- see blind_spots above).
