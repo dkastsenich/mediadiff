@@ -65,13 +65,23 @@ status: issues_found
 **Files Reviewed:** 46
 **Status:** issues_found
 
+## Corrections (2026-09-22)
+
+A diagnose-only debug session (`.planning/debug/audio-sweep-rate-truncation.md`, commit
+73a2609) tested this review's three highest-signal audio claims by measurement against the
+project's own pinned vcpkg FFmpeg build. It disproved parts of **CR-01**, **WR-03** and
+**WR-09**, and confirmed **WR-02** as P0-class but currently unreachable in this corpus. Each
+of the four findings below carries an in-place note, dated and sourced to that session; no
+finding was deleted, renumbered, moved between severity sections, or had its severity label
+changed — only a note was added under each affected heading.
+
 ## Summary
 
 The phase adds a fused audio decode sweep (`src/probe/audio_decode.cpp`, ~1160 new lines), nine `audio.*` checks, `content.audio.sample_hash`, `meta.decode_errors`, an ASC bit reader, an SBR-signaling probe, and a perf harness. The pass-fusion architecture is sound — there genuinely is one `av_read_frame` loop, decode sinks share one interleave buffer, and the skip-reason plumbing distinguishes "unmeasured" from "measured empty" carefully.
 
 The defects concentrate in three places the prompt flagged as high-risk, and they are the expensive kind:
 
-1. **The decode sinks are configured from `codecpar.sample_rate`, not the decoder's own output rate.** The project's own research (`06-RESEARCH.md` Q4, quoted verbatim in `stream_params.cpp:163-171`) establishes that `codecpar` carries the *undoubled* core rate for an implicitly-signalled HE-AAC stream while the decoder emits at 2x. Every loudness window, every true-peak oversample, every silence threshold length and every sample→millisecond conversion is therefore off by 2x on exactly the content Phase 6 spent two plans (06-02, 06-04) building fixtures for.
+1. **The decode sinks are configured from `codecpar.sample_rate`, not the decoder's own output rate.** The project's own research (`06-RESEARCH.md` Q4, quoted verbatim in `stream_params.cpp:163-171`) establishes that `codecpar` carries the *undoubled* core rate for an implicitly-signalled HE-AAC stream while the decoder emits at 2x. Every loudness window, every true-peak oversample, every silence threshold length and every sample→millisecond conversion is therefore off by 2x on exactly the content Phase 6 spent two plans (06-02, 06-04) building fixtures for. (See CR-01's own 2026-09-22 correction note below: this reproduction was tested by measurement and did not reproduce, though the code reading it is based on stands.)
 2. **Nothing re-validates a decoded frame's channel count or sample format after the first frame**, while `LoudnessSink` is pinned to the first frame's values and reads `frames * channels_` typed elements out of a buffer sized for the *current* frame. A mid-stream channel or format narrowing is a heap over-read on arbitrary input.
 3. **Float PCM is normalized with `std::llround` and then squared**, with no finiteness or range guard, on a path reachable from `pcm_f32le`/`pcm_f64le` — i.e. file bytes reinterpreted as `float` with no decoder clamping in between.
 
@@ -88,6 +98,30 @@ No `<structural_findings>` block was supplied with this review. All findings bel
 ## Critical Issues
 
 ### CR-01: Every audio decode sink is configured from the declared core rate, not the decoder's actual output rate — HE-AAC implicit SBR measures at half the real rate
+
+> **Correction (2026-09-22):** severity overstated; the code reading is correct, but the mechanism
+> is latent, not live. Measured in `.planning/debug/audio-sweep-rate-truncation.md`:
+>
+> - A standalone C probe built against the project's OWN pinned vcpkg FFmpeg
+>   (`build/x64-linux/vcpkg_installed/x64-linux/lib/*.a`, never the GPL system build),
+>   replicating mediadiff's exact call order, found **0** codecpar-vs-frame sample-rate
+>   mismatches across all 144 audio streams in this corpus.
+> - Starving `avformat_find_stream_info` (`probesize=32`, `max_analyze_duration=1`) could not
+>   force divergence: `has_codec_parameters()` also requires `codecpar->format`, which no
+>   container carries for AAC/MP3, so `find_stream_info` always decodes at least one frame for a
+>   compressed audio stream and always writes the decoder's real rate back into `codecpar` before
+>   this file's own `ensure_initialized` ever reads it.
+> - The `if (sample_rate_ <= 0)` guard at `audio_decode.cpp:716` is therefore **latent, not
+>   live** — correct by accident, resting on an undocumented, load-bearing external invariant
+>   (`codecpar` going 44100 -> 88200 ACROSS `find_stream_info` for `audio_sbr_implicit.mp4`
+>   specifically). The code reading above stands; its severity does not.
+> - This finding's own stated reproduction ("`tests/fixtures/audio_sbr_implicit.mp4` is a
+>   44100 Hz core decoding at 88200", sinks therefore receiving 44100) does **not** reproduce:
+>   measured `element_stride` is rate/10 in every case, and the implicit fixture's sink
+>   measurably received 88200, not 44100.
+> - One residual the session could not rule out: a stream whose first packets fail to decode
+>   inside `find_stream_info` but succeed later would still diverge. Not constructible without
+>   generating new media, which was out of scope for that session.
 
 **File:** `src/probe/audio_decode.cpp:679`, `src/probe/audio_decode.cpp:716-762`, `src/analyzers/audio/silence.cpp:181-182`
 
@@ -274,6 +308,25 @@ and add a static check that the class remains trivially movable except for `code
 
 ### WR-02: `sampling_state` is hardcoded to `"full"` even when the DoS limit truncated the decode
 
+> **Correction (2026-09-22): CONFIRMED, severity unchanged.** Measured in
+> `.planning/debug/audio-sweep-rate-truncation.md`:
+>
+> - Confirmed by the same session and P0-class, though currently unreachable in this corpus.
+>   `src/analyzers/content/sample_hash.cpp:100` DOES guard the packet-budget truncation path
+>   (`packet_scan.per_stream[i].partial` -> `skip: partial_scan`), so `max_bytes` /
+>   `max_packets_per_stream` are honestly handled. The one escape is
+>   `AudioDecodeState::consecutive_error_limit_hit_`, which sets no packet-scan flag, so
+>   `sampling_state` stays the hardcoded literal `"full"` exactly as this finding states.
+> - `sampling_state` is one of `hash.cpp`'s `kPreconditionKeys`, whose stated purpose is to
+>   degrade a mismatch to `skipped:hash_incomparable`, never a fabricated pass or fail. Because
+>   it is a constant, it can never mismatch, so a truncated-vs-untruncated pair compares as a
+>   real content FAIL instead — the fabricated-verdict class TRUST-02 exists to prevent.
+> - Reachability: worst case in the corpus is `audio_corrupt_frames.mp4` at
+>   `decode_error_count: 7` against a bound of 64, and those errors are non-consecutive — which
+>   is exactly why all 1208 tests (at the time of that session) pass over it without exercising
+>   this finding.
+> - Severity and position among the warnings are unchanged by this note.
+
 **File:** `src/analyzers/content/sample_hash.cpp:181`, `src/probe/audio_decode.cpp:970-972`
 
 Once `consecutive_errors_ > kMaxAudioDecodeErrorsPerStream`, `consecutive_error_limit_hit_` latches and `feed_packet` silently ignores every remaining packet for that stream. `total_samples_` is still `> 0`, `undecodable` stays `false`, `packet_scan.per_stream[i].partial` is untouched — so the truncated hash chain is emitted as a normal measurement whose precondition evidence asserts `{"sampling_state": "full"}`.
@@ -292,6 +345,20 @@ Two truncated sides then compare (both `"truncated"`), and a truncated-vs-full p
 ---
 
 ### WR-03: The decode DoS bound counts send errors only, and is off by one from its own constant
+
+> **Correction (2026-09-22): half right.** Measured in
+> `.planning/debug/audio-sweep-rate-truncation.md`:
+>
+> - The substantive half is **CORRECT** and stands: `++consecutive_errors_` appears only in the
+>   `avcodec_send_packet` failure branch, while the `avcodec_receive_frame` failure branch
+>   increments `decode_error_count_` and breaks without touching `consecutive_errors_` — so a
+>   stream that fails exclusively in receive is unbounded by this DoS mitigation, exactly as
+>   this finding states.
+> - The claimed off-by-one is **NOT a defect**, and is withdrawn in place:
+>   `consecutive_errors_ > kMaxAudioDecodeErrorsPerStream` trips on the 65th consecutive error,
+>   which matches the header's own documented wording ("refuses to decode past
+>   `kMaxAudioDecodeErrorsPerStream` consecutive errors"). The "use `>=` to match the constant's
+>   name" half of this finding's own **Fix:** below is withdrawn — annotated here, not deleted.
 
 **File:** `src/probe/audio_decode.cpp:43`, `src/probe/audio_decode.cpp:959-973`, `src/probe/audio_decode.cpp:989-993`
 
@@ -386,6 +453,21 @@ Second issue: `results.bmff->tracks[stream_index]` indexes a `trak`-order array 
 ---
 
 ### WR-09: `audio.sample_rate`'s compared value stays the core rate while its own evidence advertises a different effective rate
+
+> **Correction (2026-09-22): wrong, and so is the comment it agrees with.** Measured in
+> `.planning/debug/audio-sweep-rate-truncation.md`:
+>
+> - `tools/gen_he_aac.py:167-171` documents that the two SBR fixtures do **NOT** share a core
+>   rate: `audio_sbr_implicit.mp4` is 44100 core -> 88200 doubled; `audio_sbr_explicit.mp4` is
+>   22050 core -> 44100 doubled. Both therefore report the DOUBLED rate — the behaviour is
+>   uniform, not inconsistent, and this finding's premise of a shared 44100 core is false.
+> - Corroborated by the decoder itself: both SBR fixtures emit 2048 samples/frame (1024 core x2,
+>   SBR active) while plain `audio_aac_handwritten.mp4` emits 1024.
+> - Flagged, without being edited this cycle: the comment this finding agrees with, at
+>   `src/analyzers/audio/stream_params.cpp:163-171`, is **stale** — it survived the 06-13 plan's
+>   rework of the very mechanism it describes, and `src/probe/demux_session.cpp:843-862`
+>   (rewritten by that later plan) already states the correct behaviour. The source fix for that
+>   stale comment belongs to phase 6 gap closure, not to this quick task.
 
 **File:** `src/analyzers/audio/stream_params.cpp:176-190`, `src/probe/demux_session.cpp:845-873`
 
