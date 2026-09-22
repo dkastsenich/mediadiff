@@ -389,9 +389,12 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
                                      // stream is genuinely different decoded
                                      // audio content from block 0 onward
                                      // (verified: first divergent block 0,
-                                     // 201 divergent blocks total) -- the
-                                     // drift itself is resampled/retimed
-                                     // audio, not merely a container-level
+                                     // 201 divergent blocks total, unchanged
+                                     // by the DSP-free recipe the debug
+                                     // session true-peak-cross-platform
+                                     // moved this fixture to) -- the drift
+                                     // itself is genuinely retimed audio
+                                     // content, not merely a container-level
                                      // timestamp change.
                                      "content.audio.sample_hash",
                                  });

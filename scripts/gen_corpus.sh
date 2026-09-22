@@ -2001,11 +2001,42 @@ python3 tools/gen_ts_discontinuity.py \
 #
 # `timeline_drift_linear.mp4` / `timeline_drift_base.mp4`: the LINEAR-DRIFT
 # arm, doc 04 section 5's own "classic 0.1% clock error" recipe --
-# `asetrate=48048,aresample=48000` reads the sine source at 48048Hz then
-# resamples it down to a DECLARED 48000Hz, so the encoded content plays
-# 48048/48000 = 1.001x faster than its own declared rate: a genuine,
+# `sample_rate=47952,asetrate=48000` GENERATES the sine already at 47952Hz
+# and then RELABELS it as 48000Hz, so the encoded content plays
+# 48000/47952 = 1.001x faster than its own declared rate: a genuine,
 # uniform clock-rate mismatch between the audio and video timelines, not a
-# PTS-level artifact. 20 SECONDS, not doc 04's own unqualified duration --
+# PTS-level artifact.
+#
+# DETERMINISM (debug session true-peak-cross-platform, .planning/debug/):
+# this recipe used to read `sample_rate=48000,asetrate=48048,aresample=48000`
+# -- the same 0.1% error reached by RESAMPLING instead of by generating at
+# the target rate. That made this the ONLY fixture in this entire script
+# with a resampler in its path, and libswresample carries hand-written
+# per-architecture SIMD, so the fixture's own PCM came out different on
+# x86, on aarch64 and on the C reference path. Because fixtures are
+# gitignored and regenerated on EVERY CI runner (.gitignore: "the media it
+# describes is never committed"), each leg was encoding a different audio
+# stream. The native AAC encoder downstream then amplified that few-LSB
+# input difference NON-LINEARLY into a multi-dB swing in the DECODED true
+# peak -- measured -15.964 dBTP on x64-linux, -13.500 on the C reference
+# path, -17.697 on arm64-osx -- which surfaced as an undeclared
+# `audio.loudness.true_peak` (and `audio.silence.edges`) finding breaking
+# integration.timeline_av_sync on the arm64-osx and x64-windows-static-md
+# legs while x64-linux stayed green. `asetrate` alone is a pure metadata
+# relabel with no DSP whatsoever, so this form is bit-identical across
+# architectures -- exactly like `timeline_drift_base.mp4` below, which was
+# never affected precisely because it has no resampler.
+#
+# The substitution is measurement-neutral, verified against the real
+# binary: `timeline.av_drift` reports the IDENTICAL rational rate
+# (-54717060000/907751640 ms/min), `timeline.av_drift.pattern` still
+# classifies `linear-drift`, and `content.audio.sample_hash` still diverges
+# from block 0 with 201 divergent blocks -- every value this pair's tests
+# pin, unchanged. Do NOT reintroduce `aresample` here: a lossy encoder
+# downstream of a resampler makes true peak non-reproducible across
+# architectures, and the tolerance must never be widened to hide that.
+#
+# 20 SECONDS, not doc 04's own unqualified duration --
 # this task's own empirical finding: at 30s/60s, the K=32 least-squares
 # fit's own reduced slope denominator exceeds `kMaxDriftDenominator`
 # (analyzers.h) at MILLISECOND-tick granularity over that span, correctly
@@ -2013,10 +2044,12 @@ python3 tools/gen_ts_discontinuity.py \
 # usable measurement -- 20s stays comfortably inside the safe range while
 # still landing close to doc 04's own "~60ms/min" worked prediction
 # (measured: -60.28ms/min against `timeline_drift_base.mp4` below).
-# `sample_rate=48000` explicit on `sine=` is REQUIRED: the `sine` lavfi
-# source's own default rate is 44100Hz, not 48000Hz, so omitting it turns
-# the intended 0.1% error into a ~8.9% one (44100/48048 =/= 48000/48048;
-# this task's own measured regression while iterating this recipe).
+# An explicit `sample_rate=` on `sine=` is REQUIRED in BOTH recipes: the
+# `sine` lavfi source's own default rate is 44100Hz, so omitting it turns
+# the intended 0.1% error into a ~8.9% one (this task's own measured
+# regression while iterating this recipe). 47952 is exactly 48000/1.001,
+# and 47952 x 20s = 959040 whole samples, so the drifted arm needs no
+# fractional-sample rounding to land on the intended ratio.
 # `timeline_drift_base.mp4` is the CLEAN, same-duration companion -- doc 02's
 # "every fixture produces exactly the intended findings and no others"
 # clause needs a duration-matched baseline, not `timeline_start_base.mp4`'s
@@ -2025,7 +2058,7 @@ python3 tools/gen_ts_discontinuity.py \
 # `-c:v mpeg4 -c:a aac`, never libx264/GPL, matching every other fixture in
 # this script.
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
-  -f lavfi -i "sine=frequency=440:duration=20:sample_rate=48000,asetrate=48048,aresample=48000" \
+  -f lavfi -i "sine=frequency=440:duration=20:sample_rate=47952,asetrate=48000" \
   -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/timeline_drift_linear.mp4"
 

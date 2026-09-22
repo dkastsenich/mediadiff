@@ -489,8 +489,12 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
       // 05-10-PLAN.md Task 3 (TIME-07/TIME-08, D-04): timeline.av_drift and
       // timeline.av_drift.pattern -- ONE trigger pair covers BOTH ids.
       // timeline_drift_base.mp4/timeline_drift_linear.mp4 (the classic 0.1%
-      // clock-error recipe, doc 04 section 5, `asetrate=48048,
-      // aresample=48000`) verified empirically under --profile sw-encoder:
+      // clock-error recipe, doc 04 section 5, reached DSP-free as
+      // `sample_rate=47952,asetrate=48000` -- see scripts/gen_corpus.sh's own
+      // DETERMINISM note: the original `asetrate=48048,aresample=48000` form
+      // put libswresample's per-architecture SIMD in the fixture's own
+      // generation path, which made audio.loudness.true_peak diverge by up to
+      // 4 dB between CI legs) verified empirically under --profile sw-encoder:
       // timeline.av_drift reports `fail` (measured rate ~-60.28ms/min,
       // beyond the registered 0.2ms/min fail threshold) and
       // timeline.av_drift.pattern reports `fail` with candidate value
