@@ -419,6 +419,14 @@ if(MEDIADIFF_BUILD_BENCH)
   target_link_libraries(mediadiff_timeline_overhead PRIVATE libmediadiff fmt::fmt)
   mediadiff_apply_warnings(mediadiff_timeline_overhead)
   mediadiff_apply_platform_definitions(mediadiff_timeline_overhead)
+
+  # 06-12-PLAN.md Task 1 (PERF-04): the audio-decode-sweep overhead
+  # benchmark, mirroring mediadiff_timeline_overhead's own four lines
+  # exactly -- same opt-in gate, same no-CTest-case rule.
+  add_executable(mediadiff_audio_sweep tools/bench/audio_sweep.cpp)
+  target_link_libraries(mediadiff_audio_sweep PRIVATE libmediadiff fmt::fmt)
+  mediadiff_apply_warnings(mediadiff_audio_sweep)
+  mediadiff_apply_platform_definitions(mediadiff_audio_sweep)
 endif()
 
 enable_testing()

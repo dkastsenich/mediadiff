@@ -64,3 +64,36 @@
 # workstation -- both comfortably under PERF-01's <=3s budget.
 leg=x64-linux metric=plain_instructions value=257709408 commit=a56dd9b
 leg=x64-linux metric=full_instructions value=344956981 commit=a56dd9b
+
+# --- PERF-04 (06-12-PLAN.md): audio_plain_instructions / audio_full_instructions ---
+#
+# STATUS: PROVISIONAL -- measured LOCALLY, not on the designated x64-linux
+# CI leg (A2, 06-12-PLAN.md's own flagged assumption, mirroring D-15's
+# "the first committed baseline number cannot be produced on a
+# workstation" precedent from Phase 5). `06-13-PLAN.md`'s own job is to
+# replace both values below with the designated leg's own printed
+# pasteable lines, exactly as this file's two lines above were replaced
+# (see the STATUS block above them). Until that transcription lands, the
+# PERF-04 ratchet does not genuinely gate a real regression on the
+# designated leg -- it only self-consistency-checks against these two
+# provisional numbers.
+#
+# These two values were measured with `valgrind --tool=cachegrind`
+# (v3.22.0) against `scripts/measure_audio_perf.sh`'s own on-demand
+# 600s/44100Hz/stereo AAC reference input, at commit 4aa37ca, inside an
+# `ubuntu:24.04` container (this workstation's own host OS lacks valgrind
+# and lacks passwordless root to install it) -- the closest available
+# stand-in for the designated leg's own `ubuntu-24.04` runner image, but
+# NOT that runner, hence provisional rather than authoritative.
+#
+# `<metric>` is either `audio_plain_instructions` (PacketScan alone, audio
+# decode disabled -- `Pass::audio_decode` never enters the pass union) or
+# `audio_full_instructions` (the SAME packet scan, PLUS the shared audio
+# decode sweep -- hash + loudness + silence sinks fused into ONE
+# `av_read_frame` pass, AUDIO-10 -- PLUS every consuming analyzer's own
+# run()). The large audio_full/audio_plain ratio (roughly 435x) reflects
+# that decoding and analyzing ten minutes of 44100Hz stereo AAC is a much
+# larger unit of work than a decode-free packet scan, not a defect in
+# either leg.
+leg=x64-linux metric=audio_plain_instructions value=108915137 commit=4aa37ca
+leg=x64-linux metric=audio_full_instructions value=47359100891 commit=4aa37ca

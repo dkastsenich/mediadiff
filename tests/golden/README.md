@@ -238,7 +238,31 @@ anything host-CPU-dependent. A diff in this file is either an intentional
 fixture-recipe change (reviewable, expected) or a real regression in
 what the pinned ffmpeg measures — never routine churn to wave through.
 
-## `ts_scan_ts_*.txt` are a different kind of golden (TRUST-09, D-04)
+## `PERF_BASELINE.txt`'s audio entries (PERF-04, 06-12-PLAN.md)
+
+`PERF_BASELINE.txt` itself is not documented in this file — its own header
+comment carries its full provenance and refresh contract (D-15, Phase 5).
+This section covers only the two lines `scripts/measure_audio_perf.sh`
+adds: `audio_plain_instructions` and `audio_full_instructions`, the
+retired-instruction counts `valgrind --tool=cachegrind` reports for, in
+order: `run_packet_scan` alone with audio decode disabled (no
+`Pass::audio_decode` in the pass union), and the SAME packet scan with the
+shared audio-decode sweep enabled — the fused hash + loudness + silence
+sinks (AUDIO-10) — plus every consuming analyzer's own `run()`. The large
+`audio_full`/`audio_plain` ratio is expected: decoding and analyzing ten
+minutes of 44100Hz stereo AAC is a much larger unit of work than a
+decode-free packet scan.
+
+The reference input these two metrics measure against is a 10-minute
+44100Hz stereo AAC file, audio-only (no video stream), generated on demand
+by `scripts/measure_audio_perf.sh` into the SAME gitignored
+`.mediadiff-bench/` scratch directory `scripts/measure_timeline_perf.sh`
+already uses, cached by reuse-if-present. It follows the SAME
+never-enters-`tests/fixtures/`/never-hashed-into-`CORPUS_DIGEST.txt` rule
+(D-12, Phase 4) as every other on-demand benchmark input in this
+directory.
+
+
 
 These three (`ts_scan_ts_single.txt`, `ts_scan_ts_multiprogram.txt`,
 `ts_scan_ts_204.txt`) are compared via the same `check_golden` mechanism
