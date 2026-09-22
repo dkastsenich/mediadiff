@@ -33,18 +33,38 @@
 # strongest confirmation of this protocol so far. Both entries still need
 # the ordinary designated-leg transcription before they may be cleared.
 #
-# STATUS (as of 06-13-PLAN.md Task 1, CI run 35708992998): NOT EMPTY.
-# Phase 6 (06-01-PLAN.md through 06-10-PLAN.md) added 41 fixture names,
+# STATUS (as of 06-13-PLAN.md Task 1, CI run 35708992998): the paragraph
+# that used to stand here described the ledger as NOT EMPTY -- Phase 6
+# (06-01-PLAN.md through 06-10-PLAN.md) had added 41 workstation-computed
+# fixture names awaiting designated-leg transcription. Preserved as
+# history below (this whole paragraph is now stale narrative, not a claim
+# about the file's current contents): "Phase 6 added 41 fixture names,
 # listed below, each workstation-computed and awaiting the SAME
 # designated-leg transcription this file's own historical entries below
 # already describe -- see 06-13-PLAN.md Task 3, which transcribes them
 # into tests/golden/CORPUS_DIGEST.txt and clears this ledger back to
 # EMPTY-on-purpose, exactly as 04-21-PLAN.md and 05-13-PLAN.md did for
-# Phase 4 and Phase 5's own additions. The paragraph immediately below
-# ("STATUS: EMPTY ON PURPOSE...") describes the file's PAST state, right
-# after the Phase-5/debug-session transcription and before Phase 6 added
-# anything -- preserved as history, not a claim about the file's current
-# contents.
+# Phase 4 and Phase 5's own additions."
+#
+# STATUS (as of 06-13-PLAN.md Task 3, CI run 35735099865, commit
+# e5a16770c00343da91ad8e299773eac9774a1bd3, real x64-linux designated-leg
+# evidence): EMPTY, and for a stronger reason than "transcribed" alone --
+# NO TRANSCRIPTION WAS EVEN NEEDED. The designated leg's own "Report
+# corpus digest" and "Assert the corpus digest matches the committed pin
+# (D-GAP-01)" steps both SUCCEEDED against the values Phase 6 had already
+# committed (workstation-computed, per the stale paragraph above) --
+# meaning those 41 committed hash lines in tests/golden/CORPUS_DIGEST.txt
+# ALREADY equalled the designated leg's own real computed output, byte for
+# byte, across all 206 listing lines, confirmed independently for
+# audio_51.flac, audio_dropout.flac, audio_hash_base.mp4,
+# timeline_drift_base.mp4 and timeline_drift_linear.mp4 by direct
+# comparison against the leg's own raw digest listing. No committed
+# CORPUS_DIGEST.txt hash was rewritten by this transcription (the
+# no-rewrite guard, clause 4, is unaffected by definition -- nothing
+# changed) -- this status block and the marker below exist purely to
+# retire the "awaiting designated-leg transcription" caveat those 41 names
+# carried and to formally clear this ledger, exactly as 04-21-PLAN.md and
+# 05-13-PLAN.md cleared Phase 4 and Phase 5's own additions.
 #
 # STATUS: EMPTY ON PURPOSE. The two entries added by debug session
 # test-898-ci-nonreproducible (.planning/debug/resolved/) -- the unflagged
@@ -103,6 +123,8 @@
 #
 # TRANSCRIBED-FROM-DESIGNATED-LEG: run=35347044190 job=105605976648 commit=8c343c790b1601ceea80e3b2fde44bfcaf8e8bad date=2026-09-18
 #
+# TRANSCRIBED-FROM-DESIGNATED-LEG: run=35735099865 commit=e5a16770c00343da91ad8e299773eac9774a1bd3 date=2026-09-22
+#
 # The lines above are machine-readable markers, not decoration:
 # scripts/lint_corpus_digest_provenance.sh clause 3 accepts a zero-entry
 # ledger ONLY when at least one such marker (with a run=<digits> and a
@@ -115,69 +137,40 @@
 # CORPUS_DIGEST.txt.
 #
 # 06-01-PLAN.md added the nine content.audio.sample_hash tracer fixtures
-# (audio_hash_*, audio_pcm_*) below -- workstation-computed hashes awaiting
-# the same designated-leg transcription a later 06-plan performs.
+# (audio_hash_*, audio_pcm_*) -- workstation-computed hashes that awaited
+# designated-leg transcription; 06-13-PLAN.md Task 3 confirmed them already
+# matching (see the STATUS block above) and cleared this entry.
 #
 # 06-02-PLAN.md Task 1 added the five hand-written HE-AAC/class-1 proof
-# fixtures (audio_sbr_*, audio_aac_handwritten*) below -- also
-# workstation-computed, also awaiting designated-leg transcription.
+# fixtures (audio_sbr_*, audio_aac_handwritten*) -- also
+# workstation-computed; also confirmed matching and cleared by 06-13-PLAN.md
+# Task 3.
 #
 # 06-02-PLAN.md Task 2 added the eleven lossless loudness/true-peak/silence
 # FLAC fixtures (audio_dropout*, audio_loud_*, audio_peak_*,
-# audio_silence_*) below -- also workstation-computed, also awaiting
-# designated-leg transcription.
+# audio_silence_*) -- also workstation-computed; also confirmed matching
+# and cleared by 06-13-PLAN.md Task 3.
 #
 # 06-02-PLAN.md Task 3 added the thirteen stream-parameter, layout and
-# priming fixtures below (audio_51*, audio_flt_base.ogg, audio_mono_s16.wav,
+# priming fixtures (audio_51*, audio_flt_base.ogg, audio_mono_s16.wav,
 # audio_mp2_base.mpg, audio_prime_*, audio_stereo_*), including the
 # multi-edit and fragmented MP4 container-mechanism edge cases -- also
-# workstation-computed, also awaiting designated-leg transcription.
+# workstation-computed; also confirmed matching and cleared by
+# 06-13-PLAN.md Task 3.
 #
 # 06-10-PLAN.md added the meta.decode_errors recoverable-error/undecodable
 # fixture triple (audio_corrupt_clean.mp4, audio_corrupt_frames.mp4,
-# audio_undecodable.mp4) below -- also workstation-computed (AAC encoder
+# audio_undecodable.mp4) -- also workstation-computed (AAC encoder
 # output is not byte-stable across SIMD levels, 06-CONTEXT.md's own
-# measured finding), also awaiting designated-leg transcription.
-audio_51.flac
-audio_51_side.flac
-audio_aac_handwritten.mp4
-audio_aac_handwritten_copy.mp4
-audio_corrupt_clean.mp4
-audio_corrupt_frames.mp4
-audio_dropout.flac
-audio_dropout_clean.flac
-audio_flt_base.ogg
-audio_hash_alt.mp4
-audio_hash_base.mkv
-audio_hash_base.mp4
-audio_hash_base.ts
-audio_hash_base_copy.mp4
-audio_loud_floor.flac
-audio_loud_plus3.flac
-audio_loud_ref.flac
-audio_loud_ref_copy.flac
-audio_mono_s16.wav
-audio_mp2_base.mpg
-audio_pcm_base.mov
-audio_pcm_base.wav
-audio_pcm_flac_large.mkv
-audio_pcm_flac_small.mkv
-audio_peak_over.flac
-audio_peak_under.flac
-audio_prime_base.mp4
-audio_prime_copy.ts
-audio_prime_fragmented.mp4
-audio_prime_multiedit.mp4
-audio_prime_roundtrip.mkv
-audio_prime_roundtrip2.mp4
-audio_sbr_explicit.mp4
-audio_sbr_explicit_copy.mp4
-audio_sbr_implicit.mp4
-audio_silence_lead.flac
-audio_silence_none.flac
-audio_silence_trail.flac
-audio_stereo_s16.wav
-audio_stereo_s24.wav
-audio_undecodable.mp4
-timeline_drift_base.mp4
-timeline_drift_linear.mp4
+# measured finding); also confirmed matching and cleared by 06-13-PLAN.md
+# Task 3.
+#
+# The debug session true-peak-cross-platform CYCLE 2 paragraph near the top
+# of this file added timeline_drift_base.mp4 and timeline_drift_linear.mp4
+# (their audio recipe changed to pcm_s16le) -- also confirmed matching the
+# designated leg's own listing and cleared by 06-13-PLAN.md Task 3.
+#
+# All 41 names Phase 6 added -- every one of the six groups above -- are
+# confirmed and cleared as of the STATUS block near the top of this file
+# (run 35735099865). This ledger is EMPTY on purpose, exactly as it was
+# after Phase 4 and Phase 5's own transcriptions.
