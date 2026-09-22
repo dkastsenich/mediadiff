@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 Phase: 06 (Audio Analysis) — EXECUTING
 Plan: 13 of 13
 Status: Ready to execute
-Last activity: 2026-09-20 — Completed 06-07-PLAN.md (D-16 av_drift span; WINDOWS.md #32 left open on evidence)
+Last activity: 2026-09-22 — Completed quick task 260922-wtc: fixed the cross-phase `ms` serialization defect and amended 06-REVIEW.md's disproved claims
 
 Progress: [█████████░] 94%
 
@@ -411,6 +411,7 @@ None yet.
 | 260914-ryu | Replace GPL-only tinterlace with the LGPL interlace filter in the three interlace fixture recipes | 2026-09-14 | bf9a42f | [260914-ryu-replace-gpl-only-tinterlace-with-the-lgp](./quick/260914-ryu-replace-gpl-only-tinterlace-with-the-lgp/) |
 | 260914-t47 | Replace the GPL-gated interlace filter with an LGPL separatefields/select/weave chain in the three interlace fixture recipes | 2026-09-14 | d137242 | [260914-t47-replace-the-gpl-only-interlace-filter-in](./quick/260914-t47-replace-the-gpl-only-interlace-filter-in/) |
 | 260914-tzq | Fix the x64-windows-static-md build failure: read MEDIADIFF_DESIGNATED_LEG through the getenv_utf8 shim in test_golden.cpp and add the getenv shim lint to the CI lint job | 2026-09-14 | 47f02c4 | [260914-tzq-fix-the-x64-windows-static-md-build-fail](./quick/260914-tzq-fix-the-x64-windows-static-md-build-fail/) |
+| 260922-wtc | Fix the cross-phase `ms` serialization defect (emit `ms` only for a declared time unit, at its true magnitude) and amend 06-REVIEW.md's three claims disproved by measurement | 2026-09-22 | 9d2ceb6 | [260922-wtc-fix-the-ms-serialization-defect-and-amen](./quick/260922-wtc-fix-the-ms-serialization-defect-and-amen/) |
 
 ## Deferred Items
 
