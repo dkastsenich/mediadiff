@@ -454,7 +454,7 @@ Plans:
   4. `content.audio.sample_hash` locates the first divergent sample by index and time; the same file hashed via `aac_fixed` on two different builds compares equal; and a float-decoder hash across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail — with decoder name, class, flags and path signature recorded per hashed stream.
   5. Loudness, silence detection and hashing share a single decode sweep per track, and an audio sweep of the 10-minute reference stereo AAC file completes in under 4 s.
 
-**Plans**: 10/13 plans executed in 13 waves (sequential — nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, so no two plans share a wave)
+**Plans**: 11/13 plans executed in 13 waves (sequential — nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, so no two plans share a wave)
 
 Plans:
 **Wave 1**
@@ -499,7 +499,7 @@ Plans:
 
 **Wave 11** *(blocked on Wave 10)*
 
-- [ ] 06-11-PLAN.md — SC1's `inspect` audio section, registry-enumerated so a later id cannot ship invisible, plus the corpus-wide clean sweep (AUDIO-01/02/03)
+- [x] 06-11-PLAN.md — SC1's `inspect` audio section, registry-enumerated so a later id cannot ship invisible, plus the corpus-wide clean sweep (AUDIO-01/02/03)
 
 **Wave 12** *(blocked on Wave 11)*
 
@@ -541,7 +541,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
-| 6. Audio Analysis | 10/13 | In Progress|  |
+| 6. Audio Analysis | 11/13 | In Progress|  |
 | 7. Content & Quality | 0/TBD | Not started | - |
 
 ## Coverage
