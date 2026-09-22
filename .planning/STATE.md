@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-12-PLAN.md
-last_updated: "2026-09-22T08:23:29.992Z"
+stopped_at: 06-13-PLAN.md Task 2 + Task 3 local work done (halted before Task 3's final push -- see 06-13-SUMMARY.md)
+last_updated: "2026-09-22T14:12:15.348Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 06 plan 07 executed (D-16 av_drift span, WINDOWS.md
-state_head: e5d8037b5a4302054ceb2c1341625838bf1070d1
+state_head: 599fe89ac635b2a3e79364a48b61918e416a5179
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 105
-  completed_plans: 104
+  completed_plans: 105
 milestone_name: milestone
 ---
 
@@ -381,6 +381,7 @@ Recent decisions affecting current work:
 - [Phase 06]: Restored three DOC-03 cross-dimension clean pairs (audio.bit_depth/sample_fmt/channels) after human review; corpus sweep now declares each pair's real non-pass findings by name (expect_declared_set) instead of forcing self-compares, preserving cross-dimension coverage while still failing loudly on any undeclared non-pass.
 - [Phase 06]: Audio inspect section renders block-per-stream, registry-enumerated from builtin_registry(), with decode-dependent rows explicitly not-blank under --no-content and a data-driven no-audio-streams sentinel.
 - [Phase 06]: PERF-04's audio ratchet reuses Phase 5's exact three-mode harness shape; provisional baseline measured via Docker (ubuntu:24.04) since the workstation lacks valgrind/root — Keeps both perf harnesses' failure modes identical and readable; avoids fabricating a baseline number when the host cannot run cachegrind
+- [Phase 06]: D-06 cross-architecture proof closed on real arm64-osx evidence: aac_fixed CONFIRMED class 1, mp3/mp2 DEMOTED to class 2 (no trustworthy cross-architecture proof exists for either), ac3_fixed left unchanged with the gap recorded (WINDOWS.md #39). — The must-have text forbids closing on assumption; only aac_fixed had a real committed two-build proof that ran on arm64 this round.
 
 ### Pending Todos
 
@@ -421,6 +422,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-22T08:23:29.773Z
-Stopped at: Completed 06-12-PLAN.md
+Last session: 2026-09-22T14:11:56.161Z
+Stopped at: 06-13-PLAN.md Task 2 + Task 3 local work done (halted before Task 3's final push -- see 06-13-SUMMARY.md)
 Resume file: None
