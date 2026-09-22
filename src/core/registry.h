@@ -135,6 +135,39 @@ inline std::string_view unit_suffix(Unit unit) {
   return "none";
 }
 
+// Whether `unit` denotes a DURATION (a magnitude that means something
+// rendered as milliseconds), as opposed to a rate, ratio or bare count.
+// `Unit::ms_per_min` is deliberately EXCLUDED: it is a drift RATE (ms of
+// drift per minute of playback), not a duration itself, so treating it as
+// one would render a rate as if it were a span of time. This is the
+// predicate `rational_value_to_json` (core/serializer.cpp) consults to
+// decide whether a RationalValue's rendered `ms` convenience field means
+// anything -- see that file for the defect this predicate fixes
+// (.planning/debug/audio-sweep-rate-truncation.md). Written as a switch
+// over every enumerator with deliberately no `default:` arm, matching
+// `unit_suffix` immediately below: a future Unit enumerator must be
+// classified here explicitly, under -Wswitch (-Werror project-wide),
+// rather than silently defaulting into "not a time unit".
+inline bool unit_is_time(Unit unit) {
+  switch (unit) {
+    case Unit::ms:
+      return true;
+    case Unit::none:
+    case Unit::ms_per_min:
+    case Unit::frames:
+    case Unit::percent:
+    case Unit::db:
+    case Unit::lu:
+    case Unit::samples:
+    case Unit::ticks:
+    case Unit::count:
+      return false;
+  }
+  // Unreachable for any valid Unit -- see unit_suffix's own
+  // no-default:-arm-plus-trailing-return pattern for why this shape.
+  return false;
+}
+
 // Textual severity spelling, in both directions -- the vocabulary a user
 // types in `mediadiff.toml`'s `[severity]` table or a `--set` argument
 // (plan 02-06), and the inverse used for `-v` provenance rendering and

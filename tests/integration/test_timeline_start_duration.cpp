@@ -448,3 +448,50 @@ TEST_CASE("timeline_start_duration - the duration-short trigger pair (timeline_s
                                    "audio.silence.edges",
                                });
 }
+
+// The permanent regression guard for the `ms` serialization defect fixed by
+// this quick task (.planning/debug/audio-sweep-rate-truncation.md):
+// `rational_value_to_json` (src/core/serializer.cpp) previously derived
+// `ms` as (num/den)*1000 on the false assumption that num/den held
+// seconds; every producer actually emits the check's own declared unit,
+// milliseconds for every time check. `timeline_drift_base.mp4` is a
+// fixture whose real duration is known INDEPENDENTLY of mediadiff (its own
+// recipe, corroborated across this test suite) to be exactly 20 seconds --
+// so a correct render reports `ms` == 20000.0, and a reintroduced 1000x
+// regression would report 20000000.0 here.
+TEST_CASE("timeline_start_duration - timeline.duration renders 'ms' at its true magnitude on a 20-second fixture, "
+          "and video.sar carries no 'ms' key at all",
+          "[timeline]") {
+  const std::string path = fixture("timeline_drift_base.mp4");
+  require_fixture(path);
+  const CliResult result = run_cli({"inspect", path, "--json"});
+  REQUIRE(result.exit_code == 0);
+  const nlohmann::ordered_json doc = nlohmann::ordered_json::parse(result.out, nullptr, false);
+  REQUIRE_FALSE(doc.is_discarded());
+
+  const nlohmann::ordered_json& timeline_group = doc.at("groups").at("timeline");
+  std::size_t duration_entries_checked = 0;
+  for (const auto& entry : timeline_group) {
+    if (entry.at("id").get<std::string>() != "timeline.duration") {
+      continue;
+    }
+    const nlohmann::ordered_json& value = entry.at("value");
+    REQUIRE(value.at("num").get<std::int64_t>() == 20000);
+    REQUIRE(value.at("den").get<std::int64_t>() == 1);
+    REQUIRE(value.contains("ms"));
+    REQUIRE(value.at("ms").get<double>() == 20000.0);
+    ++duration_entries_checked;
+  }
+  REQUIRE(duration_entries_checked > 0);
+
+  const nlohmann::ordered_json& video_group = doc.at("groups").at("video");
+  bool sar_checked = false;
+  for (const auto& entry : video_group) {
+    if (entry.at("id").get<std::string>() != "video.sar") {
+      continue;
+    }
+    REQUIRE_FALSE(entry.at("value").contains("ms"));
+    sar_checked = true;
+  }
+  REQUIRE(sar_checked);
+}

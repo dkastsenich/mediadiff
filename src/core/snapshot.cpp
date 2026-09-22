@@ -380,7 +380,7 @@ mediadiff::expected<void, Error> write_snapshot(const Fingerprint& fp, const std
     nlohmann::ordered_json mj;
     mj["id"] = std::string(def.id);
     mj["scope"] = scope_to_json(m->scope);
-    mj["value"] = value_to_json(m->value);
+    mj["value"] = value_to_json(m->value, def.unit);
     // Emitted only when true, so every pre-existing golden written before
     // this field existed stays byte-identical (D-03). Positioned after
     // `value` and before `evidence` -- the canonical key order this

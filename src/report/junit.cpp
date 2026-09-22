@@ -144,7 +144,7 @@ std::string xml_escape(std::string_view text) {
   return out;
 }
 
-std::string baseline_candidate_detail(const Finding& finding) {
+std::string baseline_candidate_detail(const Finding& finding, const CheckRegistry& registry) {
   // CR-02: serialize_value_compact, not nlohmann's own .dump() -- a
   // rational/real-valued finding's embedded double must be formatted by
   // the same canonical std::to_chars writer core/serializer.cpp owns
@@ -153,8 +153,14 @@ std::string baseline_candidate_detail(const Finding& finding) {
   // an XML <failure>/<error> element body alongside "baseline: "/" |
   // candidate: " -- serialize_document's own one-scalar-per-line layout
   // would splice a literal newline into that line.
-  return fmt::format("baseline: {} | candidate: {}", serialize_value_compact(value_to_json(finding.baseline)),
-                      serialize_value_compact(value_to_json(finding.candidate)));
+  //
+  // Unit resolved per finding id, same id-matched linear scan as
+  // report/json.cpp's own finding_to_json -- a finding whose id the
+  // registry does not know renders with Unit::none (no `ms` key).
+  const auto check_idx = registry.find(finding.id);
+  const Unit unit = check_idx ? registry.at(*check_idx).unit : Unit::none;
+  return fmt::format("baseline: {} | candidate: {}", serialize_value_compact(value_to_json(finding.baseline, unit)),
+                      serialize_value_compact(value_to_json(finding.candidate, unit)));
 }
 
 enum class ElementShape { pass, failure, error, skipped };
@@ -188,7 +194,8 @@ struct Counts {
   std::size_t skipped = 0;
 };
 
-std::string render_testcase(const Finding& finding, std::string_view classname, bool strict, Counts& counts) {
+std::string render_testcase(const Finding& finding, std::string_view classname, bool strict,
+                             const CheckRegistry& registry, Counts& counts) {
   const ElementShape shape = shape_for(finding, strict);
   ++counts.tests;
 
@@ -202,12 +209,12 @@ std::string render_testcase(const Finding& finding, std::string_view classname, 
     case ElementShape::failure:
       ++counts.failures;
       out += fmt::format("<failure message=\"{}\">{}</failure>", xml_escape(finding.message),
-                          xml_escape(baseline_candidate_detail(finding)));
+                          xml_escape(baseline_candidate_detail(finding, registry)));
       break;
     case ElementShape::error:
       ++counts.errors;
       out += fmt::format("<error message=\"{}\">{}</error>", xml_escape(finding.message),
-                          xml_escape(baseline_candidate_detail(finding)));
+                          xml_escape(baseline_candidate_detail(finding, registry)));
       break;
     case ElementShape::skipped:
       ++counts.skipped;
@@ -223,7 +230,7 @@ std::string render_testcase(const Finding& finding, std::string_view classname, 
 
 }  // namespace
 
-std::string render_junit(const ReportModel& model, const CheckRegistry& /*registry*/, bool strict) {
+std::string render_junit(const ReportModel& model, const CheckRegistry& registry, bool strict) {
   Counts total;
   std::string suites_body;
 
@@ -242,7 +249,7 @@ std::string render_junit(const ReportModel& model, const CheckRegistry& /*regist
     std::string testcases;
     const std::string classname = std::string(group_to_string(block.group));
     for (const Finding* finding : gating) {
-      testcases += render_testcase(*finding, classname, strict, suite);
+      testcases += render_testcase(*finding, classname, strict, registry, suite);
     }
 
     suites_body += fmt::format(
@@ -263,7 +270,7 @@ std::string render_junit(const ReportModel& model, const CheckRegistry& /*regist
   return out;
 }
 
-std::string render_junit(const CorpusModel& model, const CheckRegistry& /*registry*/, bool strict) {
+std::string render_junit(const CorpusModel& model, const CheckRegistry& registry, bool strict) {
   Counts total;
   std::string suites_body;
 
@@ -288,7 +295,7 @@ std::string render_junit(const CorpusModel& model, const CheckRegistry& /*regist
       // `<testsuite name=...>` below instead (this overload's own
       // "one testsuite per file" contract).
       const std::string classname = std::string(group_to_string(group_for(finding->id)));
-      testcases += render_testcase(*finding, classname, strict, suite);
+      testcases += render_testcase(*finding, classname, strict, registry, suite);
     }
 
     suites_body += fmt::format(

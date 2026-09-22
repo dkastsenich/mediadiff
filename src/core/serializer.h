@@ -19,11 +19,19 @@
 
 namespace mediadiff {
 
-// Encodes `value` as its canonical on-disk JSON shape. A time
-// (RationalValue) serializes exactly as approved in Task 1 of
-// 02-01-PLAN.md's checkpoint: {"num", "den", "tb": {"num", "den"}, "ms"} —
-// "ms" is a derived convenience field, never read back by value_from_json.
-nlohmann::ordered_json value_to_json(const Value& value);
+// Encodes `value` as its canonical on-disk JSON shape. A RationalValue
+// serializes as approved in Task 1 of 02-01-PLAN.md's checkpoint, amended
+// by the quick task fixing the `ms` serialization defect
+// (.planning/debug/audio-sweep-rate-truncation.md): {"num", "den", "tb":
+// {"num", "den"}, "ms"?} — "ms" is a derived convenience field, never read
+// back by value_from_json, and is emitted ONLY when `unit` is a declared
+// time unit (core/registry.h's `unit_is_time`), as num/den with no
+// multiplier. `unit` is REQUIRED, not defaulted: a call site that cannot
+// name the owning check's declared unit must resolve it (typically via
+// `CheckRegistry::find`/`::at`) before calling this function, rather than
+// silently re-assuming one — exactly the failure mode that let `ms` render
+// 1000x too large, undetected, from phase 02-01 through phase 6.
+nlohmann::ordered_json value_to_json(const Value& value, Unit unit);
 
 // Converts a JSON value back into a Value, checked against the registry's
 // declared `expected_kind` (D-09). A kind mismatch — the JSON encodes a

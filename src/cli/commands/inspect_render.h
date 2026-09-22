@@ -71,7 +71,9 @@ inline std::vector<GroupEntry> entries_for_group(const Fingerprint& fp, const Ch
 // .dump() -- routes any embedded double through the same std::to_chars
 // writer core/serializer.cpp owns, and stays single-line since this text
 // is embedded inline in one "  {id} {scope}: {value}\n" row.
-inline std::string value_to_text(const Value& value) { return serialize_value_compact(value_to_json(value)); }
+inline std::string value_to_text(const Value& value, Unit unit) {
+  return serialize_value_compact(value_to_json(value, unit));
+}
 
 // A Measurement's own `evidence` object rendered as compact, single-line
 // text -- e.g. container.track_types' tmcd_streams/caption_streams (CONT-09:
@@ -135,7 +137,7 @@ inline std::string render_group_entry_text(const CheckRegistry& registry, const 
     out += fmt::format("{}{} {}: (skipped: {})\n", pad, sanitized_id, sanitized_scope,
                         skip_reason_to_string(entry.measurement->skip_reason));
   } else {
-    const std::string sanitized_value = sanitize_for_display(value_to_text(entry.measurement->value));
+    const std::string sanitized_value = sanitize_for_display(value_to_text(entry.measurement->value, check.unit));
     out += fmt::format("{}{} {}: {}\n", pad, sanitized_id, sanitized_scope, sanitized_value);
   }
   const std::string evidence_text = evidence_to_text(entry.measurement->evidence);
@@ -285,7 +287,7 @@ inline std::string render_inspect_json(const Fingerprint& fp, const CheckRegistr
       nlohmann::ordered_json entry_json{
           {"id", std::string(check.id)},  // control-bytes-allow: JSON escapes at the wire level (see comment above)
           {"scope", scope_to_inspect_json(entry.measurement->scope)},
-          {"value", value_to_json(entry.measurement->value)},
+          {"value", value_to_json(entry.measurement->value, check.unit)},
       };
       // 03-04-PLAN.md Task 1: present only when the analyzer explicitly
       // marked this measurement as not applicable (see the text renderer's
