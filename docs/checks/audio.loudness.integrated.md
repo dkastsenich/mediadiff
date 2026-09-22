@@ -30,6 +30,16 @@ tolerance").
 A stream that never decoded, or decoded to zero samples, reports `skipped:requires_decode` or
 `skipped:insufficient_data` respectively -- never a fabricated 0 LUFS.
 
+**Class-gated cross-platform comparison.** Like `audio.loudness.true_peak`, every measurement's
+evidence carries `decode_path_class` (D-05's own decode-path precondition key), and a delta that
+exceeds this check's own tolerance on a non-class-1 (not proven bit-exact) decode path is only
+downgraded to `skipped:cross_platform_decode_noise` when it also falls within
+`src/compare/tol.cpp`'s cross-platform decode-noise floor -- see `audio.loudness.true_peak.md` for
+the full mechanism and the measurement that motivated it (06-13-PLAN.md deviation). This check's own
+default headroom is large enough relative to the measured noise that the gate is not currently
+observed to change its behavior; it is wired for consistency, not because a real case has needed it
+yet.
+
 ## Why it matters
 
 Loudness is the one measurement that catches a silent re-level -- an enhancement stage, a loudness

@@ -68,6 +68,18 @@ enum class SkipReason {
   // omits it), but content.audio.sample_hash reports no digest for it --
   // never an unproven digest nobody can trust.
   hash_disabled,
+  // 06-13-PLAN.md deviation (human-decided, CI run 35708992998): a `tol`
+  // comparison (audio.loudness.integrated/audio.loudness.true_peak) whose
+  // delta exceeds its declared tolerance AND whose `decode_path_class`
+  // evidence (src/analyzers/audio/loudness.cpp, D-05's own precondition
+  // key reused) is non-class-1 on both sides, where the delta still falls
+  // within src/compare/tol.cpp's own cross-platform decode-noise floor.
+  // Mirrors hash_incomparable's own reasoning (a non-bit-exact decode path
+  // degrades a comparison to incomparable rather than a fabricated verdict)
+  // but for a magnitude comparator rather than a hash-equality one, and
+  // gated by a widened-tolerance FLOOR rather than a precondition mismatch
+  // -- a delta beyond the floor is still a real fail, never silenced.
+  cross_platform_decode_noise,
 };
 
 // Which stream/program a Measurement or Finding applies to. `global` covers
@@ -167,6 +179,8 @@ inline std::string_view skip_reason_to_string(SkipReason reason) {
       return "no_timing_data";
     case SkipReason::hash_disabled:
       return "hash_disabled";
+    case SkipReason::cross_platform_decode_noise:
+      return "cross_platform_decode_noise";
   }
   // Unreachable for any valid SkipReason -- see src/cli/exit_code.h's own
   // no-default:-arm-plus-trailing-return pattern for why this shape.
@@ -189,6 +203,7 @@ inline std::optional<SkipReason> skip_reason_from_string(std::string_view text) 
   if (text == "insufficient_data") return SkipReason::insufficient_data;
   if (text == "no_timing_data") return SkipReason::no_timing_data;
   if (text == "hash_disabled") return SkipReason::hash_disabled;
+  if (text == "cross_platform_decode_noise") return SkipReason::cross_platform_decode_noise;
   return std::nullopt;
 }
 

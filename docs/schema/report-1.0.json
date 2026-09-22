@@ -125,7 +125,8 @@
             "partial_scan",
             "insufficient_data",
             "no_timing_data",
-            "hash_disabled"
+            "hash_disabled",
+            "cross_platform_decode_noise"
           ]
         },
         "evidence": {},

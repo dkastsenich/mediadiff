@@ -16,9 +16,9 @@ audio:
     audio.priming audio[0]: "unknown"
         evidence: {"state":"unknown","source":"unknown","samples":0,"padding":null}
     audio.loudness.integrated audio[0]: {"num":-14104,"den":1000,"tb":{"num":1,"den":1},"ms":-14104.0}
-        evidence: {"integrated_lufs":-14.104,"state":"measured","gating_floor_lufs":-70.0}
+        evidence: {"integrated_lufs":-14.104,"state":"measured","gating_floor_lufs":-70.0,"decode_path_class":"class1"}
     audio.loudness.true_peak audio[0]: {"num":-18055,"den":1000,"tb":{"num":1,"den":1},"ms":-18055.0}
-        evidence: {"true_peak_dbtp":-18.055,"ceiling_state":"under","ceiling_dbtp":-1.0}
+        evidence: {"true_peak_dbtp":-18.055,"ceiling_state":"under","ceiling_dbtp":-1.0,"decode_path_class":"class1"}
     audio.silence.edges audio[0]: []
         evidence: {"span_count":0}
     audio.silence.dropouts audio[0]: []
@@ -41,9 +41,9 @@ audio:
     audio.priming audio[0]: "unknown"
         evidence: {"state":"unknown","source":"unknown","samples":0,"padding":null}
     audio.loudness.integrated audio[0]: {"num":-70000,"den":1000,"tb":{"num":1,"den":1},"ms":-70000.0}
-        evidence: {"integrated_lufs":-70.0,"state":"silent","gating_floor_lufs":-70.0}
+        evidence: {"integrated_lufs":-70.0,"state":"silent","gating_floor_lufs":-70.0,"decode_path_class":"class1"}
     audio.loudness.true_peak audio[0]: {"num":-21829,"den":1000,"tb":{"num":1,"den":1},"ms":-21829.0}
-        evidence: {"true_peak_dbtp":-21.829,"ceiling_state":"under","ceiling_dbtp":-1.0}
+        evidence: {"true_peak_dbtp":-21.829,"ceiling_state":"under","ceiling_dbtp":-1.0,"decode_path_class":"class1"}
     audio.silence.edges audio[0]: [{"start":{"num":0,"den":1,"tb":{"num":1,"den":1},"ms":0.0},"end":{"num":12,"den":1,"tb":{"num":1,"den":1},"ms":12000.0}}]
         evidence: {"span_count":1}
     audio.silence.dropouts audio[0]: []

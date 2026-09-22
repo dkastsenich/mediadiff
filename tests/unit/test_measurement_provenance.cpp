@@ -59,7 +59,7 @@ namespace {
 
 Scope global0() { return Scope{Scope::Kind::global, 0}; }
 
-// All 15 SkipReason enumerators, paired with the exact snake_case spelling
+// All 16 SkipReason enumerators, paired with the exact snake_case spelling
 // both src/report/json.cpp's skip_reason_to_string and
 // src/report/junit.cpp's skip_reason_text must render for it. Hand-listed
 // by design (per this plan's Test 1 behavior spec: "a test that must be
@@ -88,6 +88,11 @@ const SkipReasonCase kAllSkipReasons[] = {
     // decoder doc 05 section 3's determinism-class table does not list --
     // content.audio.sample_hash reports no digest for it.
     {SkipReason::hash_disabled, "hash_disabled"},
+    // 06-13-PLAN.md deviation (human-decided, CI run 35708992998): a `tol`
+    // comparison degraded to incomparable because both sides' decode path
+    // is non-class-1 and the delta falls within the cross-platform
+    // decode-noise floor (src/compare/tol.cpp).
+    {SkipReason::cross_platform_decode_noise, "cross_platform_decode_noise"},
 };
 
 Finding make_skip_finding(SkipReason reason, std::string message = "") {
@@ -145,7 +150,7 @@ std::string junit_skip_reason_text(SkipReason reason) {
 TEST_CASE("skip_reason: every SkipReason enumerator round-trips through the JSON renderer to its own snake_case "
           "spelling",
           "[measurement_provenance]") {
-  REQUIRE(std::size(kAllSkipReasons) == 15);
+  REQUIRE(std::size(kAllSkipReasons) == 16);
   for (const SkipReasonCase& c : kAllSkipReasons) {
     INFO("reason: " << c.text);
     CHECK(json_skip_reason_text(c.reason) == c.text);
@@ -174,10 +179,10 @@ TEST_CASE("skip_reason: the JSON renderer's output vocabulary is exactly the set
   }
 
   CHECK(rendered_values == schema_values);
-  CHECK(schema_values.size() == 15);
+  CHECK(schema_values.size() == 16);
 }
 
-TEST_CASE("skip_reason: skip_reason_text (junit) agrees with skip_reason_to_string (json) for all 15 enumerators",
+TEST_CASE("skip_reason: skip_reason_text (junit) agrees with skip_reason_to_string (json) for all 16 enumerators",
           "[measurement_provenance]") {
   for (const SkipReasonCase& c : kAllSkipReasons) {
     INFO("reason: " << c.text);

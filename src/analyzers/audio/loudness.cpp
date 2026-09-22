@@ -78,6 +78,30 @@ std::vector<std::optional<Scope>> compute_audio_scopes(const DemuxSession& demux
 // avoiding raw double noise in a byte-identical-across-runs JSON report.
 double fixed_precision(double value) { return std::stod(fmt::format("{:.3f}", value)); }
 
+// 06-13-PLAN.md deviation (human-decided, CI run 35708992998): D-05's
+// decode_path_class precondition key, reused VERBATIM (same key name, same
+// "class1" / "class2 <path_signature>" shape src/analyzers/content/
+// sample_hash.cpp's own kPreconditionKeys already reads) so
+// src/compare/tol.cpp's generic cross-platform-decode-noise override can
+// read it from a `tol`-semantic check the same way src/compare/hash.cpp
+// already reads it from a `hash`-semantic one. A class-3 (hash-disabled)
+// decoder still measures loudness -- decode.path_signature stays empty for
+// it (StreamAudioDecode's own contract: populated ONLY for class 2), so
+// class 3 renders as a bare "class3" rather than a signature that was
+// never computed. Never gated on check.id: the SAME evidence key drives
+// BOTH audio.loudness.integrated and audio.loudness.true_peak below,
+// exactly like every other tol.cpp override in this project.
+std::string decode_path_class_evidence(const StreamAudioDecode& decode) {
+  const int decode_class = determinism_class_for_decoder(decode.decoder_name);
+  if (decode_class == 1) {
+    return "class1";
+  }
+  if (decode_class == 2) {
+    return fmt::format("class2 {}", decode.path_signature);
+  }
+  return "class3";
+}
+
 // audio.loudness.integrated (AUDIO-05): the quantised RationalValue, or
 // the SAME quantisation of the fixed kLoudnessGatingFloorLufs sentinel
 // when the stream measured below the gating floor (doc 05 §4's "silent"
@@ -95,6 +119,7 @@ void emit_integrated(const StreamAudioDecode& decode, Scope scope, Fingerprint& 
       {"integrated_lufs", fixed_precision(decode.integrated_lufs_raw)},
       {"state", decode.loudness_below_floor ? "silent" : "measured"},
       {"gating_floor_lufs", kLoudnessGatingFloorLufs},
+      {"decode_path_class", decode_path_class_evidence(decode)},
   };
   fp.measurements.push_back(std::move(measurement));
 }
@@ -118,6 +143,7 @@ void emit_true_peak(const StreamAudioDecode& decode, Scope scope, Fingerprint& f
       {"true_peak_dbtp", fixed_precision(decode.true_peak_dbtp_raw)},
       {"ceiling_state", above_ceiling ? "above" : "under"},
       {"ceiling_dbtp", kTruePeakCeilingDbtp},
+      {"decode_path_class", decode_path_class_evidence(decode)},
   };
   fp.measurements.push_back(std::move(measurement));
 }

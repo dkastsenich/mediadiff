@@ -32,6 +32,35 @@ false positive on stable content, which this project treats as a P0-class bug.
 A stream that never decoded, or decoded to zero samples, reports `skipped:requires_decode` or
 `skipped:insufficient_data` respectively -- never a fabricated true peak reading.
 
+**Class-gated cross-platform comparison (06-13-PLAN.md deviation, human-decided).** Every
+measurement's evidence also carries `decode_path_class` -- D-05's own decode-path precondition key
+(`src/analyzers/content/sample_hash.cpp`'s `content.audio.sample_hash`), reused here verbatim. When
+the resolved decoder is a proven bit-exact class-1 sibling (a fixed-point codec or PCM/FLAC), this
+check stays at FULL sensitivity: any delta beyond the ordinary `0.3dB` tolerance is a real, gating
+non-pass exactly as before. When the resolved decoder is class 2 or 3 (not proven bit-exact), the
+shared decode sweep's downstream libebur128 floating-point true-peak computation is not proven
+bit-identical across platforms EITHER -- confirmed by a real designated-leg run (CI run
+35708992998): the same `timeline_drift_base.mp4` vs `timeline_drift_linear.mp4` pair
+(`--profile sw-encoder`) measured a 0.100dB delta on `x64-linux` (comfortably under 0.3dB) but
+exceeded 0.3dB on BOTH `x64-windows-static-md` and `arm64-osx` for the identical comparison. In that
+case, a delta that exceeds the ordinary tolerance but still falls within a wider **cross-platform
+decode-noise floor** (`src/compare/tol.cpp`'s `kCrossPlatformDecodeNoiseFactor`, currently 3x the
+ordinary tolerance) reports `skipped:cross_platform_decode_noise` instead of a fabricated warn/fail
+-- the SAME "degrade rather than lie" principle `content.audio.sample_hash`'s own
+`skipped:hash_incomparable` already applies to a hash comparison, generalized here to a magnitude
+comparator. A delta that exceeds even the widened floor is still a genuine, gating non-pass: this
+override never fully silences the check, only the narrow band attributable to known cross-platform
+decode noise. A genuine asymmetric ceiling crossing (above) always wins over this gate -- headroom
+loss is a real risk regardless of decode-path noise.
+
+`audio.loudness.integrated` carries the same `decode_path_class` evidence and is governed by the
+same generic override, but its own default headroom (`0.5LU`/`1.0LU`, `remux` tightened to `0.1LU`)
+is roughly two orders of magnitude larger than the measured cross-platform noise on this run (a
+0.002 LU delta was observed on the SAME comparison, against a 1.0 LU fail threshold) -- so this gate
+is not currently observed to change `audio.loudness.integrated`'s behavior. It is wired identically
+anyway (never gated on `check.id`) so a future measurement that DOES expose it is caught the same
+way, without a second, independently-tuned mechanism.
+
 ## Why it matters
 
 Headroom loss is the risk a `warn`-severity ordinary tolerance excursion alone would understate: a
@@ -52,7 +81,10 @@ If the peak-level change (and any ceiling crossing) was an intentional mastering
 The default `0.3dB` tolerance (`--tol audio.loudness.true_peak=<tol>`) bounds an ordinary peak-level
 excursion at `warn` severity. The asymmetric ceiling escalation itself has no tunable threshold
 beyond the named -1.0 dBTP constant this doc names -- it is not expressed in the tolerance grammar,
-since it is a directional (not magnitude) rule.
+since it is a directional (not magnitude) rule. The cross-platform decode-noise floor's own
+multiplier (`kCrossPlatformDecodeNoiseFactor`) is a fixed named constant in `src/compare/tol.cpp`,
+not exposed via `--tol` -- it only ever widens what counts as "known decode noise" on a non-class-1
+path, never the ordinary tolerance itself.
 
 ### Silence
 

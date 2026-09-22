@@ -57,6 +57,31 @@ std::optional<Magnitude> extract_magnitude(const Value& value) {
 // (core/exact_int.h's detail::ExactInt).
 constexpr std::int64_t kEstimatedToleranceFactor = 3;
 
+// 06-13-PLAN.md deviation (human-decided, CI run 35708992998): a SEPARATE
+// widening factor for the cross-platform-decode-noise override just below
+// -- deliberately not a reuse of kEstimatedToleranceFactor, since that
+// constant widens for a DIFFERENT reason (an estimated, not directly
+// measured, quantity) and this project's own convention (D-03/D-07/D-10/
+// D-16, all in this same file) is one named constant per override, never
+// a shared one whose meaning would drift across two unrelated gates.
+// Measured evidence this run: the SAME timeline_drift_base.mp4 vs
+// timeline_drift_linear.mp4 pair (`--profile sw-encoder`) measured a
+// 0.100dB audio.loudness.true_peak delta on the x64-linux designated leg
+// (against a 0.3dB tolerance -- comfortably within it) but exceeded 0.3dB
+// on BOTH x64-windows-static-md and arm64-osx for the SAME comparison --
+// evidence that the shared decode sweep's downstream libebur128
+// floating-point true-peak computation is not bit-identical across
+// platforms whenever the resolved decoder is not class 1. 3x mirrors
+// kEstimatedToleranceFactor's own precedent value (never re-derive a
+// magic number when an established one in this exact file already
+// expresses "generous enough to swallow known measurement noise, tight
+// enough to still catch a real regression") -- a conservative starting
+// point pending recalibration once a confirming designated-leg run
+// supplies the OTHER legs' own exact deltas (not observable from this
+// workstation; only "exceeds 0.300 dB" was reported, not the leg's exact
+// number).
+constexpr std::int64_t kCrossPlatformDecodeNoiseFactor = 3;
+
 }  // namespace
 
 // compare_tol: doc 01 section 3's `±tol` semantic. This engine layer has
@@ -320,6 +345,45 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     }
   };
 
+  // 06-13-PLAN.md deviation (human-decided, CI run 35708992998) -- a FOURTH
+  // generic, evidence-shape-driven override in this same family: reads
+  // `decode_path_class` (src/analyzers/content/sample_hash.cpp's own D-05
+  // precondition key, reused verbatim by src/analyzers/audio/loudness.cpp
+  // for exactly this purpose) from BOTH sides. "class1" means the resolved
+  // decoder is proven bit-exact (fixed-point or PCM/FLAC) -- the check
+  // stays at FULL sensitivity there, no widening at all, matching the
+  // human's own instruction to "keep the check sharp" on lossless/
+  // fixed-point paths. Any other value (a missing key on either side, or
+  // "class2 <signature>"/"class3") means the resolved decoder is NOT
+  // proven bit-exact -- the shared decode sweep's own downstream
+  // floating-point consumers (libebur128's loudness/true-peak sinks) are
+  // therefore not proven bit-identical across platforms EITHER, even
+  // though nothing here is a hash comparison. `within_noise_floor` is
+  // computed below, once the exact tolerance arithmetic exists, using the
+  // SAME formula as the ordinary fail-threshold test but multiplied by
+  // kCrossPlatformDecodeNoiseFactor -- a delta beyond that widened floor is
+  // still a real fail (this override never fully silences the check),
+  // exactly the "some differences still assert a real fail" behavior the
+  // human's decision required.
+  const auto side_decode_path_class = [](const Measurement& side) -> std::optional<std::string> {
+    if (!side.evidence.is_object() || !side.evidence.contains("decode_path_class") ||
+        !side.evidence.at("decode_path_class").is_string()) {
+      return std::nullopt;
+    }
+    return side.evidence.at("decode_path_class").get<std::string>();
+  };
+  const std::optional<std::string> baseline_decode_path_class = side_decode_path_class(baseline);
+  const std::optional<std::string> candidate_decode_path_class = side_decode_path_class(candidate);
+  const bool both_declare_decode_path_class =
+      baseline_decode_path_class.has_value() && candidate_decode_path_class.has_value();
+  const bool decode_path_not_bitexact =
+      both_declare_decode_path_class && (*baseline_decode_path_class != "class1" || *candidate_decode_path_class != "class1");
+  // `within_noise_floor` is computed further down (once effective_num/
+  // tolerance_den/abs_delta_num/delta_den exist) and `apply_decode_noise_gate`
+  // is defined further down still (once the rendered message operands
+  // exist) -- both after the exact-arithmetic block below, since a lambda
+  // cannot capture a name not yet declared in its enclosing scope.
+
   // delta = candidate - baseline, as an exact rational over
   // baseline_den*candidate_den -- cross-multiplication, never a division.
   //
@@ -431,6 +495,50 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
       within_warn = ExactInt::compare(lhs, rhs_warn) <= 0;
     }
   }
+
+  // 06-13-PLAN.md deviation (human-decided, CI run 35708992998): the
+  // cross-platform decode-noise floor's own verdict, computed with the
+  // SAME per-branch formula as `within_fail` immediately above but with
+  // `effective_num` widened by kCrossPlatformDecodeNoiseFactor first --
+  // mirrors the D-03 estimated-tolerance widening's own arithmetic shape.
+  // Only ever consulted by `apply_decode_noise_gate()` below, and only
+  // when `decode_path_not_bitexact` is true, so this cost is paid on every
+  // comparison but only ever CHANGES a verdict on the narrow evidence
+  // shape this override targets.
+  bool within_noise_floor = false;
+  {
+    const ExactInt noise_factor = ExactInt::from_i64(kCrossPlatformDecodeNoiseFactor);
+    ExactInt widened_effective_num;
+    if (!ExactInt::try_mul(effective_num, noise_factor, &widened_effective_num)) {
+      return range_finding("cross-platform decode-noise floor (fail threshold * factor)");
+    }
+    if (tolerance->is_relative) {
+      const ExactInt abs_baseline_num = baseline_num.abs();
+      ExactInt lhs;
+      if (!ExactInt::try_mul(abs_delta_num, tolerance_den, &lhs) ||
+          !ExactInt::try_mul(lhs, ExactInt::from_i64(100), &lhs)) {
+        return range_finding("cross-platform decode-noise floor relative lhs (|delta| * tolerance_den * 100)");
+      }
+      ExactInt rhs;
+      if (!ExactInt::try_mul(widened_effective_num, abs_baseline_num, &rhs) ||
+          !ExactInt::try_mul(rhs, candidate_den, &rhs)) {
+        return range_finding(
+            "cross-platform decode-noise floor relative rhs (widened_num * |baseline| * candidate_den)");
+      }
+      within_noise_floor = ExactInt::compare(lhs, rhs) <= 0;
+    } else {
+      ExactInt lhs;
+      if (!ExactInt::try_mul(abs_delta_num, tolerance_den, &lhs)) {
+        return range_finding("cross-platform decode-noise floor absolute lhs (|delta| * tolerance_den)");
+      }
+      ExactInt rhs;
+      if (!ExactInt::try_mul(widened_effective_num, delta_den, &rhs)) {
+        return range_finding("cross-platform decode-noise floor absolute rhs (widened_num * delta_den)");
+      }
+      within_noise_floor = ExactInt::compare(lhs, rhs) <= 0;
+    }
+  }
+
   // Rendered operands for the messages below -- decimal strings identical
   // to the former int64_t formatting whenever the values fit int64_t.
   const std::string abs_delta_num_text = abs_delta_num.to_decimal();
@@ -442,6 +550,24 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   // out-of-tolerance delta was let through.
   const std::string widened_suffix =
       widened ? fmt::format(" (estimated measurement, tolerance widened {}x)", kEstimatedToleranceFactor) : "";
+
+  // Applied at every return point below, after `finding.status`/`finding.
+  // message` are set, and BEFORE `apply_ceiling_escalation()` -- a genuine
+  // asymmetric ceiling crossing is a real headroom-loss risk regardless of
+  // decode-path noise, so it is allowed to override this gate's own
+  // `skipped` verdict back to `fail`, never the reverse.
+  const auto apply_decode_noise_gate = [&]() {
+    if (decode_path_not_bitexact && within_noise_floor && finding.status != Status::pass) {
+      finding.status = Status::skipped;
+      finding.skip_reason = SkipReason::cross_platform_decode_noise;
+      finding.message = fmt::format(
+          "delta {}{}/{}{} exceeds tolerance but stays within the {}x cross-platform decode-noise floor on a "
+          "non-bit-exact decode path ('{}' / '{}') -- treated as incomparable rather than a fabricated verdict",
+          sign, abs_delta_num_text, delta_den_text, tolerance->is_relative ? "%" : std::string(unit_text),
+          kCrossPlatformDecodeNoiseFactor, baseline_decode_path_class.value_or("<missing>"),
+          candidate_decode_path_class.value_or("<missing>"));
+    }
+  };
 
   if (effective_warn_num.has_value()) {
     // Two-threshold form: the zone the delta falls in decides the status,
@@ -461,6 +587,7 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
                                      tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
     }
     apply_end_delta_gate();
+    apply_decode_noise_gate();
     apply_ceiling_escalation();
     return finding;
   }
@@ -476,6 +603,7 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   finding.message = fmt::format("delta {}{}/{}{} exceeds tolerance{}", sign, abs_delta_num_text, delta_den_text,
                                  tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
   apply_end_delta_gate();
+  apply_decode_noise_gate();
   apply_ceiling_escalation();
   return finding;
 }
