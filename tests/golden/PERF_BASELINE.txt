@@ -80,20 +80,33 @@ leg=x64-linux metric=full_instructions value=344956981 commit=a56dd9b
 #
 # These two values were measured with `valgrind --tool=cachegrind`
 # (v3.22.0) against `scripts/measure_audio_perf.sh`'s own on-demand
-# 600s/44100Hz/stereo AAC reference input, at commit 4aa37ca, inside an
+# 600s/44100Hz/stereo AAC reference input, at commit fb4bd16, inside an
 # `ubuntu:24.04` container (this workstation's own host OS lacks valgrind
 # and lacks passwordless root to install it) -- the closest available
 # stand-in for the designated leg's own `ubuntu-24.04` runner image, but
 # NOT that runner, hence provisional rather than authoritative.
+#
+# RE-MEASURED at fb4bd16, replacing the 4aa37ca values
+# (audio_plain_instructions=108915137, audio_full_instructions=47359100891).
+# Those were measured while `DemuxSession::open()` still re-opened every
+# AAC file to resolve HE-AAC SBR signaling -- a whole second
+# `avformat_open_input` + `avformat_find_stream_info`, which callgrind
+# attributed 19,520,821 Ir of this leg's own 108.5M to. fb4bd16 implements
+# D-12's decided header-pass mechanism instead, so the plain leg drops
+# 18.0% and the full leg 0.04%. Both are IMPROVEMENTS, which the ratchet
+# reports and never gates on -- these lines are refreshed here so the
+# provisional baseline keeps describing the code that exists, not so a
+# failing gate passes.
 #
 # `<metric>` is either `audio_plain_instructions` (PacketScan alone, audio
 # decode disabled -- `Pass::audio_decode` never enters the pass union) or
 # `audio_full_instructions` (the SAME packet scan, PLUS the shared audio
 # decode sweep -- hash + loudness + silence sinks fused into ONE
 # `av_read_frame` pass, AUDIO-10 -- PLUS every consuming analyzer's own
-# run()). The large audio_full/audio_plain ratio (roughly 435x) reflects
+# run()). The large audio_full/audio_plain ratio (roughly 530x at
+# fb4bd16, up from 435x purely because the plain leg got cheaper) reflects
 # that decoding and analyzing ten minutes of 44100Hz stereo AAC is a much
 # larger unit of work than a decode-free packet scan, not a defect in
 # either leg.
-leg=x64-linux metric=audio_plain_instructions value=108915137 commit=4aa37ca
-leg=x64-linux metric=audio_full_instructions value=47359100891 commit=4aa37ca
+leg=x64-linux metric=audio_plain_instructions value=89259439 commit=fb4bd16
+leg=x64-linux metric=audio_full_instructions value=47339318902 commit=fb4bd16
