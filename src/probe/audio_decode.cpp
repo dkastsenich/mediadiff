@@ -49,8 +49,13 @@ std::string digest_bytes(const void* data, std::size_t size) {
   return render_xxh3_128(h.high64, h.low64);
 }
 
-// D-06's fixed-point sibling table, now including mp3/mp2 (06-05-PLAN.md:
-// both proved SIMD-stable in 06-CONTEXT.md's own recorded check). Selected
+// D-06's fixed-point sibling table, including mp3/mp2 (06-05-PLAN.md:
+// both proved SIMD-stable on x86_64 in 06-CONTEXT.md's own recorded check
+// -- SELECTION preference, independent of CLASSIFICATION; 06-13-PLAN.md
+// Task 2 demoted mp3/mp2 to class 2 below for want of a real
+// cross-architecture proof, but "auto" still prefers them by name here,
+// exactly as any other class-2 decoder is still selected and still
+// hashed, just compared only within one machine class). Selected
 // by NAME, never by AV_CODEC_ID (D-07's own requirement) -- FFmpeg
 // registers the fixed MP3/MP2 decoders under the plain names "mp3"/"mp2"
 // while the float ones are the separately-named "mp3float"/"mp2float", and
@@ -285,16 +290,52 @@ int determinism_class_for_decoder(std::string_view decoder_name) {
   if (decoder_name.rfind("pcm_", 0) == 0) {
     return 1;
   }
-  static constexpr std::array<std::string_view, 6> kClass1Names = {
-      "flac", "alac", "aac_fixed", "ac3_fixed", "mp3", "mp2",
+  // 06-13-PLAN.md Task 2 (D-06): `mp3`/`mp2` DEMOTED from class 1 back to
+  // class 2. D-06's own text required bit-exact output across
+  // architectures (arm64 as well as x86 SIMD levels) before promoting
+  // them, not proof on one x86 host alone. The real arm64 CI round trip
+  // (run 35735099865) only proved AAC's `aac_fixed` two-build proof
+  // (D-11, tests/integration/test_audio_hash_decoder.cpp's class proof
+  // Test 2) -- `mp2`'s only real corpus fixture (audio_mp2_base.mpg) is
+  // ffmpeg-encoder output, not guaranteed byte-identical across
+  // architectures (WINDOWS.md #12's already-documented class), so no
+  // trustworthy cross-architecture decode proof was ever run for it; `mp3`
+  // has no real corpus fixture at all in this LGPL decode-only pin. Per
+  // this plan's own must-have ("either CONFIRMED... or DEMOTED... never
+  // closed on assumption"), absence of proof demotes rather than assumes.
+  // See docs/checks/content.audio.sample_hash.md and .planning/WINDOWS.md
+  // #39 for the full record. `mp3`/`mp2` are still SELECTED by name under
+  // "auto" (kFixedSiblings above is unaffected -- selection and
+  // classification are deliberately independent, D-06's own T-06-15
+  // rule), so this is a pure classification change: the fixed-point
+  // decoders are still preferred and still hash, just now compared only
+  // within one machine class via the class-2 `path_signature_` path
+  // (compose_decode_path_signature(), already exercised by every other
+  // class-2 decoder below).
+  static constexpr std::array<std::string_view, 2> kClass1Names = {
+      "flac", "alac",
   };
   for (std::string_view name : kClass1Names) {
     if (decoder_name == name) {
       return 1;
     }
   }
-  static constexpr std::array<std::string_view, 6> kClass2Names = {
-      "aac", "ac3", "eac3", "opus", "mp3float", "mp2float",
+  // 06-13-PLAN.md Task 2: `aac_fixed` is CONFIRMED class 1 by real
+  // arm64-osx evidence (the D-11 two-build proof passed on CI run
+  // 35735099865, comparing a fresh arm64 measurement against the
+  // designated-leg-committed snapshot). `ac3_fixed` predates D-06's own
+  // reopening (it was already class 1 before this plan) and has no real
+  // corpus fixture to exercise a cross-architecture proof against in this
+  // LGPL decode-only pin -- its arm64 status remains genuinely unmeasured
+  // and is recorded as an open gap (.planning/WINDOWS.md #39) rather than
+  // silently assumed, but it is not the subject of this plan's own
+  // confirm-or-demote must-have (which is scoped to the mp3/mp2
+  // promotion), so its pre-existing class is left unchanged here.
+  if (decoder_name == "aac_fixed" || decoder_name == "ac3_fixed") {
+    return 1;
+  }
+  static constexpr std::array<std::string_view, 8> kClass2Names = {
+      "aac", "ac3", "eac3", "opus", "mp3float", "mp2float", "mp3", "mp2",
   };
   for (std::string_view name : kClass2Names) {
     if (decoder_name == name) {

@@ -22,18 +22,45 @@ determinism table (never influenced by `--profile` -- decoder choice is a proper
 fingerprint, not the policy under which it is later evaluated):
 
 - **Class 1 -- hashes everywhere, compares across any two machines or builds.** Every PCM
-  codec (bit-exact by construction), `flac`, `alac`, and the fixed-point siblings `aac_fixed`,
-  `ac3_fixed`, `mp3`, `mp2` -- selected BY NAME (`avcodec_find_decoder_by_name`), never by codec
-  ID, because the fixed-point and float variants of MP3/MP2 share one codec ID and only the
-  name distinguishes them. **The `mp3`/`mp2` promotion to class 1 is PROVISIONAL**: it is proven
-  bit-exact on x86_64 only as of this writing; an arm64 CI leg either confirms cross-architecture
-  identity or forces a documented demotion back to class 2 (06-RESEARCH.md A1).
+  codec (bit-exact by construction), `flac`, `alac`, and the fixed-point siblings `aac_fixed`
+  and `ac3_fixed` -- selected BY NAME (`avcodec_find_decoder_by_name`), never by codec ID.
+  **06-13-PLAN.md's cross-architecture round trip (CI run 35735099865, commit e5a1677, a real
+  arm64-osx leg):**
+  - **`aac_fixed` is CONFIRMED class 1**, measured: the D-11 class-1 two-build proof
+    (`tests/integration/test_audio_hash_decoder.cpp`'s "class proof Test 2") compares a snapshot
+    taken from one build against a fresh measurement on the SAME hand-written, byte-identical-by-
+    construction fixture (`audio_aac_handwritten.mp4`, D-10) -- it ran, and passed, on the real
+    arm64-osx leg. That is real cross-architecture evidence, not an assumption.
+  - **`mp3` and `mp2` are DEMOTED to class 2, not confirmed.** D-06's own text required bit-exact
+    output across architectures (arm64 as well as x86 SIMD levels), not proof on one x86 host.
+    No trustworthy cross-architecture two-build proof exists for either: `mp2`'s only real corpus
+    fixture (`audio_mp2_base.mpg`) is ffmpeg-encoder output, and this pinned ffmpeg build's lossy
+    encoders are already documented (`.planning/WINDOWS.md` #12) as NOT producing
+    architecture-stable bytes even under `-flags +bitexact` -- a two-build proof built on it would
+    need D-11's own fixture-identity assertion to run first, and that assertion would very likely
+    fail on arm64 before ever reaching the decode comparison, testing fixture instability rather
+    than decoder instability. `mp3` has no real corpus fixture at all in this LGPL decode-only
+    pin. Building a trustworthy proof for either needs a D-10-style hand-written, architecture-
+    stable elementary stream, which does not exist and was out of this plan's scope. Per this
+    plan's own must-have ("either CONFIRMED... or DEMOTED... never closed on assumption"), the
+    honest outcome, absent proof, is demotion: `determinism_class_for_decoder()`
+    (`src/probe/audio_decode.h`/`.cpp`) now returns class 2 for both. "auto" still SELECTS the
+    fixed-point `mp3`/`mp2` decoders by name (selection and classification are independent,
+    D-06's own T-06-15 rule) -- they still hash, just compared only within one machine class via
+    the class-2 `path_signature` path, exactly like any other class-2 decoder.
+  - **`ac3_fixed`'s cross-architecture bit-exactness is ALSO unmeasured by any real
+    fixture-level test** (no real AC-3 corpus fixture exists in this LGPL decode-only pin, same
+    gap as `mp3`) -- but its class-1 status predates D-06's own reopening and is not the literal
+    subject of this plan's confirm-or-demote must-have (scoped to the `mp3`/`mp2` promotion), so
+    it is left unchanged here. This gap is recorded openly, not silently, at
+    `.planning/WINDOWS.md` #39.
 - **Class 2 -- hashes, but only comparable within one machine class.** The native (non-fixed)
-  decoders: `aac`, `ac3`, `eac3`, `opus`, `mp3float`, `mp2float`, and any fixed-point-sibling
-  stream that fell back to its default decoder (e.g. a USAC stream, which `aac_fixed` cannot
-  open). A class-2 record carries a `path_signature` (library versions, target triplet, CPU
-  feature flags) that a same-machine comparison matches and a cross-machine comparison usually
-  does not.
+  decoders: `aac`, `ac3`, `eac3`, `opus`, `mp3float`, `mp2float` -- and, since 06-13-PLAN.md Task
+  2, the fixed-point `mp3`/`mp2` decoders themselves (demoted above) -- plus any fixed-point-
+  sibling stream that fell back to its default decoder (e.g. a USAC stream, which `aac_fixed`
+  cannot open). A class-2 record carries a `path_signature` (library versions, target triplet,
+  CPU feature flags) that a same-machine comparison matches and a cross-machine comparison
+  usually does not.
 - **Class 3 -- never hashes.** A codec this table does not list. Hashing is DISABLED for that
   stream rather than producing a digest nobody has proven trustworthy: the measurement reports
   `skipped:hash_disabled`, carrying the decoder name and class but no digest.

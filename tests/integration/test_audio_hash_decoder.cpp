@@ -111,8 +111,12 @@ nlohmann::ordered_json compare_json(const std::string& baseline, const std::stri
 // this LGPL decode-only pin's corpus and are covered instead by
 // tests/unit/test_audio_decode.cpp's pure determinism_class_for_decoder
 // table assertions): with no flag, an AAC stream selects aac_fixed/class1
-// and an MP2 stream selects mp2/class1 (D-06's promotion).
-TEST_CASE("audio_hash_decoder - Test 1: auto selects the class-1 fixed-point sibling for AAC and MP2",
+// (D-06's confirmed promotion, real arm64 evidence) and an MP2 stream
+// still selects the fixed-point "mp2" decoder by name but now records
+// class2 (06-13-PLAN.md Task 2's demotion -- no real cross-architecture
+// proof exists for mp2, see docs/checks/content.audio.sample_hash.md).
+TEST_CASE("audio_hash_decoder - Test 1: auto selects the class-1 fixed-point sibling for AAC (confirmed) and "
+          "mp2 by name though now recorded class2 (demoted, 06-13-PLAN.md)",
           "[integration]") {
   const nlohmann::ordered_json same_aac = compare_json(fixture("audio_hash_base.mp4"), fixture("audio_hash_base.mp4"));
   const auto* aac_finding = find_finding(same_aac, "content.audio.sample_hash");
@@ -130,7 +134,9 @@ TEST_CASE("audio_hash_decoder - Test 1: auto selects the class-1 fixed-point sib
   REQUIRE(mp2_finding != nullptr);
   CHECK(mp2_finding->at("status") == "pass");
   CHECK(mp2_finding->at("evidence").at("candidate").at("decoder_name") == "mp2");
-  CHECK(mp2_finding->at("evidence").at("candidate").at("decode_path_class") == "class1");
+  const std::string mp2_class =
+      mp2_finding->at("evidence").at("candidate").at("decode_path_class").get<std::string>();
+  CHECK(mp2_class.rfind("class2", 0) == 0);
 }
 
 // Test 2: `--hash-decoder default` opts out unconditionally -- the same AAC
@@ -380,4 +386,60 @@ TEST_CASE("audio_hash_decoder - class proof Test 7: a same-run compare never deg
   REQUIRE(finding != nullptr);
   CHECK(finding->at("status") == "pass");
   CHECK(finding->at("skip_reason") == "none");
+}
+
+// Test 9 (06-13-PLAN.md Task 2, D-06): the real coverage of the class-1
+// cross-architecture two-build proof, made explicit and visible rather
+// than left to be inferred from which TEST_CASEs happen to exist.
+// `aac_fixed` is the ONLY class-1 fixed-point decoder with a committed,
+// real cross-architecture proof (class proof Test 2 above, D-11, run
+// against a genuinely arm64 CI leg -- run 35735099865). It is NOT
+// extended to `ac3_fixed`, `mp3` or `mp2` here, each for a documented,
+// distinct reason -- never silently, and never because the promotion is
+// assumed proven:
+//
+//   - `mp2`: the only real corpus fixture (audio_mp2_base.mpg) is
+//     ffmpeg-encoder output. WINDOWS.md #12 already established that this
+//     pinned ffmpeg build's lossy encoders do NOT produce
+//     architecture-stable bytes even under `-flags +bitexact`. A two-build
+//     proof built on this fixture would need D-11's own identity
+//     assertion to run first (exactly like the AAC proof) -- and per #12
+//     that assertion would very likely FAIL on arm64 before ever reaching
+//     the decode comparison, proving fixture instability rather than
+//     decoder instability, and misattributing the failure. A trustworthy
+//     proof for mp2 needs a D-10-style hand-written, architecture-stable
+//     MP2 elementary stream, which does not exist and is out of this
+//     plan's scope to build (D-06's promotion is DEMOTED to class 2
+//     instead of proven on a misleading test, per this plan's own
+//     must-have).
+//   - `mp3`: has no real corpus fixture at all in this LGPL decode-only
+//     pin (Test 1's own comment above) -- there is nothing to compare.
+//     Also DEMOTED to class 2.
+//   - `ac3_fixed`: same fixture gap as mp3 -- no real corpus fixture
+//     exists. Its class-1 status predates D-06's own reopening and is not
+//     the literal subject of this plan's confirm-or-demote must-have
+//     (which is scoped to the mp3/mp2 promotion), so it is left
+//     unchanged, but its cross-architecture bit-exactness is EQUALLY
+//     unmeasured by any real fixture-level test -- recorded openly rather
+//     than left implicit (.planning/WINDOWS.md #39).
+//
+// This test asserts nothing about decode output; its only job is to make
+// the proof's real scope a named, discoverable fact in the test suite
+// rather than a claim only recoverable by reading which TEST_CASEs are
+// absent.
+TEST_CASE("audio_hash_decoder - Test 9: the class-1 two-build cross-architecture proof covers aac_fixed only -- "
+          "ac3_fixed/mp3/mp2 remain unproven cross-architecture and are explicitly excluded by name, never "
+          "silently",
+          "[integration]") {
+  INFO("ac3_fixed: no real corpus fixture exists in this LGPL decode-only pin -- cross-architecture "
+       "bit-exactness cannot be measured without a hand-written AC-3 bitstream (D-10-style), out of this "
+       "plan's scope. EXCLUDED from the two-build proof, not proven. See .planning/WINDOWS.md #39.");
+  INFO("mp3: same gap as ac3_fixed -- no real corpus fixture exists at all. EXCLUDED, not proven. See "
+       ".planning/WINDOWS.md #39.");
+  INFO("mp2: audio_mp2_base.mpg exists but is ffmpeg-encoder output, not guaranteed byte-identical across "
+       "architectures (WINDOWS.md #12) -- a two-build proof on it would test fixture stability, not decoder "
+       "bit-exactness, without a D-10-style hand-written bitstream. DEMOTED to class 2 rather than proven on a "
+       "misleading test. See .planning/WINDOWS.md #39.");
+  SUCCEED("aac_fixed is the only class-1 fixed-point decoder with a real, committed cross-architecture "
+          "two-build proof (class proof Test 2, D-11) in this corpus.");
 }

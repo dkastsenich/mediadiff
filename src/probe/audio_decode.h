@@ -304,20 +304,30 @@ struct AudioDecodeResult {
 // implement its own loop.
 mediadiff::expected<AudioDecodeResult, Error> run_audio_decode(DemuxSession& session);
 
-// 06-05-PLAN.md (D-06, AUDIO-09, TRUST-01/TRUST-02): doc 05 section 3's
-// normative determinism-class table, extended by D-06's mp3/mp2 promotion --
-// the SINGLE place this table is encoded. Classifies by the decoder's own
-// NAME (never by AV_CODEC_ID, D-06's own by-name-only rule; never by
-// trusting a separately-computed class integer, T-06-15's own mitigation):
-// every `pcm_*` decoder, `flac` and `alac` are class 1 (bit-exact by
-// construction or empirically proven stable); `aac_fixed`, `ac3_fixed`,
-// `mp3` and `mp2` are class 1 (the fixed-point siblings, D-06); `aac`,
-// `ac3`, `eac3`, `opus`, `mp3float` and `mp2float` are class 2 (SIMD-
-// dependent but decodable, comparable only within one machine class); every
-// other name -- a codec doc 05 section 3 does not list -- is class 3: not
-// proven deterministic, hashing disabled rather than an unreviewed digest
-// (D-06's "extend only where proven" rule). Pure and allocation-light so it
-// is directly unit-testable without a real decode.
+// 06-05-PLAN.md (D-06, AUDIO-09, TRUST-01/TRUST-02), demoted by
+// 06-13-PLAN.md Task 2: doc 05 section 3's normative determinism-class
+// table -- the SINGLE place this table is encoded. Classifies by the
+// decoder's own NAME (never by AV_CODEC_ID, D-06's own by-name-only rule;
+// never by trusting a separately-computed class integer, T-06-15's own
+// mitigation): every `pcm_*` decoder, `flac` and `alac` are class 1
+// (bit-exact by construction or empirically proven stable); `aac_fixed`
+// and `ac3_fixed` are class 1 (the fixed-point siblings that predate
+// D-06's own reopening); `aac`, `ac3`, `eac3`, `opus`, `mp3float`,
+// `mp2float` -- and, since 06-13-PLAN.md Task 2, `mp3` and `mp2` -- are
+// class 2 (SIMD-dependent but decodable, comparable only within one
+// machine class). D-06's own mp3/mp2 promotion to class 1 required proof
+// of bit-exact output across architectures, not just x86 SIMD levels; the
+// real arm64 CI round trip (run 35735099865) proved only `aac_fixed`'s
+// cross-architecture bit-exactness (D-11's committed two-build proof) --
+// `mp2`'s only real fixture is ffmpeg-encoder output with no guaranteed
+// cross-architecture byte stability (WINDOWS.md #12) and `mp3` has no real
+// corpus fixture at all, so neither promotion is proven and both are
+// demoted rather than assumed (see docs/checks/content.audio.sample_hash.md,
+// .planning/WINDOWS.md #39). Every other name -- a codec doc 05 section 3
+// does not list -- is class 3: not proven deterministic, hashing disabled
+// rather than an unreviewed digest (D-06's "extend only where proven"
+// rule). Pure and allocation-light so it is directly unit-testable without
+// a real decode.
 int determinism_class_for_decoder(std::string_view decoder_name);
 
 // 06-05-PLAN.md (AUDIO-09): a `--hash-decoder <name>` existence check for

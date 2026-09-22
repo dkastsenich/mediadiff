@@ -205,30 +205,38 @@ TEST_CASE("audio_decode - a video-only file attempts no stream", "[unit]") {
   CHECK(!first_attempted(*result).has_value());
 }
 
-// 06-05-PLAN.md Task 1 (D-06, AUDIO-09): determinism_class_for_decoder()'s
-// own normative table, exercised directly -- pure, allocation-light,
-// requires no decode at all. Every name doc 05 section 3 lists (D-06's
-// mp3/mp2 promotion included) plus the class-3 "not listed" fallback.
+// 06-05-PLAN.md Task 1 (D-06, AUDIO-09), DEMOTED by 06-13-PLAN.md Task 2:
+// determinism_class_for_decoder()'s own normative table, exercised
+// directly -- pure, allocation-light, requires no decode at all. `mp3`/
+// `mp2` moved from class 1 to class 2 here: the real arm64 CI round trip
+// (run 35735099865) proved only `aac_fixed`'s cross-architecture
+// bit-exactness (D-11's two-build proof); `mp2`'s only real fixture is
+// ffmpeg-encoder output with no guaranteed cross-architecture byte
+// stability (WINDOWS.md #12) and `mp3` has no real corpus fixture at all,
+// so neither promotion is proven and D-06's own must-have forbids
+// assuming it. See docs/checks/content.audio.sample_hash.md.
 TEST_CASE("audio_decode - determinism_class_for_decoder covers the whole normative table", "[unit]") {
   // Class 1: every pcm_* decoder (by prefix), plus the named fixed-point
-  // siblings and empirically-stable codecs.
+  // siblings and empirically-stable codecs proven cross-architecture.
   CHECK(determinism_class_for_decoder("pcm_s16le") == 1);
   CHECK(determinism_class_for_decoder("pcm_f32le") == 1);
   CHECK(determinism_class_for_decoder("flac") == 1);
   CHECK(determinism_class_for_decoder("alac") == 1);
   CHECK(determinism_class_for_decoder("aac_fixed") == 1);
   CHECK(determinism_class_for_decoder("ac3_fixed") == 1);
-  CHECK(determinism_class_for_decoder("mp3") == 1);
-  CHECK(determinism_class_for_decoder("mp2") == 1);
 
   // Class 2: SIMD-dependent but decodable, comparable only within one
-  // machine class.
+  // machine class. `mp3`/`mp2` DEMOTED here (06-13-PLAN.md Task 2) --
+  // still selected by name under "auto" (kFixedSiblings), just no longer
+  // classified as cross-architecture bit-exact absent real proof.
   CHECK(determinism_class_for_decoder("aac") == 2);
   CHECK(determinism_class_for_decoder("ac3") == 2);
   CHECK(determinism_class_for_decoder("eac3") == 2);
   CHECK(determinism_class_for_decoder("opus") == 2);
   CHECK(determinism_class_for_decoder("mp3float") == 2);
   CHECK(determinism_class_for_decoder("mp2float") == 2);
+  CHECK(determinism_class_for_decoder("mp3") == 2);
+  CHECK(determinism_class_for_decoder("mp2") == 2);
 
   // Class 3: a codec doc 05 section 3 does not list at all (D-06's
   // "extend only where proven" rule) -- hashing disabled rather than an
@@ -264,17 +272,24 @@ TEST_CASE("audio_decode - --hash-decoder <name> forces that exact decoder", "[un
   CHECK(stream->fallback_reason.empty());
 }
 
-// Test 7 (06-05-PLAN.md Task 1, D-06): the mp3/mp2 promotion end to end --
-// audio_mp2_base.mpg's MP2 stream auto-selects the fixed-point "mp2"
-// decoder over "mp2float", landing on class 1. (MP3 has no analogous
-// end-to-end fixture in this LGPL decode-only pin -- no MP3 *encoder*
-// exists to synthesize one bitexactly; MP3's own table entry is covered by
-// the pure determinism_class_for_decoder assertions above instead.)
-TEST_CASE("audio_decode - MP2 auto-selects the fixed-point sibling (D-06 promotion)", "[unit]") {
+// Test 7 (06-05-PLAN.md Task 1, D-06), DEMOTED by 06-13-PLAN.md Task 2:
+// "auto" still selects the fixed-point "mp2" decoder by NAME over
+// "mp2float" -- selection is unaffected by the demotion (D-06's own
+// T-06-15 rule: classification and selection are independent) -- but it
+// now lands on class 2 with a recorded path_signature, since no real
+// arm64 evidence proved mp2's cross-architecture bit-exactness this
+// round. (MP3 has no analogous end-to-end fixture in this LGPL decode-only
+// pin -- no MP3 *encoder* exists to synthesize one bitexactly; MP3's own
+// table entry is covered by the pure determinism_class_for_decoder
+// assertions above instead.)
+TEST_CASE("audio_decode - MP2 auto-selects the fixed-point sibling by name, now recorded class 2 (D-06 "
+          "demotion, 06-13-PLAN.md)",
+          "[unit]") {
   const std::optional<StreamAudioDecode> stream = first_attempted_with_preference(audio_mp2_base_mpg(), "auto");
   REQUIRE(stream.has_value());
   CHECK(stream->decoder_name == "mp2");
-  CHECK(stream->decoder_class == 1);
+  CHECK(stream->decoder_class == 2);
+  CHECK(!stream->path_signature.empty());
   CHECK(stream->fallback_reason.empty());
 }
 
