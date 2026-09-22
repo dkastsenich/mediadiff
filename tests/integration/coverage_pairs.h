@@ -562,56 +562,53 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
       // audio.sample_fmt: trigger is audio_stereo_s16.wav (s16) vs
       // audio_stereo_s24.wav (s32, since s24 canonicalizes to its packed
       // 32-bit container per D-02) -- verified `fail`, "s16" vs "s32".
-      // Clean pair (06-11-PLAN.md Task 2, Rule 1 fix): audio_stereo_s16.wav
-      // AGAINST ITSELF, not the originally declared audio_stereo_s16.wav
-      // vs audio_pcm_base.wav. That pair WAS `pass` for audio.sample_fmt
-      // itself (both "s16"), but audio_pcm_base.wav is a genuinely
-      // DIFFERENT, longer recording -- a real content/duration difference,
-      // not merely a format coincidence -- so the whole-report corpus
-      // sweep (tests/integration/test_audio_corpus_sweep.cpp) correctly
-      // reported timeline.duration/content.audio.sample_hash/size.file all
-      // firing. Narrowing to a self-compare keeps "s16" on both sides
-      // (trivially) and is clean everywhere.
+      // Clean pair is audio_stereo_s16.wav vs audio_pcm_base.wav, both s16
+      // -- verified `pass`, "s16" both sides. (Restored 06-11-PLAN.md Task 2
+      // human-review correction: a same-file self-compare only proves
+      // determinism, which test_trust06_idempotence.cpp already covers
+      // corpus-wide; this pair proves the stronger, load-bearing property --
+      // audio.sample_fmt stays clean when a DIFFERENT recording's other
+      // dimensions change -- cross-dimension independence, not mere
+      // determinism. The corpus-wide sweep
+      // (tests/integration/test_audio_corpus_sweep.cpp) now declares this
+      // pair's OTHER non-pass findings by name instead of forcing this pair
+      // toward a self-compare.)
       {"audio.sample_fmt",
        {fixture("audio_stereo_s16.wav"), fixture("audio_stereo_s24.wav"), fixture("audio_stereo_s16.wav"),
-        fixture("audio_stereo_s16.wav")}},
+        fixture("audio_pcm_base.wav")}},
       // audio.bit_depth: trigger is audio_51.flac (16-bit) vs
       // audio_dropout.flac (24-bit), both genuinely declaring
       // bits_per_raw_sample so the finding reports a real `fail` rather
       // than an Absent-driven `skipped` -- verified `fail`, 16 vs 24.
-      // Clean pair is audio_51.flac against ITSELF (06-11-PLAN.md Task 2,
-      // Rule 1 fix): the original choice, audio_51.flac vs
-      // audio_51_side.flac, is bit-depth-clean (both 16-bit) but is ALSO
-      // audio.layout's own declared TRIGGER pair ("5.1" vs "5.1(side)",
-      // see audio.layout below) -- a check declared clean for THIS id was
-      // silently reusing a fixture pair that fails a DIFFERENT id,
-      // surfaced by the corpus-wide clean sweep
-      // (tests/integration/test_audio_corpus_sweep.cpp) asserting the
-      // WHOLE report, not merely audio.bit_depth's own status. Verified
-      // `pass`, 16 both sides, and now clean across every registered
-      // check (a self-compare can move nothing).
+      // Clean pair is audio_51.flac vs audio_51_side.flac, both 16-bit --
+      // verified `pass`, 16 both sides. (Restored 06-11-PLAN.md Task 2
+      // human-review correction: this pair is ALSO audio.layout's own
+      // declared trigger pair ("5.1" vs "5.1(side)") -- by design, per
+      // D-02, one pair may be check X's clean pair and check Y's trigger
+      // pair simultaneously. A same-file self-compare would prove only
+      // determinism; this pair proves audio.bit_depth stays clean across a
+      // genuine layout change, the cross-dimension independence a
+      // self-compare cannot demonstrate. The corpus-wide sweep
+      // (tests/integration/test_audio_corpus_sweep.cpp) declares
+      // audio.layout's expected non-pass finding on this pair by name.)
       {"audio.bit_depth",
        {fixture("audio_51.flac"), fixture("audio_dropout.flac"), fixture("audio_51.flac"),
-        fixture("audio_51.flac")}},
+        fixture("audio_51_side.flac")}},
       // audio.channels: trigger is audio_stereo_s16.wav (2ch) vs
-      // audio_mono_s16.wav (1ch) -- verified `fail`, 2 vs 1.
-      //
-      // Clean pair (06-11-PLAN.md Task 2, Rule 1 fix): audio_stereo_s16.wav
-      // AGAINST ITSELF, not the originally declared audio_stereo_s16.wav
-      // vs audio_stereo_s24.wav. That pair WAS `pass` for audio.channels
-      // itself (2ch both sides), and its own comment already acknowledged
-      // it "simultaneously triggers audio.sample_fmt" -- but the
-      // corpus-wide sweep (tests/integration/test_audio_corpus_sweep.cpp)
-      // showed it is genuinely a DIFFERENT recording entirely (also moves
-      // audio.codec, audio.layout, container.track_order and every
-      // size.* check), not a controlled single-dimension change. Since
-      // audio.sample_fmt above was independently narrowed to its own
-      // self-compare, there is no remaining reason for audio.channels to
-      // reuse a cross-recording pair; self-compare is clean everywhere and
-      // no coverage is lost (channel count trivially matches itself).
+      // audio_mono_s16.wav (1ch) -- verified `fail`, 2 vs 1. Clean pair is
+      // audio_stereo_s16.wav vs audio_stereo_s24.wav, both 2ch -- verified
+      // `pass`, 2 both sides (this pair simultaneously triggers
+      // audio.sample_fmt above, which is fine -- DOC-03 only requires THIS
+      // check to be clean on the declared clean pair, not that the pair be
+      // clean everywhere). (Restored 06-11-PLAN.md Task 2 human-review
+      // correction: a same-file self-compare only proves determinism; this
+      // pair proves audio.channels stays clean across a genuine sample-
+      // format change -- cross-dimension independence. The corpus-wide
+      // sweep (tests/integration/test_audio_corpus_sweep.cpp) declares this
+      // pair's other expected non-pass findings by name.)
       {"audio.channels",
        {fixture("audio_stereo_s16.wav"), fixture("audio_mono_s16.wav"), fixture("audio_stereo_s16.wav"),
-        fixture("audio_stereo_s16.wav")}},
+        fixture("audio_stereo_s24.wav")}},
       // audio.layout: trigger is audio_51.flac (5.1) vs
       // audio_51_side.flac (5.1(side)) -- the headline "same channel
       // count, different layout" story -- verified `fail`, "5.1" vs

@@ -27,25 +27,57 @@
 // measurement, never suppressed here.
 //
 // Running this sweep against the real corpus found FIVE non-pass results
-// across 33 unique declared clean pairs. Three were genuine DOC-03-table
-// defects -- a check's own declared "clean" pair happened to reuse a
-// fixture pair that moved a DIFFERENT id -- and were fixed by narrowing
-// the fixture in coverage_pairs.h itself (audio.bit_depth,
-// audio.sample_fmt, audio.channels; see that file's own comments on each
-// entry for the measurement). The remaining two are PRE-EXISTING,
-// Phase-5-owned instances of the SAME root cause (WINDOWS.md #34/#35):
-// timeline.duration.coherence is a `state` semantic (src/core/checks.def's
-// own registered comment: "there is no way to make a state-semantic pair
-// with BOTH sides flagged report pass"), and two unrelated fixtures each
-// carry an inherent container-vs-stream duration disagreement on one of
-// their own streams (timeline_ts_nowrap.ts's audio stream; topo_subs.mp4's
-// mov_text subtitle stream) that fires identically on either side of ANY
+// across 33 unique declared clean pairs.
+//
+// CORRECTION (06-11-PLAN.md Task 2, post-checkpoint human review): an
+// earlier revision of this file claimed three of the five were "genuine
+// DOC-03-table defects...fixed by narrowing the fixture" -- that claim was
+// WRONG and has been superseded. audio.bit_depth, audio.sample_fmt and
+// audio.channels each declare a CROSS-DIMENSION clean pair on purpose: the
+// pair proves the check stays clean while a DIFFERENT dimension changes
+// (audio.bit_depth clean across a layout change; audio.channels and
+// audio.sample_fmt clean across each other's own triggering dimension).
+// That is real coverage a same-file self-compare cannot provide -- a
+// self-compare proves only determinism, which
+// tests/integration/test_trust06_idempotence.cpp already covers
+// corpus-wide. Narrowing those three pairs to self-compares (as the
+// superseded revision did) silently deleted their only cross-dimension
+// clean evidence to force a whole-report zero-non-pass result. The actual
+// root cause was that THIS sweep's own assertion was stricter than the
+// DOC-03 table's design: the table deliberately allows one pair to be
+// check X's clean pair AND check Y's trigger pair (D-02, "one cause can
+// legitimately move several facts") -- asserting whole-report zero
+// non-pass forces every clean pair toward a self-compare, which hollows
+// out the table. The fix applied here keeps the three original
+// discriminating pairs (restored verbatim, comments included, in
+// coverage_pairs.h) and instead DECLARES each pair's own known non-pass
+// findings by name below, via the same expect_declared_set mechanism
+// WINDOWS.md #34/#35 already use -- one mechanism for every exception,
+// not two.
+//
+// So of the five original non-pass results: THREE are the audio.bit_depth
+// / audio.sample_fmt / audio.channels cross-dimension pairs above, each
+// now a named, cited exception below (not a fixture change). The
+// remaining two are PRE-EXISTING, Phase-5-owned instances of a different
+// root cause (WINDOWS.md #34/#35): timeline.duration.coherence is a
+// `state` semantic (src/core/checks.def's own registered comment: "there
+// is no way to make a state-semantic pair with BOTH sides flagged report
+// pass"), and two unrelated fixtures each carry an inherent
+// container-vs-stream duration disagreement on one of their own streams
+// (timeline_ts_nowrap.ts's audio stream; topo_subs.mp4's mov_text
+// subtitle stream) that fires identically on either side of ANY
 // comparison involving that fixture, including against itself. Neither is
 // fixable within this plan's own file scope (the audio inspect section,
 // not Phase 5's timeline analyzers) -- recorded below as two named, cited
-// exceptions via the SAME expect_declared_set mechanism D-02's own
-// per-fixture declared sets already use, never a blanket filter of
-// count_non_pass.
+// exceptions.
+//
+// An UNDECLARED non-pass anywhere else in the corpus still fails this
+// sweep loudly, naming the fixture pair and every offending finding by id
+// and status via expect_declared_set/diff_declared_set -- that property is
+// the whole point of the sweep and is verified (not merely asserted) by
+// this plan's own commit history: a temporary undeclared non-pass was
+// injected and shown to fail loudly, then reverted, before this file was
+// committed.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -104,14 +136,19 @@ std::string join(const std::vector<std::string>& items) {
   return out;
 }
 
-// WINDOWS.md #34/#35: the TWO named, cited exceptions this sweep allows --
-// pre-existing, Phase-5-owned, already-documented artifacts this plan's
-// own file scope cannot fix (see this file's own top comment). Every
-// other pair sweeps against the empty set (ordinary "reports nothing at
-// all" clean). Matched by (baseline, candidate) exactly, never by id or
-// by "any pair involving this fixture" -- a change that makes a
-// DIFFERENT pair also touch either fixture must still sweep clean unless
-// it independently earns its own cited exception here.
+// Every named, cited exception this sweep allows -- either a pre-existing,
+// Phase-5-owned, already-documented artifact this plan's own file scope
+// cannot fix (WINDOWS.md #34/#35), or a cross-dimension DOC-03 clean pair
+// that, BY DESIGN (D-02), also happens to trigger a different check id
+// (see this file's own top comment for the full reasoning). Every other
+// pair sweeps against the empty set (ordinary "reports nothing at all"
+// clean). Matched by (baseline, candidate) exactly, never by id or by
+// "any pair involving this fixture" -- a change that makes a DIFFERENT
+// pair also touch either fixture must still sweep clean unless it
+// independently earns its own cited exception here. This is the ONLY
+// exception mechanism this sweep uses -- declared non-pass findings, via
+// expect_declared_set below, never a self-compare forced upstream in
+// coverage_pairs.h to dodge this sweep.
 const std::map<std::pair<std::string, std::string>, std::vector<std::string>>& known_exceptions() {
   static const std::map<std::pair<std::string, std::string>, std::vector<std::string>> exceptions = {
       // WINDOWS.md #34: timeline_ts_nowrap.ts's own audio stream carries an
@@ -127,6 +164,45 @@ const std::map<std::pair<std::string, std::string>, std::vector<std::string>>& k
       // duration disagreement.
       {{mediadiff::test::fixture("topo_subs.mp4"), mediadiff::test::fixture("topo_subs_copy.mp4")},
        {"timeline.duration.coherence"}},
+      // audio.bit_depth's own declared clean pair (coverage_pairs.h) is
+      // audio_51.flac vs audio_51_side.flac -- SAME 16-bit depth,
+      // DIFFERENT layout ("5.1" vs "5.1(side)"), which is also
+      // audio.layout's own declared TRIGGER pair (D-02: one pair may be
+      // check X's clean pair and check Y's trigger pair). Verified
+      // directly against the real binary (`compare --profile sw-encoder
+      // --json`): exactly one non-pass finding, audio.layout `fail`.
+      {{mediadiff::test::fixture("audio_51.flac"), mediadiff::test::fixture("audio_51_side.flac")},
+       {"audio.layout"}},
+      // audio.sample_fmt's own declared clean pair (coverage_pairs.h) is
+      // audio_stereo_s16.wav vs audio_pcm_base.wav -- SAME sample format
+      // (s16), DIFFERENT recording (a longer, independent capture).
+      // Verified directly against the real binary: four non-pass
+      // findings -- timeline.duration `fail` (different duration, the
+      // recording's own defining difference), content.audio.sample_hash
+      // `fail` (different content, the same reason), size.file `fail` and
+      // size.overhead `info` (a longer file is a bigger file). None of
+      // these touch audio.sample_fmt itself, which stays `pass` on this
+      // pair as declared.
+      {{mediadiff::test::fixture("audio_stereo_s16.wav"), mediadiff::test::fixture("audio_pcm_base.wav")},
+       {"timeline.duration", "content.audio.sample_hash", "size.file", "size.overhead"}},
+      // audio.channels' own declared clean pair (coverage_pairs.h) is
+      // audio_stereo_s16.wav vs audio_stereo_s24.wav -- SAME channel count
+      // (2ch), DIFFERENT sample format (s16 vs s32, D-02's own "s24
+      // canonicalizes to its packed 32-bit container" case), which is
+      // also audio.sample_fmt's own declared TRIGGER pair. Verified
+      // directly against the real binary: seven non-pass findings --
+      // audio.sample_fmt `fail` (the pair's own defining difference),
+      // audio.codec/audio.layout `fail` and container.track_order `warn`
+      // (this pair is drawn from a genuinely different underlying
+      // encode, not a single-dimension nudge -- consistent with
+      // audio.sample_fmt's own trigger-pair declaration above), and
+      // size.file/size.stream_bitrate/size.peak_bitrate `fail` (a
+      // higher-bit-depth PCM stream is bigger). None of these touch
+      // audio.channels itself, which stays `pass` on this pair as
+      // declared.
+      {{mediadiff::test::fixture("audio_stereo_s16.wav"), mediadiff::test::fixture("audio_stereo_s24.wav")},
+       {"container.track_order", "audio.codec", "audio.sample_fmt", "audio.layout", "size.file",
+        "size.stream_bitrate", "size.peak_bitrate"}},
   };
   return exceptions;
 }
@@ -143,8 +219,8 @@ std::vector<std::string> expected_non_pass_ids(const UniqueCleanPair& pair) {
 }  // namespace
 
 TEST_CASE(
-    "audio_corpus_sweep - every declared clean pair in the corpus reports a zero non-pass count across the WHOLE "
-    "report",
+    "audio_corpus_sweep - every declared clean pair in the corpus reports ONLY its declared non-pass findings "
+    "(empty by default) across the WHOLE report",
     "[integration]") {
   const std::vector<UniqueCleanPair> pairs = unique_clean_pairs();
   REQUIRE(!pairs.empty());
