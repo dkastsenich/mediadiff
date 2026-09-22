@@ -2027,14 +2027,60 @@ python3 tools/gen_ts_discontinuity.py \
 # architectures -- exactly like `timeline_drift_base.mp4` below, which was
 # never affected precisely because it has no resampler.
 #
-# The substitution is measurement-neutral, verified against the real
+# That substitution was measurement-neutral, verified against the real
 # binary: `timeline.av_drift` reports the IDENTICAL rational rate
-# (-54717060000/907751640 ms/min), `timeline.av_drift.pattern` still
-# classifies `linear-drift`, and `content.audio.sample_hash` still diverges
-# from block 0 with 201 divergent blocks -- every value this pair's tests
-# pin, unchanged. Do NOT reintroduce `aresample` here: a lossy encoder
-# downstream of a resampler makes true peak non-reproducible across
-# architectures, and the tolerance must never be widened to hide that.
+# (-54717060000/907751640 ms/min) and `timeline.av_drift.pattern` still
+# classifies `linear-drift`. Do NOT reintroduce `aresample` here.
+#
+# DETERMINISM, CYCLE 2 (same debug session, CI run 35723466889): the above
+# was NECESSARY but NOT SUFFICIENT. It turned x64-windows-static-md fully
+# GREEN -- proof on a genuinely foreign DSP path that the resampler really
+# was a cause -- but arm64-osx still failed, now at +1.299 dB and with the
+# SIGN FLIPPED relative to x64-linux (candidate -14.765 where linux reads
+# -15.976, previously -17.697). A sign flip under a SMALLER magnitude is the
+# signature of a chaotic `max` reshuffle, not of a shrinking proportional
+# error. The remaining amplifier is the NATIVE AAC ENCODER itself, which the
+# same session had already proved is independently DSP-divergent: every AAC
+# elementary stream in this pair differs across DSP paths, including
+# `timeline_drift_base.mp4`'s, whose PCM input is bit-identical. Removing
+# the resampler removed the larger INPUT to that amplifier; it did not
+# remove the amplifier.
+#
+# So the audio codec here is `pcm_s16le`, not `aac`. This is the escalation
+# that session pre-registered in its own blind_spots, and it is structural
+# rather than empirical: with PCM the stored audio IS the filter-graph
+# output and the decoded samples ARE the stored bytes, so the decoded true
+# peak cannot vary with the host at all. src/probe/audio_decode.h classifies
+# a PCM codec as decode class 1 BY DEFINITION -- "bit-exact by construction,
+# no algorithm exists to diverge across SIMD levels or architectures".
+# Verified against the real binary on both the x86-SIMD and the
+# `-cpuflags 0` C-reference DSP path: the decoded PCM is byte-identical on
+# both arms, `audio.loudness.true_peak` reads -18.056 dBTP on BOTH files
+# (delta EXACTLY 0, not merely small), `audio.loudness.integrated` likewise
+# delta 0, `timeline.av_drift` still reports the IDENTICAL rational rate
+# -54717060000/907751640 ms/min, `timeline.av_drift.pattern` still
+# classifies `linear-drift`, `container.mp4.edit_list` still warns on the
+# audio track (now on `segment_duration` 960000 vs 959040 -- the clock error
+# itself, no longer masked by AAC's `media_time=1024` priming), and
+# `content.audio.sample_hash` still diverges from block 0 (200 divergent
+# blocks, was 201 under AAC). A per-(id, scope) status diff of the whole
+# report against the AAC incumbent shows ZERO changes.
+#
+# `alac` and `flac` were both evaluated and REJECTED. flac's encoder makes
+# architecture-dependent coding decisions (the linear arm's elementary
+# stream differs across DSP paths), so the fixture's own bytes would still
+# be per-host. alac's audio stream differs between the two arms by -1.188%,
+# an encoder-determined number only 1.8pp clear of `size.stream_bitrate`'s
+# 3% warn line -- exactly the near-threshold calibration the resolved
+# test-898-ci-nonreproducible session was opened for. pcm_s16le's arm-to-arm
+# delta is -0.100%: not an encoder output at all, but the 0.1% clock error
+# itself (1920000 vs 1918080 bytes = 960000 vs 959040 samples x 2).
+#
+# Do NOT put a LOSSY audio codec back in this pair. The decoded true peak of
+# a lossy encode sits 2-4.6 dB ABOVE the source signal's own peak and is
+# dominated by codec ringing, so which of many near-equal ringing candidates
+# wins the `max` is effectively a coin flip under ANY per-host perturbation
+# -- and the tolerance must never be widened to hide that.
 #
 # 20 SECONDS, not doc 04's own unqualified duration --
 # this task's own empirical finding: at 30s/60s, the K=32 least-squares
@@ -2055,16 +2101,17 @@ python3 tools/gen_ts_discontinuity.py \
 # clause needs a duration-matched baseline, not `timeline_start_base.mp4`'s
 # own 4s tracer, or `timeline.duration`'s own triple-comparison would fire
 # as an unrelated collateral finding on every compare against this pair.
-# `-c:v mpeg4 -c:a aac`, never libx264/GPL, matching every other fixture in
-# this script.
+# `-c:v mpeg4`, never libx264/GPL, matching every other fixture in this
+# script. The AUDIO codec is deliberately NOT `aac` here -- see the
+# DETERMINISM (CYCLE 2) note above.
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
   -f lavfi -i "sine=frequency=440:duration=20:sample_rate=47952,asetrate=48000" \
-  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -c:v mpeg4 -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/timeline_drift_linear.mp4"
 
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
   -f lavfi -i "sine=frequency=440:duration=20:sample_rate=48000" \
-  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -c:v mpeg4 -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/timeline_drift_base.mp4"
 
 # `timeline_drift_step.mp4`: the STEP arm -- a genuine, isolated mid-file

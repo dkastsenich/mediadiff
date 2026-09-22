@@ -321,9 +321,18 @@ TEST_CASE("timeline_av_sync - ROADMAP SC4: comparing an unknown-priming file aga
 //
 // `timeline_drift_base.mp4` vs `timeline_drift_linear.mp4` (05-10-PLAN.md
 // Task 3's own linear-drift recipe, doc 04 section 5's classic 0.1% clock
-// error): `timeline.av_drift` reports `fail` (measured rate ~-60.28ms/min)
-// and `timeline.av_drift.pattern` reports `fail` with candidate value
-// `linear-drift`.
+// error): `timeline.av_drift` reports `fail` (measured rate ~-60.28ms/min,
+// rational -54717060000/907751640) and `timeline.av_drift.pattern` reports
+// `fail` with candidate value `linear-drift`. Both fixtures carry
+// `-c:a pcm_s16le` audio, NOT aac -- see scripts/gen_corpus.sh's own
+// DETERMINISM notes. A lossy encoder in this pair's generation path made
+// `audio.loudness.true_peak` diverge by up to 4 dB between CI legs
+// (fixtures are regenerated per runner, and a decoded lossy peak is codec
+// ringing 2-4.6 dB above the source signal, so the `max` reshuffles under
+// any per-host perturbation). With PCM the decoded samples ARE the stored
+// bytes, so the peak is EXACTLY invariant. The rational rate above is
+// byte-identical under aac and under pcm_s16le -- the codec change does not
+// move this test's flagship measurement by one ULP.
 //
 // `timeline_start_base.mp4` vs `timeline_drift_step.mp4` (05-10-PLAN.md
 // Task 3's own mid-file audio PTS discontinuity recipe):
@@ -389,13 +398,22 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
                                      // stream is genuinely different decoded
                                      // audio content from block 0 onward
                                      // (verified: first divergent block 0,
-                                     // 201 divergent blocks total, unchanged
-                                     // by the DSP-free recipe the debug
-                                     // session true-peak-cross-platform
-                                     // moved this fixture to) -- the drift
-                                     // itself is genuinely retimed audio
-                                     // content, not merely a container-level
-                                     // timestamp change.
+                                     // 200 divergent blocks total) -- the
+                                     // drift itself is genuinely retimed
+                                     // audio content, not merely a
+                                     // container-level timestamp change.
+                                     // The count was 201 while this pair's
+                                     // audio was AAC; debug session
+                                     // true-peak-cross-platform cycle 2 moved
+                                     // both fixtures to `-c:a pcm_s16le` so
+                                     // the decoded samples are the stored
+                                     // bytes and audio.loudness.true_peak is
+                                     // EXACTLY invariant across
+                                     // architectures. This declared set is
+                                     // UNCHANGED by that move -- a
+                                     // per-(id, scope) status diff of the
+                                     // whole report against the AAC
+                                     // incumbent showed zero changes.
                                      "content.audio.sample_hash",
                                  });
     for (const auto& f : report.at("findings")) {
