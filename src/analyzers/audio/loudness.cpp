@@ -78,19 +78,33 @@ std::vector<std::optional<Scope>> compute_audio_scopes(const DemuxSession& demux
 // avoiding raw double noise in a byte-identical-across-runs JSON report.
 double fixed_precision(double value) { return std::stod(fmt::format("{:.3f}", value)); }
 
-// 06-13-PLAN.md deviation (human-decided, CI run 35708992998): D-05's
-// decode_path_class precondition key, reused VERBATIM (same key name, same
-// "class1" / "class2 <path_signature>" shape src/analyzers/content/
-// sample_hash.cpp's own kPreconditionKeys already reads) so
-// src/compare/tol.cpp's generic cross-platform-decode-noise override can
-// read it from a `tol`-semantic check the same way src/compare/hash.cpp
-// already reads it from a `hash`-semantic one. A class-3 (hash-disabled)
-// decoder still measures loudness -- decode.path_signature stays empty for
-// it (StreamAudioDecode's own contract: populated ONLY for class 2), so
+// DIAGNOSTIC EVIDENCE ONLY -- it changes no verdict. D-05's
+// decode_path_class key, reused VERBATIM (same key name, same "class1" /
+// "class2 <path_signature>" shape src/analyzers/content/sample_hash.cpp
+// emits), recording WHICH decoder determinism class produced this
+// loudness measurement. A class-3 (hash-disabled) decoder still measures
+// loudness -- decode.path_signature stays empty for it
+// (StreamAudioDecode's own contract: populated ONLY for class 2), so
 // class 3 renders as a bare "class3" rather than a signature that was
-// never computed. Never gated on check.id: the SAME evidence key drives
-// BOTH audio.loudness.integrated and audio.loudness.true_peak below,
-// exactly like every other tol.cpp override in this project.
+// never computed.
+//
+// HISTORY: f7ce12d added this key to feed a cross-platform decode-noise
+// gate in src/compare/tol.cpp, on the premise that libebur128's
+// floating-point true-peak computation was not bit-identical across
+// platforms on non-class-1 decode paths. That premise was DISPROVEN by
+// debug session true-peak-cross-platform (see
+// .planning/debug/resolved/true-peak-cross-platform.md): the real cause
+// was that `timeline_drift_linear.mp4`'s own generator recipe carried a
+// resampler, so each CI runner encoded different bytes. The gate was
+// reverted; this key is KEPT because it earned independent diagnostic
+// value in that very investigation -- reading `class1` on all six
+// measurements is what eliminated decoder nondeterminism as a hypothesis
+// and forced the search upstream into fixture provenance. Note that
+// `decode_path_class` is one of src/compare/hash.cpp's kPreconditionKeys,
+// but that table is consulted only by compare_hash(); these two checks are
+// `tol`-semantic, so the key is inert at comparison time and must stay
+// that way. Do NOT reintroduce a verdict-changing gate on it here without
+// first reproducing a divergence that is not fixture-provenance.
 std::string decode_path_class_evidence(const StreamAudioDecode& decode) {
   const int decode_class = determinism_class_for_decoder(decode.decoder_name);
   if (decode_class == 1) {

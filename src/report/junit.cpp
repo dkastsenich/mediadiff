@@ -78,8 +78,6 @@ std::string_view skip_reason_text(SkipReason reason) {
       return "no_timing_data";
     case SkipReason::hash_disabled:
       return "hash_disabled";
-    case SkipReason::cross_platform_decode_noise:
-      return "cross_platform_decode_noise";
   }
   return "none";
 }
