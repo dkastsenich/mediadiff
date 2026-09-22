@@ -1,6 +1,19 @@
 # tests/golden/CORPUS_DIGEST_PROVISIONAL.txt -- names only, no hashes
 # (D-GAP-01 gap closure, 04-13-PLAN.md Task 2).
 #
+# STATUS (as of 06-13-PLAN.md Task 1, CI run 35708992998): NOT EMPTY.
+# Phase 6 (06-01-PLAN.md through 06-10-PLAN.md) added 41 fixture names,
+# listed below, each workstation-computed and awaiting the SAME
+# designated-leg transcription this file's own historical entries below
+# already describe -- see 06-13-PLAN.md Task 3, which transcribes them
+# into tests/golden/CORPUS_DIGEST.txt and clears this ledger back to
+# EMPTY-on-purpose, exactly as 04-21-PLAN.md and 05-13-PLAN.md did for
+# Phase 4 and Phase 5's own additions. The paragraph immediately below
+# ("STATUS: EMPTY ON PURPOSE...") describes the file's PAST state, right
+# after the Phase-5/debug-session transcription and before Phase 6 added
+# anything -- preserved as history, not a claim about the file's current
+# contents.
+#
 # STATUS: EMPTY ON PURPOSE. The two entries added by debug session
 # test-898-ci-nonreproducible (.planning/debug/resolved/) -- the unflagged
 # and flagged TS jump-trigger fixtures, whose bytes changed when

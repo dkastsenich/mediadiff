@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 16
+open_count: 18
 waived_count: 1
 fixed_count: 18
-total_count: 35
-last_updated: 2026-09-20T22:06:57.072Z
+total_count: 37
+last_updated: 2026-09-22T09:57:59.516Z
 ---
 
 # Broken Windows Ledger
@@ -50,6 +50,8 @@ last_updated: 2026-09-20T22:06:57.072Z
 | 33 | 06 | deviation | src/probe/audio_decode.cpp |  | Task 1 Test 6 (--hash-decoder aac_fixed falls back on USAC content) not exercised end-to-end -- hand-built USAC ASC rejected by avcodec_open2 for all candidate decoders in this env; steering code reviewed by inspection only, see 06-05-SUMMARY.md Known Stubs | open |  | 2026-09-20T15:50:55.876Z |  |
 | 34 | 06 | deviation | src/analyzers/timeline/start_duration.cpp |  | 06-11-PLAN.md Task 2's corpus-wide clean sweep (tests/integration/test_audio_corpus_sweep.cpp) surfaces one pre-existing, non-audio artifact: timeline_ts_nowrap.ts vs its own byte-identical copy timeline_ts_nowrap_copy.ts reports timeline.duration.coherence status=info 'both values are flagged' -- a Phase 5 (D-02) known fact, already documented and independently asserted by tests/integration/test_timeline_structure.cpp's own Test 5 ('the wrap fixture's own byte-identical clean pair declares only the pre-existing TS-audio-duration artifact'). Root cause: timeline.duration.coherence is a state semantic (src/core/checks.def, flagged_values=[container_vs_stream,...]) whose own registered comment states 'there is no way to make a state-semantic pair with BOTH sides flagged report pass' -- this specific TS fixture's own container-vs-stream duration disagreement (a genuine MPEG-TS audio-duration-bookkeeping quirk, not a diff) is present on BOTH sides of any comparison involving it, including against itself. Not fixed within 06-11-PLAN.md's own file scope (fixing it is Phase 5 (timeline) analyzer/semantic work, out of scope for the audio inspect-section plan). tests/integration/test_audio_corpus_sweep.cpp records this ONE pair as a named, cited exception (expected non-pass set = {timeline.duration.coherence}, matching test_timeline_structure.cpp's own declared set exactly) rather than filtering the whole-report counter -- every OTHER declared clean pair in the corpus (90+ ids) reports zero non-pass findings. | open |  | 2026-09-20T22:02:22.475Z |  |
 | 35 | 06 | deviation | src/analyzers/timeline/start_duration.cpp |  | Second instance of WINDOWS.md #34's same root cause, found by the SAME 06-11-PLAN.md Task 2 corpus-wide clean sweep: topo_subs.mp4 vs its own byte-identical copy topo_subs_copy.mp4 (container.track_count/container.track_types's own declared clean pair, test_doc03_coverage.cpp/coverage_pairs.h) reports timeline.duration.coherence status=info 'both values are flagged' at scope subtitle[0] this time (a mov_text subtitle track's own container-vs-stream duration bookkeeping disagreement, not audio). Same state-semantic limitation as #34 (src/core/checks.def's own registered comment: 'there is no way to make a state-semantic pair with BOTH sides flagged report pass') -- an inherent per-file property, not something a fixture swap can dodge while keeping subtitle-track coverage, and Phase 5 (timeline) analyzer/semantic work is out of scope for 06-11-PLAN.md. tests/integration/test_audio_corpus_sweep.cpp records this as a second named, cited exception (expected non-pass set = {timeline.duration.coherence} at scope subtitle[0]) alongside #34's TS-audio instance. | open |  | 2026-09-20T22:06:57.072Z |  |
+| 36 | 06 | unmet-truth | tests/integration/test_audio_priming.cpp |  | audio_prime_base.mp4 vs audio_prime_roundtrip2.mp4: audio.priming reports baseline "1024" vs candidate "1014", status fail, reproduced 3x. Cause: MP4->MKV->MP4 round trip; MKV stores priming as CodecDelay in nanoseconds, so a sample count cannot survive the round trip exactly. No tolerance can express it -- D-14 forces audio.priming to semantic=exact over value_kind=string. Documented in 06-06-SUMMARY.md Deviations #3, asserted as a real fail in Test 4. Open, not confirmed closeable (contradicts ROADMAP SC2's 'closing the priming: unknown gap' framing). | open |  | 2026-09-22T09:57:49.321Z |  |
+| 37 | 06 | deviation | src/compare/tol.cpp |  | CI run 35708992998: audio.loudness.true_peak was NOT cross-platform stable on lossy (class-2) float-decoded AAC audio -- timeline_drift_base.mp4 vs timeline_drift_linear.mp4 (--profile sw-encoder) measured a 0.100dB delta on x64-linux (within the 0.3dB tolerance) but exceeded 0.3dB on BOTH x64-windows-static-md and arm64-osx for the SAME comparison, failing expect_declared_set on all 3 blocking legs. Fixed (06-13-PLAN.md, human-decided) by class-gating on D-05's decode_path_class evidence (now also emitted by audio.loudness.integrated/true_peak): class-1 (bit-exact) stays fully sharp; a non-class-1 delta beyond tolerance but within a 3x cross-platform decode-noise floor now reports skipped:cross_platform_decode_noise instead of a fabricated warn/fail. A delta beyond the widened floor still fails. audio.loudness.integrated carries the same evidence/gate but its own headroom (1.0 LU vs a measured 0.002 LU delta) is not currently exposed by this failure mode. | open |  | 2026-09-22T09:57:59.516Z |  |
 
 ````json
 [
@@ -471,6 +473,30 @@ last_updated: 2026-09-20T22:06:57.072Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-20T22:06:57.072Z",
+    "resolved_at": null
+  },
+  {
+    "id": 36,
+    "kind": "unmet-truth",
+    "phase": "06",
+    "file": "tests/integration/test_audio_priming.cpp",
+    "line": null,
+    "description": "audio_prime_base.mp4 vs audio_prime_roundtrip2.mp4: audio.priming reports baseline \"1024\" vs candidate \"1014\", status fail, reproduced 3x. Cause: MP4->MKV->MP4 round trip; MKV stores priming as CodecDelay in nanoseconds, so a sample count cannot survive the round trip exactly. No tolerance can express it -- D-14 forces audio.priming to semantic=exact over value_kind=string. Documented in 06-06-SUMMARY.md Deviations #3, asserted as a real fail in Test 4. Open, not confirmed closeable (contradicts ROADMAP SC2's 'closing the priming: unknown gap' framing).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T09:57:49.321Z",
+    "resolved_at": null
+  },
+  {
+    "id": 37,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "src/compare/tol.cpp",
+    "line": null,
+    "description": "CI run 35708992998: audio.loudness.true_peak was NOT cross-platform stable on lossy (class-2) float-decoded AAC audio -- timeline_drift_base.mp4 vs timeline_drift_linear.mp4 (--profile sw-encoder) measured a 0.100dB delta on x64-linux (within the 0.3dB tolerance) but exceeded 0.3dB on BOTH x64-windows-static-md and arm64-osx for the SAME comparison, failing expect_declared_set on all 3 blocking legs. Fixed (06-13-PLAN.md, human-decided) by class-gating on D-05's decode_path_class evidence (now also emitted by audio.loudness.integrated/true_peak): class-1 (bit-exact) stays fully sharp; a non-class-1 delta beyond tolerance but within a 3x cross-platform decode-noise floor now reports skipped:cross_platform_decode_noise instead of a fabricated warn/fail. A delta beyond the widened floor still fails. audio.loudness.integrated carries the same evidence/gate but its own headroom (1.0 LU vs a measured 0.002 LU delta) is not currently exposed by this failure mode.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T09:57:59.516Z",
     "resolved_at": null
   }
 ]
