@@ -44,6 +44,7 @@ meta:
   meta.tags.language video[0]: "und"
   meta.tags.language audio[0]: "und"
   meta.tags.language subtitle[0]: "und"
+  meta.decode_errors audio[0]: 0
 == mkv: topo_chapters.mkv ==
 container:
   container.format global: "matroska"
@@ -80,6 +81,7 @@ meta:
       evidence: {"ENCODER":"Lavc aac"}
   meta.tags.language video[0]: "und"
   meta.tags.language audio[0]: "und"
+  meta.decode_errors audio[0]: 0
 == ts: ts_multiprogram.ts ==
 container:
   container.format global: "mpegts"
@@ -123,3 +125,5 @@ meta:
   meta.tags.language video[1]: "und"
   meta.tags.language audio[0]: "und"
   meta.tags.language audio[1]: "und"
+  meta.decode_errors audio[0]: 0
+  meta.decode_errors audio[1]: 0
