@@ -3,8 +3,11 @@ slug: true-peak-cross-platform
 status: resolved
 trigger: "audio.loudness.true_peak reports a different value on arm64-osx and x64-windows-static-md than on x64-linux for the same file, despite bit-exact class-1 decode, failing integration.timeline_av_sync on two blocking CI legs"
 created: 2026-09-22
-updated: 2026-09-22T12:30:00Z
+updated: 2026-09-22T15:30:00Z
 phase: "06"
+cycle: 2
+reopened: 2026-09-22T14:00:00Z
+reopened_reason: "CI run 35723466889 -- cycle-1 fix was NECESSARY but NOT SUFFICIENT. Windows went GREEN, arm64-osx still fails test 1137 with delta +1.299dB (was 1.633dB, and the sign FLIPPED: linear is now HIGHER than linux, -14.765 vs -15.976). Applying the escalation cycle 1 pre-registered in its own blind_spots: make this fixture pair's audio LOSSLESS."
 ---
 
 # Debug: cross-platform divergence in audio.loudness.true_peak
@@ -250,6 +253,78 @@ Worth checking specifically:
   implication: the fix is surgically contained to one recipe, and its golden can be
     updated correctly from this workstation.
 
+
+### CYCLE 2 evidence (2026-09-22)
+
+- timestamp: 2026-09-22 (EXPERIMENT 7 -- codec candidate sweep, both DSP paths)
+  checked: regenerated BOTH recipes verbatim with the pinned FFmpeg 9.0.1 under (A)
+    default cpuflags and (B) `-cpuflags 0`, substituting only the audio codec, and
+    hashed (i) the AUDIO ELEMENTARY STREAM and (ii) the DECODED s16le PCM.
+  found:
+    | codec       | elementary stream across DSP paths | decoded PCM across DSP paths |
+    | aac         | base DIFFERS, linear DIFFERS        | (lossy -- differs)           |
+    | alac        | base same, linear same              | IDENTICAL both arms          |
+    | flac        | base same, linear **DIFFERS**       | IDENTICAL both arms          |
+    | pcm_s16le   | base same, linear same              | IDENTICAL both arms          |
+    The identical decoded hashes are 1942e0815b8d5adf11c9 (base) and
+    7414e362ca6270b024e8 (linear) -- byte-for-byte the raw filter-graph outputs
+    Experiments 2 and 4 recorded, i.e. a lossless codec is provably transparent here.
+  implication: the AAC row is the defect, confirmed on the elementary stream directly.
+    FLAC is rejected as the remedy: its ENCODER makes arch-dependent coding decisions,
+    so the fixture's own bytes would still differ per host (harmless for the peak,
+    needless churn for the digest).
+
+- timestamp: 2026-09-22 (EXPERIMENT 8 -- full red/green matrix against the REAL binary)
+  checked: `mediadiff compare <base> <linear> --profile sw-encoder --json` for all four
+    codecs x both DSP paths, comparing every finding's (id, scope, status).
+  found:
+    | codec     | true_peak base/cand | delta | non-pass set | av_drift rational        |
+    | aac/simd  | -16.064 / -15.976   | 0.088 | declared 4   | -54717060000/907751640   |
+    | aac/C-ref | -16.064 / -15.976   | 0.088 | declared 4   | -54717060000/907751640   |
+    | alac      | -18.056 / -18.056   | **0** | declared 4   | -54717060000/907751640   |
+    | flac      | -18.056 / -18.056   | **0** | declared 4   | -54717060000/907751640   |
+    | pcm_s16le | -18.056 / -18.056   | **0** | declared 4   | -54717060000/907751640   |
+    (the lossless rows are identical on BOTH DSP paths; only pcm is shown once)
+    Per-(id, scope) status diff vs the AAC incumbent:
+      aac -> alac      : audio.bit_depth  skipped -> pass   (1 change)
+      aac -> flac      : audio.bit_depth  skipped -> pass   (1 change)
+      aac -> pcm_s16le : **NO STATUS CHANGES AT ALL**
+  implication: the escalation works, and `pcm_s16le` is the codec that changes NOTHING
+    else. `audio.loudness.integrated` also becomes exactly equal (-21.757 both sides,
+    delta 0; AAC/C-ref had a real 0.002 LU delta).
+
+- timestamp: 2026-09-22 (EXPERIMENT 9 -- size-margin check, the test-898 trap)
+  checked: the audio elementary stream byte delta between the two arms per codec --
+    the quantity `size.stream_bitrate` compares against a 3% warn line, and the resolved
+    `test-898-ci-nonreproducible` session's own transferable heuristic is to keep that
+    margin an order of magnitude clear of the host spread.
+  found: aac -0.197%, flac +0.536%, alac **-1.188%**, pcm_s16le **-0.100%**.
+  implication: alac's 1.188% is an ENCODER-DETERMINED number only 1.8pp from the warn
+    line and would move with any encoder change -- precisely the near-threshold
+    calibration this project has already been bitten by. `pcm_s16le`'s -0.100% is not an
+    encoder output at all: it is exactly the 0.1% clock error, by construction
+    (1920000 bytes vs 1918080 = 960000 vs 959040 samples x 2). Decisive for pcm.
+
+- timestamp: 2026-09-22 (containment + golden protocol, re-verified for cycle 2)
+  checked: (a) `git show 8caf1f1:tests/golden/CORPUS_DIGEST.txt` -- the commit clause 4
+    of scripts/lint_corpus_digest_provenance.sh pins; (b) a full consumer sweep for both
+    fixture names across tests/, src/, docs/, scripts/; (c) the designated-leg hash
+    prediction protocol.
+  found: (a) that file has 81 lines and ZERO `timeline_` entries -- BOTH drift fixtures
+    were added in Phase 5, after 8caf1f1, so the NO-REWRITE GUARD does not bind on
+    either line and both may be updated locally (with a provisional-ledger entry).
+    (b) the only consumers are `tests/integration/test_timeline_av_sync.cpp` (Test 5
+    linear-drift sub-block), `tests/integration/coverage_pairs.h` (the timeline.av_drift
+    / .pattern trigger pair) and the two digest files. No golden text file, no snapshot,
+    no script references them. `tests/integration/test_doc03_coverage.cpp` only requires
+    the trigger pair to yield a non-clean finding for the id, which it still does.
+    (c) regenerating BOTH incumbent recipes under `TZ=UTC taskset -c 0-3` reproduces
+    base's DESIGNATED-LEG-TRANSCRIBED hash fc56ebd7... AND linear's locally-predicted
+    d59149df... byte-for-byte -- the strongest validation of this protocol yet, because
+    base's value was transcribed from a real CI leg, not predicted here.
+  implication: PROCEED. Blast radius is two recipes, two digest lines, one ledger entry
+    and two stale comments.
+
 ## Eliminated
 
 - hypothesis: decoder nondeterminism across platforms — eliminated by `decode_path_class: class1` on all six readings plus integrated loudness agreeing to 0.001 LU.
@@ -271,62 +346,118 @@ Worth checking specifically:
 
 ## Current Focus
 
-reasoning_checkpoint:
-  hypothesis: "`timeline_drift_linear.mp4` is generated through `aresample` (libswresample),
-    whose output is architecture-dependent. Media fixtures are gitignored and regenerated on
-    every CI runner, so each platform encodes a DIFFERENT audio stream. The AAC encoder then
-    chaotically amplifies that few-LSB input difference into a multi-dB swing in the DECODED
-    true peak. `audio.loudness.true_peak` is reporting that difference correctly. The defect
-    is in the FIXTURE, not in the check, the decoder, or libebur128."
-  confirming_evidence:
-    - "Direct: regenerating the incumbent recipe on the C-reference DSP path locally moves
-       true peak from -15.964 to -13.500 while the resampler-free companion stays at -16.064.
-       The SIMD run reproduces the x64-linux CI numbers to the last digit."
-    - "Direct: the filter-graph PCM hash is bit-identical across DSP paths for the
-       resampler-free chain and differs for the `aresample` chain, with the encoder removed
-       from the measurement entirely."
-    - "Direct: `.gitignore` excludes all media fixtures; only 97 text files are tracked."
-    - "Direct: the incumbent on a foreign DSP path fails the REAL declared-set assertion;
-       the candidate passes it on BOTH DSP paths with an identical finding set."
-  falsification_test: "Generate a resampler-free chain reaching the same signal and show its
-    true peak still diverges across DSP paths — that would refute the resampler as the cause.
-    RUN (Experiment 4/6): it does NOT diverge; -15.976 on both paths. Hypothesis survived."
-  fix_rationale: "Remove the ONLY architecture-divergent block from the fixture's audio path.
-    `sine=...:sample_rate=47952,asetrate=48000` reaches the SAME 0.1% clock mismatch with a
-    pure metadata relabel and no DSP. This addresses the root cause (uncontrolled arch-varying
-    fixture input) rather than the symptom (the check firing). The check keeps FULL
-    sensitivity: tolerance untouched, declared set untouched."
-  blind_spots:
-    - "arm64/Windows cannot be run here. `-cpuflags 0` is a PROXY for a foreign DSP path, not
-       aarch64 NEON itself. Mitigated by the CI table's own base row, which shows a genuine
-       arm64-osx run agreeing with x64-linux to the last digit on the resampler-free fixture."
-    - "The AAC encoder is itself DSP-divergent (Experiment 5). The fix relies on that
-       divergence being peak-invisible — true on 2 local DSP paths AND on real arm64, but not
-       proven for every future architecture. If CI ever shows residual drift, the escalation
-       is to make this pair's audio lossless (Experiment 3 proved the peak is then exactly
-       invariant), not to widen the tolerance."
-    - "The new golden hash is a locally-PREDICTED designated-leg value. It must still be
-       blessed by a real designated-leg run, which is why the fixture goes on the provisional
-       ledger."
-  candidate_causes:
-    - "code: libebur128 mis-initialised / wrong peak API called (CODE) — ELIMINATED"
-    - "environment: per-triplet libebur128 build difference (ENVIRONMENT) — ELIMINATED"
-    - "data: the fixture's own bytes differ per runner because it is regenerated, not
-       committed, and its recipe contains an arch-divergent resampler (DATA) — CONFIRMED"
-    - "process: goldens/fixtures have per-host provenance that the harness does not record
-       (PROCESS) — contributing, already known to this project (KB x2)"
-  and_gate: "yes, two conditions are required simultaneously. (1) DATA/PROCESS: fixtures are
-    regenerated per runner rather than committed, so the two platforms never compare the same
-    bytes. (2) DATA: this one recipe contains a resampler whose output is arch-dependent, and
-    a lossy encoder downstream that amplifies the difference non-linearly. Neither alone is
-    sufficient — the other 160+ fixtures are equally regenerated per runner and do not fail,
-    and the resampler's perturbation is provably too small to move the peak until the lossy
-    encoder amplifies it (Experiment 3: lossless capture, delta exactly 0)."
+### CYCLE 2 (2026-09-22) -- the cycle-1 fix was NECESSARY but NOT SUFFICIENT
 
-next_action: NONE -- session closed. Both human-verify decisions answered and carried
-  out (commits 476f4c5 and ab9e908). Not pushed; the user owns the push. The only
-  residual is the ordinary designated-leg transcription of the new
-  timeline_drift_linear.mp4 hash, tracked on CORPUS_DIGEST_PROVISIONAL.txt.
+CI run 35723466889 (head e99fea2, after 476f4c5 + ab9e908 + e99fea2):
+
+| leg | test 1137 | verdict |
+|---|---|---|
+| `x64-windows-static-md` | PASS | **GREEN.** The resampler really was a cause, confirmed on a genuinely foreign DSP path (MSVC x86 build). |
+| `arm64-osx` | FAIL | still `audio.loudness.true_peak`, `delta +1299000/1000000dB exceeds tolerance` |
+| `x64-linux` | Test step PASSES | leg red only on an unrelated timeline instruction-count ratchet, handled separately |
+
+| measurement | x64-linux | arm64-osx BEFORE 476f4c5 | arm64-osx AFTER 476f4c5 |
+|---|---|---|---|
+| `timeline_drift_base.mp4` true_peak | -16.064 | -16.064 | -16.064 |
+| `timeline_drift_linear.mp4` true_peak | -15.976 | -17.697 | **-14.765** |
+| delta | 0.088 dB | 1.633 dB | **1.299 dB** |
+
+Read precisely:
+- `timeline_drift_base.mp4` is STILL exactly -16.064 on every leg. The resampler-free
+  path is bit-stable on a real foreign architecture, exactly as cycle 1 predicted.
+- The candidate improved 1.633 -> 1.299 dB but the SIGN FLIPPED relative to linux
+  (now HIGHER: -14.765 vs -15.976, previously LOWER). A sign flip under a smaller
+  magnitude is the signature of a chaotic `max` reshuffle, not of a residual
+  proportional error -- i.e. exactly the amplification mechanism Experiment 3 named,
+  now driven by a different input.
+- The remaining amplifier is the **native AAC encoder itself**, which Experiment 5
+  already proved is independently DSP-divergent (`base`'s AAC elementary stream
+  differs across DSP paths even though its PCM input is bit-identical).
+
+cycle-1 blind_spot #2 said this exactly: "The fix relies on that divergence being
+peak-invisible -- true on 2 local DSP paths AND on real arm64, but not proven for
+every future architecture. If CI ever shows residual drift, the escalation is to
+make this pair's audio lossless (Experiment 3 proved the peak is then exactly
+invariant), not to widen the tolerance." That pre-registered escalation is what
+cycle 2 applies.
+
+reasoning_checkpoint:
+  hypothesis: "The AAC ENCODER is a second, independent architecture-divergent block
+    in this pair's generation path (Experiment 5, cycle 1). Removing the resampler
+    removed the LARGER amplifier input but left the encoder in place. Because both
+    fixtures are regenerated per runner, arm64-osx still encodes a different AAC
+    elementary stream from x64-linux, and the decoded true peak -- which sits 2-4.6 dB
+    ABOVE the source PCM peak and is therefore dominated by lossy-codec ringing, not by
+    the sine -- reshuffles which of many near-equal ringing candidates wins the `max`.
+    The ONLY way to make the peak EXACTLY invariant is to remove the lossy encoder, so
+    that the decoded samples ARE the source PCM, which is already proven bit-identical
+    across DSP paths for both arms."
+  confirming_evidence:
+    - "Direct (cycle-1 Experiment 5): EVERY AAC elementary stream in this pair differs
+       across DSP paths, including base's, whose PCM input is bit-identical."
+    - "Direct (cycle-1 Experiment 3): with the encoder removed from the measurement
+       (lossless capture), the two filter graphs' true peaks are EXACTLY equal."
+    - "Direct (CI 35723466889): with the resampler gone and only the encoder left, the
+       divergence persists at 1.299 dB AND flips sign -- a residual proportional error
+       would shrink monotonically, a chaotic max reshuffle does exactly this."
+    - "Direct (cycle-2 Experiment 7, this session): with a lossless codec the DECODED
+       PCM is byte-identical across both local DSP paths for BOTH arms
+       (base 1942e0815b8d5adf11c9, linear 7414e362ca6270b024e8 -- the very hashes
+       Experiments 2 and 4 recorded for the raw filter-graph output), whereas AAC's
+       elementary stream differs on both arms."
+  falsification_test: "Under a lossless codec, show the decoded PCM or the reported true
+    peak still moves between the x86-SIMD and the C-reference DSP path -- that would
+    refute the encoder as the remaining cause. RUN (Experiment 7/8): decoded PCM is
+    byte-identical and the reported true peak is -18.056 on BOTH arms under BOTH DSP
+    paths, delta EXACTLY 0. Hypothesis survived."
+  fix_rationale: "Switch BOTH fixtures' audio from `-c:a aac` to `-c:a pcm_s16le`. This
+    removes the last lossy/arch-divergent block from the pair's audio path: the stored
+    audio IS the filter-graph output, and the decoded samples ARE the stored bytes.
+    `src/probe/audio_decode.h` classifies a PCM codec as decode class 1 by definition --
+    'bit-exact by construction, no algorithm exists to diverge across SIMD levels or
+    architectures'. That is a structural guarantee, not a measured small delta.
+    Tolerance untouched, declared finding set untouched, check sensitivity untouched."
+  blind_spots:
+    - "arm64/Windows still cannot be run here. `-cpuflags 0` is a PROXY for a foreign
+       DSP path, NOT aarch64 NEON. Mitigated far more strongly than in cycle 1: the
+       claim is no longer 'the delta is small' but 'the decoder has no algorithm', and
+       the audio elementary stream itself is byte-identical across DSP paths."
+    - "libebur128's own true-peak computation is float C. Given IDENTICAL input samples
+       it is assumed identical across architectures. Independent evidence: phase 6's own
+       loudness fixtures are lossless FLAC (D-13) and their loudness checks have been
+       green on arm64-osx and Windows in every run. The value is also reported as a
+       millibel rational (num/1000), which rounds away anything below 0.0005 dB."
+    - "`timeline_drift_step.mp4` remains AAC and is the same LATENT class. It is out of
+       this fix's scope (it is not this pair) and has been green on arm64-osx across
+       three consecutive CI runs. Recorded as a residual, not silently ignored."
+    - "Both new golden hashes are locally PREDICTED. Mitigated: the same command
+       reproduced base's already-designated-leg-TRANSCRIBED hash fc56ebd7... and
+       linear's d59149df... byte-for-byte before the change."
+  candidate_causes:
+    - "data: the AAC encoder in the fixture's own generation path is arch-divergent and
+       the decoded peak is codec ringing (DATA) -- CONFIRMED"
+    - "code: libebur128 / the true-peak read-out is arch-dependent (CODE) -- ELIMINATED
+       in cycle 1 on three independent grounds, and re-refuted by base's -16.064 being
+       identical on arm64-osx across all three CI runs"
+    - "environment: a per-triplet libebur128 or FFmpeg build difference (ENVIRONMENT) --
+       ELIMINATED in cycle 1 by reading the vcpkg port (one unconditional option, no
+       features, no SIMD, no per-triplet branch)"
+    - "process: fixtures are regenerated per runner rather than committed (PROCESS) --
+       CONFIRMED as the standing necessary condition, unchanged from cycle 1"
+  and_gate: "yes, still two conditions simultaneously, with condition (2) now naming a
+    different divergent block. (1) PROCESS/DATA: fixtures are regenerated per runner, so
+    the legs never compare the same bytes -- necessary, never sufficient. (2) DATA: this
+    pair's audio passes through a LOSSY encoder whose output is architecture-dependent,
+    and whose decoded peak is dominated by ringing 2-4.6 dB above the source signal, so
+    any input or encoder perturbation reshuffles the `max`. Cycle 1 removed one input to
+    (2) (the resampler); cycle 2 removes (2) itself. Neither alone is sufficient: the
+    160+ other regenerated fixtures do not fail, and the same lossless content under a
+    committed fixture would be trivially stable."
+
+next_action: NONE -- cycle 2 closed. Fix committed as e1658c8, not pushed; the user owns
+  the push. Two residuals, both ordinary: (a) designated-leg transcription of BOTH drift
+  hashes, tracked on CORPUS_DIGEST_PROVISIONAL.txt; (b) a real arm64-osx CI run to confirm
+  green, which is why WINDOWS.md #37 is REOPENED rather than left fixed.
 
 ## Resolution
 
@@ -401,6 +532,157 @@ side_findings:
     true_peak). The same fix removes it.
   - commit f7ce12d's causal premise is DISPROVEN -- see the Eliminated section. Judgement
     and recommendation carried to the human-verify checkpoint.
+
+## Resolution -- CYCLE 2 (2026-09-22)
+
+cycle_1_verdict: |
+  NECESSARY but NOT SUFFICIENT, and its own CONFIRMED root cause stands unretracted.
+  The resampler WAS a real cause: `x64-windows-static-md` -- a genuinely foreign DSP
+  path (MSVC x86 build) that had failed in runs 35708992998 and 35713912901 -- went
+  FULLY GREEN in run 35723466889 with no other change. `timeline_drift_base.mp4` also
+  held at exactly -16.064 on every leg, confirming the resampler-free chain is
+  bit-stable on real aarch64. Cycle 1 was incomplete, not wrong.
+
+why_windows_went_green_but_arm64_did_not: |
+  Both legs regenerate their own fixtures, and cycle 1 removed one of TWO
+  architecture-divergent blocks. Windows and x64-linux are both x86: their libswresample
+  SIMD paths differed (the resampler), but their AAC encoders make the same coding
+  decisions once the input PCM is identical -- so removing the resampler made Windows's
+  audio stream identical to linux's and the leg went green. arm64-osx is a different
+  ISA: even with byte-identical PCM input, its AAC encoder emits a different elementary
+  stream (cycle-1 Experiment 5 proved this directly, including for `base`). The decoded
+  peak of a lossy encode sits 2-4.6 dB ABOVE the source signal and is dominated by codec
+  ringing, so which of many near-equal ringing candidates wins the `max` is effectively
+  a coin flip under any per-host perturbation. Hence arm64's residual, and hence its
+  SIGN FLIP (-17.697 -> -14.765, crossing linux's -15.976) under a SMALLER magnitude --
+  the signature of a reshuffle, not of a shrinking error.
+
+root_cause: |
+  Unchanged AND-gate, with condition (2) now naming the SECOND divergent block.
+  (1) DATA/PROCESS: media fixtures are gitignored and regenerated on EVERY CI runner, so
+      the legs never compare the same bytes. Necessary, never sufficient.
+  (2) DATA: this fixture pair's audio passed through a LOSSY encoder (`-c:a aac`) whose
+      output is architecture-dependent, and whose decoded true peak is dominated by
+      codec ringing above the source signal. Cycle 1 removed one INPUT to that amplifier
+      (the resampler); the amplifier itself remained. `audio.loudness.true_peak` was
+      CORRECT throughout, in both cycles.
+
+fix: |
+  scripts/gen_corpus.sh -- BOTH drift recipes, `-c:a aac` -> `-c:a pcm_s16le`:
+    - -c:v mpeg4 -c:a aac       -flags +bitexact -fflags +bitexact  (both arms)
+    + -c:v mpeg4 -c:a pcm_s16le -flags +bitexact -fflags +bitexact  (both arms)
+  The filter graphs are untouched, so the 0.1% clock error is reached exactly as before
+  (`sample_rate=47952,asetrate=48000` vs `sample_rate=48000`). The guarantee is now
+  STRUCTURAL rather than empirical: the stored audio IS the filter-graph output and the
+  decoded samples ARE the stored bytes. src/probe/audio_decode.h classifies a PCM codec
+  as decode class 1 BY DEFINITION -- "bit-exact by construction, no algorithm exists to
+  diverge across SIMD levels or architectures". MP4 carries it as `ipcm`; no muxer or
+  demuxer warning, and the linked FFmpeg 8.1 reads it back and decodes it (verified with
+  the built binary, never with the system GPL ffmpeg).
+  Tolerance UNCHANGED. Declared finding set UNCHANGED. Check sensitivity UNCHANGED.
+
+codec_rejections: |
+  `alac`  -- rejected. Its arm-to-arm audio-stream delta is -1.188%, an ENCODER-determined
+             number only 1.8pp clear of `size.stream_bitrate`'s 3% warn line. That is the
+             near-threshold fixture calibration the resolved test-898-ci-nonreproducible
+             session was opened for, and its own transferable heuristic forbids it. It also
+             flips `audio.bit_depth` skipped -> pass.
+  `flac`  -- rejected. Its ENCODER makes architecture-dependent coding decisions: the
+             linear arm's elementary stream DIFFERS across DSP paths. Harmless for the
+             peak (decode is still exact) but it leaves the fixture's own bytes per-host
+             for no benefit. Also flips `audio.bit_depth`.
+  `pcm_s16le` -- chosen. Elementary stream byte-identical across DSP paths on both arms;
+             arm-to-arm delta -0.100%, which is the 0.1% clock error itself and not an
+             encoder output at all (1920000 vs 1918080 bytes = 960000 vs 959040 samples
+             x 2); decode class 1; and a per-(id, scope) status diff of the WHOLE report
+             against the AAC incumbent shows ZERO changes. Cost: 2.57 MB per fixture vs
+             0.83 MB, on gitignored media.
+
+measurement_neutrality: |
+  | measurement                  | AAC incumbent            | pcm_s16le                |
+  | timeline.av_drift (rational) | -54717060000/907751640   | -54717060000/907751640   |
+  | timeline.av_drift (ms/min)   | -60.2776                 | -60.2776                 |
+  | timeline.av_drift.pattern    | linear-drift             | linear-drift             |
+  | timeline.av_offset           | -21 ms both sides (pass) | 0 ms both sides (pass)   |
+  | container.mp4.edit_list      | warn (media_time=1024)   | warn (media_time=0)      |
+  | content.audio.sample_hash    | fail, block 0, 201 blks  | fail, block 0, 200 blks  |
+  | audio.loudness.true_peak     | -16.064 / -15.976        | -18.056 / -18.056 (0)    |
+  | audio.loudness.integrated    | -21.764 / -21.764        | -21.757 / -21.757 (0)    |
+  The flagship measurement does not move by one ULP. `timeline.av_offset` moves because
+  AAC's 1024-sample priming delay is gone; it was equal on both sides before and is equal
+  on both sides now, so it produced no finding either way. `container.mp4.edit_list`
+  still warns, now purely on `segment_duration` 960000 vs 959040 -- the clock error
+  itself, no longer masked by the priming trim.
+
+verification: |
+  guardrail_verdict: accepted
+  1. REPRODUCTION (red). The cycle-2 red is only DIRECTLY observable on real arm64-osx;
+     stated plainly: `-cpuflags 0` does NOT reproduce it (the AAC pair reads
+     -16.064 / -15.976, pass, on BOTH local DSP paths). A SURROGATE red was therefore
+     constructed and run against the REAL test: flipping 1 LSB on every 1000th input
+     sample -- a perturbation of 1/32768, far below the source peak and of exactly the
+     magnitude cycle-1 Experiment 3 proved cannot move it -- makes test #1142
+     `integration.timeline_av_sync - ROADMAP SC1` FAIL under AAC with the exact CI
+     assertion shape:
+       "expect_declared_set: non-pass finding id(s) occurring MORE often than declared:
+        audio.loudness.true_peak", "delta +325000/1000000dB exceeds tolerance"
+     The decoded peak moved -15.976 -> -15.739, a 0.237 dB swing from a -90 dBFS input
+     perturbation: an amplification factor of ~237x. That IS the mechanism, measured.
+  2. FIX (green). The SAME perturbation under `pcm_s16le` leaves
+     `audio.loudness.true_peak` at `pass`, peak -18.056 -> -18.055 (0.001 dB, i.e. the
+     perturbation's own size). Honest caveat: that surrogate pair also leaks
+     `size.overhead`, an artifact of hand-muxing a raw stream rather than of the fix --
+     the real generated fixtures pass the whole suite.
+  3. STRUCTURAL PROOF (stronger than the surrogate). With `pcm_s16le` the DECODED PCM is
+     byte-identical across both local DSP paths for BOTH arms (base
+     1942e0815b8d5adf11c9, linear 7414e362ca6270b024e8 -- the very hashes cycle-1
+     Experiments 2 and 4 recorded for the raw filter-graph output), and the AUDIO
+     ELEMENTARY STREAM is byte-identical too. AAC's differs on both arms.
+  4. FALSIFICATION CONTROL: red and green differ by the audio codec alone -- same host,
+     same binary, same assertion, same perturbation.
+  5. CROSS-PLATFORM INVARIANCE: true peak -18.056 dBTP on BOTH files under BOTH DSP
+     paths, delta EXACTLY 0 -- not "small", zero.
+  6. FULL SUITE: the complete pre-flight chain exits 0 --
+     gen_corpus (205 fixtures) && check_corpus && lint_bash4_builtins &&
+     lint_corpus_digest_provenance (all 4 clauses, incl. the no-rewrite guard over all
+     80 pre-existing lines) && lint_eng16 && cmake --build (clean under
+     warnings-as-errors) && ctest **1195/1195 pass, 0 failed**, with the same 6
+     pre-existing designated-leg-only skips.
+  7. SCHEMA: `check verify.schema-drift 06` -> block: false, drift_detected: false.
+  8. GOLDEN PROTOCOL: both new hashes PREDICTED under `TZ=UTC taskset -c 0-3`, stable
+     across two runs, and the regenerated corpus reproduced both exactly. Validated
+     beforehand by reproducing BOTH fixtures' then-current pinned hashes byte-for-byte,
+     including base's fc56ebd7..., which was TRANSCRIBED from designated-leg run
+     35269755235 rather than predicted -- the strongest confirmation of this protocol so
+     far. Both names are on CORPUS_DIGEST_PROVISIONAL.txt awaiting transcription.
+  RESIDUAL (needs CI): aarch64 NEON and MSVC still cannot be executed here. The claim is
+  no longer "the measured delta is small" but "the decoder has no algorithm and the
+  stored bytes are identical", which is why this cycle is materially stronger than
+  cycle 1 despite the same proxy limitation.
+
+files_changed:
+  - scripts/gen_corpus.sh (both recipes + the CYCLE 2 DETERMINISM rationale)
+  - tests/golden/CORPUS_DIGEST.txt (both drift hashes + recomputed SUMMARY)
+  - tests/golden/CORPUS_DIGEST_PROVISIONAL.txt (base added, STATUS rewritten)
+  - tests/integration/coverage_pairs.h (recipe-quoting comment)
+  - tests/integration/test_timeline_av_sync.cpp (201 -> 200 blocks, codec note)
+  - .planning/WINDOWS.md (#37 REOPENED, cycle 2 recorded)
+
+digest_provenance_finding: |
+  The no-rewrite guard does NOT bind on either line. `git show
+  8caf1f1:tests/golden/CORPUS_DIGEST.txt` (the single commit
+  scripts/lint_corpus_digest_provenance.sh clause 4 pins) has 80 listing lines and ZERO
+  `timeline_` entries -- both drift fixtures were added in Phase 5, after that commit.
+  Clause 4 ran and passed over all 80. Because both new hashes are locally PREDICTED
+  rather than transcribed, both names go on CORPUS_DIGEST_PROVISIONAL.txt; that ledger
+  plus designated-leg transcription is the route, exactly as the constraint intends.
+
+residual_risks:
+  - "`timeline_drift_step.mp4` is still `-c:a aac` and is the same LATENT class. It is not
+     part of this pair, so changing it is out of this fix's scope; it has been green on
+     arm64-osx across three consecutive CI runs. Recorded, not silently ignored."
+  - "No lint forbids a lossy audio codec (or an arch-divergent filter) in a gen_corpus.sh
+     recipe. Still a known gap, now with a second instance behind it."
 
 ## Human verification (2026-09-22) -- both decisions answered, carried out
 
