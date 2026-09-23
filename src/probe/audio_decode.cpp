@@ -187,23 +187,41 @@ int ebur128_role_for_channel(AVChannel channel, int position_index) {
 // already read) to a common Q15-scaled fixed-point amplitude -- full scale
 // +/-32768, matching a native s16 sample's own range. s32 is right-shifted
 // by 16 (coarser than s32's own noise floor, but ample resolution for a
-// coarse dBFS threshold comparison); a native float/double sample is
-// scaled by 32768.0 and rounded via std::llround (ties away from zero,
-// the SAME determinism argument quantize_loudness_milli below already
-// relies on -- deterministic on any IEEE-754 conformant toolchain, per
-// TRUST-05). This is FORMAT NORMALIZATION, not the RMS/peak DERIVATION
-// itself (this file's own acceptance criterion targets the latter): every
-// windowed-sum, threshold comparison and run-length decision downstream of
-// this call is plain int64 arithmetic, never floating point -- the
-// conversion step alone cannot avoid interpreting a genuinely
-// floating-point native sample format (AAC/Opus/Vorbis all decode to
-// planar float), exactly the same unavoidable boundary
+// coarse dBFS threshold comparison). This is FORMAT NORMALIZATION, not the
+// RMS/peak DERIVATION itself (this file's own acceptance criterion targets
+// the latter): every windowed-sum, threshold comparison and run-length
+// decision downstream of this call is plain int64 arithmetic, never
+// floating point -- the conversion step alone cannot avoid interpreting a
+// genuinely floating-point native sample format (AAC/Opus/Vorbis all
+// decode to planar float), exactly the same unavoidable boundary
 // `loudness_feed_dispatch_for_sample_fmt`'s own four native formats cross.
 // Dispatches on the SAME `Ebur128Feed` identity the loudness sink already
 // resolved (never a second, independent format table) -- `none` (a native
 // format none of the four accept) returns 0, unreachable in practice since
 // the silence detector is gated on `feed_kind != Ebur128Feed::none`
 // exactly like the loudness sink.
+//
+// 06-16-PLAN.md (CR-03): the float/double arms are the ONLY place a
+// hostile or corrupt sample value can enter this file (pcm_f32le/
+// pcm_f64le reinterpret raw file bytes as float with no decoder
+// clamping -- ANY bit pattern arrives here). Before this plan, a non-finite
+// input reached std::llround directly (UB: llround(NaN)/llround(inf) is
+// unspecified, and the un-clamped result could then negate INT64_MIN or
+// square-overflow in the caller's peak-squared computation), and the raw
+// float bytes fed LoudnessSink without any check at all (fabricating a
+// libebur128 reading from garbage). Both arms now return 0 for a
+// non-finite input (the same "no signal" answer digital silence already
+// gets), and otherwise clamp the scaled value to
+// +/-kMaxMeasurableFloatSampleMagnitude BEFORE std::llround -- so every
+// arm's output, including these two, lies in [-32768, 32768] with no
+// exception. The clamp is decision-neutral for the silence/dropout
+// detector: a single full-scale sample (32768^2 = 2^30) already exceeds
+// the whole dropout window's threshold-sum bound at any rate this
+// project's memory budget admits, so the clamp can only ever additionally
+// suppress a below-floor reading libebur128 would already have reported as
+// silent -- it never turns a genuinely audible sample into a different
+// classification (this plan's own corpus-wide differential proves this
+// empirically: 0 changed snapshots, float-decoded fixtures included).
 std::int64_t normalize_amplitude_q15(Ebur128Feed feed_kind, const std::uint8_t* ptr) {
   switch (feed_kind) {
     case Ebur128Feed::short_fmt:
@@ -212,11 +230,23 @@ std::int64_t normalize_amplitude_q15(Ebur128Feed feed_kind, const std::uint8_t* 
       return static_cast<std::int64_t>(*reinterpret_cast<const std::int32_t*>(ptr)) >> 16;
     case Ebur128Feed::float_fmt: {
       const float v = *reinterpret_cast<const float*>(ptr);
-      return static_cast<std::int64_t>(std::llround(static_cast<double>(v) * 32768.0));
+      if (!std::isfinite(v)) {
+        return 0;
+      }
+      const double scaled = static_cast<double>(v) * 32768.0;
+      const double clamped =
+          std::clamp(scaled, -kMaxMeasurableFloatSampleMagnitude, kMaxMeasurableFloatSampleMagnitude);
+      return static_cast<std::int64_t>(std::llround(clamped));
     }
     case Ebur128Feed::double_fmt: {
       const double v = *reinterpret_cast<const double*>(ptr);
-      return static_cast<std::int64_t>(std::llround(v * 32768.0));
+      if (!std::isfinite(v)) {
+        return 0;
+      }
+      const double scaled = v * 32768.0;
+      const double clamped =
+          std::clamp(scaled, -kMaxMeasurableFloatSampleMagnitude, kMaxMeasurableFloatSampleMagnitude);
+      return static_cast<std::int64_t>(std::llround(clamped));
     }
     case Ebur128Feed::none:
       return 0;
@@ -264,6 +294,17 @@ void record_first_error(std::string* out, std::string_view call, int averror) {
 
 int loudness_feed_dispatch_for_sample_fmt(int av_sample_fmt_id) {
   return static_cast<int>(ebur128_feed_for_format(static_cast<AVSampleFormat>(av_sample_fmt_id)));
+}
+
+// 06-16-PLAN.md (CR-03): dispatches through the SAME ebur128_feed_for_format
+// resolution loudness_feed_dispatch_for_sample_fmt above already exposes --
+// never a second, independent format table -- then forwards to
+// normalize_amplitude_q15 itself, so tests can assert its boundary
+// behavior (including the clamp and the non-finite-returns-0 rule) without
+// needing a real decode.
+std::int64_t normalize_amplitude_q15_for_sample_fmt(int av_sample_fmt_id, const std::uint8_t* sample) {
+  const Ebur128Feed feed_kind = ebur128_feed_for_format(static_cast<AVSampleFormat>(av_sample_fmt_id));
+  return normalize_amplitude_q15(feed_kind, sample);
 }
 
 int loudness_channel_role_for_avchannel(int av_channel_id, int position_index) {
@@ -866,10 +907,41 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
     digest_full_blocks();
   }
 
+  // 06-16-PLAN.md (CR-03, T-06-52/T-06-53): scan this frame's own decoded
+  // values for a non-finite or out-of-range float/double sample BEFORE
+  // either level sink below ever sees it -- the hash feed above already
+  // ran unconditionally (the hash chain keeps consuming this stream in
+  // full; T-06-53's own "sampling_state stays full" contract). Only the
+  // float/double native formats carry this risk at all (S16/S32 read
+  // straight off already-finite decoder integers, never reinterpreted file
+  // bytes) -- gated on the SAME silence_feed_kind_ the loudness sink and
+  // silence detector below already resolved, never a second, independent
+  // format check. The integer feed kinds skip this scan entirely, so the
+  // aac_fixed perf reference path gains no per-sample work from this
+  // block.
+  if (level_stop_reason_.empty() && (silence_feed_kind_ == static_cast<int>(Ebur128Feed::float_fmt) ||
+                                      silence_feed_kind_ == static_cast<int>(Ebur128Feed::double_fmt))) {
+    const bool is_double_scan = silence_feed_kind_ == static_cast<int>(Ebur128Feed::double_fmt);
+    const std::size_t value_count = static_cast<std::size_t>(nb_samples) * static_cast<std::size_t>(channels);
+    for (std::size_t i = 0; i < value_count; ++i) {
+      const std::uint8_t* value_ptr = scratch + i * static_cast<std::size_t>(bytes_per_sample);
+      const double v = is_double_scan ? *reinterpret_cast<const double*>(value_ptr)
+                                       : static_cast<double>(*reinterpret_cast<const float*>(value_ptr));
+      if (!std::isfinite(v) || std::fabs(v) > kMaxMeasurableFloatSampleMagnitude) {
+        latch_level_stop(kLevelStopNonFiniteOrOutOfRange);
+        break;
+      }
+    }
+  }
+
   // 06-08-PLAN.md (AUDIO-10): independent of hash_enabled_ -- the loudness
   // sink measures every successfully decoded stream, whether or not its
   // hash is comparable.
-  if (loudness_sink_) {
+  //
+  // 06-16-PLAN.md (CR-03): also gated on level_stop_reason_ being empty --
+  // a hostile sample latched by the scan just above must never reach
+  // libebur128 at all, not even the frame that holds it (T-06-53).
+  if (level_stop_reason_.empty() && loudness_sink_) {
     loudness_sink_->feed(scratch, nb_samples);
   }
 
@@ -878,7 +950,13 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
   // hash_enabled_ -- every successfully decoded stream's silence is
   // measured, whether or not its hash is comparable (mirrors the loudness
   // sink's own independence immediately above).
-  if (silence_supported_) {
+  //
+  // 06-16-PLAN.md (CR-03): also gated on level_stop_reason_ being empty --
+  // mirrors the loudness gate immediately above, for the same reason
+  // (normalize_amplitude_q15's own clamp already bounds this loop's own
+  // arithmetic regardless, but a hostile frame is stopped here entirely,
+  // never partially measured).
+  if (level_stop_reason_.empty() && silence_supported_) {
     any_sample_consumed_ = true;
     const auto feed_kind = static_cast<Ebur128Feed>(silence_feed_kind_);
     for (int s = 0; s < nb_samples; ++s) {
@@ -945,12 +1023,19 @@ void AudioDecodeState::observe_silence_sample(std::int64_t peak_q15) {
   }
 
   // -- Dropout (RMS) detector: a trailing sliding window of squared,
-  // Q15-normalized peak amplitude. The running sum is bounded by
-  // construction (at most `dropout_window_samples_` terms, each at most
-  // (2^15)^2, itself bounded by Phase 3 D-01's own per-file memory-budget-
-  // scale sample rates) -- comfortably inside int64_t with no checked
-  // arithmetic needed, mirroring D-04's own "block math is bounded,
-  // checked_mul not required" precedent. --
+  // Q15-normalized peak amplitude.
+  //
+  // 06-16-PLAN.md (CR-03, WR-03's sibling correctness argument): the real
+  // bound, now that normalize_amplitude_q15's own clamp guarantees every
+  // arm's output lies in [-32768, 32768] (S16/S32 unchanged; FLT/DBL
+  // clamped and non-finite-mapped-to-0) -- `peak_q15` here is already an
+  // abs() of that output, so |peak_q15| <= 2^15 and `sq` below is at most
+  // 2^30. `dropout_window_samples_` is `sample_rate * kDropoutRmsWindowMs /
+  // 1000`, i.e. sample_rate/10 -- at most INT_MAX*100/1000 (~2^28) samples
+  // even at a pathological INT_MAX-Hz declared rate, so the running sum
+  // (at most that many 2^30 terms) stays below 2^58, comfortably inside
+  // int64_t (2^63-1) with no checked arithmetic needed, mirroring D-04's
+  // own "block math is bounded, checked_mul not required" precedent. --
   const std::int64_t sq = peak_q15 * peak_q15;
   dropout_window_.push_back(sq);
   dropout_sum_sq_ += sq;
@@ -1069,6 +1154,17 @@ void AudioDecodeState::latch_decode_truncation(std::string_view reason) {
   if (decode_truncation_reason_.empty()) {
     decode_truncation_reason_ = std::string(reason);
   }
+  if (level_stop_reason_.empty()) {
+    level_stop_reason_ = std::string(reason);
+  }
+}
+
+// 06-16-PLAN.md (CR-03): level-ONLY latch -- deliberately never touches
+// decode_truncation_reason_, unlike latch_decode_truncation above. The
+// hash chain (gated on decode_truncation_reason_ alone, consume_frame's
+// own early-return guard) keeps consuming this stream in full; only the
+// loudness/silence sinks (both gated on level_stop_reason_) stop.
+void AudioDecodeState::latch_level_stop(std::string_view reason) {
   if (level_stop_reason_.empty()) {
     level_stop_reason_ = std::string(reason);
   }

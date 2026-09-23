@@ -127,6 +127,28 @@ inline constexpr std::string_view kDecodeStopChannelsChanged = "decoded_channels
 inline constexpr std::string_view kDecodeStopSampleFormatChanged = "decoded_sample_format_changed";
 inline constexpr std::string_view kDecodeStopSampleRateChanged = "decoded_sample_rate_changed";
 inline constexpr std::string_view kDecodeStopChannelLayoutChanged = "decoded_channel_layout_changed";
+// 06-16-PLAN.md (CR-03): appended to the same list -- LEVEL-ONLY, never
+// repurposing any decode-stop token above. The hash chain keeps consuming
+// this stream in full (sampling_state stays "full"); only
+// level_measurement_stop_reason latches this token, via
+// AudioDecodeState::latch_level_stop, the FIRST time a decoded float or
+// double sample is non-finite or exceeds
+// kMaxMeasurableFloatSampleMagnitude in magnitude.
+inline constexpr std::string_view kLevelStopNonFiniteOrOutOfRange = "non_finite_or_out_of_range_sample";
+
+// 06-16-PLAN.md (CR-03, A1): a float/double decoded sample above this
+// magnitude (about +90.3 dBFS -- 32768x full scale) is not audio a level
+// meter can represent: it is corrupt or hostile data reinterpreted as
+// float. Real float pipelines exceed 0 dBFS by at most a few dB, so this
+// bound is a measurability floor, not a tolerance. Up to this magnitude,
+// libebur128's own double-precision energy sums stay far from overflow
+// (32768^2 * 48000 samples is about 5e13). Also normalize_amplitude_q15's
+// own output clamp: every arm's return value lies in
+// [-kMaxMeasurableFloatSampleMagnitude, kMaxMeasurableFloatSampleMagnitude]
+// -- exactly [-32768, 32768] -- so the silence loop's `-amplitude` can
+// never negate INT64_MIN and a squared peak is at most 2^30 (WR-03's
+// sibling correctness argument, this plan's own must_have).
+inline constexpr double kMaxMeasurableFloatSampleMagnitude = 32768.0;
 
 // One detected silence/dropout span, in the stream's OWN sample-index
 // domain -- a half-open range `[start_sample, end_sample)` of decoded
@@ -421,6 +443,20 @@ bool hash_decoder_name_exists(std::string_view name);
 // dispatch (Test 4): the sink always interleaves before feeding.
 int loudness_feed_dispatch_for_sample_fmt(int av_sample_fmt_id);
 
+// 06-16-PLAN.md (CR-03): exposes normalize_amplitude_q15's own dispatch,
+// by raw AVSampleFormat integer identity, so tests/unit/test_audio_decode.cpp
+// can assert its boundary behavior directly -- mirrors
+// loudness_feed_dispatch_for_sample_fmt's own reason for being exported
+// (a raw-int-identity seam, never a libav/ebur128 type in this header).
+// `sample` points at one native-format sample's raw bytes (the SAME
+// interleaved-scratch-buffer convention normalize_amplitude_q15's own
+// callers already use). Dispatches through ebur128_feed_for_format on
+// `av_sample_fmt_id` first, so an unsupported format returns 0 exactly
+// like the internal Ebur128Feed::none arm. Every arm's return value lies
+// in [-32768, 32768] (S16/S32 unchanged; FLT/DBL clamped to
+// +/-kMaxMeasurableFloatSampleMagnitude and 0 for a non-finite input).
+std::int64_t normalize_amplitude_q15_for_sample_fmt(int av_sample_fmt_id, const std::uint8_t* sample);
+
 // Returns the real libebur128 `enum channel` value (ebur128.h) this
 // decoded position maps to -- `EBUR128_UNUSED` for LFE (BS.1770 excludes
 // it from the loudness sum) and for any position this table cannot
@@ -675,6 +711,14 @@ class AudioDecodeState {
   // (feed_packet's own consecutive-error-limit branch) -- there is no
   // separate "stop level measurement only" call today.
   void latch_decode_truncation(std::string_view reason);
+  // 06-16-PLAN.md (CR-03): latches `level_stop_reason_` ONLY -- never
+  // `decode_truncation_reason_` -- the first time it is called (the same
+  // first-reason-wins rule latch_decode_truncation follows), so the hash
+  // chain keeps consuming this stream in full (`decode_truncated` stays
+  // false, `sampling_state` stays "full") while the loudness/silence
+  // sinks stop receiving samples. Called only from consume_frame's own
+  // float/double scan.
+  void latch_level_stop(std::string_view reason);
 };
 
 }  // namespace detail

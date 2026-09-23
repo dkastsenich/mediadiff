@@ -18,8 +18,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -67,8 +73,11 @@ using mediadiff::kDecodeStopChannelsChanged;
 using mediadiff::kDecodeStopConsecutiveErrorLimit;
 using mediadiff::kDecodeStopSampleFormatChanged;
 using mediadiff::kDecodeStopSampleRateChanged;
+using mediadiff::kLevelStopNonFiniteOrOutOfRange;
+using mediadiff::kMaxMeasurableFloatSampleMagnitude;
 using mediadiff::kSamplingStateFull;
 using mediadiff::kSamplingStateTruncated;
+using mediadiff::normalize_amplitude_q15_for_sample_fmt;
 using mediadiff::Measurement;
 using mediadiff::PacketScanLimits;
 using mediadiff::PacketScanRequest;
@@ -321,6 +330,102 @@ AVFrame* make_test_frame(int sample_rate, int channels, int nb_samples, AVSample
     }
   }
   return frame;
+}
+
+// 06-16-PLAN.md Task 1 (CR-03): mirrors test_silence_sink.cpp's own
+// unique_scratch_dir() exactly (this project's own per-file-duplication
+// convention, already established for write_mono_pcm16_wav's sibling).
+namespace fs = std::filesystem;
+
+fs::path unique_scratch_dir() {
+  static std::atomic<int> counter{0};
+  const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+  const fs::path dir =
+      fs::temp_directory_path() / ("mediadiff_audio_decode_" + std::to_string(now) + "_" + std::to_string(counter++));
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  return dir;
+}
+
+// 06-16-PLAN.md Task 1 (CR-03): a minimal, canonical IEEE-float WAV
+// (format tag 3), hand-written exactly like test_silence_sink.cpp's own
+// write_mono_pcm16_wav -- never shelled out to ffmpeg -- so this test's
+// own hostile sample values (NaN, +inf, 1e30, exactly-32768.0) land at
+// precisely the sample this test names, with no encoder free to alter
+// them. `bits` is 32 (native `float`) or 64 (native `double`); `samples`
+// is the RAW, UNSCALED value written verbatim to each interleaved slot
+// across every channel (never a Q15/dBFS conversion -- consume_frame's
+// own float/double scan reads these exact bytes back).
+std::string write_float_wav(const std::string& name, int sample_rate, int channels, int bits,
+                             const std::vector<double>& samples) {
+  REQUIRE((bits == 32 || bits == 64));
+  const int bytes_per_sample = bits / 8;
+  const auto data_bytes = static_cast<std::uint32_t>(samples.size() * static_cast<std::size_t>(bytes_per_sample));
+  const auto byte_rate = static_cast<std::uint32_t>(sample_rate * channels * bytes_per_sample);
+  const auto block_align = static_cast<std::uint16_t>(channels * bytes_per_sample);
+  const std::uint32_t riff_size = 36 + data_bytes;
+
+  std::string header;
+  header.reserve(44);
+  auto put_u32le = [&](std::uint32_t v) {
+    header.push_back(static_cast<char>(v & 0xFF));
+    header.push_back(static_cast<char>((v >> 8) & 0xFF));
+    header.push_back(static_cast<char>((v >> 16) & 0xFF));
+    header.push_back(static_cast<char>((v >> 24) & 0xFF));
+  };
+  auto put_u16le = [&](std::uint16_t v) {
+    header.push_back(static_cast<char>(v & 0xFF));
+    header.push_back(static_cast<char>((v >> 8) & 0xFF));
+  };
+  header += "RIFF";
+  put_u32le(riff_size);
+  header += "WAVE";
+  header += "fmt ";
+  put_u32le(16);
+  put_u16le(3);  // WAVE_FORMAT_IEEE_FLOAT
+  put_u16le(static_cast<std::uint16_t>(channels));
+  put_u32le(static_cast<std::uint32_t>(sample_rate));
+  put_u32le(byte_rate);
+  put_u16le(block_align);
+  put_u16le(static_cast<std::uint16_t>(bits));
+  header += "data";
+  put_u32le(data_bytes);
+
+  const fs::path path = unique_scratch_dir() / name;
+  std::ofstream out(path, std::ios::binary);
+  REQUIRE(out.is_open());
+  out.write(header.data(), static_cast<std::streamsize>(header.size()));
+  for (const double v : samples) {
+    if (bits == 32) {
+      const float f = static_cast<float>(v);
+      out.write(reinterpret_cast<const char*>(&f), sizeof(f));
+    } else {
+      out.write(reinterpret_cast<const char*>(&v), sizeof(v));
+    }
+  }
+  out.close();
+  return path.string();
+}
+
+// 06-16-PLAN.md Task 1 (CR-03): a 1kHz tone at `amplitude` (1.0 == full
+// scale), with exactly ONE sample overwritten by `bad_value` at
+// `bad_sample_index` -- mirrors test_silence_sink.cpp's own
+// synth_tone_with_hole shape, but injecting a single hostile RAW value
+// instead of a run of exact zeros.
+std::vector<double> synth_tone_with_bad_sample(int sample_rate, double duration_s, double amplitude,
+                                                int bad_sample_index, double bad_value) {
+  const auto total = static_cast<int>(duration_s * sample_rate);
+  std::vector<double> samples(static_cast<std::size_t>(total));
+  constexpr double kFreq = 1000.0;
+  for (int i = 0; i < total; ++i) {
+    if (i == bad_sample_index) {
+      samples[static_cast<std::size_t>(i)] = bad_value;
+    } else {
+      const double t = static_cast<double>(i) / sample_rate;
+      samples[static_cast<std::size_t>(i)] = amplitude * std::sin(2.0 * M_PI * kFreq * t);
+    }
+  }
+  return samples;
 }
 
 }  // namespace
@@ -992,4 +1097,185 @@ TEST_CASE("audio_decode - after a latch, a matching frame is not counted and fee
   CHECK(result.decode_error_count == 0);
 
   avcodec_parameters_free(&codecpar);
+}
+
+// 06-16-PLAN.md Task 1 (CR-03): normalize_amplitude_q15_for_sample_fmt's
+// own boundary behavior, exercised directly against raw sample bytes --
+// no decode needed. 2.0f -> 32768 is the RED this task's own SUMMARY
+// records (the pre-fix code returns 65536, twice the clamped bound).
+TEST_CASE("audio_decode - normalize_amplitude_q15_for_sample_fmt clamps float/double to +/-32768 and maps "
+          "non-finite to 0; integer arms are unchanged (CR-03)",
+          "[unit]") {
+  const float half = 0.5f;
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_FLT, reinterpret_cast<const std::uint8_t*>(&half)) ==
+        16384);
+
+  const float two = 2.0f;
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_FLT, reinterpret_cast<const std::uint8_t*>(&two)) ==
+        32768);
+
+  const float neg_two = -2.0f;
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_FLT, reinterpret_cast<const std::uint8_t*>(&neg_two)) ==
+        -32768);
+
+  const float nan_f = std::numeric_limits<float>::quiet_NaN();
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_FLT, reinterpret_cast<const std::uint8_t*>(&nan_f)) ==
+        0);
+
+  const float inf_f = std::numeric_limits<float>::infinity();
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_FLT, reinterpret_cast<const std::uint8_t*>(&inf_f)) ==
+        0);
+
+  const double huge_pos = 1e300;
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_DBL,
+                                                reinterpret_cast<const std::uint8_t*>(&huge_pos)) == 32768);
+
+  const double huge_neg = -1e300;
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_DBL,
+                                                reinterpret_cast<const std::uint8_t*>(&huge_neg)) == -32768);
+
+  const std::int16_t s16_min = -32768;
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_S16,
+                                                reinterpret_cast<const std::uint8_t*>(&s16_min)) == -32768);
+
+  const std::int32_t s32_min = INT32_MIN;
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_S32,
+                                                reinterpret_cast<const std::uint8_t*>(&s32_min)) == -32768);
+
+  const std::int32_t s32_max = INT32_MAX;
+  CHECK(normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_S32,
+                                                reinterpret_cast<const std::uint8_t*>(&s32_max)) == 32767);
+}
+
+// 06-16-PLAN.md Task 1 (CR-03, T-06-52/T-06-53): the end-to-end must_have --
+// a 1s, 48000Hz mono f32 WAV holding a 0.5-amplitude tone with one NaN at
+// sample 24000, decoded through the real DemuxSession + run_packet_scan
+// path. Before this fix, loudness_measured was true (the NaN reached
+// llround and libebur128 unguarded) -- the RED this task's own SUMMARY
+// records.
+TEST_CASE("audio_decode - a non-finite float sample stops level measurement but the hash stays full, end to end "
+          "(CR-03)",
+          "[unit]") {
+  const std::vector<double> samples =
+      synth_tone_with_bad_sample(48000, 1.0, 0.5, 24000, std::numeric_limits<double>::quiet_NaN());
+  const std::string path = write_float_wav("audio_cr03_nan.wav", 48000, 1, 32, samples);
+
+  ScanBundle bundle = scan_with_decode(path);
+  const std::optional<StreamAudioDecode> stream = first_attempted(bundle.audio_decode);
+  REQUIRE(stream.has_value());
+  CHECK(stream->sample_format_packed == "flt");
+  CHECK(stream->level_measurement_stopped);
+  CHECK(stream->level_measurement_stop_reason == std::string(kLevelStopNonFiniteOrOutOfRange));
+  CHECK(!stream->decode_truncated);
+  CHECK(stream->total_samples == 48000);
+  CHECK(!stream->loudness_measured);
+  CHECK(!stream->silence_measured);
+
+  const Fingerprint hash_fp = run_content_audio_sample_hash(bundle);
+  const Measurement* hash_measurement = find_measurement(hash_fp, CheckId::content_audio_sample_hash);
+  REQUIRE(hash_measurement != nullptr);
+  CHECK(hash_measurement->skip_reason == SkipReason::none);
+  REQUIRE(hash_measurement->evidence.is_object());
+  REQUIRE(hash_measurement->evidence.contains("sampling_state"));
+  CHECK(hash_measurement->evidence.at("sampling_state") == std::string(kSamplingStateFull));
+
+  ProbeResults level_results;
+  level_results.demux = &bundle.session;
+  level_results.packet_scan = bundle.packets;
+  level_results.audio_decode = bundle.audio_decode;
+  Fingerprint level_fp;
+  audio_loudness_analyzer().run(level_results, level_fp);
+  audio_silence_analyzer().run(level_results, level_fp);
+  for (CheckId id : {CheckId::audio_loudness_integrated, CheckId::audio_loudness_true_peak,
+                      CheckId::audio_silence_edges, CheckId::audio_silence_dropouts}) {
+    const Measurement* m = find_measurement(level_fp, id);
+    REQUIRE(m != nullptr);
+    CHECK(m->skip_reason == SkipReason::partial_scan);
+    REQUIRE(m->evidence.is_object());
+    REQUIRE(m->evidence.contains("reason"));
+    CHECK(m->evidence.at("reason") == std::string(kLevelStopNonFiniteOrOutOfRange));
+  }
+  CHECK(!level_fp.partial);
+}
+
+// 06-16-PLAN.md Task 1 (CR-03): the same file with a huge finite value
+// (1e30, well past kMaxMeasurableFloatSampleMagnitude) in place of the NaN
+// also stops -- the guard is a magnitude bound, not merely a
+// finiteness check.
+TEST_CASE("audio_decode - a huge finite float sample (1e30) also stops level measurement (CR-03)", "[unit]") {
+  const std::vector<double> samples = synth_tone_with_bad_sample(48000, 1.0, 0.5, 24000, 1e30);
+  const std::string path = write_float_wav("audio_cr03_huge.wav", 48000, 1, 32, samples);
+
+  ScanBundle bundle = scan_with_decode(path);
+  const std::optional<StreamAudioDecode> stream = first_attempted(bundle.audio_decode);
+  REQUIRE(stream.has_value());
+  CHECK(stream->level_measurement_stopped);
+  CHECK(stream->level_measurement_stop_reason == std::string(kLevelStopNonFiniteOrOutOfRange));
+  CHECK(!stream->loudness_measured);
+}
+
+// 06-16-PLAN.md Task 1 (CR-03): the exact boundary named in this plan's own
+// must_have -- a lone sample of exactly kMaxMeasurableFloatSampleMagnitude
+// (32768.0) does NOT stop level measurement; one ULP-scale step past it
+// (32769.0) does.
+TEST_CASE("audio_decode - a float sample of exactly 32768.0 does not stop level measurement; 32769.0 does (CR-03)",
+          "[unit]") {
+  {
+    const std::vector<double> samples =
+        synth_tone_with_bad_sample(48000, 0.1, 0.1, 2400, kMaxMeasurableFloatSampleMagnitude);
+    const std::string path = write_float_wav("audio_cr03_boundary_ok.wav", 48000, 1, 32, samples);
+    ScanBundle bundle = scan_with_decode(path);
+    const std::optional<StreamAudioDecode> stream = first_attempted(bundle.audio_decode);
+    REQUIRE(stream.has_value());
+    CHECK(!stream->level_measurement_stopped);
+    CHECK(stream->loudness_measured);
+  }
+  {
+    const std::vector<double> samples =
+        synth_tone_with_bad_sample(48000, 0.1, 0.1, 2400, kMaxMeasurableFloatSampleMagnitude + 1.0);
+    const std::string path = write_float_wav("audio_cr03_boundary_stop.wav", 48000, 1, 32, samples);
+    ScanBundle bundle = scan_with_decode(path);
+    const std::optional<StreamAudioDecode> stream = first_attempted(bundle.audio_decode);
+    REQUIRE(stream.has_value());
+    CHECK(stream->level_measurement_stopped);
+    CHECK(stream->level_measurement_stop_reason == std::string(kLevelStopNonFiniteOrOutOfRange));
+  }
+}
+
+// 06-16-PLAN.md Task 1 (CR-03): an f64 WAV with one +inf also stops,
+// exercising the double arm of the same scan (the float arm is exercised
+// by every other test in this group).
+TEST_CASE("audio_decode - an inf double sample also stops level measurement, exercising the double arm (CR-03)",
+          "[unit]") {
+  const std::vector<double> samples =
+      synth_tone_with_bad_sample(48000, 1.0, 0.5, 24000, std::numeric_limits<double>::infinity());
+  const std::string path = write_float_wav("audio_cr03_inf_f64.wav", 48000, 1, 64, samples);
+
+  ScanBundle bundle = scan_with_decode(path);
+  const std::optional<StreamAudioDecode> stream = first_attempted(bundle.audio_decode);
+  REQUIRE(stream.has_value());
+  CHECK(stream->sample_format_packed == "dbl");
+  CHECK(stream->level_measurement_stopped);
+  CHECK(stream->level_measurement_stop_reason == std::string(kLevelStopNonFiniteOrOutOfRange));
+  CHECK(!stream->loudness_measured);
+}
+
+// 06-16-PLAN.md Task 1 (CR-03): control -- a clean f32 tone WAV (no hostile
+// sample at all) does not stop, and measures loudness normally.
+TEST_CASE("audio_decode - a clean float tone does not stop level measurement (CR-03 control)", "[unit]") {
+  const auto total = static_cast<int>(0.1 * 48000);
+  std::vector<double> samples(static_cast<std::size_t>(total));
+  for (int i = 0; i < total; ++i) {
+    const double t = static_cast<double>(i) / 48000.0;
+    samples[static_cast<std::size_t>(i)] = 0.5 * std::sin(2.0 * M_PI * 1000.0 * t);
+  }
+  const std::string path = write_float_wav("audio_cr03_clean.wav", 48000, 1, 32, samples);
+
+  ScanBundle bundle = scan_with_decode(path);
+  const std::optional<StreamAudioDecode> stream = first_attempted(bundle.audio_decode);
+  REQUIRE(stream.has_value());
+  CHECK(!stream->level_measurement_stopped);
+  CHECK(stream->level_measurement_stop_reason.empty());
+  CHECK(stream->loudness_measured);
+  CHECK(stream->silence_measured);
 }
