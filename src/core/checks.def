@@ -1695,12 +1695,16 @@ transform = "1.0LU"
 # EBUR128_MODE_TRUE_PEAK, maximum over channels, dBTP. `warn` severity for
 # an ordinary tolerance excursion, but a candidate crossing the -1.0 dBTP
 # ceiling upward from a baseline that was under it escalates to `fail`
-# regardless of the magnitude delta -- a GENERIC, evidence-shape-gated
-# escalation in `src/compare/tol.cpp` (never a second check id: headroom
-# loss risks clipping after a downstream lossy encode, headroom gained does
-# not, and `src/compare/state.cpp`'s flagged-value membership semantic
-# would fire whenever EITHER side is hot, including on an unchanged pair
-# already above the ceiling -- the P0 false-positive class).
+# regardless of the magnitude delta, once the candidate's rise across the
+# ceiling reaches the 0.010 dB deadband (kCeilingCrossingDeadbandNum/Den,
+# src/analyzers/audio/analyzers.h) -- a smaller rise is quantiser-scale
+# noise and keeps its ordinary tolerance verdict (06-17-PLAN.md, CR-04 gap
+# closure). A GENERIC, evidence-shape-gated escalation in
+# `src/compare/tol.cpp` (never a second check id: headroom loss risks
+# clipping after a downstream lossy encode, headroom gained does not, and
+# `src/compare/state.cpp`'s flagged-value membership semantic would fire
+# whenever EITHER side is hot, including on an unchanged pair already above
+# the ceiling -- the P0 false-positive class).
 [[check]]
 id = "audio.loudness.true_peak"
 group = "audio"
