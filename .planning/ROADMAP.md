@@ -462,7 +462,7 @@ Plans:
   4. `content.audio.sample_hash` locates the first divergent sample by index and time; the same file hashed via `aac_fixed` on two different builds compares equal; and a float-decoder hash across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail — with decoder name, class, flags and path signature recorded per hashed stream.
   5. Loudness, silence detection and hashing share a single decode sweep per track, and an audio sweep of the 10-minute reference stereo AAC file completes in under 4 s.
 
-**Plans**: 14/20 plans executed. 06-01..06-13 were executed in 13 waves. 06-14..06-20 are gap-closure plans (VERIFICATION.md gap 3 plus 06-13's pending CI confirmation) in 7 further waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, and the gap plans share one working tree, one build directory and `src/probe/audio_decode.*`, so no two plans share a wave.
+**Plans**: 15/20 plans executed. 06-01..06-13 were executed in 13 waves. 06-14..06-20 are gap-closure plans (VERIFICATION.md gap 3 plus 06-13's pending CI confirmation) in 7 further waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, and the gap plans share one working tree, one build directory and `src/probe/audio_decode.*`, so no two plans share a wave.
 
 Plans:
 **Wave 1**
@@ -523,7 +523,7 @@ Plans:
 
 **Wave 15** *(blocked on Wave 14)*
 
-- [ ] 06-15-PLAN.md — CR-01: sinks configured from the decoded frame's rate, proven in-process on the real divergent codecpar state. CR-02: every frame re-validated against the recorded configuration, so no mismatched shape reaches a sink (AUDIO-08, AUDIO-10)
+- [x] 06-15-PLAN.md — CR-01: sinks configured from the decoded frame's rate, proven in-process on the real divergent codecpar state. CR-02: every frame re-validated against the recorded configuration, so no mismatched shape reaches a sink (AUDIO-08, AUDIO-10)
 
 **Wave 16** *(blocked on Wave 15)*
 
@@ -577,7 +577,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
-| 6. Audio Analysis | 14/20 | In Progress|  |
+| 6. Audio Analysis | 15/20 | In Progress|  |
 | 7. Content & Quality | 0/TBD | Not started | - |
 
 ## Coverage
