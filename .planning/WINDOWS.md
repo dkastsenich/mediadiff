@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 20
 waived_count: 2
 fixed_count: 20
-total_count: 41
-last_updated: 2026-09-23T20:44:44.179Z
+total_count: 42
+last_updated: 2026-09-23T21:39:15.041Z
 ---
 
 # Broken Windows Ledger
@@ -56,6 +56,7 @@ last_updated: 2026-09-23T20:44:44.179Z
 | 39 | 06 | deviation | src/probe/audio_decode.cpp |  | 06-13-PLAN.md Task 2 (D-06 cross-architecture proof): the real arm64-osx CI round trip (run 35735099865, commit e5a1677) proved only aac_fixed's class-1 cross-architecture bit-exactness (D-11's committed two-build proof, tests/integration/test_audio_hash_decoder.cpp class proof Test 2, run against the hand-written byte-identical audio_aac_handwritten.mp4 fixture). D-06's own mp3/mp2 promotion required bit-exact proof across architectures, not one x86 host; no trustworthy proof exists for either -- mp2's only real fixture (audio_mp2_base.mpg) is ffmpeg-encoder output already documented (WINDOWS.md #12) as not architecture-stable even under -flags +bitexact, and mp3 has no real corpus fixture at all in this LGPL decode-only pin. Per this plan's own must-have (confirmed-or-demoted, never closed on assumption), both are DEMOTED: determinism_class_for_decoder() now returns class 2 for mp3/mp2 (still selected by name under auto, per D-06's own T-06-15 selection/classification independence, now recorded class2 with a path_signature). ac3_fixed's cross-architecture bit-exactness is EQUALLY unmeasured by any real fixture-level test (no real AC-3 corpus fixture exists either) but its class-1 status predates D-06's reopening and is not the literal subject of this plan's must-have, so it is left unchanged and recorded here as an open gap rather than silently assumed. Building a trustworthy proof for mp3/mp2/ac3_fixed needs a D-10-style hand-written, architecture-stable elementary stream, which does not exist and is out of this plan's scope. | open |  | 2026-09-22T14:04:13.122Z |  |
 | 40 | 06 | unrun-verify | src/probe/audio_decode.cpp |  | CR-01 residual: the libav-internal path where a stream's first packets fail inside avformat_find_stream_info but decode later is not reproduced with real media (.planning/debug/audio-sweep-rate-truncation.md's own session could not construct it, and new ffmpeg-encoded media is out of scope). Its end state, codecpar keeping the header rate while the decoder emits another, is covered in-process by the CR-01 oracle test ('audio_decode - the sweep is configured from the decoded frame's rate even when codecpar declares a different one (CR-01)', tests/unit/test_audio_decode.cpp). Since 06-15 the sweep configures every sink from the decoded frame in any case, so this residual is diagnostic-only, not a live gap. | open |  | 2026-09-23T20:10:26.407Z |  |
 | 41 | 06 | todo | src/probe/audio_decode.cpp |  | T-06-55 (Denial of Service, low, accept): dropout_window_ (a std::deque<std::int64_t>) holds up to dropout_window_samples_ = max(1, sample_rate * kDropoutRmsWindowMs(100) / 1000) entries -- i.e. up to sample_rate/10 int64 (8-byte) values, so a crafted declared sample rate directly sizes this one deque. Growth is bounded by the samples ACTUALLY DECODED, not by the declared rate alone: for PCM (the format most exposed, since its rate is taken directly from the container header with no codec-side ceiling), the deque can reach at most about 4x the raw PCM input size (one int64 per interleaved sample, versus 2 bytes/sample for s16 or up to 8 for s64 -- worst case roughly 4x for common 16-bit PCM), because the number of decoded samples is itself bounded by how many sample-frames worth of bytes the packet stream actually contains. Compressed codecs additionally cap the rate in their own bitstream headers (FLAC's STREAMINFO sample-rate field is a 20-bit value, topping out near 1,048,575 Hz -- nowhere near the pathological INT_MAX rates size.* checks already guard against for other fields). A crafted rate therefore amplifies memory in PROPORTION TO the input size actually supplied, never unboundedly independent of it -- distinct from an unbounded-allocation vulnerability, where memory grows independent of input size. | waived | accepted risk T-06-55: dropout_window_'s size scales with a crafted sample rate, but only in proportion to the input actually supplied (at most ~4x raw PCM input size; compressed codecs cap the rate in their own headers, e.g. FLAC's 20-bit STREAMINFO field). Not an unbounded-allocation vulnerability. Recorded and waived per 06-16-PLAN.md Task 3. | 2026-09-23T20:44:26.714Z | 2026-09-23T20:44:44.179Z |
+| 42 | 06 | deviation | tests/unit/test_audio_config.cpp |  | 06-18 Task 2 carries tdd="true" but was executed as a single feat commit (5fde258) rather than a separate RED test(...) commit followed by a GREEN feat(...) commit -- the new decode_observed_rate_hz assertions and the four-fixture cross-pass invariant were written alongside the implementation change, not proven to fail first. All tests pass and the plan's own acceptance criteria are met; only the RED/GREEN commit-separation discipline was skipped. | open |  | 2026-09-23T21:39:15.041Z |  |
 
 ````json
 [
@@ -550,6 +551,18 @@ last_updated: 2026-09-23T20:44:44.179Z
     "reason": "accepted risk T-06-55: dropout_window_'s size scales with a crafted sample rate, but only in proportion to the input actually supplied (at most ~4x raw PCM input size; compressed codecs cap the rate in their own headers, e.g. FLAC's 20-bit STREAMINFO field). Not an unbounded-allocation vulnerability. Recorded and waived per 06-16-PLAN.md Task 3.",
     "recorded_at": "2026-09-23T20:44:26.714Z",
     "resolved_at": "2026-09-23T20:44:44.179Z"
+  },
+  {
+    "id": 42,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "tests/unit/test_audio_config.cpp",
+    "line": null,
+    "description": "06-18 Task 2 carries tdd=\"true\" but was executed as a single feat commit (5fde258) rather than a separate RED test(...) commit followed by a GREEN feat(...) commit -- the new decode_observed_rate_hz assertions and the four-fixture cross-pass invariant were written alongside the implementation change, not proven to fail first. All tests pass and the plan's own acceptance criteria are met; only the RED/GREEN commit-separation discipline was skipped.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T21:39:15.041Z",
+    "resolved_at": null
   }
 ]
 ````
