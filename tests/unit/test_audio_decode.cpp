@@ -19,6 +19,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,6 +27,9 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/error.h>
+#include <libavutil/samplefmt.h>
 }
 
 #include <nlohmann/json.hpp>
@@ -58,7 +62,11 @@ using mediadiff::determinism_class_for_decoder;
 using mediadiff::Finding;
 using mediadiff::Fingerprint;
 using mediadiff::hash_decoder_name_exists;
+using mediadiff::kDecodeStopChannelLayoutChanged;
+using mediadiff::kDecodeStopChannelsChanged;
 using mediadiff::kDecodeStopConsecutiveErrorLimit;
+using mediadiff::kDecodeStopSampleFormatChanged;
+using mediadiff::kDecodeStopSampleRateChanged;
 using mediadiff::kSamplingStateFull;
 using mediadiff::kSamplingStateTruncated;
 using mediadiff::Measurement;
@@ -635,4 +643,101 @@ TEST_CASE("audio_decode - two truncated sample_hash chains compare skipped:hash_
   CHECK(finding.status == Status::skipped);
   CHECK(finding.skip_reason == SkipReason::hash_incomparable);
   CHECK(finding.message.find("truncated") != std::string::npos);
+}
+
+// 06-15-PLAN.md Task 1 (CR-01): the ONE real stream in this corpus whose
+// codecpar rate, read BEFORE avformat_find_stream_info has run, disagrees
+// with what the decoder actually emits
+// (.planning/debug/audio-sweep-rate-truncation.md, Phase 2 question (b):
+// pre_fsi_diff = 1, audio_sbr_implicit.mp4 going 44100 -> 88200 across
+// find_stream_info). Reproduces the divergent state directly -- a bare
+// avformat_open_input, never avformat_find_stream_info -- since no
+// ordinary container fixture reaches this divergence through
+// DemuxSession's own normal open path (0 of 144 corpus streams, per the
+// debug session's own corpus-wide sweep, flagged_assumption A1). The
+// oracle's expected rate comes from an independent bare `aac_fixed`
+// decode of the SAME packets, never a hand-picked literal.
+TEST_CASE("audio_decode - the sweep is configured from the decoded frame's rate even when codecpar declares a "
+          "different one (CR-01)",
+          "[unit]") {
+  AVFormatContext* ctx = avformat_alloc_context();
+  REQUIRE(ctx != nullptr);
+  const std::string path = mediadiff::test::fixture_dir() + "/audio_sbr_implicit.mp4";
+  // Deliberately no avformat_find_stream_info() call -- reproducing that
+  // exact divergent state is this test's own point.
+  REQUIRE(avformat_open_input(&ctx, path.c_str(), nullptr, nullptr) == 0);
+  REQUIRE(ctx->nb_streams == 1);
+  AVCodecParameters& codecpar = *ctx->streams[0]->codecpar;
+  REQUIRE(codecpar.codec_type == AVMEDIA_TYPE_AUDIO);
+  REQUIRE(codecpar.sample_rate == 44100);
+
+  const std::vector<std::vector<std::uint8_t>> packets = read_stream_packets(*ctx, 0);
+  REQUIRE(!packets.empty());
+
+  // The oracle: an independent bare aac_fixed decode of the SAME packets,
+  // never AudioDecodeState itself (flagged_assumption A1).
+  const AVCodec* oracle_decoder = avcodec_find_decoder_by_name("aac_fixed");
+  REQUIRE(oracle_decoder != nullptr);
+  AVCodecContext* oracle_ctx = avcodec_alloc_context3(oracle_decoder);
+  REQUIRE(oracle_ctx != nullptr);
+  REQUIRE(avcodec_parameters_to_context(oracle_ctx, &codecpar) >= 0);
+  oracle_ctx->flags |= AV_CODEC_FLAG_BITEXACT;
+  REQUIRE(avcodec_open2(oracle_ctx, oracle_decoder, nullptr) >= 0);
+
+  std::int64_t oracle_rate = 0;
+  AVFrame* oracle_frame = av_frame_alloc();
+  REQUIRE(oracle_frame != nullptr);
+  for (const std::vector<std::uint8_t>& packet_bytes : packets) {
+    if (oracle_rate > 0) {
+      break;
+    }
+    AVPacket* pkt = av_packet_alloc();
+    REQUIRE(pkt != nullptr);
+    pkt->data = const_cast<std::uint8_t*>(packet_bytes.data());
+    pkt->size = static_cast<int>(packet_bytes.size());
+    const int send_rc = avcodec_send_packet(oracle_ctx, pkt);
+    av_packet_free(&pkt);
+    REQUIRE(send_rc >= 0);
+    const int recv_rc = avcodec_receive_frame(oracle_ctx, oracle_frame);
+    if (recv_rc >= 0) {
+      oracle_rate = oracle_frame->sample_rate;
+      av_frame_unref(oracle_frame);
+    } else {
+      REQUIRE((recv_rc == AVERROR(EAGAIN) || recv_rc == AVERROR_EOF));
+    }
+  }
+  av_frame_free(&oracle_frame);
+  avcodec_free_context(&oracle_ctx);
+  REQUIRE(oracle_rate == 88200);
+
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(codecpar, "auto"));
+  REQUIRE(state.attempted());
+  for (const std::vector<std::uint8_t>& packet_bytes : packets) {
+    state.feed_packet(packet_bytes.data(), static_cast<int>(packet_bytes.size()));
+  }
+  const StreamAudioDecode result = state.finalize();
+  CHECK(result.sample_rate == oracle_rate);
+  CHECK(result.declared_sample_rate == 44100);
+  CHECK(result.block_samples == oracle_rate / kAudioBlockDivisor);
+
+  avformat_close_input(&ctx);
+}
+
+// 06-15-PLAN.md Task 1 (CR-01): on the NORMAL open path (DemuxSession,
+// which always runs avformat_find_stream_info), decoded and declared
+// agree on this same fixture -- find_stream_info's own internal decode
+// already corrected codecpar before ensure_initialized ever reads it, so
+// this plan changes no corpus output for any real open path.
+TEST_CASE("audio_decode - the normal open path decodes and declares the same rate", "[unit]") {
+  auto session = DemuxSession::open(mediadiff::test::fixture_dir() + "/audio_sbr_implicit.mp4", DemuxOptions{});
+  REQUIRE(session.has_value());
+
+  auto result = run_audio_decode(*session);
+  REQUIRE(result.has_value());
+
+  const std::optional<StreamAudioDecode> stream = first_attempted(*result);
+  REQUIRE(stream.has_value());
+  CHECK(stream->sample_rate == 88200);
+  CHECK(stream->declared_sample_rate == 88200);
 }

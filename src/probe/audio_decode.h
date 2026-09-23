@@ -117,6 +117,16 @@ inline constexpr std::int64_t kDropoutMinSpanMs = 150;
 // IDs are forever" rule, extended here to stop tokens). 06-15/06-16 append
 // further tokens to this list; they never repurpose this one.
 inline constexpr std::string_view kDecodeStopConsecutiveErrorLimit = "consecutive_decode_error_limit";
+// 06-15-PLAN.md (CR-02): appended to the same list -- a per-frame
+// re-validation stop, never repurposing kDecodeStopConsecutiveErrorLimit
+// above. Checked in this fixed order (channels, format, rate, layout) by
+// AudioDecodeState::consume_frame; the FIRST mismatch wins and latches
+// its own token, mirroring latch_decode_truncation's own first-reason-wins
+// rule.
+inline constexpr std::string_view kDecodeStopChannelsChanged = "decoded_channels_changed";
+inline constexpr std::string_view kDecodeStopSampleFormatChanged = "decoded_sample_format_changed";
+inline constexpr std::string_view kDecodeStopSampleRateChanged = "decoded_sample_rate_changed";
+inline constexpr std::string_view kDecodeStopChannelLayoutChanged = "decoded_channel_layout_changed";
 
 // One detected silence/dropout span, in the stream's OWN sample-index
 // domain -- a half-open range `[start_sample, end_sample)` of decoded
@@ -175,7 +185,28 @@ struct StreamAudioDecode {
   // a planar/packed pair of the same underlying format record identically
   // per D-02.
   std::string sample_format_packed;
+  // 06-15-PLAN.md (CR-01): the DECODED output rate -- the first decoded
+  // frame's own `sample_rate`, never `codecpar`'s declared rate. Before
+  // this plan, this field was seeded directly from `codecpar.sample_rate`
+  // at `ensure_initialized()`, which
+  // .planning/debug/audio-sweep-rate-truncation.md proved correct only
+  // because `avformat_find_stream_info` had already decoded a frame and
+  // written the real rate back into codecpar -- an undocumented,
+  // load-bearing external invariant (CR-01's own "correct by accident"
+  // finding). Every sink below (`block_samples`, the loudness sink, the
+  // silence/dropout window lengths) is configured from THIS value, never
+  // from `declared_sample_rate`. Falls back to `declared_sample_rate` only
+  // when the first decoded frame itself reports a non-positive rate (never
+  // observed in this project's corpus). 0 when no frame ever decoded.
   std::int64_t sample_rate = 0;
+  // codecpar's own rate as seen at `ensure_initialized()` -- diagnostic
+  // only, never used to configure anything, and no analyzer serializes
+  // it. Compare against `sample_rate` above to see whether the container
+  // header's declared rate agreed with what the decoder actually emitted;
+  // `tests/unit/test_audio_decode.cpp`'s CR-01 test is the one real
+  // corpus stream where the two disagree (`audio_sbr_implicit.mp4`,
+  // opened before `avformat_find_stream_info` has corrected codecpar).
+  std::int64_t declared_sample_rate = 0;
   std::int64_t channels = 0;
   // av_channel_layout_describe()'s own rendered string -- AVChannelLayout
   // only, never the legacy uint64_t channel_layout mask (this project's
@@ -505,6 +536,16 @@ class AudioDecodeState {
   // stream that had attempted() true.
   StreamAudioDecode finalize();
 
+  // 06-15-PLAN.md (CR-02): a test seam, mirroring
+  // src/analyzers/container/meta.cpp's own `detail::sanitize_utf8_for_test`
+  // naming precedent -- feeds one hand-built AVFrame directly to
+  // consume_frame() with no real decode behind it. Production code reaches
+  // consume_frame() only through feed_packet()/finalize(); this exists
+  // solely so tests/unit/test_audio_decode.cpp can construct the exact
+  // per-frame mismatch shapes CR-02 covers (a mid-stream channel/format/
+  // rate/layout change) that no real corpus fixture reproduces.
+  void consume_frame_for_test(const AVFrame& frame);
+
  private:
   struct BlockAccumulator;
 
@@ -540,7 +581,18 @@ class AudioDecodeState {
   std::string flags_recorded_;
   std::string path_signature_;
   std::string sample_format_packed_;
+  // 06-15-PLAN.md (CR-02): the same packed-equivalent format identity
+  // (`av_get_alt_sample_fmt`'s own resolved AVSampleFormat, as an int) the
+  // lazy-init block already derives for `sample_format_packed_` above --
+  // recorded separately here because `consume_frame`'s own per-frame
+  // re-validation needs to compare a LATER frame's resolved format
+  // against it without re-deriving the string. -1 (no format resolves to
+  // a negative AVSampleFormat) until the first frame is consumed.
+  int configured_packed_format_ = -1;
   std::int64_t sample_rate_ = 0;
+  // 06-15-PLAN.md (CR-01): codecpar's own rate, recorded once at
+  // ensure_initialized() -- mirrors StreamAudioDecode::declared_sample_rate.
+  std::int64_t declared_sample_rate_ = 0;
   std::int64_t channels_ = 0;
   std::string layout_string_;
   std::int64_t block_samples_ = 0;

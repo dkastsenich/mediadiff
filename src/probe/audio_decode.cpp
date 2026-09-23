@@ -501,7 +501,9 @@ AudioDecodeState::AudioDecodeState(AudioDecodeState&& other) noexcept
       flags_recorded_(std::move(other.flags_recorded_)),
       path_signature_(std::move(other.path_signature_)),
       sample_format_packed_(std::move(other.sample_format_packed_)),
+      configured_packed_format_(other.configured_packed_format_),
       sample_rate_(other.sample_rate_),
+      declared_sample_rate_(other.declared_sample_rate_),
       channels_(other.channels_),
       layout_string_(std::move(other.layout_string_)),
       block_samples_(other.block_samples_),
@@ -557,7 +559,9 @@ AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept
   flags_recorded_ = std::move(other.flags_recorded_);
   path_signature_ = std::move(other.path_signature_);
   sample_format_packed_ = std::move(other.sample_format_packed_);
+  configured_packed_format_ = other.configured_packed_format_;
   sample_rate_ = other.sample_rate_;
+  declared_sample_rate_ = other.declared_sample_rate_;
   channels_ = other.channels_;
   layout_string_ = std::move(other.layout_string_);
   block_samples_ = other.block_samples_;
@@ -680,7 +684,13 @@ bool AudioDecodeState::ensure_initialized(const AVCodecParameters& codecpar, std
   }
 
   decoder_name_ = decoder->name != nullptr ? decoder->name : "";
-  sample_rate_ = codecpar.sample_rate > 0 ? static_cast<std::int64_t>(codecpar.sample_rate) : 0;
+  // 06-15-PLAN.md (CR-01): recorded for diagnostics only -- `sample_rate_`
+  // itself is no longer seeded here. It stays 0 until consume_frame()'s
+  // own lazy-init block resolves it from the first DECODED frame, which
+  // is the sweep's actual configuring value (see audio_decode.h's own doc
+  // comment on StreamAudioDecode::sample_rate for why codecpar's rate
+  // cannot be trusted at this point).
+  declared_sample_rate_ = codecpar.sample_rate > 0 ? static_cast<std::int64_t>(codecpar.sample_rate) : 0;
   // 06-05-PLAN.md (D-06, T-06-15): CLASSIFICATION is derived from the
   // decoder's own recorded NAME through the single normative table,
   // regardless of which of the three selection paths above chose it --
@@ -715,10 +725,17 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
     const AVSampleFormat name_fmt = packed_fmt != AV_SAMPLE_FMT_NONE ? packed_fmt : native_fmt;
     const char* fmt_name = av_get_sample_fmt_name(name_fmt);
     sample_format_packed_ = fmt_name != nullptr ? fmt_name : "unknown";
+    configured_packed_format_ = static_cast<int>(name_fmt);
     channels_ = channels;
-    if (sample_rate_ <= 0) {
-      sample_rate_ = frame.sample_rate > 0 ? static_cast<std::int64_t>(frame.sample_rate) : 0;
-    }
+    // 06-15-PLAN.md (CR-01): the sweep's configuring rate is the DECODED
+    // frame's own rate, not codecpar's declared one -- codecpar is right
+    // only after find_stream_info's own internal decode has already
+    // corrected it (.planning/debug/audio-sweep-rate-truncation.md, Phase
+    // 2 question (b): a real stream, audio_sbr_implicit.mp4, measurably
+    // diverges 44100 -> 88200 across that call). Falls back to
+    // declared_sample_rate_ only when the frame itself reports a
+    // non-positive rate.
+    sample_rate_ = frame.sample_rate > 0 ? static_cast<std::int64_t>(frame.sample_rate) : declared_sample_rate_;
     block_samples_ = std::max<std::int64_t>(1, sample_rate_ > 0 ? sample_rate_ / kAudioBlockDivisor : 1);
     block_stride_bytes_ =
         block_samples_ * static_cast<std::int64_t>(channels_) * static_cast<std::int64_t>(bytes_per_sample);
@@ -1064,6 +1081,7 @@ StreamAudioDecode AudioDecodeState::finalize() {
   result.path_signature = path_signature_;
   result.sample_format_packed = sample_format_packed_;
   result.sample_rate = sample_rate_;
+  result.declared_sample_rate = declared_sample_rate_;
   result.channels = channels_;
   result.layout_string = layout_string_;
   result.block_samples = block_samples_;
