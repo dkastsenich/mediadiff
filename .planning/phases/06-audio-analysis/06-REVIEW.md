@@ -153,6 +153,8 @@ sample_rate_ = decoded_rate;            // the rate every sink/window/ms-convers
 
 If `StreamAudioDecode::sample_rate` is also consumed as "the declared rate" anywhere, split it into two fields (`declared_sample_rate` / `decoded_sample_rate`) rather than overloading one. Also add `rate=` to `normalization` from the *decoded* rate so the hash precondition stops claiming a rate the blocks were not cut at.
 
+> **Resolution (06-15, 2026-09-23):** Closed. `ensure_initialized`'s sink configuration now derives from the first DECODED frame's rate (`StreamAudioDecode::sample_rate`), never `codecpar`'s declared rate, which is kept separately as `declared_sample_rate` (diagnostic-only). Commits `258df55` (feat), `ef9cae9` (docs). Regression test: `tests/unit/test_audio_decode.cpp#audio_decode - the sweep is configured from the decoded frame's rate even when codecpar declares a different one (CR-01)`. Observed RED (pre-fix, transcribed from 06-15-SUMMARY.md): `sample_rate` read `44100`/`block_samples` read `4410` (the declared, undoubled rate) against the oracle's independently-decoded `88200` on `audio_sbr_implicit.mp4`. A CR-01 residual (a stream whose first packets fail inside `avformat_find_stream_info` but decode later, not constructible with real media) is tracked open at `WINDOWS.md` #40.
+
 ---
 
 ### CR-02: No mid-stream format/channel re-validation — `LoudnessSink::feed` reads past the end of `interleave_scratch_`
@@ -188,6 +190,8 @@ if (!sample_format_packed_.empty()) {
 ```
 
 Record `recorded_packed_fmt_` (an `AVSampleFormat`) alongside `sample_format_packed_` at lazy-init time.
+
+> **Resolution (06-15, 2026-09-23):** Closed. Every decoded frame is now validated against the first frame's recorded channel count, sample format, sample rate and channel layout, in that fixed check order; a mismatch latches and the sweep feeds nothing further to any sink (closing the T-06-49 heap-over-read). Commits `d4c1a05` (feat), `ef9cae9` (docs). Regression tests: `tests/unit/test_audio_decode.cpp#audio_decode - a mid-stream channel count change stops the sweep` and its format/rate/layout/tiebreak/D-02-planar-packed/post-latch-no-op siblings. Observed RED (pre-fix, transcribed from 06-15-SUMMARY.md): `total_samples` read `2048`/`loudness_measured` read `true` on a mismatched second frame — the sink kept measuring past the configuration change instead of stopping.
 
 ---
 
@@ -230,6 +234,8 @@ case Ebur128Feed::float_fmt: {
 
 and use `std::abs` on the already-clamped value (which can no longer be `INT64_MIN`). Note the same clamp is needed before `feed()` hands raw float bytes to libebur128, which will happily propagate `NaN` into the loudness accumulator.
 
+> **Resolution (06-16, 2026-09-23):** Closed. `normalize_amplitude_q15`'s float/double arms now return 0 for a non-finite input and clamp the scaled value to `[-32768, 32768]` before `std::llround`, closing the UB triple (llround(NaN)/llround(inf), negation of INT64_MIN, signed-square overflow). Commits `f424194` (feat), `4973b51` (docs). Regression tests: `tests/unit/test_audio_decode.cpp#audio_decode - a non-finite float sample stops level measurement but the hash stays full, end to end (CR-03)` and four sibling boundary/control cases. Observed RED (transcribed from 06-16-SUMMARY.md): `normalize_amplitude_q15_for_sample_fmt(AV_SAMPLE_FMT_FLT, 2.0f)` returned `65536` before the fix (twice the correct clamped `32768`); `NaN`/`+inf`/`1e300` all returned `INT64_MIN` (`-9223372036854775808`); the end-to-end NaN-WAV test reported `level_measurement_stopped == false` with both `loudness_measured`/`silence_measured == true` (the hostile sample reached libebur128 unguarded).
+
 ---
 
 ### CR-04: The `-1.0 dBTP` ceiling escalation has no deadband — a 0.001 dB change hard-fails despite a 0.3 dB tolerance
@@ -262,6 +268,8 @@ const bool ceiling_crossed_upward =
 
 (If the asymmetric rule must also fire on an in-tolerance delta, then the emitting analyzer must widen the band: classify `"above"` only at `>= kCeilingMilli + kCeilingDeadbandMilli` and `"under"` only at `< kCeilingMilli - kCeilingDeadbandMilli`, reporting a third `"at"` state in between that never escalates.)
 
+> **Resolution (06-17, 2026-09-23):** Closed. The `-1.0 dBTP` ceiling escalation now requires a material crossing (>= a 0.010 dB deadband) before escalating to `Status::fail`; a sub-deadband crossing keeps its ordinary tolerance verdict with a message suffix naming the deadband, while a crossing comfortably inside the declared 0.3 dB tolerance still fails (SC3). Commits `70f57c1` (feat), `25d0299` (docs). Regression tests: `tests/unit/test_tolerance.cpp#compare_tol ceiling escalation: a rise below the 0.010 dB deadband does not escalate on the real audio.loudness.true_peak check (CR-04)` and its exactly-at-deadband/SC3-in-tolerance/reverse-transition siblings, run against the REAL `audio.loudness.true_peak` `CheckDef`. Observed RED (transcribed from 06-17-SUMMARY.md): both a 1 milli-dB and a 9 milli-dB rise reported `fail` with "asymmetric ceiling crossing" before the fix.
+
 ---
 
 ### CR-05: `audio.profile`'s compared value can flip to `(sbr: unknown)` because of a wall-clock timeout
@@ -283,6 +291,8 @@ Secondary, same function: the comment at `demux_session.cpp:850-861` claims that
 
 For the secondary issue, gate the `profile_is_he_aac` branch on the rate evidence too, or record `implicit_probe_rate_hz_` from the header pass so `effective_sample_rate_hz` never falls back to a rate that may be undoubled.
 
+> **Resolution (06-18, 2026-09-23):** Closed. A fallback-probe container-open failure (including a zero-wall-clock-budget timeout) now propagates as a hard `Error` out of `DemuxSession::open`, never rendered as `audio.profile`'s `(sbr: unknown)` value; the probe's post-open interrupt budget is unconditionally disarmed and its reads bounded solely by the existing `kMaxSbrProbeContainerPacketsScanned` packet-count limit. Secondary issue also closed: every `implicit_decoded` resolution now carries decode-observed rate evidence, including the header-pass branch that previously resolved purely on `profile` with no rate check. Commits `8cfda8f` (feat, Task 1), `5fde258` (feat, Task 2), `b422953` (docs, Task 3). Regression tests: `tests/unit/test_audio_config.cpp#audio_config - resolve_sbr_signaling: a probe Error propagates unchanged as this function's own Error, not as SbrSignaling::unknown (CR-05)` and `#audio_config - the real probe under a zero wall-clock budget returns a timeout Error, never a value (CR-05)` (the second against the REAL probe on `audio_sbr_implicit.mp4`). RED was not captured mechanically for this fix (06-18-SUMMARY.md's own Deviations/TDD Gate Compliance note records this as a process, not correctness, deviation); the observed pre-fix defect is the non-determinism CR-05 itself names: the same file could report `"LC (sbr: implicit)"` on one run and `"LC (sbr: unknown)"` on the next under host scheduling pressure.
+
 ---
 
 ## Warnings
@@ -303,6 +313,8 @@ SilenceDetectorState silence_;   // implicitly moved, cannot be forgotten
 ```
 
 and add a static check that the class remains trivially movable except for `codec_ctx_`/`loudness_sink_`.
+
+> **Deferred (06-14):** Latent: `packet_scan.cpp` value-initializes in place and nothing moves a live state. 06-14, 06-15 and 06-16 add their own members to both move bodies (asserted by grep) but do not touch these two.
 
 ---
 
@@ -342,6 +354,8 @@ A baseline and candidate that hit the limit at different byte offsets produce di
 
 Two truncated sides then compare (both `"truncated"`), and a truncated-vs-full pair degrades to `hash_incomparable` instead of a false `fail`.
 
+> **Resolution (06-14, 2026-09-23):** Closed. `sampling_state` now reads `decode.decode_truncated ? "truncated" : "full"` instead of the hardcoded `"full"`; a truncated-vs-full or truncated-vs-truncated `content.audio.sample_hash` pair degrades to `skipped:hash_incomparable` instead of a fabricated content verdict. Commits `d3c5285` (feat, Task 1), `1d23ea0` (feat, Task 2), `5a53dfd` (docs, Task 3). Regression test: `tests/unit/test_audio_decode.cpp#audio_decode - a truncated-vs-full sample_hash pair compares skipped:hash_incomparable, never a fabricated verdict` (plus the two-independently-truncated-chains sibling). Observed RED (transcribed from 06-14-SUMMARY.md): `CHECK(finding.status == Status::skipped)` reported `3 == 4` (`Status::fail` vs `Status::skipped`) and `CHECK(finding.skip_reason == SkipReason::hash_incomparable)` reported `0 == 5` (`SkipReason::none` vs `SkipReason::hash_incomparable`) — the pair compared a real content fail ("digests differ") instead of the required skip.
+
 ---
 
 ### WR-03: The decode DoS bound counts send errors only, and is off by one from its own constant
@@ -368,6 +382,8 @@ Separately, the check is `consecutive_errors_ > kMaxAudioDecodeErrorsPerStream` 
 
 **Fix:** increment `consecutive_errors_` in the receive-error arm too, and use `>=` to match the constant's name.
 
+> **Resolution (06-16, 2026-09-23) — substantive half only:** `avcodec_receive_frame` failures now count toward the same `ConsecutiveDecodeErrorBound` a `avcodec_send_packet` failure already did, closing the unbounded-receive-failure half this finding names. The claimed off-by-one stays withdrawn (per the 2026-09-22 correction above): `consecutive_errors_ > kMaxAudioDecodeErrorsPerStream` still trips on the 65th consecutive error, matching the header's own documented wording — no `>=` change was made. Commits `422565a` (feat), `4973b51` (docs). Regression tests: `tests/unit/test_audio_decode.cpp#audio_decode - ConsecutiveDecodeErrorBound: 64 errors leave exhausted false, the 65th sets it true (WR-03)` and its record_success/real-decoder/mixed-arm siblings. Observed RED (transcribed from 06-16-SUMMARY.md): a mixed run (one real receive-frame failure, then 64 further one-byte send-failure packets) reported `decode_truncated == false` before the fix — only the 64 send-side errors counted toward `consecutive_errors_`, so the run needed a 65th SEND failure to trip the bound rather than the receive failure already incurred.
+
 ---
 
 ### WR-04: `fixed_precision` round-trips a double through `std::stod` — uncaught exception and locale dependence
@@ -388,6 +404,8 @@ double fixed_precision(double value) { return std::round(value * 1000.0) / 1000.
 
 (or keep the fmt string and emit it as a JSON *string* if the intent is display precision rather than a numeric value).
 
+> **Deferred (06-14):** Locale and exception hazard in evidence formatting only. No gap-3 truth depends on it.
+
 ---
 
 ### WR-05: `decode_path_class` evidence is computed from two different sources in two analyzers
@@ -397,6 +415,8 @@ double fixed_precision(double value) { return std::round(value * 1000.0) / 1000.
 `sample_hash.cpp` builds the class-2 signature by calling `compose_decode_path_signature()` *live*, at analyzer time; `loudness.cpp` reads `decode.path_signature`, recorded at decode time. They agree today only because both run in the same process. `decode_path_class` is a `kPreconditionKeys` entry (`hash.cpp:152`), so a divergence between the two silently becomes a `hash_incomparable` skip that nobody can explain.
 
 **Fix:** `sample_hash.cpp` should use `decode.path_signature` — the value `StreamAudioDecode` already carries for exactly this purpose — and `compose_decode_path_signature()` should have exactly one call site (`AudioDecodeState::ensure_initialized`).
+
+> **Deferred (06-14):** Diagnostic evidence that changes no verdict (true_peak doc). No gap-3 truth depends on it.
 
 ---
 
@@ -409,6 +429,8 @@ double fixed_precision(double value) { return std::round(value * 1000.0) / 1000.
 A snapshot taken with `--hash-decoder default` compared against a live probe under the default `auto` will report `meta.decode_errors` differences as a real regression at `severity = fail`.
 
 **Fix:** record the resolved `hash_decoder` in the snapshot envelope and either (a) extend the precondition mechanism to these checks, or (b) reject a compare whose envelope `hash_decoder` disagrees with the current invocation, with an actionable message.
+
+> **Deferred (06-14):** Needs an envelope-level precondition design, a separate contract change beyond gap 3. 06-14-PLAN.md's flagged assumption A2 records the interaction (meta.decode_errors stays unchanged and honest; the stop is surfaced by sample_hash and the four level checks instead).
 
 ---
 
@@ -438,6 +460,8 @@ result.prefers_declared = reconstruction_succeeded;   // never true for the cont
 
 and keep the container-field fallback available only under `prefers_declared == false`.
 
+> **Resolution (06-19, 2026-09-23):** Closed. `span_ticks_for_basis`'s `prefers_declared` is now derived from the reconstruction OUTCOME (a raw span existed, both priming/padding tick counts were known, both checked subtractions stayed in range, and the trimmed result was strictly positive), never from mere input availability. A side whose reconstruction fails can no longer advertise `span_basis: "adjusted"` over an untrimmed container-field fallback. Commits `e08469e` (test, RED), `296674c` (feat, GREEN), `c050ccd` (docs). Regression tests: `tests/unit/test_av_sync.cpp#av_sync - span_ticks_for_basis does not prefer the adjusted basis when the reconstruction underflows to a non-positive span (WR-07)` and three boundary/precision siblings (trimmed==0, trimmed==1, checked_sub overflow). Observed RED (from `e08469e`'s own commit message, transcribed): the pre-existing underflow-to-fallback test's `REQUIRE(result.prefers_declared)` was flipped to `REQUIRE_FALSE`, and all four new/flipped assertions failed against the pre-fix implementation, which derived `prefers_declared` from input availability rather than reconstruction success. `WINDOWS.md` #32 gained a dated note recording this fix; the underlying MPEG-TS priming-unknown residual stays open, unaffected by it.
+
 ---
 
 ### WR-08: `audio.priming`'s compared value depends on which *other* analyzers ran, and aliases bmff/ebml track index to AVStream index
@@ -449,6 +473,8 @@ and keep the container-field fallback available only under `prefers_declared == 
 Second issue: `results.bmff->tracks[stream_index]` indexes a `trak`-order array with an `AVStream` index. The comment asserts these coincide "by construction of libavformat's own trak-encounter-order stream creation", but libavformat skips traks it cannot map to a stream (unsupported handler types, malformed `stsd`), which shifts the alignment and would attribute another track's edit list to this audio stream — a wrong priming value, not a skip.
 
 **Fix:** declare `Pass::bmff_scan` / `Pass::ebml_scan` in `audio_priming_analyzer()`'s `PassSet` so the value is pass-independent, and match tracks by an explicit track-id/stream-id key captured at scan time rather than by positional index (or record the owning `AVStream` index on `BmffTrack`/`EbmlTrack` during the scan).
+
+> **Deferred (06-14):** Same pass-independence class as CR-05, but a different mechanism: opportunistic bmff/ebml reads. 06-18's CR-05 tests are probe-determinism tests (an Error channel and a zero wall-clock budget); they assert nothing about analyzer-set independence, so they would NOT catch WR-08.
 
 ---
 
@@ -475,6 +501,8 @@ Second issue: `results.bmff->tracks[stream_index]` indexes a `trak`-order array 
 
 **Fix:** rename `StreamAudioDecode::sample_rate` to `decoded_sample_rate` and document that it is never the declared rate. Add an integration test asserting that, for `audio_sbr_implicit.mp4`, `audio.silence.*` span endpoints match the same fixture decoded to WAV.
 
+> **Resolution (06-18, 2026-09-23) — comment-only, per this finding's own scope:** `stream_params.cpp`'s stale `emit_sample_rate` comment is corrected: the compared value is `codecpar->sample_rate` after `avformat_find_stream_info`, which for AAC already decodes and writes the doubled output rate back — true for BOTH SBR fixtures (`audio_sbr_implicit.mp4` 44100->88200; `audio_sbr_explicit.mp4` 22050->44100), not an "undoubled base rate" as the comment previously claimed (the same stale premise this finding's own 2026-09-22 correction above already flags). This finding's own proposed Fix (renaming `StreamAudioDecode::sample_rate` to `decoded_sample_rate`) is explicitly NOT implemented — 06-15's declared/decoded split already subsumes the naming concern, per 06-18-SUMMARY.md's own scope note. Commit `b422953` (docs). No dedicated regression test: this is a comment correction with no observable behavior change, so there is no RED/GREEN pair to transcribe.
+
 ---
 
 ### WR-10: `-HUGE_VAL` true peak is clamped onto a plausible real value
@@ -488,6 +516,8 @@ Second issue: `results.bmff->tracks[stream_index]` indexes a `trak`-order array 
 ```cpp
 result.true_peak_is_silent = !std::isfinite(true_peak);   // rendered as "silent" in the value, like loudness_below_floor
 ```
+
+> **Deferred (06-14):** Sentinel collision on the digitally silent readout. 06-16's CR-03 guards input samples, not this readout, and no gap-3 truth depends on it.
 
 ---
 
@@ -505,6 +535,8 @@ const bool content_enabled = !opt_flag(no_content_flag);
 Behaviourally equivalent today, but it means a future change to the shared contract (a third flag, a config-file fallback, a different error text) silently applies to three of the four commands. The duplicated error string is already a near-miss: the shared resolver returns `ErrorKind::usage` mapped through `exit_code_for`, while this path hardcodes `kExitUsage`.
 
 **Fix:** replace the inline block with `resolve_content_enabled(ContentArgs{content_flag, no_content_flag}, ContentCommandDefault::decode_by_default)` and the standard `report_cli_error` / `exit_code_for` error path.
+
+> **Deferred (06-14):** CLI refactor with no behavior defect named in gap 3.
 
 ---
 
@@ -526,6 +558,8 @@ bool hash_decoder_name_is_audio(std::string_view name) {
 
 and reject a non-audio name with a usage error naming the decoder's actual type.
 
+> **Deferred (06-14):** Input-validation hardening outside gap 3. A non-audio decoder name fails to open and falls back per D-07.
+
 ---
 
 ### WR-13: `block_digests` is serialized unconditionally — snapshots and `--json` reports grow without bound
@@ -536,6 +570,8 @@ and reject a non-audio name with a usage error naming the decoder's actual type.
 
 **Fix:** cap the emitted per-block array (e.g. emit at most N digests plus a count, or emit block digests only under `-v`/an explicit flag), and cap `divergent_ranges` the way other evidence arrays in this codebase are capped. The `chain_digest` alone is sufficient for the pass/fail decision; the per-block array is a locator.
 
+> **Deferred (06-14):** Size and storage policy (D-04's accepted budget). Not a correctness gap.
+
 ---
 
 ### WR-14: `audio_stream_params` skips on the *global* `partial` flag while every sibling audio analyzer uses the per-stream flag
@@ -545,6 +581,8 @@ and reject a non-audio name with a usage error naming the decoder's actual type.
 `run_audio_stream_params` reads `packet_scan.partial` (whole-file) while the four decode-consuming analyzers read `packet_scan.per_stream[i].partial`. On a multi-stream file where only the *video* stream hit the per-stream packet ceiling, `audio.codec` / `audio.channels` / `audio.layout` all skip as `partial_scan` even though the audio stream was scanned completely — and these six values come from `codecpar` after the header pass, where a truncated *packet* scan is irrelevant to begin with.
 
 **Fix:** use `packet_scan.per_stream[i].partial` for consistency, or drop the gate entirely for the header-pass-derived values (the analyzer does not read the packet array at all).
+
+> **Deferred (06-14):** Separate skip-granularity inconsistency. No gap-3 truth depends on it.
 
 ---
 
@@ -562,6 +600,8 @@ Both copies are inside the `start`/`end` bracket and have no counterpart in `run
 The committed `PERF_BASELINE.txt` numbers for `audio_full_instructions` are therefore inflated by a workload proportional to packet count, and the ratchet is gating against a figure that does not describe the shipped code path.
 
 **Fix:** `results.packet_scan = std::move(outputs->packets); results.audio_decode = std::move(outputs->audio_decode);` and re-baseline the ledger with a note in `PERF_BASELINE.txt` explaining the one-time step change.
+
+> **Deferred (06-14):** Harness accuracy only. The instruction ratchet baseline already includes the copy consistently.
 
 ---
 
@@ -586,14 +626,16 @@ if [ $(( (measured - baseline_value) * 100 )) -gt $(( baseline_value * PERF_RATC
 
 and apply the mirrored form to the improvement branch.
 
+> **Deferred (06-14):** Harness precision. Recorded as the PERF-04 boundary/precision flagged edges (06-14-PLAN.md edge-probe items #17/#18).
+
 ---
 
 ### Additional notes (folded, no separate finding)
 
-- `scripts/gen_corpus.sh` truncates the committed golden (`: > "$AUDIO_EBUR128_REFERENCE"`) before any fixture is generated; an `ffmpeg` failure part-way through leaves a truncated `tests/golden/AUDIO_EBUR128_REFERENCE.txt` in the working tree. Write to a temp file and `mv` into place on success (the `write_atomic` discipline `tools/gen_he_aac.py:604-618` already uses).
-- `scripts/measure_audio_perf.sh` creates `SELF_TEST_DIR` via `mktemp -d` with no `trap`, so the directory leaks if any self-test assertion fires before the explicit `rm -rf`.
-- `src/probe/audio_decode.cpp:207-225` type-puns via `reinterpret_cast<const int16_t*>` etc. on `std::vector<std::uint8_t>` storage. Alignment happens to hold (vector storage is max-aligned, offsets are sample-width multiples), but it is strict-aliasing UB; `std::memcpy` into a local of the target type is the portable form and compiles to the same instruction.
-- `src/compare/hash.cpp:106` computes `stride` from whichever side is positive and silently uses `0` when both are; `sample_range` then reports `[0, 0)` for every block. A `stride <= 0` guard that omits `sample_range` entirely would be more honest.
+- `scripts/gen_corpus.sh` truncates the committed golden (`: > "$AUDIO_EBUR128_REFERENCE"`) before any fixture is generated; an `ffmpeg` failure part-way through leaves a truncated `tests/golden/AUDIO_EBUR128_REFERENCE.txt` in the working tree. Write to a temp file and `mv` into place on success (the `write_atomic` discipline `tools/gen_he_aac.py:604-618` already uses). **Deferred (06-14):** Script robustness. 06-20's pre-flight checks `git diff -- tests/golden/` after every `gen_corpus.sh` run, which catches the failure mode.
+- `scripts/measure_audio_perf.sh` creates `SELF_TEST_DIR` via `mktemp -d` with no `trap`, so the directory leaks if any self-test assertion fires before the explicit `rm -rf`. **Deferred (06-14):** Temp-dir leak on self-test failure only.
+- `src/probe/audio_decode.cpp:207-225` type-puns via `reinterpret_cast<const int16_t*>` etc. on `std::vector<std::uint8_t>` storage. Alignment happens to hold (vector storage is max-aligned, offsets are sample-width multiples), but it is strict-aliasing UB; `std::memcpy` into a local of the target type is the portable form and compiles to the same instruction. **Deferred (06-14):** Strict-aliasing form. Alignment holds as the note states. 06-16 changes only the float/double arms' range handling and keeps the read form.
+- `src/compare/hash.cpp:106` computes `stride` from whichever side is positive and silently uses `0` when both are; `sample_range` then reports `[0, 0)` for every block. A `stride <= 0` guard that omits `sample_range` entirely would be more honest. **Deferred (06-14):** Evidence cosmetics on a degenerate rate. 06-14's own hash.cpp change (the truncated-sampling rule) sits before that code and leaves it as found.
 
 ---
 
