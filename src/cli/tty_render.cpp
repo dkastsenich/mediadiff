@@ -355,7 +355,7 @@ std::string render_tty(const ReportModel& model, const CheckRegistry& registry, 
       // report/json.cpp's finding_to_json / report/junit.cpp's
       // baseline_candidate_detail -- a finding whose id the registry does
       // not know renders with Unit::none (no `ms` key).
-      const auto check_idx = registry.find(finding.id);
+      const auto check_idx = registry.find(finding.id);  // control-bytes-allow: lookup key, not rendered
       const Unit finding_unit = check_idx ? registry.at(*check_idx).unit : Unit::none;
       out += render_finding_row(finding, finding_unit, color, terminal_width);
       if (is_gating(finding.severity)) {
