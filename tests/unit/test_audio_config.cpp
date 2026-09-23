@@ -29,10 +29,12 @@
 
 #include "core/error.h"
 #include "probe/audio_config.h"
+#include "probe/audio_decode.h"
 #include "probe/demux_session.h"
 #include "support/fixture_paths.h"
 #include "util/expected.h"
 
+using mediadiff::AudioDecodeResult;
 using mediadiff::AudioObjectType;
 using mediadiff::AudioSpecificConfig;
 using mediadiff::DemuxOptions;
@@ -43,9 +45,11 @@ using mediadiff::HeaderPassSbrEvidence;
 using mediadiff::implicit_sbr_is_possible;
 using mediadiff::parse_audio_specific_config;
 using mediadiff::resolve_sbr_signaling;
+using mediadiff::run_audio_decode;
 using mediadiff::SbrProbeDecodeResult;
 using mediadiff::SbrResolution;
 using mediadiff::SbrSignaling;
+using mediadiff::StreamAudioDecode;
 using mediadiff::StreamInfo;
 
 // 06-18-PLAN.md (CR-05): a small RAII guard that restores
@@ -247,6 +251,9 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a top-level AOT_SBR ASC resolve
   const auto result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
   REQUIRE(result.has_value());
   REQUIRE(result->signaling == SbrSignaling::explicit_asc);
+  // 06-18-PLAN.md (CR-05 secondary): explicit_asc never carries
+  // decode_observed_rate_hz -- it is decided with no decode at all.
+  REQUIRE(result->decode_observed_rate_hz == 0);
   REQUIRE(probe.calls == 0);
 }
 
@@ -289,6 +296,35 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header 
   const auto result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
   REQUIRE(result.has_value());
   REQUIRE(result->signaling == SbrSignaling::implicit_decoded);
+  // 06-18-PLAN.md (CR-05 secondary): decode_observed_rate_hz is the
+  // header pass's own decode-observed rate (88200 here), never 0 and
+  // never re-derived by doubling.
+  REQUIRE(result->decode_observed_rate_hz == 88200);
+  REQUIRE(probe.calls == 0);
+}
+
+// 06-18-PLAN.md (CR-05 secondary): the HE-profile branch resolves purely on
+// `profile`, with NO rate check -- this test pins that it carries the
+// OBSERVED rate even when that rate is NOT doubled relative to the ASC's
+// declared core (44100 in, 44100 observed), rather than ever fabricating a
+// doubled value.
+TEST_CASE("audio_config - resolve_sbr_signaling: an HE-profile header resolution carries the observed rate even "
+          "when it is NOT doubled relative to the ASC's declared core (CR-05 secondary)",
+          "[unit]") {
+  const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
+  REQUIRE(asc.has_value());
+  REQUIRE(asc->sampling_frequency_hz == 44100);
+
+  CountingProbe probe;
+  HeaderPassSbrEvidence header;
+  header.profile_resolved = true;
+  header.profile_is_he_aac = true;
+  header.resolved_sample_rate_hz = 44100;  // NOT doubled relative to the core
+
+  const auto result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::implicit_decoded);
+  REQUIRE(result->decode_observed_rate_hz == 44100);
   REQUIRE(probe.calls == 0);
 }
 
@@ -308,6 +344,7 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header 
   const auto result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
   REQUIRE(result.has_value());
   REQUIRE(result->signaling == SbrSignaling::implicit_decoded);
+  REQUIRE(result->decode_observed_rate_hz == 88200);
   REQUIRE(probe.calls == 0);
 }
 
@@ -328,6 +365,9 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header 
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_lc(44100), probe.fn());
   REQUIRE(result.has_value());
   REQUIRE(result->signaling == SbrSignaling::none);
+  // 06-18-PLAN.md (CR-05 secondary): `none` never carries a
+  // decode_observed_rate_hz.
+  REQUIRE(result->decode_observed_rate_hz == 0);
   REQUIRE(probe.calls == 0);
 }
 
@@ -381,6 +421,9 @@ TEST_CASE("audio_config - resolve_sbr_signaling: with NO header-pass profile, a 
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
   REQUIRE(result.has_value());
   REQUIRE(result->signaling == SbrSignaling::implicit_decoded);
+  // 06-18-PLAN.md (CR-05 secondary): the fallback's own directly-observed
+  // decoded rate, unchanged behavior from before this plan.
+  REQUIRE(result->decode_observed_rate_hz == 88200);
   REQUIRE(probe.calls == 1);
 }
 
@@ -522,6 +565,9 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a missing ASC AND no header-pas
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, header_resolved_nothing(), probe.fn());
   REQUIRE(result.has_value());
   REQUIRE(result->signaling == SbrSignaling::unknown);
+  // 06-18-PLAN.md (CR-05 secondary): `unknown` never carries a
+  // decode_observed_rate_hz.
+  REQUIRE(result->decode_observed_rate_hz == 0);
   REQUIRE(probe.calls == 0);
 }
 
@@ -658,4 +704,60 @@ TEST_CASE("audio_config - a video stream (video_base.mp4) resolves sbr_signaling
   const StreamInfo info = session->stream_info(0);
   REQUIRE(info.sbr_signaling == SbrSignaling::none);
   REQUIRE(info.effective_sample_rate_hz == 0);
+}
+
+// ===========================================================================
+// 06-18-PLAN.md Task 2: cross-pass invariant (the plan's own
+// assumption_delta_decision companion test) -- StreamInfo::
+// effective_sample_rate_hz must equal the decode sweep's own
+// StreamAudioDecode::sample_rate (06-15-PLAN.md's DECODED rate) on every
+// AAC fixture in this corpus. Pins that no D-12 resolution branch can ever
+// again report a rate the decoder did not actually emit.
+// ===========================================================================
+
+namespace {
+int find_audio_stream_index(const DemuxSession& session) {
+  for (int i = 0; i < session.stream_count(); ++i) {
+    if (session.stream_info(i).media_type == mediadiff::StreamMediaType::audio) {
+      return i;
+    }
+  }
+  return -1;
+}
+}  // namespace
+
+TEST_CASE("audio_config - effective_sample_rate_hz equals the decode sweep's decoded rate on every AAC fixture "
+          "(cross-pass invariant)",
+          "[unit]") {
+  const std::vector<std::string> aac_fixtures = {
+      "audio_sbr_implicit.mp4",
+      "audio_sbr_explicit.mp4",
+      "audio_aac_handwritten.mp4",
+      "audio_hash_base.mp4",
+  };
+  for (const auto& name : aac_fixtures) {
+    INFO("fixture: " << name);
+    auto session = DemuxSession::open(fixture(name), DemuxOptions{});
+    REQUIRE(session.has_value());
+    const int audio_index = find_audio_stream_index(*session);
+    REQUIRE(audio_index >= 0);
+    const StreamInfo info = session->stream_info(audio_index);
+
+    auto decode_result = run_audio_decode(*session);
+    REQUIRE(decode_result.has_value());
+    REQUIRE(static_cast<std::size_t>(audio_index) < decode_result->per_stream.size());
+    const StreamAudioDecode& decode = decode_result->per_stream[static_cast<std::size_t>(audio_index)];
+    REQUIRE(decode.attempted);
+
+    REQUIRE(info.effective_sample_rate_hz == decode.sample_rate);
+  }
+
+  // The implicit fixture's own value is independently known (88200,
+  // per this plan's own must_have) -- pinned directly, not merely via the
+  // cross-pass equality above.
+  auto implicit_session = DemuxSession::open(fixture("audio_sbr_implicit.mp4"), DemuxOptions{});
+  REQUIRE(implicit_session.has_value());
+  const int implicit_index = find_audio_stream_index(*implicit_session);
+  REQUIRE(implicit_index >= 0);
+  REQUIRE(implicit_session->stream_info(implicit_index).effective_sample_rate_hz == 88200);
 }

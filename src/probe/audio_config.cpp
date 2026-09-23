@@ -268,16 +268,27 @@ mediadiff::expected<SbrResolution, Error> resolve_sbr_signaling(bool codec_id_is
   // (D-12's pass-independence requirement).
   if (header.profile_resolved) {
     if (header.profile_is_he_aac) {
-      // 06-18-PLAN.md (CR-05 secondary, Task 2 extends this branch's own
-      // decode_observed_rate_hz -- see this file's own Task-2 commit).
-      return SbrResolution{SbrSignaling::implicit_decoded, 0};
+      // 06-18-PLAN.md (CR-05 secondary): decode_observed_rate_hz is
+      // header.resolved_sample_rate_hz -- find_stream_info's own decoded
+      // codecpar rate, i.e. genuinely decode-observed, never a formulaic
+      // doubling. This branch resolves purely on `profile`, with NO rate
+      // check at all, so before this plan it silently left the cache at 0
+      // and StreamInfo::effective_sample_rate_hz fell back to assuming
+      // `codecpar->sample_rate` was already doubled "by construction" --
+      // true for the doubled-rate branch below, but never actually checked
+      // here (06-REVIEW.md CR-05 secondary).
+      const std::int64_t decode_observed_rate_hz = header.resolved_sample_rate_hz;
+      return SbrResolution{SbrSignaling::implicit_decoded, decode_observed_rate_hz};
     }
     if (asc.has_value() && asc->sampling_frequency_hz > 0 &&
         header.resolved_sample_rate_hz == asc->sampling_frequency_hz * 2) {
       // The demuxer's declared core rate was doubled by the decoder --
       // D-12's own literal test ("a doubled sample rate under an
-      // LC-declared ASC identifies implicit SBR").
-      return SbrResolution{SbrSignaling::implicit_decoded, 0};
+      // LC-declared ASC identifies implicit SBR"). decode_observed_rate_hz
+      // is that same decode-observed codecpar rate (06-18-PLAN.md, CR-05
+      // secondary).
+      const std::int64_t decode_observed_rate_hz = header.resolved_sample_rate_hz;
+      return SbrResolution{SbrSignaling::implicit_decoded, decode_observed_rate_hz};
     }
     // A resolved, non-HE profile at the undoubled declared rate is a
     // POSITIVE determination that this stream carries no SBR -- the
@@ -320,7 +331,10 @@ mediadiff::expected<SbrResolution, Error> resolve_sbr_signaling(bool codec_id_is
   const bool doubled_rate =
       probe->declared_sample_rate_hz > 0 && probe->decoded_sample_rate_hz == probe->declared_sample_rate_hz * 2;
   if (doubled_rate || probe->he_profile) {
-    return SbrResolution{SbrSignaling::implicit_decoded, probe->decoded_sample_rate_hz};
+    // decode_observed_rate_hz is the fallback probe's own directly-observed
+    // decoded rate -- unchanged from before this plan (06-18-PLAN.md).
+    const std::int64_t decode_observed_rate_hz = probe->decoded_sample_rate_hz;
+    return SbrResolution{SbrSignaling::implicit_decoded, decode_observed_rate_hz};
   }
   return SbrResolution{SbrSignaling::none, 0};
 }

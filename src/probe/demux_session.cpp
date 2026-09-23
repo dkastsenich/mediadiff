@@ -523,7 +523,7 @@ DemuxSession::DemuxSession(DemuxSession&& other) noexcept
       reprobed_container_duration_ticks_(other.reprobed_container_duration_ticks_),
       reprobed_stream_duration_ticks_(std::move(other.reprobed_stream_duration_ticks_)),
       sbr_signaling_(std::move(other.sbr_signaling_)),
-      implicit_probe_rate_hz_(std::move(other.implicit_probe_rate_hz_)) {
+      decode_observed_rate_hz_(std::move(other.decode_observed_rate_hz_)) {
   other.ctx_ = nullptr;
 }
 
@@ -540,7 +540,7 @@ DemuxSession& DemuxSession::operator=(DemuxSession&& other) noexcept {
     reprobed_container_duration_ticks_ = other.reprobed_container_duration_ticks_;
     reprobed_stream_duration_ticks_ = std::move(other.reprobed_stream_duration_ticks_);
     sbr_signaling_ = std::move(other.sbr_signaling_);
-    implicit_probe_rate_hz_ = std::move(other.implicit_probe_rate_hz_);
+    decode_observed_rate_hz_ = std::move(other.decode_observed_rate_hz_);
     other.ctx_ = nullptr;
   }
   return *this;
@@ -905,33 +905,37 @@ StreamInfo DemuxSession::stream_info(int index) const {
     }
   }
 
-  // 06-04-PLAN.md (AUDIO-03, D-12): effective (SBR-decoded) rate. NOT a
-  // formulaic doubling -- confirmed empirically (audio_sbr_implicit.mp4,
-  // this project's own hand-written fixture) that
-  // `avformat_find_stream_info()`'s own internal probing can ALREADY
-  // resolve the doubled rate into `codecpar->sample_rate` for a short
-  // enough stream (both WITH and WITHOUT `--content`, since this happens
-  // during the header pass itself, before any decode-pass distinction
-  // exists) -- doubling an already-doubled value would fabricate a false,
-  // quadrupled rate, exactly the P0 class this project exists to prevent.
-  // For an `implicit_decoded` stream that D-12's FALLBACK probe resolved,
-  // this reads that probe's OWN directly-observed decoded rate
-  // (implicit_probe_rate_hz_, cached by compute_sbr_signaling) instead,
-  // which is correct whether or not `codecpar` already reflects the
-  // doubling. 06-13-PLAN.md: a stream resolved by D-12's PRIMARY
-  // header-pass mechanism leaves that cache at 0 and keeps
-  // `codecpar->sample_rate` -- which, for that path, is the doubled rate
-  // BY CONSTRUCTION, since noticing the doubling is how the primary
-  // mechanism identified implicit SBR in the first place. For `explicit_asc`,
-  // `codecpar->sample_rate` is set to the ALREADY-DOUBLED
+  // 06-04-PLAN.md (AUDIO-03, D-12) / 06-18-PLAN.md (CR-05 secondary):
+  // effective (SBR-decoded) rate. NOT a formulaic doubling -- for EVERY
+  // `implicit_decoded` resolution, whichever D-12 step resolved it, this
+  // reads that step's own directly decode-observed rate
+  // (decode_observed_rate_hz_, cached by compute_sbr_signaling from
+  // SbrResolution::decode_observed_rate_hz -- see that member's own doc
+  // comment in demux_session.h). Before 06-18, only the bounded FALLBACK
+  // probe populated that cache; a stream resolved by D-12's PRIMARY
+  // header-pass mechanism left it at 0 and this fell back to
+  // `codecpar->sample_rate` instead, relying on it already being the
+  // doubled rate "by construction" -- true empirically
+  // (audio_sbr_implicit.mp4, this project's own hand-written fixture,
+  // where `avformat_find_stream_info()`'s own internal probing ALREADY
+  // resolves the doubled rate into `codecpar->sample_rate`) for the
+  // doubled-rate branch, since noticing the doubling is literally how that
+  // branch identifies implicit SBR -- but the HE-profile branch resolves
+  // purely on `profile`, with NO rate check, so it never actually verified
+  // the doubling it was implicitly claiming (06-REVIEW.md CR-05
+  // secondary). Every branch now records what it actually observed, so
+  // this field is never a formula, on any path, for any resolution.
+  // Doubling an already-doubled value would fabricate a false, quadrupled
+  // rate, exactly the P0 class this project exists to prevent. For
+  // `explicit_asc`, `codecpar->sample_rate` is set to the ALREADY-DOUBLED
   // `ext_sample_rate` directly by the MP4 demuxer (06-RESEARCH.md Q4,
   // isom.c), so it is used unchanged.
   const std::int64_t core_rate = info.sample_rate.value_or(0);
   std::int64_t effective_rate = core_rate;
   if (info.sbr_signaling == SbrSignaling::implicit_decoded &&
-      static_cast<std::size_t>(index) < implicit_probe_rate_hz_.size() &&
-      implicit_probe_rate_hz_[static_cast<std::size_t>(index)] > 0) {
-    effective_rate = implicit_probe_rate_hz_[static_cast<std::size_t>(index)];
+      static_cast<std::size_t>(index) < decode_observed_rate_hz_.size() &&
+      decode_observed_rate_hz_[static_cast<std::size_t>(index)] > 0) {
+    effective_rate = decode_observed_rate_hz_[static_cast<std::size_t>(index)];
   }
   info.effective_sample_rate_hz = effective_rate;
 
@@ -963,12 +967,12 @@ StreamInfo DemuxSession::stream_info(int index) const {
 // downgraded to SbrSignaling::unknown for that stream.
 mediadiff::expected<void, Error> DemuxSession::compute_sbr_signaling(const std::string& utf8_path) {
   sbr_signaling_.clear();
-  implicit_probe_rate_hz_.clear();
+  decode_observed_rate_hz_.clear();
   if (ctx_ == nullptr) {
     return {};
   }
   sbr_signaling_.reserve(ctx_->nb_streams);
-  implicit_probe_rate_hz_.reserve(ctx_->nb_streams);
+  decode_observed_rate_hz_.reserve(ctx_->nb_streams);
   for (unsigned i = 0; i < ctx_->nb_streams; ++i) {
     const AVCodecParameters* codecpar = ctx_->streams[i]->codecpar;
     const bool is_aac = codecpar->codec_type == AVMEDIA_TYPE_AUDIO && codecpar->codec_id == AV_CODEC_ID_AAC;
@@ -1010,7 +1014,7 @@ mediadiff::expected<void, Error> DemuxSession::compute_sbr_signaling(const std::
       return mediadiff::unexpected(resolution.error());
     }
     sbr_signaling_.push_back(resolution->signaling);
-    implicit_probe_rate_hz_.push_back(resolution->decode_observed_rate_hz);
+    decode_observed_rate_hz_.push_back(resolution->decode_observed_rate_hz);
   }
   return {};
 }
