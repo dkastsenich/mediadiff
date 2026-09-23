@@ -462,7 +462,7 @@ Plans:
   4. `content.audio.sample_hash` locates the first divergent sample by index and time; the same file hashed via `aac_fixed` on two different builds compares equal; and a float-decoder hash across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail — with decoder name, class, flags and path signature recorded per hashed stream.
   5. Loudness, silence detection and hashing share a single decode sweep per track, and an audio sweep of the 10-minute reference stereo AAC file completes in under 4 s.
 
-**Plans**: 13/13 plans executed in 13 waves (sequential — nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, so no two plans share a wave)
+**Plans**: 20 plans. 06-01..06-13 were executed in 13 waves. 06-14..06-20 are gap-closure plans (VERIFICATION.md gap 3 plus 06-13's pending CI confirmation) in 7 further waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, and the gap plans share one working tree, one build directory and `src/probe/audio_decode.*`, so no two plans share a wave.
 
 Plans:
 **Wave 1**
@@ -516,6 +516,34 @@ Plans:
 **Wave 13** *(blocked on Wave 12)*
 
 - [x] 06-13-PLAN.md — Designated-leg round trip: transcribe the digest and perf baseline from the real run, and close D-06's cross-architecture claim on an arm64 measurement — confirmed or demoted (AUDIO-09, TRUST-01, PERF-04)
+
+**Wave 14** *(gap closure; blocked on Wave 13)*
+
+- [ ] 06-14-PLAN.md — WR-02: a decode stopped by the error limit is labelled `truncated` and degrades to `skipped:hash_incomparable`; level checks skip `partial_scan` with the stop reason; the single stop-reason vocabulary; the deferred review findings (AUDIO-08, TRUST-02)
+
+**Wave 15** *(blocked on Wave 14)*
+
+- [ ] 06-15-PLAN.md — CR-01: sinks configured from the decoded frame's rate, proven in-process on the real divergent codecpar state. CR-02: every frame re-validated against the recorded configuration, so no mismatched shape reaches a sink (AUDIO-08, AUDIO-10)
+
+**Wave 16** *(blocked on Wave 15)*
+
+- [ ] 06-16-PLAN.md — CR-03: non-finite or out-of-range float PCM stops level measurement and normalize is bounded. WR-03: receive-side failures count toward the consecutive bound. Plus a corpus differential and the audio ratchet (AUDIO-05, AUDIO-07)
+
+**Wave 17** *(blocked on Wave 16)*
+
+- [ ] 06-17-PLAN.md — CR-04: a 0.010 dB rise deadband on the -1.0 dBTP escalation, with SC3's in-tolerance material crossing still failing (AUDIO-06)
+
+**Wave 18** *(blocked on Wave 17)*
+
+- [ ] 06-18-PLAN.md — CR-05: `audio.profile` never depends on host timing (a deterministic probe; open failure is an Error), decode-observed rate evidence for every implicit_decoded resolution, and WR-09's stale comment corrected (AUDIO-03)
+
+**Wave 19** *(blocked on Wave 18)*
+
+- [ ] 06-19-PLAN.md — WR-07: `span_basis` "adjusted" only when the trim was actually reconstructed; the amended SC2 assertions re-run unchanged (AUDIO-04)
+
+**Wave 20** *(blocked on Wave 19)*
+
+- [ ] 06-20-PLAN.md — Final designated-leg CI round trip behind a human-approved push, folding in 06-13's pending confirmation (PERF-04, AUDIO-09, TRUST-01)
 
 **Source doc**: `claude_docs/05-audio-analysis.md` (design-doc phase 5)
 
