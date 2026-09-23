@@ -31,10 +31,12 @@ video, or too few usable checkpoints).
 string compare, never routed through the tolerance comparator), so it
 never itself swaps bases at compare time -- but the span the K=32
 checkpoints are spread across is measured on the trimmed
-(priming-/padding-excluded) basis whenever this audio stream's own
-priming AND padding are both known and convertible, and on the
-packet-derived raw extent otherwise (`span_basis` in `timeline.av_drift`'s
-own shared evidence). Because the trajectory itself -- and therefore the
+(priming-/padding-excluded) basis only when it was actually reconstructed
+from the packet-derived extent (this audio stream's own priming AND
+padding tick counts both known, both subtractions in range, result
+strictly positive -- WR-07, 06-19-PLAN.md), and on the packet-derived raw
+extent otherwise (`span_basis` in `timeline.av_drift`'s own shared
+evidence). Because the trajectory itself -- and therefore the
 residual and rate this classification is derived from -- comes from
 whichever basis this stream actually used, two files whose priming/padding
 knowledge differs can classify differently even with identical real
