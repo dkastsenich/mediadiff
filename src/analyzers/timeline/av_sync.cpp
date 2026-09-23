@@ -333,17 +333,27 @@ std::optional<std::int64_t> priming_samples_to_ticks(std::int64_t samples, std::
 // decision this file's two call sites (video, audio) now share instead of
 // duplicating.
 //
-// Reconstruction (the "adjusted"/trimmed candidate): only attempted when
-// BOTH tick counts are known -- subtract each from the packet-derived raw
-// span, in order, via checked arithmetic. A non-positive or overflowing
-// result is treated as "reconstruction unavailable", falling through to
-// the container-field branch below rather than reporting a fabricated
-// non-positive span.
+// Reconstruction (the "adjusted"/trimmed candidate): only attempted when a
+// raw span exists AND both tick counts are known -- subtract each from the
+// packet-derived raw span, in order, via checked arithmetic. A non-positive
+// or overflowing result is treated as "reconstruction unavailable", falling
+// through to the container-field branch below rather than reporting a
+// fabricated non-positive span. `prefers_declared` (WR-07, 06-REVIEW.md,
+// 06-19-PLAN.md) is set from THIS OUTCOME, never from mere input
+// availability: a raw span must actually exist, both tick counts must be
+// known, both checked subtractions must stay in range, and the trimmed
+// result must be strictly positive. Only then does the caller learn the
+// "adjusted" basis was really measured. A side whose reconstruction fails
+// for any of those four reasons falls back to the container's declared
+// field below and NEVER advertises `prefers_declared == true` for it --
+// advertising it anyway is exactly the WR-07 defect: `span_basis:
+// "adjusted"` reported over a span that was, in truth, never trimmed.
 //
 // Fallback (the ONLY branch video ever reaches, since its caller always
 // supplies `std::nullopt` for both tick arguments): the container's own
 // `declared_duration_ticks` field, when positive -- exactly this file's
-// pre-D-16 selection for both video and (priming-unaware) audio callers.
+// pre-D-16 selection for both video and (priming-unaware) audio callers,
+// and also what a failed reconstruction on an audio stream falls back to.
 SpanBasisCandidates span_ticks_for_basis(std::optional<std::int64_t> declared_duration_ticks, const PtsSpan& pts_span,
                                           std::optional<std::int64_t> priming_ticks,
                                           std::optional<std::int64_t> padding_ticks) {
@@ -352,17 +362,18 @@ SpanBasisCandidates span_ticks_for_basis(std::optional<std::int64_t> declared_du
     result.has_raw_span = true;
     result.raw_span_ticks = pts_span.span_ticks;
   }
-  result.prefers_declared = priming_ticks.has_value() && padding_ticks.has_value();
-  if (result.prefers_declared && result.has_raw_span) {
-    std::int64_t trimmed = result.raw_span_ticks;
-    const bool reconstruction_ok =
-        checked_sub(trimmed, *priming_ticks, &trimmed) && checked_sub(trimmed, *padding_ticks, &trimmed);
-    if (reconstruction_ok && trimmed > 0) {
-      result.has_declared_span = true;
-      result.declared_span_ticks = trimmed;
-    }
+  bool reconstruction_ok = false;
+  std::int64_t trimmed = 0;
+  if (result.has_raw_span && priming_ticks.has_value() && padding_ticks.has_value()) {
+    trimmed = result.raw_span_ticks;
+    reconstruction_ok = checked_sub(trimmed, *priming_ticks, &trimmed) &&
+                         checked_sub(trimmed, *padding_ticks, &trimmed) && trimmed > 0;
   }
-  if (!result.has_declared_span && declared_duration_ticks.has_value() && *declared_duration_ticks > 0) {
+  result.prefers_declared = reconstruction_ok;
+  if (reconstruction_ok) {
+    result.has_declared_span = true;
+    result.declared_span_ticks = trimmed;
+  } else if (declared_duration_ticks.has_value() && *declared_duration_ticks > 0) {
     result.has_declared_span = true;
     result.declared_span_ticks = *declared_duration_ticks;
   }
@@ -1003,9 +1014,12 @@ void run_timeline_av_sync(const ProbeResults& results, Fingerprint& fp) {
                    nlohmann::ordered_json{{"reason", "insufficient_audio_frames"}}, fp);
       } else {
         // D-16: ONE shared basis decision (from the audio call's own
-        // `prefers_declared`, which is true only when THIS stream's
-        // priming AND padding are both known and convertible), applied
-        // symmetrically to select both the video-side and the audio-side
+        // `prefers_declared`, which is true only when THIS audio stream's
+        // trimmed span was actually reconstructed -- WR-07, 06-19-PLAN.md:
+        // a raw span existed, priming and padding were both known, both
+        // checked subtractions stayed in range, and the result was
+        // strictly positive), applied symmetrically to select both the
+        // video-side and the audio-side
         // span -- never decided per-side, which would let video and audio
         // (or, across a pair, baseline and candidate) disagree about which
         // basis a single measurement reports. `span_for_basis` falls back

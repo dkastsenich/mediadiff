@@ -772,16 +772,24 @@ PtsSpan sorted_pts_with_span(std::span<const PacketRecord> packets);
 // timebase, into a video-timebase subtraction would silently mix units).
 //
 // Returns BOTH candidate spans -- it never itself picks one -- plus THIS
-// CALL's own preference for the trimmed ("adjusted") basis: true only
-// when BOTH `priming_ticks` and `padding_ticks` were supplied, i.e. this
-// stream's own priming AND padding are both known and convertible. The
-// caller reads this preference from the AUDIO call alone and applies that
-// SAME shared decision to both the audio-side span AND the video-side
-// span (D-16's own "measured raw ... applied symmetrically" requirement)
-// -- one boolean, shared, decided once from the audio stream's own
-// priming knowledge, never decided per-stream independently, which would
-// let video and audio disagree about which basis a SINGLE measurement is
-// reporting.
+// CALL's own preference for the trimmed ("adjusted") basis. WR-07
+// (06-REVIEW.md, 06-19-PLAN.md): `prefers_declared` is true only when the
+// trimmed span was ACTUALLY RECONSTRUCTED, which requires all four of:
+// (1) a raw (packet-derived) span exists, (2) both `priming_ticks` and
+// `padding_ticks` carry a value, (3) both checked subtractions (raw minus
+// priming, then minus padding) stayed in range, and (4) the resulting
+// trimmed value is strictly positive. It is NOT true merely because
+// `priming_ticks`/`padding_ticks` carry a value -- a side whose
+// reconstruction fails for any of those four reasons falls back to the
+// container's own declared-duration field and reports `prefers_declared
+// == false` for that fallback, never claiming the "adjusted" basis over a
+// span that was never actually trimmed. The caller reads this preference
+// from the AUDIO call alone and applies that SAME shared decision to both
+// the audio-side span AND the video-side span (D-16's own "measured raw
+// ... applied symmetrically" requirement) -- one boolean, shared, decided
+// once from the audio stream's own reconstruction outcome, never decided
+// per-stream independently, which would let video and audio disagree
+// about which basis a SINGLE measurement is reporting.
 struct SpanBasisCandidates {
   bool has_declared_span = false;
   std::int64_t declared_span_ticks = 0;
