@@ -18,6 +18,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -306,15 +307,24 @@ Fingerprint run_content_audio_sample_hash(const ScanBundle& bundle) {
 // Locates the content.audio.sample_hash finding at Scope::Kind::audio
 // among `findings` -- REQUIREs exactly one, since this file's own
 // audio_pcm_base.wav fixture carries exactly one audio stream.
+//
+// Shaped like tests/unit/test_report_model.cpp's own block_for() helper
+// (06-20-PLAN.md Task 1, Fix A): a single conditional assertion and one
+// reachable exit, so there is nothing left afterward for either toolchain
+// to complain about. An unconditional throwing Catch2 failure call
+// followed by a fall-through return is a genuine toolchain-parity
+// conflict -- the statements that keep GCC/Clang quiet about a missing
+// return (-Wreturn-type) are exactly the statements MSVC's flow analysis
+// proves unreachable after such a call throws, and rejects under /W4 /WX
+// (C4702 -> C2220). scripts/lint_dead_code_after_fail.sh scans the rest of
+// the test tree for the same shape.
 const Finding& find_sample_hash_finding(const std::vector<Finding>& findings) {
-  for (const Finding& f : findings) {
-    if (f.id == "content.audio.sample_hash" && f.scope.kind == Scope::Kind::audio) {
-      return f;
-    }
-  }
-  FAIL("content.audio.sample_hash finding not found");
-  static const Finding fallback{};
-  return fallback;
+  const auto it = std::find_if(findings.begin(), findings.end(), [](const Finding& f) {
+    return f.id == "content.audio.sample_hash" && f.scope.kind == Scope::Kind::audio;
+  });
+  INFO("content.audio.sample_hash finding not found");
+  REQUIRE(it != findings.end());
+  return *it;
 }
 
 // 06-14-PLAN.md Task 2: mirrors test_audio_stream_params.cpp's own `find()`
