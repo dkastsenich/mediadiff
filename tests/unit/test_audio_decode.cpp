@@ -213,6 +213,61 @@ StreamAudioDecode drive_error_limit_decode(const std::string& path, int garbage_
   return state.finalize();
 }
 
+// 06-16-PLAN.md Task 2 (WR-03, flagged_assumption A2): builds the ONE real
+// packet shape that makes avcodec_receive_frame ITSELF fail --
+// libavcodec/pcm.c truncates a packet to whole sample frames and returns
+// the truncated size (lines 430-445, 620-625); libavcodec/decode.c keeps
+// the unconsumed remainder (lines 495-499), and the NEXT receive call
+// decodes it and fails because it is shorter than one frame. `n` =
+// channels * bytes_per_sample (one whole sample frame); the packet is the
+// first `n` bytes of the stream's OWN first real packet (never synthetic
+// silence, so the one decoded sample is real audio) plus one extra zero
+// byte. Feeds this ONE packet on a fresh state, then `garbage_packet_count`
+// further one-byte (0xff) packets -- each of THOSE fails immediately at
+// avcodec_send_packet (mirrors drive_error_limit_decode's own established
+// behavior), reproducing the MIXED send/receive-failure run
+// flagged_assumption A3 requires (a receive-ONLY run cannot be built from
+// outside libavcodec, since send decodes eagerly, decode.c 733-736).
+StreamAudioDecode drive_receive_arm_decode(const std::string& path, int garbage_packet_count) {
+  auto session = DemuxSession::open(path, DemuxOptions{});
+  REQUIRE(session.has_value());
+  AVFormatContext* ctx = session->native_context();
+  REQUIRE(ctx != nullptr);
+
+  int audio_stream_index = -1;
+  for (unsigned int i = 0; i < ctx->nb_streams; ++i) {
+    if (ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+      audio_stream_index = static_cast<int>(i);
+      break;
+    }
+  }
+  REQUIRE(audio_stream_index >= 0);
+  const AVCodecParameters& codecpar = *ctx->streams[audio_stream_index]->codecpar;
+  REQUIRE(av_get_bits_per_sample(codecpar.codec_id) >= 16);
+
+  const std::vector<std::vector<std::uint8_t>> packets = read_stream_packets(*ctx, audio_stream_index);
+  REQUIRE(!packets.empty());
+  const int bytes_per_sample = av_get_bytes_per_sample(static_cast<AVSampleFormat>(codecpar.format));
+  REQUIRE(bytes_per_sample > 0);
+  const int n = codecpar.ch_layout.nb_channels * bytes_per_sample;
+  REQUIRE(static_cast<int>(packets[0].size()) >= n);
+
+  std::vector<std::uint8_t> first_packet(packets[0].begin(), packets[0].begin() + n);
+  first_packet.push_back(0);  // one extra byte -- shorter than one whole sample frame.
+
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(codecpar, "auto"));
+  REQUIRE(state.attempted());
+
+  state.feed_packet(first_packet.data(), static_cast<int>(first_packet.size()));
+
+  const std::uint8_t garbage_byte = 0xff;
+  for (int i = 0; i < garbage_packet_count; ++i) {
+    state.feed_packet(&garbage_byte, 1);
+  }
+  return state.finalize();
+}
+
 // 06-14-PLAN.md Task 1: the scan_with_decode/run_analyzer pattern from
 // tests/unit/test_decode_path_record.cpp, copied file-local per this
 // project's established per-file-duplication convention (that file's own
@@ -1278,4 +1333,85 @@ TEST_CASE("audio_decode - a clean float tone does not stop level measurement (CR
   CHECK(stream->level_measurement_stop_reason.empty());
   CHECK(stream->loudness_measured);
   CHECK(stream->silence_measured);
+}
+
+// 06-16-PLAN.md Task 2 (WR-03): ConsecutiveDecodeErrorBound's own seam
+// tests, no decode needed -- pins the `>` comparison (never `>=`) and the
+// record_success()/exhausted-latch behavior directly.
+TEST_CASE("audio_decode - ConsecutiveDecodeErrorBound: 64 errors leave exhausted false, the 65th sets it true "
+          "(WR-03)",
+          "[unit]") {
+  mediadiff::detail::ConsecutiveDecodeErrorBound bound;
+  for (int i = 0; i < 64; ++i) {
+    CHECK(!bound.record_error());
+  }
+  CHECK(!bound.exhausted);
+  CHECK(bound.record_error());
+  CHECK(bound.exhausted);
+}
+
+TEST_CASE("audio_decode - ConsecutiveDecodeErrorBound: record_success resets the run, but not once exhausted "
+          "(WR-03)",
+          "[unit]") {
+  mediadiff::detail::ConsecutiveDecodeErrorBound bound;
+  for (int i = 0; i < 64; ++i) {
+    bound.record_error();
+  }
+  CHECK(!bound.exhausted);
+  bound.record_success();
+  CHECK(bound.consecutive == 0);
+  CHECK(!bound.exhausted);
+  for (int i = 0; i < 64; ++i) {
+    CHECK(!bound.record_error());
+  }
+  CHECK(!bound.exhausted);
+  CHECK(bound.record_error());
+  CHECK(bound.exhausted);
+
+  // Once exhausted, record_success() resets the counter but never
+  // un-latches `exhausted` -- mirrors latch_decode_truncation's own
+  // first-reason-wins, never-un-set rule.
+  bound.record_success();
+  CHECK(bound.consecutive == 0);
+  CHECK(bound.exhausted);
+}
+
+// 06-16-PLAN.md Task 2 (WR-03, flagged_assumption A2): the guard this
+// task's own action text requires -- on a FRESH state, the one packet
+// drive_receive_arm_decode builds (one whole sample frame plus one extra
+// byte) yields exactly one decoded sample and then one
+// avcodec_receive_frame failure, against the real linked FFmpeg 8.1.
+TEST_CASE("audio_decode - a real pcm packet with one trailing extra byte decodes one sample then fails at "
+          "avcodec_receive_frame (WR-03 guard)",
+          "[unit]") {
+  const StreamAudioDecode result = drive_receive_arm_decode(audio_pcm_base_wav(), /*garbage_packet_count=*/0);
+  REQUIRE(result.decode_error_count == 1);
+  REQUIRE(result.total_samples == 1);
+  REQUIRE(result.first_error_reason.rfind("avcodec_receive_frame", 0) == 0);
+}
+
+// 06-16-PLAN.md Task 2 (WR-03): the mixed run -- one receive failure
+// (drive_receive_arm_decode's own single packet) followed by 64 one-byte
+// send-failure packets is 65 CONSECUTIVE errors, tripping the bound.
+// Before this fix, the receive failure was never counted at all, so this
+// exact 64-garbage-packet run left consecutive_errors_ at only 64 (all
+// send) and never truncated -- the RED this task's own SUMMARY records.
+TEST_CASE("audio_decode - receive-side failures count toward the consecutive-error bound: 64 further send "
+          "failures trip it (WR-03)",
+          "[unit]") {
+  const StreamAudioDecode result = drive_receive_arm_decode(audio_pcm_base_wav(), /*garbage_packet_count=*/64);
+  CHECK(result.decode_truncated);
+  CHECK(result.decode_truncation_reason == std::string(kDecodeStopConsecutiveErrorLimit));
+  CHECK(result.decode_error_count == 65);
+}
+
+// 06-16-PLAN.md Task 2 (WR-03): the boundary's other side -- 63 further
+// send failures is only 64 consecutive errors (the receive failure plus
+// 63), which does NOT trip the bound (`>`, never `>=`).
+TEST_CASE("audio_decode - receive-side failures count toward the consecutive-error bound: 63 further send "
+          "failures do not (WR-03)",
+          "[unit]") {
+  const StreamAudioDecode result = drive_receive_arm_decode(audio_pcm_base_wav(), /*garbage_packet_count=*/63);
+  CHECK(!result.decode_truncated);
+  CHECK(result.decode_error_count == 64);
 }

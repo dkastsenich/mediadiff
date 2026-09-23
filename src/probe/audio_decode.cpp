@@ -36,12 +36,6 @@ namespace mediadiff {
 
 namespace {
 
-// T-06-01's own DoS mitigation: after this many consecutive decode
-// errors on one stream, feed_packet stops handing further packets to the
-// decoder for that stream -- a crafted, endlessly-erroring stream cannot
-// force an unbounded amount of decode work.
-constexpr int kMaxAudioDecodeErrorsPerStream = 64;
-
 std::string render_xxh3_128(std::uint64_t high64, std::uint64_t low64) { return fmt::format("{:016x}{:016x}", high64, low64); }
 
 std::string digest_bytes(const void* data, std::size_t size) {
@@ -529,8 +523,7 @@ AudioDecodeState::AudioDecodeState(AudioDecodeState&& other) noexcept
     : codec_ctx_(other.codec_ctx_),
       attempted_init_(other.attempted_init_),
       attempted_(other.attempted_),
-      consecutive_error_limit_hit_(other.consecutive_error_limit_hit_),
-      consecutive_errors_(other.consecutive_errors_),
+      error_bound_(other.error_bound_),
       decode_error_count_(other.decode_error_count_),
       first_error_reason_(std::move(other.first_error_reason_)),
       decode_truncation_reason_(std::move(other.decode_truncation_reason_)),
@@ -587,8 +580,7 @@ AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept
   codec_ctx_ = other.codec_ctx_;
   attempted_init_ = other.attempted_init_;
   attempted_ = other.attempted_;
-  consecutive_error_limit_hit_ = other.consecutive_error_limit_hit_;
-  consecutive_errors_ = other.consecutive_errors_;
+  error_bound_ = other.error_bound_;
   decode_error_count_ = other.decode_error_count_;
   first_error_reason_ = std::move(other.first_error_reason_);
   decode_truncation_reason_ = std::move(other.decode_truncation_reason_);
@@ -1083,10 +1075,11 @@ void AudioDecodeState::digest_full_blocks() {
 }
 
 void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
-  // 06-15-PLAN.md (CR-02): the decoder is not fed after any stop --
-  // consecutive_error_limit_hit_ (06-14) or a CR-02 per-frame mismatch --
-  // exactly the same "stop feeding" behavior for both stop classes.
-  if (!attempted_ || consecutive_error_limit_hit_ || codec_ctx_ == nullptr || !decode_truncation_reason_.empty()) {
+  // 06-15-PLAN.md (CR-02) / 06-16-PLAN.md (WR-03): the decoder is not fed
+  // after any stop -- error_bound_.exhausted (06-14, now latched by EITHER
+  // a send or a receive failure) or a CR-02 per-frame mismatch -- exactly
+  // the same "stop feeding" behavior for both stop classes.
+  if (!attempted_ || error_bound_.exhausted || codec_ctx_ == nullptr || !decode_truncation_reason_.empty()) {
     return;
   }
 
@@ -1109,7 +1102,6 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
   av_packet_free(&pkt);
   if (send_rc < 0 && send_rc != AVERROR(EAGAIN)) {
     ++decode_error_count_;
-    ++consecutive_errors_;
     record_first_error(&first_error_reason_, "avcodec_send_packet", send_rc);
     // 06-10-PLAN.md (D-09): `undecodable` is NEVER decided here -- it is
     // derived once, at finalize(), from the FINAL total_samples_/
@@ -1118,8 +1110,10 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
     // this stream turns out undecodable: a stream that already decoded
     // real samples before hitting this limit is not undecodable, even
     // though it stops here.
-    if (consecutive_errors_ > kMaxAudioDecodeErrorsPerStream) {
-      consecutive_error_limit_hit_ = true;
+    //
+    // 06-16-PLAN.md (WR-03): routed through the shared error_bound_ seam --
+    // the receive-error arm below now goes through the SAME bound.
+    if (error_bound_.record_error()) {
       latch_decode_truncation(kDecodeStopConsecutiveErrorLimit);
     }
     return;
@@ -1141,9 +1135,17 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
     if (recv_rc < 0) {
       ++decode_error_count_;
       record_first_error(&first_error_reason_, "avcodec_receive_frame", recv_rc);
+      // 06-16-PLAN.md (WR-03): before this plan, a receive-side failure
+      // never reached the consecutive-error bound at all -- only the
+      // send-error arm above did. An interleaved success/receive-failure
+      // pattern (T-06-54) could therefore decode forever without ever
+      // tripping it. Now both arms share the SAME error_bound_.
+      if (error_bound_.record_error()) {
+        latch_decode_truncation(kDecodeStopConsecutiveErrorLimit);
+      }
       break;
     }
-    consecutive_errors_ = 0;
+    error_bound_.record_success();
     consume_frame(*frame);
     av_frame_unref(frame);
   }

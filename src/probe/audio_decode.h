@@ -109,6 +109,16 @@ inline constexpr std::int64_t kDropoutRmsWindowMs = 100;
 inline constexpr double kDropoutThresholdDbfs = -70.0;
 inline constexpr std::int64_t kDropoutMinSpanMs = 150;
 
+// T-06-01's own DoS mitigation: after this many consecutive decode errors
+// on one stream, feed_packet stops handing further packets to the decoder
+// for that stream -- a crafted, endlessly-erroring stream cannot force an
+// unbounded amount of decode work. 06-16-PLAN.md (WR-03): moved here from
+// an anonymous-namespace constant in audio_decode.cpp so
+// detail::ConsecutiveDecodeErrorBound below can default its own `limit`
+// member from it, and so this header's own feed_packet doc comment can
+// name it directly.
+inline constexpr int kMaxAudioDecodeErrorsPerStream = 64;
+
 // 06-14-PLAN.md (WR-02, TRUST-02, D-09): the single list of decode-stop
 // tokens `StreamAudioDecode::decode_truncation_reason` /
 // `level_measurement_stop_reason` ever carry. The "Decode stop reasons"
@@ -493,6 +503,45 @@ namespace detail {
 // this header never names libebur128's own `ebur128_state` type.
 struct LoudnessSink;
 
+// 06-16-PLAN.md (WR-03): T-06-01's own consecutive-decode-error DoS bound,
+// extracted into its own unit-testable seam -- before this plan, only
+// avcodec_send_packet failures were counted toward it
+// (StreamAudioDecode::feed_packet's send-error arm), so an interleaved
+// success/avcodec_receive_frame-failure pattern could decode forever
+// without ever tripping the bound (T-06-54). Both the send and receive
+// error arms now go through the SAME `record_error()`/`record_success()`
+// pair. The comparison stays `>` (never `>=`) against `limit` -- 64
+// consecutive errors do not trip it, the 65th does -- per 06-REVIEW.md's
+// own withdrawn off-by-one correction: the header's "refuses to decode
+// past kMaxAudioDecodeErrorsPerStream consecutive errors" wording already
+// meant "past", i.e. strictly more than, the named limit.
+struct ConsecutiveDecodeErrorBound {
+  int limit = kMaxAudioDecodeErrorsPerStream;
+  int consecutive = 0;
+  bool exhausted = false;
+
+  // Call on every recoverable decode error (send or receive). Returns
+  // `exhausted` so the caller can latch a truncation reason the FIRST time
+  // this returns true -- a later call while already exhausted still
+  // returns true, but feed_packet's own early-return guard means no
+  // caller reaches this again after that first latch in practice.
+  bool record_error() {
+    ++consecutive;
+    if (consecutive > limit) {
+      exhausted = true;
+    }
+    return exhausted;
+  }
+
+  // Call on every successfully decoded frame. Resets the CONSECUTIVE run
+  // (a later error starts counting from zero again) but deliberately never
+  // clears `exhausted` -- once latched, a stream that hit the bound stays
+  // latched for the rest of its own sweep (mirrors
+  // AudioDecodeState::latch_decode_truncation's own first-reason-wins,
+  // never-un-set rule).
+  void record_success() { consecutive = 0; }
+};
+
 // One stream's own decode lifetime, fused into probe/packet_scan.cpp's
 // existing av_read_frame loop exactly as probe/parser_scan.h's
 // StreamParserState is -- lazily opens a decoder on the first packet,
@@ -556,12 +605,15 @@ class AudioDecodeState {
   // otherwise recovered from (D-09) -- never thrown, never surfaced as a
   // libav error crossing the src/probe/ boundary, and never a decoder
   // re-open (D-07). Bounded: refuses to decode past
-  // kMaxAudioDecodeErrorsPerStream consecutive errors (T-06-01's own DoS
-  // mitigation), after which this stream stops feeding further packets --
-  // `undecodable` is decided at finalize() from the FINAL total_samples/
-  // decode_error_count, never eagerly here (06-10-PLAN.md: a stream that
-  // hit this limit after already decoding real samples is not
-  // undecodable).
+  // kMaxAudioDecodeErrorsPerStream CONSECUTIVE errors (T-06-01's own DoS
+  // mitigation) -- 06-16-PLAN.md (WR-03): both a send failure AND a
+  // receive failure count toward this same bound, through
+  // detail::ConsecutiveDecodeErrorBound, so an interleaved
+  // success/receive-failure run can no longer evade it -- after which this
+  // stream stops feeding further packets. `undecodable` is decided at
+  // finalize() from the FINAL total_samples/decode_error_count, never
+  // eagerly here (06-10-PLAN.md: a stream that hit this limit after
+  // already decoding real samples is not undecodable).
   void feed_packet(const std::uint8_t* data, int size);
 
   // Flushes the decoder (a null-packet avcodec_send_packet, per libav's
@@ -593,8 +645,12 @@ class AudioDecodeState {
   // (total_samples_ == 0 && decode_error_count_ > 0), never guessed early
   // from the consecutive-error-limit path alone (a stream that hits the
   // limit after already decoding real samples is not undecodable).
-  bool consecutive_error_limit_hit_ = false;
-  int consecutive_errors_ = 0;
+  //
+  // 06-16-PLAN.md (WR-03): replaces the former two-member pair (a
+  // bool latch plus a run counter) with the single unit-tested
+  // ConsecutiveDecodeErrorBound seam -- both feed_packet's send-error and
+  // receive-error arms now go through it.
+  ConsecutiveDecodeErrorBound error_bound_;
   std::int64_t decode_error_count_ = 0;
   // The first recoverable error's own reason (Test 7) -- set once, never
   // overwritten by a later error.
