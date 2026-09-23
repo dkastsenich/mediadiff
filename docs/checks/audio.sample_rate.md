@@ -8,28 +8,30 @@ Hertz. Derived from the header pass alone -- no decode is required, so it
 reports a real value under `--no-content`.
 
 Evidence always carries both a `core_rate_hz` key and an `effective_rate_hz`
-key. `core_rate_hz` is `codecpar->sample_rate` itself, which is what keeps
-this check's compared value pass-independent (06-RESEARCH.md Q4).
-`effective_rate_hz` is never a formulaic doubling of `core_rate_hz` -- for
-an HE-AAC stream whose SBR signaling `audio.profile` (06-04) resolved as
-`implicit`, it carries the bounded probe's own DIRECTLY-OBSERVED decoded
-rate; for `explicit` and every other case it equals `core_rate_hz`
-unchanged. This asymmetry exists because `codecpar->sample_rate` cannot be
-assumed undoubled going in: 06-RESEARCH.md Q4 confirmed the MP4 demuxer
-itself writes the ALREADY-DOUBLED rate for **explicit** signaling
-(`isom.c`'s own `ext_sample_rate` branch), and empirically
-`avformat_find_stream_info()`'s own internal probing can ALSO already
-resolve `codecpar->sample_rate` to the doubled value for a short
-**implicit**-signaled stream, entirely within the header pass (reproducible
-identically with and without `--content`). A literal `core_rate_hz * 2`
-for the implicit case would therefore risk fabricating a false, quadrupled
-rate whenever `codecpar` already carries the doubled value -- so
-`effective_rate_hz` always reflects what the probe itself actually
-decoded, never a derived formula. The two keys may therefore be equal even
-for an `implicit`-signaled stream, when the probe's own decode agrees with
-`codecpar`'s already-resolved rate. The `effective_rate_hz` key exists so
-the implicit case's real, probe-confirmed rate is visible in evidence
-without changing this check's value shape or introducing a second id.
+key. `core_rate_hz` is `codecpar->sample_rate` exactly as it stands AFTER
+`avformat_find_stream_info()` -- which is what keeps this check's compared
+value pass-independent (06-RESEARCH.md Q4): that call happens once, inside
+the header pass alone, before any `--content` distinction exists, so the
+same value is read whichever later passes run. For a compressed AAC stream
+that decode already writes the decoder's own output rate back into
+`codecpar`, so `core_rate_hz` is ALREADY THE DOUBLED RATE for an implicitly
+signaled stream (`audio_sbr_implicit.mp4`: 44100 -> 88200) exactly as it is
+for an explicitly signaled one (`isom.c`'s own `ext_sample_rate` branch,
+06-RESEARCH.md Q4) -- `core_rate_hz`'s name predates this finding and is a
+published evidence key, so it stays despite no longer describing an
+"undoubled core" rate (06-18-PLAN.md, WR-09 correction).
+`effective_rate_hz` (06-04-PLAN.md / 06-18-PLAN.md, AUDIO-03, CR-05
+secondary) is never a formulaic doubling of `core_rate_hz` -- for an
+HE-AAC stream whose SBR signaling `audio.profile` (06-04) resolved as
+`implicit`, it carries the DECODE-OBSERVED rate from whichever D-12 step
+actually resolved that stream (the header pass's own primary mechanism, or
+the bounded fallback probe when the header pass resolved nothing); for
+`explicit` and every other case it equals `core_rate_hz` unchanged. The two
+keys are therefore equal for the common case (the decode-observed rate
+agrees with `codecpar`'s own already-resolved rate), and the
+`effective_rate_hz` key exists so the implicit case's real,
+decoder-observed rate is visible in evidence without changing this check's
+value shape or introducing a second id.
 
 A file with no audio stream at all still reports this check as
 `skipped:insufficient_data`, rather than emitting nothing -- `skipped !=

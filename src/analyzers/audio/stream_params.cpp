@@ -144,25 +144,36 @@ void emit_codec(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
-// audio.sample_rate: the CORE rate recorded as the compared value, with
-// BOTH a core and an effective rate key in evidence. `effective_rate_hz`
-// now rides StreamInfo::effective_sample_rate_hz (06-04-PLAN.md, AUDIO-03)
-// -- doubled relative to the core rate ONLY for an implicitly-decoded
-// HE-AAC stream (the bounded probe's own real finding); equal to the core
-// rate for every other stream, INCLUDING explicit SBR signaling, since
-// `codecpar` itself already carries the doubled rate in that case
-// (StreamInfo::effective_sample_rate_hz's own doc comment has the full
-// empirical citation). The COMPARED value stays the core rate always:
-// 06-RESEARCH.md Q4 proved `codecpar`'s own rate is the undoubled base
-// rate for an implicitly signaled stream, so moving the compared value
-// here would make the same audio report two different sample rates
-// depending on which passes ran (06-CONTEXT.md's own must_have; see
-// docs/checks/audio.sample_rate.md's own D-12 note). std::nullopt (a
-// codec that declares no positive sample rate at all,
-// StreamInfo::sample_rate's own absent-vs-zero convention) skips
-// insufficient_data rather than reporting a fabricated rate -- not
-// reached by any fixture in this project's corpus, but a real codecpar
-// can in principle report this.
+// audio.sample_rate (06-18-PLAN.md, WR-09 correction): the compared value
+// is `codecpar->sample_rate` exactly as it stands AFTER
+// `avformat_find_stream_info()` -- StreamInfo::sample_rate, read verbatim
+// from the header pass. For a compressed AAC stream that call decodes at
+// least one frame internally (has_codec_parameters() also needs the
+// decoded sample format, which no container carries for AAC) and writes
+// the decoder's own output rate back into `codecpar`, so for BOTH of this
+// project's hand-written SBR fixtures the compared value is already the
+// DOUBLED output rate: `audio_sbr_implicit.mp4` reads 44100 -> 88200,
+// `audio_sbr_explicit.mp4` reads 22050 -> 44100 (tools/gen_he_aac.py's own
+// two distinct core rates, .planning/debug/audio-sweep-rate-truncation.md
+// observation 2/3). This value is pass-independent NOT because it is
+// somehow immune to the decode that produced it, but because that decode
+// happens once, unconditionally, inside the header pass alone
+// (`avformat_open_input` + `avformat_find_stream_info`), before any
+// later `--content`/decode-pass distinction exists -- so the same value
+// is read whichever later passes run (06-CONTEXT.md's own must_have; see
+// docs/checks/audio.sample_rate.md's own D-12 note). The evidence key
+// named `core_rate_hz` carries this SAME value -- the name predates this
+// finding and is a published key (checks.def), so it stays as-is despite
+// no longer being an accurate description of an "undoubled core" rate.
+// `effective_rate_hz` rides StreamInfo::effective_sample_rate_hz
+// (06-04-PLAN.md / 06-18-PLAN.md, AUDIO-03, CR-05 secondary) -- the
+// decode-OBSERVED rate the resolving D-12 step actually recorded for an
+// `implicit_decoded` stream (SbrResolution::decode_observed_rate_hz), and
+// equal to `core_rate_hz` for every other stream. std::nullopt (a codec
+// that declares no positive sample rate at all, StreamInfo::sample_rate's
+// own absent-vs-zero convention) skips insufficient_data rather than
+// reporting a fabricated rate -- not reached by any fixture in this
+// project's corpus, but a real codecpar can in principle report this.
 void emit_sample_rate(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   if (!info.sample_rate.has_value()) {
     push_skip(CheckId::audio_sample_rate, scope, SkipReason::insufficient_data, fp);

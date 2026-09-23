@@ -28,8 +28,25 @@ three buckets an HE-AAC stream can land in are distinguishable:
   one of the other two.
 - `(sbr: unknown)` -- the ambiguous case could not be resolved at all: the
   header pass resolved no profile (libav decoded nothing) **and** there is
-  no ASC to reason from, or the bounded fallback decode itself failed.
-  Never silently asserted as "no SBR".
+  no ASC to reason from, or the bounded fallback decode RAN and produced
+  no frame (no target packet within its own packet-count bound, a send
+  failure, or a receive that yielded nothing) -- deterministic for the
+  same bytes, on the same build, every time. Never silently asserted as
+  "no SBR".
+
+**06-18-PLAN.md (CR-05): a fallback probe that cannot open the file at
+all -- including one that exceeds its own wall-clock budget -- fails the
+whole command with that error, and is never rendered as `(sbr: unknown)`.**
+Before this plan, the fallback probe's second container open kept its
+wall-clock interrupt budget armed through its own later reads, so an
+interrupted read on a loaded host could turn a real answer into
+`(sbr: unknown)` -- the same file could report `(sbr: implicit)` on one
+run and `(sbr: unknown)` on the next, which is exactly the determinism
+violation checks.def's own contract forbids ("a check's value must never
+depend on which passes ran"). The fallback's reads past its own bounded
+open are now bounded by `kMaxSbrProbeContainerPacketsScanned` (64)
+packets, never by the wall clock, so `audio.profile`'s value depends only
+on the file's bytes.
 
 Evidence always carries the raw `profile` integer (including the
 `AV_PROFILE_UNKNOWN` sentinel) and a `sbr_signaling` key spelling the
