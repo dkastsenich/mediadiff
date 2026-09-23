@@ -115,17 +115,27 @@ here to stop tokens.
 
 | token | what stopped | effect on this check | effect on the level checks |
 |---|---|---|---|
-| `consecutive_decode_error_limit` | more than 64 consecutive decode failures (`kMaxAudioDecodeErrorsPerStream`), after which the stream's decode stops | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
+| `consecutive_decode_error_limit` | more than 64 consecutive decode failures (`kMaxAudioDecodeErrorsPerStream`) -- **both** `avcodec_send_packet` and `avcodec_receive_frame` failures count toward this one run (06-16-PLAN.md, WR-03) -- after which the stream's decode stops | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
 | `decoded_channels_changed` | the first decoded frame whose channel count differs from the first frame's | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
 | `decoded_sample_format_changed` | the first decoded frame whose sample format (packed-equivalent spelling) differs from the first frame's | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
 | `decoded_sample_rate_changed` | the first decoded frame whose sample rate differs from the first frame's | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
 | `decoded_channel_layout_changed` | the first decoded frame whose channel layout differs from the first frame's | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
+| `non_finite_or_out_of_range_sample` | the first decoded float or double sample that is non-finite, or whose magnitude exceeds `kMaxMeasurableFloatSampleMagnitude` (32768.0, about +90.3 dBFS) | **none** -- the hash chain keeps consuming this stream in full; `sampling_state` stays `"full"` | `skipped:partial_scan` with evidence `reason` naming this token |
 
 06-15-PLAN.md (CR-02): the four `decoded_*` tokens are a per-frame re-validation, checked in this
 fixed order (channels, format, rate, layout) against the configuration the FIRST decoded frame
 established -- a mismatched frame, and every frame after it, never reaches the hash chain, the
 loudness sink, or the silence detector, and is never counted in `total_samples`. A planar and a
 packed spelling of the SAME sample format are never a mismatch (D-02).
+
+06-16-PLAN.md (CR-03): `non_finite_or_out_of_range_sample` is the one LEVEL-ONLY stop token in this
+table -- reachable only from `pcm_f32le`/`pcm_f64le` (or any other native float/double decoder
+output), where file bytes are reinterpreted as float with no decoder clamping. Unlike every other
+row above, it never sets `decode_truncated` and never moves `sampling_state` off `"full"`: the hash
+chain has already consumed the frame holding the hostile sample (an untrimmed byte-for-byte digest
+is well-defined over ANY byte pattern, hostile or not) before the loudness/silence sinks' own scan
+stops them from ever seeing it. A lone sample of exactly `kMaxMeasurableFloatSampleMagnitude` does
+NOT stop; the first sample past it does.
 
 ## Why it matters
 

@@ -47,6 +47,14 @@ recorded-in-the-open form Phase 5 used when 05-12-PLAN.md amended `PERF-03` in
 `.planning/REQUIREMENTS.md`. Approved at 06-10-PLAN.md's Task 1 checkpoint
 (`approve-amendment`, 2026-09-20).
 
+Receive-side failures (`avcodec_receive_frame`), already counted in this value, now also count
+toward the consecutive bound that stops a stream's decode after more than 64 in a row
+(06-16-PLAN.md, WR-03) -- before this plan, only send-side (`avcodec_send_packet`) failures did, so
+an interleaved success/receive-failure pattern could decode forever without ever tripping the
+bound. When the bound trips, `content.audio.sample_hash` reports `sampling_state: "truncated"` and
+the level checks skip `partial_scan` (see `content.audio.sample_hash.md`'s own "Decode stop
+reasons" table).
+
 ## Why it matters
 
 Without this check, a recoverable decode error had no comparable representation at all: doc 01
