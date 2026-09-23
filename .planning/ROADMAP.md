@@ -531,7 +531,7 @@ Plans:
 
 **Wave 17** *(blocked on Wave 16)*
 
-- [ ] 06-17-PLAN.md — CR-04: a 0.010 dB rise deadband on the -1.0 dBTP escalation, with SC3's in-tolerance material crossing still failing (AUDIO-06)
+- [x] 06-17-PLAN.md — CR-04: a 0.010 dB rise deadband on the -1.0 dBTP escalation, with SC3's in-tolerance material crossing still failing (AUDIO-06)
 
 **Wave 18** *(blocked on Wave 17)*
 

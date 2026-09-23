@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-16-PLAN.md
-last_updated: "2026-09-23T20:52:20.835Z"
+stopped_at: Completed 06-17-PLAN.md
+last_updated: "2026-09-23T21:08:52.672Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 06 execution started
-state_head: 4973b51ef43b07f4acf37dadd2ccac24d2c9aaa9
+state_head: 25d0299b0cf6548a6368875a52e09174fcdb566b
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 112
-  completed_plans: 108
+  completed_plans: 109
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 4 of 20
+Plan: 5 of 20
 Status: Ready to execute
 Last activity: 2026-09-23 — Phase 06 execution started
 
@@ -159,6 +159,7 @@ Progress: [█████████░] 94%
 | Phase 06 P14 | 20min | 3 tasks | 14 files |
 | Phase 06 P15 | 35min | 3 tasks | 7 files |
 | Phase 06 P16 | 36min | 3 tasks | 6 files |
+| Phase 06-audio-analysis P17 | 15min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -389,6 +390,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-15: The sweep's configuration moved from codecpar's declared rate to the first decoded frame's rate (CR-01) -- codecpar was correct only because avformat_find_stream_info's own internal decode had already corrected it, an undocumented external invariant. StreamAudioDecode gained declared_sample_rate as a diagnostic-only field. — No ordinary corpus fixture exercises the divergence (0 of 144 streams per the debug session), so the fix is proven with an in-process test that drives AudioDecodeState against a pre-find_stream_info codecpar directly rather than a claimed-but-nonexistent real fixture.
 - [Phase 06]: 06-15: Every decoded frame is re-validated against the first frame's channels/format/rate/layout (CR-02); the first mismatch latches a decoded_* stop token and the sweep feeds nothing further to any sink, closing the T-06-49 heap-over-read shape a mid-stream channel narrowing produced. — No real fixture can construct a mid-stream shape change, so CR-02 is proven with a new consume_frame_for_test seam driving hand-built AVFrames directly.
 - [Phase 06]: 06-16: closed CR-03 (non-finite/out-of-range float guard, level-only stop) and WR-03 (receive-side failures count toward the consecutive-error bound); corpus-wide differential and audio ratchet both confirm no output regression.
+- [Phase 06-audio-analysis]: CR-04: audio ceiling-crossing escalation gated by a 0.010 dB deadband (kCeilingCrossingDeadbandNum/Den) computed on the signed exact delta, in src/analyzers/audio/analyzers.h + src/compare/tol.cpp — Closes a knife-edge false-positive class (a 0.0002 dB quantiser-noise crossing hard-failing) while every crossing of 0.010 dB or more, including one inside the 0.3 dB tolerance, still escalates (SC3/AUDIO-06 intact); no evidence key or value changed
 
 ### Pending Todos
 
@@ -430,6 +432,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-23T20:52:20.611Z
-Stopped at: Completed 06-16-PLAN.md
+Last session: 2026-09-23T21:08:52.433Z
+Stopped at: Completed 06-17-PLAN.md
 Resume file: None
