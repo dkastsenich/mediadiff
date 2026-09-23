@@ -179,6 +179,19 @@ struct StreamLayoutKey {
 // false mismatch).
 bool stream_layouts_match(std::span<const StreamLayoutKey> primary, std::span<const StreamLayoutKey> reprobe);
 
+// 06-18-PLAN.md (CR-05): the real SbrProbeFn implementation -- see this
+// function's own doc comment in demux_session.cpp for the full contract,
+// including flagged assumption A1's Error-vs-nullopt classification.
+// Exposed here (moved out of demux_session.cpp's own anonymous namespace)
+// purely as a TEST SEAM: tests/unit/test_audio_config.cpp drives it
+// directly against a real fixture to prove the zero-wall-clock-budget
+// timeout Error and the real-probe determinism behaviors without going
+// through resolve_sbr_signaling's injected SbrProbeFn wrapper. No
+// production caller outside src/probe/demux_session.cpp's own
+// compute_sbr_signaling() exists or should exist.
+mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> probe_implicit_sbr_via_second_open(
+    const std::string& utf8_path, int target_stream_index);
+
 }  // namespace detail
 
 // 05-17-PLAN.md (Gap 2, TIME-02/TIME-03): where a DemuxSession's own
@@ -762,7 +775,12 @@ class DemuxSession {
   // THIS session's own sweep; a second, independent open+close for a
   // narrow header-pass decision is the same isolation mechanism this file
   // already established for TS duration reprobing).
-  void compute_sbr_signaling(const std::string& utf8_path);
+  //
+  // 06-18-PLAN.md (CR-05): returns Error the instant the fallback probe's
+  // own second open fails or times out for any stream -- propagated by
+  // open() as a hard failure of the whole open, so a timing-dependent
+  // outcome can never surface as SbrSignaling::unknown instead.
+  mediadiff::expected<void, Error> compute_sbr_signaling(const std::string& utf8_path);
 };
 
 }  // namespace mediadiff

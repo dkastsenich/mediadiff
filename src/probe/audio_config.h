@@ -38,6 +38,9 @@
 #include <optional>
 #include <span>
 
+#include "core/error.h"
+#include "util/expected.h"
+
 namespace mediadiff {
 
 // AOT (Audio Object Type) values this project's callers need to
@@ -147,15 +150,24 @@ struct HeaderPassSbrEvidence {
   std::int64_t resolved_sample_rate_hz = 0;
 };
 
-// A caller-supplied, at-most-once-invoked bounded decode attempt.
-// std::nullopt means "no decode was possible at all" (the target stream's
-// first packet could not be obtained or decoded within budget) --
-// resolve_sbr_signaling() maps that to SbrSignaling::unknown, never a
-// guess. src/probe/demux_session.cpp is the only real implementation of
-// this callback in the shipped binary; tests/unit/test_audio_config.cpp
-// injects a call-counting fake to prove the "at most once, only when
-// genuinely ambiguous" contract below without opening a real file.
-using SbrProbeFn = std::function<std::optional<SbrProbeDecodeResult>()>;
+// 06-18-PLAN.md (CR-05): a caller-supplied, at-most-once-invoked bounded
+// decode attempt. An Error propagates UNCHANGED out of
+// resolve_sbr_signaling() -- a container-open failure, a timeout included,
+// is a hard failure of the probe itself, never a value. std::nullopt (a
+// well-formed `expected` holding no value) means the probe genuinely RAN
+// and decoded nothing (no target packet within budget, no decoder, a send
+// failure, or no frame) -- resolve_sbr_signaling() maps THAT to
+// SbrSignaling::unknown, never a guess. The two cases are deliberately not
+// collapsed: a timeout says nothing about the file's own bytes, while a
+// clean "no frame" answer is deterministic and pass-independent. See this
+// header's own top comment (D-12) and probe_implicit_sbr_via_second_open's
+// doc comment in src/probe/demux_session.cpp for the Error/nullopt
+// classification each failure mode maps to. src/probe/demux_session.cpp is
+// the only real implementation of this callback in the shipped binary;
+// tests/unit/test_audio_config.cpp injects a call-counting fake to prove
+// the "at most once, only when genuinely ambiguous" contract below without
+// opening a real file.
+using SbrProbeFn = std::function<mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error>()>;
 
 // The one-packet decode `resolve_sbr_signaling()` itself never performs
 // more than -- this file stays libav-free (the real decode loop enforcing
@@ -191,6 +203,19 @@ enum class SbrSignaling : std::uint8_t {
   unknown,
 };
 
+// 06-18-PLAN.md (CR-05 secondary): what resolve_sbr_signaling() itself
+// resolved for one stream -- `signaling` is the SbrSignaling verdict above,
+// `decode_observed_rate_hz` is the rate a REAL decode actually produced for
+// an `implicit_decoded` resolution (0 for every other signaling value).
+// Never a formulaic doubling of the declared/core rate -- see
+// StreamInfo::effective_sample_rate_hz's own doc comment in demux_session.h
+// for why. Populated by every implicit_decoded-resolving branch (both
+// header-pass branches and the bounded fallback probe).
+struct SbrResolution {
+  SbrSignaling signaling = SbrSignaling::none;
+  std::int64_t decode_observed_rate_hz = 0;
+};
+
 // 06-13-PLAN.md (AUDIO-03, D-12 as DECIDED): the fallback probe's own
 // precondition -- can this ASC describe an IMPLICITLY-signalled SBR
 // stream at all? Implicit signaling is, by definition, an AAC-LC (AOT 2)
@@ -210,15 +235,17 @@ enum class SbrSignaling : std::uint8_t {
 // FFmpeg 8.1, never the system ffmpeg.
 bool implicit_sbr_is_possible(const AudioSpecificConfig& asc);
 
-// 06-04-PLAN.md / 06-13-PLAN.md (AUDIO-03, D-12): resolves SBR signaling
-// in the header pass so `audio.profile`'s value is identical whichever
-// passes ran (D-12's whole point -- see audio.profile.md).
+// 06-04-PLAN.md / 06-13-PLAN.md / 06-18-PLAN.md (AUDIO-03, D-12, CR-05):
+// resolves SBR signaling in the header pass so `audio.profile`'s value is
+// identical whichever passes ran (D-12's whole point -- see
+// audio.profile.md), and so a probe TIMEOUT can never become a compared
+// value (CR-05 -- see audio.profile.md's own wall-clock paragraph).
 //
 // Decision order, highest-confidence first:
-//   1. `codec_id_is_aac == false` -> `none`, without consulting `asc` at
-//      all (Test 7).
+//   1. `codec_id_is_aac == false` -> `{none, 0}`, without consulting `asc`
+//      at all (Test 7).
 //   2. An ASC that signals SBR EXPLICITLY (top-level AOT_SBR, or a 0x2b7
-//      backward-compatible sync extension) -> `explicit_asc`, with NO
+//      backward-compatible sync extension) -> `{explicit_asc, 0}`, with NO
 //      decode and no look at `header` -- D-12's no-decode fast path.
 //      Deliberately ahead of the header-pass tests below: an explicit
 //      stream's `codecpar` also reports an HE profile AND a doubled rate,
@@ -228,20 +255,29 @@ bool implicit_sbr_is_possible(const AudioSpecificConfig& asc);
 //      already decoded this stream's first frames inside
 //      `avformat_find_stream_info()`, so:
 //        - an HE-class profile, or a `codecpar` rate that is exactly
-//          twice the ASC's declared core rate, -> `implicit_decoded`;
-//        - anything else -> `none`, a REAL determination ("the decoder
-//          resolved AAC-LC at the declared rate"), never `unknown`.
+//          twice the ASC's declared core rate, -> `implicit_decoded`,
+//          `decode_observed_rate_hz` set to that same decode-observed
+//          `codecpar` rate (never re-derived by doubling);
+//        - anything else -> `{none, 0}`, a REAL determination ("the
+//          decoder resolved AAC-LC at the declared rate"), never
+//          `unknown`.
 //   4. D-12's FALLBACK -- only when the header pass resolved nothing
 //      (`profile_resolved == false`, i.e. libav could not decode a single
-//      frame). A missing ASC is `unknown` (nothing to reason from). An
-//      ASC that cannot be implicit SBR (`implicit_sbr_is_possible`) is
-//      `none`, decided from the declared config alone. Otherwise
-//      `probe_decode` is invoked -- AT MOST ONCE, enforced structurally
-//      by there being exactly one call site -- and a doubled decoded rate
-//      or an HE-class profile maps to `implicit_decoded`, anything else
-//      to `none`. An empty `probe_decode`, or a probe that returns
-//      std::nullopt, resolves to `unknown` -- never a guess.
-SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<AudioSpecificConfig>& asc,
-                                    const HeaderPassSbrEvidence& header, const SbrProbeFn& probe_decode);
+//      frame). A missing ASC is `{unknown, 0}` (nothing to reason from).
+//      An ASC that cannot be implicit SBR (`implicit_sbr_is_possible`) is
+//      `{none, 0}`, decided from the declared config alone. Otherwise
+//      `probe_decode` is invoked -- AT MOST ONCE, enforced structurally by
+//      there being exactly one call site. A probe Error PROPAGATES
+//      UNCHANGED as this function's own Error result (CR-05: a
+//      container-open failure or timeout is never rendered as a value).
+//      A probe that ran and decoded nothing (`std::nullopt`) resolves to
+//      `{unknown, 0}` -- never a guess. A decoded probe result maps a
+//      doubled decoded rate or an HE-class profile to `implicit_decoded`
+//      (with `decode_observed_rate_hz` set to the probe's own directly-
+//      observed decoded rate), anything else to `{none, 0}`.
+mediadiff::expected<SbrResolution, Error> resolve_sbr_signaling(bool codec_id_is_aac,
+                                                                  const std::optional<AudioSpecificConfig>& asc,
+                                                                  const HeaderPassSbrEvidence& header,
+                                                                  const SbrProbeFn& probe_decode);
 
 }  // namespace mediadiff

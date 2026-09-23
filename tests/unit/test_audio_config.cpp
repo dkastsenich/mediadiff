@@ -27,21 +27,38 @@
 #include <string>
 #include <vector>
 
+#include "core/error.h"
 #include "probe/audio_config.h"
 #include "probe/demux_session.h"
 #include "support/fixture_paths.h"
+#include "util/expected.h"
 
 using mediadiff::AudioObjectType;
 using mediadiff::AudioSpecificConfig;
 using mediadiff::DemuxOptions;
 using mediadiff::DemuxSession;
+using mediadiff::Error;
+using mediadiff::ErrorKind;
 using mediadiff::HeaderPassSbrEvidence;
 using mediadiff::implicit_sbr_is_possible;
 using mediadiff::parse_audio_specific_config;
 using mediadiff::resolve_sbr_signaling;
 using mediadiff::SbrProbeDecodeResult;
+using mediadiff::SbrResolution;
 using mediadiff::SbrSignaling;
 using mediadiff::StreamInfo;
+
+// 06-18-PLAN.md (CR-05): a small RAII guard that restores
+// DemuxSession's process-wide default wall-clock budget on scope exit --
+// used by the zero-budget determinism test below so it never leaks a
+// changed global budget into a later test in the same binary.
+namespace {
+struct ScopedWallClockBudget {
+  std::int64_t previous = mediadiff::default_wall_clock_budget_ms();
+  explicit ScopedWallClockBudget(std::int64_t ms) { mediadiff::set_default_wall_clock_budget_ms(ms); }
+  ~ScopedWallClockBudget() { mediadiff::set_default_wall_clock_budget_ms(previous); }
+};
+}  // namespace
 
 namespace {
 
@@ -171,13 +188,21 @@ namespace {
 // call count explicitly, so a regression that reintroduces 06-04's
 // "probe first, ask questions later" ordering fails HERE by name rather
 // than only showing up as an instruction-count ratchet failure in CI.
+//
+// 06-18-PLAN.md (CR-05): `error`, when set, makes `fn()` return that Error
+// instead of `result` -- the fake's own way of exercising CR-05's
+// Error-propagation contract without a real container open.
 struct CountingProbe {
   int calls = 0;
   std::optional<SbrProbeDecodeResult> result;
+  std::optional<Error> error;
 
   mediadiff::SbrProbeFn fn() {
-    return [this]() -> std::optional<SbrProbeDecodeResult> {
+    return [this]() -> mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> {
       ++calls;
+      if (error.has_value()) {
+        return mediadiff::unexpected(*error);
+      }
       return result;
     };
   }
@@ -219,8 +244,9 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a top-level AOT_SBR ASC resolve
   header.profile_is_he_aac = true;
   header.resolved_sample_rate_hz = 44100;
 
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
-  REQUIRE(result == SbrSignaling::explicit_asc);
+  const auto result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::explicit_asc);
   REQUIRE(probe.calls == 0);
 }
 
@@ -236,9 +262,10 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a 0x2b7 sync-extension SBR mark
   REQUIRE(asc->extension_sampling_frequency_hz == 44100);
 
   CountingProbe probe;
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_lc(22050), probe.fn());
-  REQUIRE(result == SbrSignaling::explicit_asc);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::explicit_asc);
   REQUIRE(probe.calls == 0);
 }
 
@@ -259,8 +286,9 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header 
   header.profile_is_he_aac = true;
   header.resolved_sample_rate_hz = 88200;
 
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
-  REQUIRE(result == SbrSignaling::implicit_decoded);
+  const auto result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::implicit_decoded);
   REQUIRE(probe.calls == 0);
 }
 
@@ -277,8 +305,9 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header 
   header.profile_is_he_aac = false;  // profile alone would say LC
   header.resolved_sample_rate_hz = 88200;  // but the rate was doubled
 
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
-  REQUIRE(result == SbrSignaling::implicit_decoded);
+  const auto result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header, probe.fn());
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::implicit_decoded);
   REQUIRE(probe.calls == 0);
 }
 
@@ -295,9 +324,10 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a bare AAC-LC ASC whose header 
   REQUIRE(asc.has_value());
 
   CountingProbe probe;
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_lc(44100), probe.fn());
-  REQUIRE(result == SbrSignaling::none);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::none);
   REQUIRE(probe.calls == 0);
 }
 
@@ -308,9 +338,10 @@ TEST_CASE("audio_config - resolve_sbr_signaling: no ASC at all but a header-pass
           "none, not unknown",
           "[unit]") {
   CountingProbe probe;
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, header_resolved_lc(44100), probe.fn());
-  REQUIRE(result == SbrSignaling::none);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::none);
   REQUIRE(probe.calls == 0);
 }
 
@@ -323,8 +354,9 @@ TEST_CASE("audio_config - resolve_sbr_signaling: no ASC at all but a header-pass
   header.profile_is_he_aac = true;
   header.resolved_sample_rate_hz = 44100;
 
-  const SbrSignaling result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, header, probe.fn());
-  REQUIRE(result == SbrSignaling::implicit_decoded);
+  const auto result = resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, header, probe.fn());
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::implicit_decoded);
   REQUIRE(probe.calls == 0);
 }
 
@@ -345,9 +377,10 @@ TEST_CASE("audio_config - resolve_sbr_signaling: with NO header-pass profile, a 
   r.he_profile = false;
   probe.result = r;
 
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
-  REQUIRE(result == SbrSignaling::implicit_decoded);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::implicit_decoded);
   REQUIRE(probe.calls == 1);
 }
 
@@ -364,9 +397,10 @@ TEST_CASE("audio_config - resolve_sbr_signaling: with NO header-pass profile, a 
   r.he_profile = false;
   probe.result = r;
 
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
-  REQUIRE(result == SbrSignaling::none);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::none);
   REQUIRE(probe.calls == 1);
 }
 
@@ -377,9 +411,33 @@ TEST_CASE("audio_config - resolve_sbr_signaling: the bounded probe itself failin
   REQUIRE(asc.has_value());
 
   CountingProbe probe;  // probe.result stays std::nullopt
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
-  REQUIRE(result == SbrSignaling::unknown);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::unknown);
+  REQUIRE(probe.calls == 1);
+}
+
+// 06-18-PLAN.md (CR-05): the RED this task fixes -- before the fix, ANY
+// probe failure (an Error included) fell through to `unknown` exactly like
+// a clean std::nullopt. A fake probe returning
+// Error{input_unsupported, "x"} now propagates that Error UNCHANGED out of
+// resolve_sbr_signaling(), rather than being silently rendered as a value.
+TEST_CASE("audio_config - resolve_sbr_signaling: a probe Error propagates unchanged as this function's own Error, "
+          "not as SbrSignaling::unknown (CR-05)",
+          "[unit]") {
+  const auto asc = parse_audio_specific_config(bare_lc_asc_bytes());
+  REQUIRE(asc.has_value());
+  REQUIRE(asc->sampling_frequency_hz == 44100);
+
+  CountingProbe probe;
+  probe.error = Error{ErrorKind::input_unsupported, "x"};
+
+  const auto result =
+      resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().kind == ErrorKind::input_unsupported);
+  REQUIRE(result.error().message == "x");
   REQUIRE(probe.calls == 1);
 }
 
@@ -398,9 +456,10 @@ TEST_CASE("audio_config - resolve_sbr_signaling: with NO header-pass profile, an
   REQUIRE(asc->object_type == 23);
 
   CountingProbe probe;
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, asc, header_resolved_nothing(), probe.fn());
-  REQUIRE(result == SbrSignaling::none);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::none);
   REQUIRE(probe.calls == 0);
 }
 
@@ -449,19 +508,59 @@ TEST_CASE("audio_config - resolve_sbr_signaling: a non-AAC codec resolves to non
   // Even an ASC that WOULD resolve explicit if consulted must not change
   // the outcome -- codec_id_is_aac=false gates the whole decision.
   const auto asc = parse_audio_specific_config(explicit_sbr_asc_bytes());
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/false, asc, header_resolved_lc(44100), probe.fn());
-  REQUIRE(result == SbrSignaling::none);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::none);
   REQUIRE(probe.calls == 0);
 }
 
 TEST_CASE("audio_config - resolve_sbr_signaling: a missing ASC AND no header-pass profile resolves to unknown",
           "[unit]") {
   CountingProbe probe;
-  const SbrSignaling result =
+  const auto result =
       resolve_sbr_signaling(/*codec_id_is_aac=*/true, std::nullopt, header_resolved_nothing(), probe.fn());
-  REQUIRE(result == SbrSignaling::unknown);
+  REQUIRE(result.has_value());
+  REQUIRE(result->signaling == SbrSignaling::unknown);
   REQUIRE(probe.calls == 0);
+}
+
+// ===========================================================================
+// Real-probe determinism (06-18-PLAN.md, CR-05):
+// detail::probe_implicit_sbr_via_second_open exercised DIRECTLY against
+// real fixtures -- proving the zero-wall-clock-budget timeout Error and the
+// Error-vs-nullopt classification (flagged assumption A1) without going
+// through resolve_sbr_signaling's own decision tree.
+// ===========================================================================
+
+TEST_CASE("audio_config - the real probe under a zero wall-clock budget returns a timeout Error, never a value "
+          "(CR-05)",
+          "[unit]") {
+  const ScopedWallClockBudget guard(0);
+  const auto probe = mediadiff::detail::probe_implicit_sbr_via_second_open(fixture("audio_sbr_implicit.mp4"), 0);
+  REQUIRE_FALSE(probe.has_value());
+  REQUIRE(probe.error().kind == ErrorKind::input_unsupported);
+  REQUIRE(probe.error().message.find("wall-clock budget") != std::string::npos);
+}
+
+TEST_CASE("audio_config - the real probe at the default wall-clock budget decodes audio_sbr_implicit.mp4's stream "
+          "0 to 88200 Hz",
+          "[unit]") {
+  const auto probe = mediadiff::detail::probe_implicit_sbr_via_second_open(fixture("audio_sbr_implicit.mp4"), 0);
+  REQUIRE(probe.has_value());
+  REQUIRE(probe->has_value());
+  REQUIRE((*probe)->decoded_sample_rate_hz == 88200);
+}
+
+TEST_CASE("audio_config - the real probe on audio_hash_base.mp4 deterministically returns no frame on two "
+          "consecutive calls (its first packet is entirely encoder-delay priming)",
+          "[unit]") {
+  const auto probe1 = mediadiff::detail::probe_implicit_sbr_via_second_open(fixture("audio_hash_base.mp4"), 0);
+  const auto probe2 = mediadiff::detail::probe_implicit_sbr_via_second_open(fixture("audio_hash_base.mp4"), 0);
+  REQUIRE(probe1.has_value());
+  REQUIRE(probe2.has_value());
+  REQUIRE_FALSE(probe1->has_value());
+  REQUIRE_FALSE(probe2->has_value());
 }
 
 // ===========================================================================

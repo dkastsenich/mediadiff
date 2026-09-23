@@ -242,12 +242,14 @@ bool implicit_sbr_is_possible(const AudioSpecificConfig& asc) {
   return false;
 }
 
-SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<AudioSpecificConfig>& asc,
-                                    const HeaderPassSbrEvidence& header, const SbrProbeFn& probe_decode) {
+mediadiff::expected<SbrResolution, Error> resolve_sbr_signaling(bool codec_id_is_aac,
+                                                                  const std::optional<AudioSpecificConfig>& asc,
+                                                                  const HeaderPassSbrEvidence& header,
+                                                                  const SbrProbeFn& probe_decode) {
   if (!codec_id_is_aac) {
     // Test 7: a non-AAC stream never even reaches an ASC-shaped decision --
     // the caller is not expected to have attempted a parse at all.
-    return SbrSignaling::none;
+    return SbrResolution{SbrSignaling::none, 0};
   }
   if (asc.has_value() && asc->has_explicit_sbr) {
     // D-12's no-decode fast path -- probe_decode is never called, and the
@@ -255,7 +257,7 @@ SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<Aud
     // explicitly-signalled stream ALSO reports an HE profile and a
     // doubled rate in `codecpar`, and explicit-versus-implicit is exactly
     // the distinction `audio.profile` exists to carry.
-    return SbrSignaling::explicit_asc;
+    return SbrResolution{SbrSignaling::explicit_asc, 0};
   }
 
   // --- D-12's PRIMARY mechanism: the header pass already decoded ------
@@ -266,14 +268,16 @@ SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<Aud
   // (D-12's pass-independence requirement).
   if (header.profile_resolved) {
     if (header.profile_is_he_aac) {
-      return SbrSignaling::implicit_decoded;
+      // 06-18-PLAN.md (CR-05 secondary, Task 2 extends this branch's own
+      // decode_observed_rate_hz -- see this file's own Task-2 commit).
+      return SbrResolution{SbrSignaling::implicit_decoded, 0};
     }
     if (asc.has_value() && asc->sampling_frequency_hz > 0 &&
         header.resolved_sample_rate_hz == asc->sampling_frequency_hz * 2) {
       // The demuxer's declared core rate was doubled by the decoder --
       // D-12's own literal test ("a doubled sample rate under an
       // LC-declared ASC identifies implicit SBR").
-      return SbrSignaling::implicit_decoded;
+      return SbrResolution{SbrSignaling::implicit_decoded, 0};
     }
     // A resolved, non-HE profile at the undoubled declared rate is a
     // POSITIVE determination that this stream carries no SBR -- the
@@ -282,7 +286,7 @@ SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<Aud
     // the case that must NOT be `unknown`: D-14 makes `unknown` compare
     // as its own value, so reporting it where the answer was determinable
     // is a latent false finding on an unchanged file.
-    return SbrSignaling::none;
+    return SbrResolution{SbrSignaling::none, 0};
   }
 
   // --- D-12's FALLBACK: nothing was resolved in the header pass -------
@@ -290,26 +294,35 @@ SbrSignaling resolve_sbr_signaling(bool codec_id_is_aac, const std::optional<Aud
   // stream during find_stream_info (`profile` still AV_PROFILE_UNKNOWN).
   if (!asc.has_value()) {
     // No profile AND no ASC: there is genuinely nothing to reason from.
-    return SbrSignaling::unknown;
+    return SbrResolution{SbrSignaling::unknown, 0};
   }
   if (!implicit_sbr_is_possible(*asc)) {
     // Decided from the declared config alone -- no decode can change what
     // the ASC's own object type and rate already rule out.
-    return SbrSignaling::none;
+    return SbrResolution{SbrSignaling::none, 0};
   }
   if (!probe_decode) {
-    return SbrSignaling::unknown;
+    return SbrResolution{SbrSignaling::unknown, 0};
   }
-  const std::optional<SbrProbeDecodeResult> probe = probe_decode();
+  // 06-18-PLAN.md (CR-05): a probe Error propagates UNCHANGED -- a
+  // container-open failure, a timeout included, is a hard failure of the
+  // probe itself, never a value this function invents an answer for.
+  const mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> probe_result = probe_decode();
+  if (!probe_result) {
+    return mediadiff::unexpected(probe_result.error());
+  }
+  const std::optional<SbrProbeDecodeResult>& probe = *probe_result;
   if (!probe.has_value()) {
-    return SbrSignaling::unknown;
+    // The probe RAN and genuinely decoded nothing -- deterministic for the
+    // same bytes, distinct from the Error branch above.
+    return SbrResolution{SbrSignaling::unknown, 0};
   }
   const bool doubled_rate =
       probe->declared_sample_rate_hz > 0 && probe->decoded_sample_rate_hz == probe->declared_sample_rate_hz * 2;
   if (doubled_rate || probe->he_profile) {
-    return SbrSignaling::implicit_decoded;
+    return SbrResolution{SbrSignaling::implicit_decoded, probe->decoded_sample_rate_hz};
   }
-  return SbrSignaling::none;
+  return SbrResolution{SbrSignaling::none, 0};
 }
 
 }  // namespace mediadiff
