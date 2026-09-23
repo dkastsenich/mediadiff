@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-18-PLAN.md
-last_updated: "2026-09-23T21:41:26.166Z"
+stopped_at: Completed 06-19-PLAN.md
+last_updated: "2026-09-23T21:57:29.688Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 06 execution started
-state_head: b422953ad6e59c38618d22e8ff3015e6dd4b2c51
+state_head: c050ccd830399a2f5f729ca849e2441b07498245
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 112
-  completed_plans: 110
+  completed_plans: 111
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 6 of 20
+Plan: 7 of 20
 Status: Ready to execute
 Last activity: 2026-09-23 — Phase 06 execution started
 
@@ -161,6 +161,7 @@ Progress: [█████████░] 94%
 | Phase 06 P16 | 36min | 3 tasks | 6 files |
 | Phase 06-audio-analysis P17 | 15min | 2 tasks | 5 files |
 | Phase 06-audio-analysis P18 | 30 min | 3 tasks | 8 files |
+| Phase 06 P19 | 14min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -394,6 +395,8 @@ Recent decisions affecting current work:
 - [Phase 06-audio-analysis]: CR-04: audio ceiling-crossing escalation gated by a 0.010 dB deadband (kCeilingCrossingDeadbandNum/Den) computed on the signed exact delta, in src/analyzers/audio/analyzers.h + src/compare/tol.cpp — Closes a knife-edge false-positive class (a 0.0002 dB quantiser-noise crossing hard-failing) while every crossing of 0.010 dB or more, including one inside the 0.3 dB tolerance, still escalates (SC3/AUDIO-06 intact); no evidence key or value changed
 - [Phase 06]: CR-05 fixed via deterministic probe + hard Error propagation (review's second option), not by rendering a timeout the same as unknown
 - [Phase 06]: CR-05 secondary: SbrResolution::decode_observed_rate_hz now populated by every implicit_decoded branch, not only the fallback probe
+- [Phase 06]: 06-19: span_ticks_for_basis's prefers_declared derived from the reconstruction outcome (raw span + both tick counts + in-range subtractions + strictly positive result), not input availability -- closes WR-07 — A preference flag must reflect whether the guarded computation actually succeeded, not merely whether its inputs looked plausible; the container-field fallback's own behavior (WR-07 flagged assumption A1) is unchanged
+- [Phase 06]: 06-19: WINDOWS.md #32 hand-edited via Edit tool (not the windows CLI mutation command) to append a dated note to an existing entry's description cell; status/counts left untouched — The windows CLI tool creates new entries; this plan needed to append to an existing open entry without altering its status or the ledger's frontmatter counts
 
 ### Pending Todos
 
@@ -435,6 +438,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-23T21:41:25.934Z
-Stopped at: Completed 06-18-PLAN.md
+Last session: 2026-09-23T21:57:29.499Z
+Stopped at: Completed 06-19-PLAN.md
 Resume file: None
