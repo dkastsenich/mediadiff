@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: 06-13-PLAN.md Task 2 + Task 3 local work done (halted before Task 3's final push -- see 06-13-SUMMARY.md)
-last_updated: "2026-09-23T19:22:47.291Z"
+stopped_at: Completed 06-14-PLAN.md
+last_updated: "2026-09-23T19:45:59.923Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 06 execution started
-state_head: 5b0943c19d655c3c79bac12335aac249d9fdeda6
+state_head: b9e3e45f84dd7b53515a8815937e0ca8367c5e78
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 112
-  completed_plans: 105
+  completed_plans: 106
 milestone_name: milestone
 ---
 
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 1 of 20
-Status: Executing Phase 06
+Plan: 2 of 20
+Status: Ready to execute
 Last activity: 2026-09-23 — Phase 06 execution started
 
 Progress: [█████████░] 94%
@@ -156,6 +156,7 @@ Progress: [█████████░] 94%
 | Phase 06-audio-analysis P10 | 90min | 3 tasks | 24 files |
 | Phase 06 P11 | 55min | 2 tasks | 9 files |
 | Phase 06 P12 | 20min | 2 tasks | 7 files |
+| Phase 06 P14 | 20min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -382,6 +383,7 @@ Recent decisions affecting current work:
 - [Phase 06]: Audio inspect section renders block-per-stream, registry-enumerated from builtin_registry(), with decode-dependent rows explicitly not-blank under --no-content and a data-driven no-audio-streams sentinel.
 - [Phase 06]: PERF-04's audio ratchet reuses Phase 5's exact three-mode harness shape; provisional baseline measured via Docker (ubuntu:24.04) since the workstation lacks valgrind/root — Keeps both perf harnesses' failure modes identical and readable; avoids fabricating a baseline number when the host cannot run cachegrind
 - [Phase 06]: D-06 cross-architecture proof closed on real arm64-osx evidence: aac_fixed CONFIRMED class 1, mp3/mp2 DEMOTED to class 2 (no trustworthy cross-architecture proof exists for either), ac3_fixed left unchanged with the gap recorded (WINDOWS.md #39). — The must-have text forbids closing on assumption; only aac_fixed had a real committed two-build proof that ran on arm64 this round.
+- [Phase 06]: 06-14: compare_hash's new truncated-sampling rule is checked before the generic kPreconditionKeys mismatch, so it now also owns the truncated-vs-full case (message text changed to name truncated explicitly; status/skip_reason unchanged). — Subsumes truncated-vs-full and truncated-vs-truncated in one rule, since the generic mismatch rule cannot catch two independently-truncated sides whose sampling_state values happen to agree.
 
 ### Pending Todos
 
@@ -423,6 +425,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-22T14:11:56.161Z
-Stopped at: 06-13-PLAN.md Task 2 + Task 3 local work done (halted before Task 3's final push -- see 06-13-SUMMARY.md)
+Last session: 2026-09-23T19:45:59.741Z
+Stopped at: Completed 06-14-PLAN.md
 Resume file: None
