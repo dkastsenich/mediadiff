@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 
+#include "analyzers/audio/analyzers.h"
 #include "analyzers/timeline/analyzers.h"
 #include "compare/semantics.h"
 #include "core/error.h"
@@ -18,6 +19,7 @@
 #include "core/registry.h"
 #include "core/tolerance.h"
 #include "core/value.h"
+#include "probe/audio_decode.h"
 
 using mediadiff::CheckDef;
 using mediadiff::Error;
@@ -36,7 +38,12 @@ using mediadiff::Status;
 using mediadiff::Tolerance;
 using mediadiff::Unit;
 using mediadiff::ValueKind;
+using mediadiff::builtin_registry;
 using mediadiff::compare_tol;
+using mediadiff::CheckRegistry;
+using mediadiff::kCeilingCrossingDeadbandDen;
+using mediadiff::kCeilingCrossingDeadbandNum;
+using mediadiff::kLoudnessQuantiserDen;
 
 TEST_CASE("tolerance: every valid suffix parses with the expected unit and integer magnitude", "[tolerance]") {
   struct Case {
@@ -713,4 +720,125 @@ TEST_CASE("compare_tol ceiling escalation: either side missing or misspelling ce
     CHECK(finding->status == Status::pass);
     CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
   }
+}
+
+// --- CR-04 gap closure (06-17-PLAN.md, 06-REVIEW.md/VERIFICATION.md gap
+// 3, AUDIO-06): the deadband that gates the asymmetric ceiling escalation
+// above so a knife-edge quantiser-noise crossing (the review's own 0.0002
+// dB example) does not hard-fail despite the check's own 0.3 dB tolerance,
+// while every crossing of 0.010 dB or more -- including one comfortably
+// INSIDE that tolerance (SC3) -- still fails. Exercised against the REAL
+// `audio.loudness.true_peak` CheckDef from `builtin_registry()` (unit
+// `db`, tolerance `0.3dB`, severity `warn`), never a synthetic id -- this
+// is the actual production check the gap was found on. Measurements are
+// shaped exactly like `emit_true_peak`'s own output
+// (`src/analyzers/audio/loudness.cpp`): `RationalValue{milli,
+// kLoudnessQuantiserDen, Rational{1,1}}` plus a `ceiling_state` evidence
+// key derived the same way (`milli >= -1000` -> "above", else "under"). ---
+
+namespace {
+
+CheckDef true_peak_check() {
+  const CheckRegistry& registry = builtin_registry();
+  auto index = registry.find("audio.loudness.true_peak");
+  REQUIRE(index.has_value());
+  return registry.at(*index);
+}
+
+// `milli` is the quantised dBTP value at `kLoudnessQuantiserDen` (e.g.
+// -1000 == -1.000 dBTP, the named ceiling) -- mirrors `emit_true_peak`'s
+// own `RationalValue` shape and its own `ceiling_state` derivation
+// (`milli >= -1000` -> "above") exactly, so a hand-built pair here is
+// indistinguishable, from `compare_tol`'s point of view, from a pair
+// `audio_loudness_analyzer()` actually emitted.
+Measurement true_peak_measurement(std::int64_t milli) {
+  Measurement m;
+  m.check_index = 0;
+  m.scope = Scope{Scope::Kind::global, 0};
+  m.value = mediadiff::Value{RationalValue{milli, kLoudnessQuantiserDen, Rational{1, 1}}};
+  m.evidence = nlohmann::ordered_json{{"ceiling_state", milli >= -1000 ? "above" : "under"}};
+  return m;
+}
+
+}  // namespace
+
+TEST_CASE("compare_tol ceiling escalation: a rise below the 0.010 dB deadband does not escalate on the real "
+          "audio.loudness.true_peak check (CR-04)",
+          "[tolerance]") {
+  const CheckDef check = true_peak_check();
+  REQUIRE(check.id == "audio.loudness.true_peak");  // the real check, not a synthetic stand-in
+
+  {
+    // A 1 milli-dB rise (-1.001 -> -1.000 dBTP) -- the review's own
+    // knife-edge class. Before this plan's fix: Status::fail (RED, this
+    // plan's SUMMARY records the pre-fix value).
+    const Measurement baseline = true_peak_measurement(-1001);
+    const Measurement candidate = true_peak_measurement(-1000);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);
+    CHECK(finding->message.find("deadband") != std::string::npos);
+    CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+  }
+  {
+    // A 9 milli-dB rise (-1.005 -> -0.996 dBTP) -- still under the 10
+    // milli-dB deadband.
+    const Measurement baseline = true_peak_measurement(-1005);
+    const Measurement candidate = true_peak_measurement(-996);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);
+    CHECK(finding->message.find("deadband") != std::string::npos);
+    CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+  }
+}
+
+TEST_CASE("compare_tol ceiling escalation: a rise of exactly the deadband escalates on the real "
+          "audio.loudness.true_peak check (CR-04)",
+          "[tolerance]") {
+  const CheckDef check = true_peak_check();
+  REQUIRE(kCeilingCrossingDeadbandNum == 10);
+  REQUIRE(kCeilingCrossingDeadbandDen == 1000);
+  // A 10 milli-dB rise (-1.005 -> -0.995 dBTP) -- exactly the deadband's
+  // own boundary (>=), so this still escalates.
+  const Measurement baseline = true_peak_measurement(-1005);
+  const Measurement candidate = true_peak_measurement(-995);
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::fail);
+  CHECK(finding->message.find("asymmetric ceiling crossing") != std::string::npos);
+}
+
+TEST_CASE("compare_tol ceiling escalation: a material crossing inside the 0.3 dB tolerance still fails on the real "
+          "audio.loudness.true_peak check (SC3, CR-04)",
+          "[tolerance]") {
+  const CheckDef check = true_peak_check();
+  // A 100 milli-dB (0.1 dB) rise (-1.050 -> -0.950 dBTP) -- well over the
+  // 10 milli-dB deadband, and comfortably INSIDE the check's own declared
+  // 0.3 dB (300 milli-dB) tolerance. SC3/AUDIO-06's own contract: the
+  // escalation fires regardless of the declared tolerance, so this must
+  // still fail.
+  const Measurement baseline = true_peak_measurement(-1050);
+  const Measurement candidate = true_peak_measurement(-950);
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::fail);
+  CHECK(finding->message.find("asymmetric ceiling crossing") != std::string::npos);
+}
+
+TEST_CASE("compare_tol ceiling escalation: the reverse transition (above -> under) never escalates and never "
+          "carries a deadband suffix, on the real audio.loudness.true_peak check (CR-04)",
+          "[tolerance]") {
+  const CheckDef check = true_peak_check();
+  // -0.995 -> -1.005 dBTP: headroom gained, not lost -- must stay exactly
+  // as before this plan (no escalation, no deadband message either, since
+  // the deadband gate only exists to soften an upward-crossing escalation
+  // that would otherwise have fired).
+  const Measurement baseline = true_peak_measurement(-995);
+  const Measurement candidate = true_peak_measurement(-1005);
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+  CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+  CHECK(finding->message.find("deadband") == std::string::npos);
 }

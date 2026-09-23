@@ -110,6 +110,36 @@ const AnalyzerSpec& audio_priming_analyzer();
 // BOTH sides (never gated on `check.id`).
 const AnalyzerSpec& audio_loudness_analyzer();
 
+// CR-04 gap closure (06-17-PLAN.md, 06-REVIEW.md/VERIFICATION.md gap 3,
+// AUDIO-06): the deadband that gates `src/compare/tol.cpp`'s asymmetric
+// ceiling escalation above, expressed as a rational IN THE DECLARED UNIT OF
+// WHICHEVER CHECK CARRIES `ceiling_state` -- today only
+// `audio.loudness.true_peak` (unit `db`), so 10/1000 means 0.010 dB. Four
+// independent reasons fix this exact magnitude (06-17-PLAN.md's own
+// objective, all measured or already in-repo):
+//   - it is 10x the 0.001 dB quantiser step (`kLoudnessQuantiserDen` above,
+//     1000) that the review's own 0.0002 dB knife-edge example straddles;
+//   - it is 10x the 0.001 dB shift a sub-LSB PCM perturbation produced under
+//     `pcm_s16le` in debug session true-peak-cross-platform
+//     (.planning/debug/resolved/true-peak-cross-platform.md, ~line 632:
+//     -18.056 -> -18.055 dBTP);
+//   - it is 1/30 of `audio.loudness.true_peak`'s own declared 0.3 dB
+//     tolerance;
+//   - it is 23x below the 0.237 dB swing a lossy AAC path amplified that
+//     SAME perturbation into -- a crossing of that size is exactly the
+//     headroom risk the ceiling rule exists for, and it still escalates.
+//
+// This gates ONLY the asymmetric escalation in `compare_tol` -- it is never
+// read as, or confused with, a tolerance: a crossing under the deadband
+// keeps its ordinary tolerance verdict (computed from the check's own
+// declared tolerance, unchanged), it does not become a new kind of pass.
+//
+// A future analyzer that emits `ceiling_state` in a DIFFERENT declared unit
+// (not dB) must revisit this constant's magnitude for that unit before
+// relying on it -- nothing here scales automatically across units.
+inline constexpr std::int64_t kCeilingCrossingDeadbandNum = 10;
+inline constexpr std::int64_t kCeilingCrossingDeadbandDen = 1000;
+
 // audio.silence.edges/audio.silence.dropouts (06-09-PLAN.md, AUDIO-07,
 // AUDIO-10): a pure consumer of `ProbeResults::audio_decode`'s
 // `edge_silence_spans`/`dropout_spans` -- never opens a decoder, never

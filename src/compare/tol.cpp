@@ -8,6 +8,7 @@
 
 #include <fmt/format.h>
 
+#include "analyzers/audio/analyzers.h"
 #include "analyzers/timeline/analyzers.h"
 #include "core/exact_int.h"
 #include "core/rational.h"
@@ -296,6 +297,29 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   // prevent. Reading the evidence shape instead means an unchanged
   // above-ceiling pair (both sides "above") never escalates, only a
   // genuine under-to-above TRANSITION does.
+  //
+  // CR-04 gap closure (06-17-PLAN.md, 06-REVIEW.md/VERIFICATION.md gap 3):
+  // the escalation above used to fire on ANY under->above transition,
+  // however small -- a 0.0002 dB shift that happened to straddle the
+  // milli-dB-quantised ceiling hard-failed despite the check's own 0.3 dB
+  // tolerance, exactly the false-positive class this project treats as P0.
+  // `ceiling_crossing_material` (computed below, once `delta_num`/
+  // `delta_den` exist) gates the escalation to crossings whose OWN signed
+  // rise is at least `kCeilingCrossingDeadbandNum`/`Den`
+  // (`src/analyzers/audio/analyzers.h`, 0.010 dB) -- a crossing smaller
+  // than that keeps its ordinary tolerance verdict, with a message suffix
+  // naming the deadband, never a fabricated pass or a new evidence value.
+  // Two shapes considered and rejected during that plan's own review:
+  //   - gating on `!within_warn` -- `audio.loudness.true_peak` declares a
+  //     single threshold, so `within_warn` is always false here and the
+  //     gate would be a no-op; read as its evident intent, `!within_fail`,
+  //     it would pass EVERY crossing inside 0.3 dB, contradicting AUDIO-06
+  //     and this check's own "regardless of tolerance" rule.
+  //   - a third analyzer-side "at" `ceiling_state` value within
+  //     +/-deadband -- an evidence-CONTRACT change (a new value in
+  //     snapshots/--json/inspect/goldens) that would also hide a large
+  //     crossing landing inside the band (e.g. -1.5 -> -0.995 dBTP, a
+  //     0.505 dB rise) from ever escalating.
   const auto side_ceiling_state = [](const Measurement& side) -> std::optional<std::string> {
     if (!side.evidence.is_object() || !side.evidence.contains("ceiling_state") ||
         !side.evidence.at("ceiling_state").is_string()) {
@@ -307,16 +331,35 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   const std::optional<std::string> candidate_ceiling_state = side_ceiling_state(candidate);
   const bool ceiling_crossed_upward = baseline_ceiling_state.has_value() && candidate_ceiling_state.has_value() &&
                                        *baseline_ceiling_state == "under" && *candidate_ceiling_state == "above";
+  // CR-04: whether an upward crossing detected above actually escalates --
+  // computed below, once `delta_num`/`delta_den` exist, from the SIGNED
+  // delta against `kCeilingCrossingDeadbandNum`/`Den`. Declared here (ahead
+  // of `apply_ceiling_escalation`, which captures it by reference) so the
+  // lambda's own definition stays adjacent to `ceiling_crossed_upward`.
+  // Stays `false` -- never escalates -- when `ceiling_crossed_upward` is
+  // false, matching the pre-existing no-op behavior exactly.
+  bool ceiling_crossing_material = false;
   // Applied at every return point below, after `finding.status`/`finding.
   // message` are set -- an unconditional escalation to `fail` (never
   // `escalate(severity)`: the risk this rule guards against is real
-  // regardless of the check's own configured severity), and a no-op when
-  // the evidence shape above did not detect an upward crossing.
+  // regardless of the check's own configured severity) when the crossing
+  // is both upward AND material; a no-op when the evidence shape above did
+  // not detect an upward crossing at all; and, for an upward crossing that
+  // is NOT material (its own rise stayed under the deadband), the ordinary
+  // tolerance verdict computed below is left untouched but the message
+  // gains a suffix naming the deadband, so a reader can see why a
+  // ceiling-crossing pair did not escalate.
   const auto apply_ceiling_escalation = [&]() {
-    if (ceiling_crossed_upward) {
+    if (!ceiling_crossed_upward) {
+      return;
+    }
+    if (ceiling_crossing_material) {
       finding.status = Status::fail;
       finding.message += " (asymmetric ceiling crossing: baseline under, candidate above -- escalated regardless of "
                           "tolerance)";
+    } else {
+      finding.message += " (ceiling crossing inside the 0.010 deadband: baseline under, candidate above, rise below "
+                          "the deadband -- not escalated)";
     }
   };
 
@@ -365,6 +408,26 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     return range_finding("delta_num (cross-product subtraction)");
   }
   const ExactInt abs_delta_num = delta_num.abs();
+
+  // CR-04: `ceiling_crossing_material` (declared above, beside
+  // `ceiling_crossed_upward`) is set here, now that the EXACT signed delta
+  // exists -- `delta_num`/`delta_den`, never `abs_delta_num`: a candidate
+  // that reads BELOW its baseline (delta_num negative) never clears the
+  // deadband even if the evidence shape above flagged an upward crossing.
+  // Comparison is delta_num/delta_den >= kCeilingCrossingDeadbandNum/Den,
+  // cross-multiplied (delta_den > 0 always -- A2, the same assumption the
+  // absolute-tolerance comparison below already makes for `delta_den`).
+  // Skipped entirely when `ceiling_crossed_upward` is false: no crossing to
+  // gate, and the flag stays at its declared `false` default.
+  if (ceiling_crossed_upward) {
+    ExactInt ceiling_crossing_lhs;
+    ExactInt ceiling_crossing_rhs;
+    if (!ExactInt::try_mul(delta_num, ExactInt::from_i64(kCeilingCrossingDeadbandDen), &ceiling_crossing_lhs) ||
+        !ExactInt::try_mul(ExactInt::from_i64(kCeilingCrossingDeadbandNum), delta_den, &ceiling_crossing_rhs)) {
+      return range_finding("ceiling crossing deadband comparison (delta * deadband cross-product)");
+    }
+    ceiling_crossing_material = ExactInt::compare(ceiling_crossing_lhs, ceiling_crossing_rhs) >= 0;
+  }
 
   // D-03: either side carrying `estimated` widens the effective threshold
   // magnitudes by kEstimatedToleranceFactor -- exact integer
