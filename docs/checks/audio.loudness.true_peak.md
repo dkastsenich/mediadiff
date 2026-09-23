@@ -30,7 +30,11 @@ is flagged, including on an UNCHANGED pair that is already above the ceiling on 
 false positive on stable content, which this project treats as a P0-class bug.
 
 A stream that never decoded, or decoded to zero samples, reports `skipped:requires_decode` or
-`skipped:insufficient_data` respectively -- never a fabricated true peak reading.
+`skipped:insufficient_data` respectively -- never a fabricated true peak reading. A stream whose
+level measurement stopped early (the decode sweep hit a limit before this stream's own end)
+reports `skipped:partial_scan` with evidence `reason` naming the stop token -- see the "Decode stop
+reasons" table in `content.audio.sample_hash.md` -- never a value computed from only the part of
+the stream that was measured.
 
 **`decode_path_class` evidence (diagnostic only).** Every measurement's evidence carries
 `decode_path_class` -- D-05's own key (`src/analyzers/content/sample_hash.cpp`'s

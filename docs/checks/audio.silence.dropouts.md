@@ -34,7 +34,10 @@ with no detected dropout reports an **empty span list** as a real measured value
 When the shared decode sweep never ran for this stream (`--no-content`, or a codec this build's
 linked FFmpeg cannot open at all), this check skips `requires_decode`. When the sweep ran but
 produced zero decoded samples, or a native sample format this detector cannot interpret, it
-skips `insufficient_data` -- never a fabricated empty list.
+skips `insufficient_data` -- never a fabricated empty list. When the sweep stopped early (a decode
+sweep limit hit before this stream's own end), it skips `partial_scan` with evidence `reason`
+naming the stop token -- see the "Decode stop reasons" table in `content.audio.sample_hash.md` --
+never a span list computed from only the part of the stream that was measured.
 
 ## Why it matters
 

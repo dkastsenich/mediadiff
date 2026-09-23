@@ -28,7 +28,11 @@ real, gating difference (a `silent`-vs-numeric-LU comparison never accidentally 
 tolerance").
 
 A stream that never decoded, or decoded to zero samples, reports `skipped:requires_decode` or
-`skipped:insufficient_data` respectively -- never a fabricated 0 LUFS.
+`skipped:insufficient_data` respectively -- never a fabricated 0 LUFS. A stream whose level
+measurement stopped early (the decode sweep hit a limit before this stream's own end) reports
+`skipped:partial_scan` with evidence `reason` naming the stop token -- see the "Decode stop
+reasons" table in `content.audio.sample_hash.md` -- never a value computed from only the part of
+the stream that was measured.
 
 **`decode_path_class` evidence (diagnostic only).** Like `audio.loudness.true_peak`, every
 measurement's evidence carries D-05's `decode_path_class` key, recording which decoder determinism

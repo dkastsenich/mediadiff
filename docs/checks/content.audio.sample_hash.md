@@ -89,6 +89,28 @@ this check then reports `skipped:requires_decode` on every audio scope, never si
 a fabricated value. A stream that decodes to zero samples reports `skipped:insufficient_data`,
 never an empty-string digest.
 
+**Truncated decodes.** When the decode sweep stops before a stream's own end (see "Decode stop
+reasons" below), the value reported is the chain of what actually decoded, with `sampling_state`
+evidence `"truncated"` and a `decode_truncation_reason` key naming why. A truncated side compared
+against ANYTHING -- a full decode of the same file, or another independently truncated decode --
+reports `skipped:hash_incomparable`, never `pass` and never `fail`: a digest match over a prefix
+cannot vouch for the part of the stream that was never read, even when both sides happen to agree
+on `sampling_state` or the prefixes happen to digest-match. `meta.decode_errors` still reports the
+real error count up to the stop, and the fingerprint is NOT marked `partial` for this reason alone
+(only a wholly undecodable stream is, per doc 05's own recoverable-errors-are-gating rule) --
+truncation and undecodable are two distinct outcomes of the same DoS mitigation.
+
+### Decode stop reasons
+
+The single list of tokens `decode_truncation_reason` and the level checks' own skip evidence
+`reason` (`audio.loudness.integrated`/`.true_peak`, `audio.silence.edges`/`.dropouts`) ever carry.
+A token, once published, is never renamed -- this project's "check IDs are forever" rule, extended
+here to stop tokens.
+
+| token | what stopped | effect on this check | effect on the level checks |
+|---|---|---|---|
+| `consecutive_decode_error_limit` | more than 64 consecutive decode failures (`kMaxAudioDecodeErrorsPerStream`), after which the stream's decode stops | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
+
 ## Why it matters
 
 Container remuxing (MP4 to MKV, MP4 to MPEG-TS), a lossless transcode (WAV to FLAC), or a
