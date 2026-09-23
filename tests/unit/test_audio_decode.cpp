@@ -267,6 +267,62 @@ const Measurement* find_measurement(const Fingerprint& fp, mediadiff::CheckId id
   return nullptr;
 }
 
+// 06-15-PLAN.md Task 2 (CR-02): a hand-built pcm_s16le AVCodecParameters
+// for AudioDecodeState::ensure_initialized() -- CR-02's own mismatch
+// shapes (a mid-stream channel/format/rate/layout change) are not
+// constructible from any real corpus fixture (see the debug session's own
+// corpus-wide finding, 0 divergences in 144 streams, for the analogous
+// CR-01 claim), so an in-process construction is the only way to exercise
+// them. Owned by the caller (avcodec_parameters_free).
+AVCodecParameters* make_pcm_s16le_codecpar(int sample_rate, int channels) {
+  AVCodecParameters* codecpar = avcodec_parameters_alloc();
+  REQUIRE(codecpar != nullptr);
+  codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+  codecpar->codec_id = AV_CODEC_ID_PCM_S16LE;
+  codecpar->sample_rate = sample_rate;
+  codecpar->format = AV_SAMPLE_FMT_S16;
+  av_channel_layout_default(&codecpar->ch_layout, channels);
+  return codecpar;
+}
+
+// Allocates one hand-built AVFrame carrying `nb_samples` deterministic
+// sample-channel slots at `sample_rate`/`format`, with the given channel
+// layout (defaulted from `channels` when `layout` is null). Every
+// sample-channel slot is filled with the SAME byte value regardless of
+// planar/packed layout -- CR-02's own D-02 test needs a planar and a
+// packed frame of ONE format to interleave to byte-identical output, and
+// this filler makes that true by construction (never a meaningful
+// waveform; CR-02's comparisons only ever read shape, never sample
+// values). Owned by the caller (av_frame_free).
+AVFrame* make_test_frame(int sample_rate, int channels, int nb_samples, AVSampleFormat format = AV_SAMPLE_FMT_S16,
+                          const AVChannelLayout* layout = nullptr) {
+  AVFrame* frame = av_frame_alloc();
+  REQUIRE(frame != nullptr);
+  frame->format = format;
+  frame->sample_rate = sample_rate;
+  frame->nb_samples = nb_samples;
+  if (layout != nullptr) {
+    REQUIRE(av_channel_layout_copy(&frame->ch_layout, layout) >= 0);
+  } else {
+    av_channel_layout_default(&frame->ch_layout, channels);
+  }
+  REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+
+  const bool planar = av_sample_fmt_is_planar(format) != 0;
+  const int bytes_per_sample = av_get_bytes_per_sample(format);
+  const int frame_channels = frame->ch_layout.nb_channels;
+  for (int s = 0; s < nb_samples; ++s) {
+    for (int c = 0; c < frame_channels; ++c) {
+      const std::uint8_t byte_value = static_cast<std::uint8_t>((s * 31 + c * 97) & 0xff);
+      std::uint8_t* dst = planar ? frame->extended_data[c] + static_cast<std::size_t>(s) * bytes_per_sample
+                                  : frame->extended_data[0] +
+                                        (static_cast<std::size_t>(s) * frame_channels + c) * bytes_per_sample;
+      std::memset(dst, byte_value, static_cast<std::size_t>(bytes_per_sample));
+    }
+  }
+  return frame;
+}
+
 }  // namespace
 
 // Test: AAC decoder selection prefers the fixed-point sibling (D-06/D-07)
@@ -740,4 +796,200 @@ TEST_CASE("audio_decode - the normal open path decodes and declares the same rat
   REQUIRE(stream.has_value());
   CHECK(stream->sample_rate == 88200);
   CHECK(stream->declared_sample_rate == 88200);
+}
+
+// 06-15-PLAN.md Task 2 (CR-02, T-06-49): a mid-stream channel narrowing
+// (stereo -> mono) stops the sweep at the SECOND frame -- before this
+// fix, LoudnessSink stayed pinned to the first frame's channel count
+// while total_samples_/the hash chain kept accepting the narrower frame,
+// the exact heap-over-read shape T-06-49 names. RED before this fix:
+// total_samples 2048 and loudness_measured true (both frames counted, no
+// stop at all).
+TEST_CASE("audio_decode - a mid-stream channel count change stops the sweep", "[unit]") {
+  AVCodecParameters* codecpar = make_pcm_s16le_codecpar(48000, 2);
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(*codecpar, "auto"));
+
+  AVFrame* stereo = make_test_frame(48000, 2, 1024);
+  state.consume_frame_for_test(*stereo);
+  av_frame_free(&stereo);
+
+  AVFrame* mono = make_test_frame(48000, 1, 1024);
+  state.consume_frame_for_test(*mono);
+  av_frame_free(&mono);
+
+  const StreamAudioDecode result = state.finalize();
+  CHECK(result.decode_truncated);
+  CHECK(result.decode_truncation_reason == std::string(kDecodeStopChannelsChanged));
+  CHECK(result.total_samples == 1024);
+  CHECK(result.level_measurement_stopped);
+  CHECK(!result.loudness_measured);
+
+  avcodec_parameters_free(&codecpar);
+}
+
+// 06-15-PLAN.md Task 2 (CR-02): a mid-stream sample format change
+// (stereo S16 -> stereo FLT) stops the sweep, distinct from a channel
+// change.
+TEST_CASE("audio_decode - a mid-stream sample format change stops the sweep", "[unit]") {
+  AVCodecParameters* codecpar = make_pcm_s16le_codecpar(48000, 2);
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(*codecpar, "auto"));
+
+  AVFrame* first = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_S16);
+  state.consume_frame_for_test(*first);
+  av_frame_free(&first);
+
+  AVFrame* second = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_FLT);
+  state.consume_frame_for_test(*second);
+  av_frame_free(&second);
+
+  const StreamAudioDecode result = state.finalize();
+  CHECK(result.decode_truncated);
+  CHECK(result.decode_truncation_reason == std::string(kDecodeStopSampleFormatChanged));
+  CHECK(result.total_samples == 1024);
+
+  avcodec_parameters_free(&codecpar);
+}
+
+// 06-15-PLAN.md Task 2 (CR-02, CR-01's own effective-rate rule reused): a
+// mid-stream sample rate change (48000 -> 44100) stops the sweep.
+TEST_CASE("audio_decode - a mid-stream sample rate change stops the sweep", "[unit]") {
+  AVCodecParameters* codecpar = make_pcm_s16le_codecpar(48000, 2);
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(*codecpar, "auto"));
+
+  AVFrame* first = make_test_frame(48000, 2, 1024);
+  state.consume_frame_for_test(*first);
+  av_frame_free(&first);
+
+  AVFrame* second = make_test_frame(44100, 2, 1024);
+  state.consume_frame_for_test(*second);
+  av_frame_free(&second);
+
+  const StreamAudioDecode result = state.finalize();
+  CHECK(result.decode_truncated);
+  CHECK(result.decode_truncation_reason == std::string(kDecodeStopSampleRateChanged));
+  CHECK(result.total_samples == 1024);
+
+  avcodec_parameters_free(&codecpar);
+}
+
+// 06-15-PLAN.md Task 2 (CR-02, flagged_assumption A2): a mid-stream
+// channel LAYOUT change (STEREO -> STEREO_DOWNMIX, the same two channels
+// at different positions) stops the sweep even though channel count,
+// format and rate all agree.
+TEST_CASE("audio_decode - a mid-stream channel layout change stops the sweep", "[unit]") {
+  AVCodecParameters* codecpar = make_pcm_s16le_codecpar(48000, 2);
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(*codecpar, "auto"));
+
+  const AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+  AVFrame* first = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_S16, &stereo);
+  state.consume_frame_for_test(*first);
+  av_frame_free(&first);
+
+  const AVChannelLayout stereo_downmix = AV_CHANNEL_LAYOUT_STEREO_DOWNMIX;
+  AVFrame* second = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_S16, &stereo_downmix);
+  state.consume_frame_for_test(*second);
+  av_frame_free(&second);
+
+  const StreamAudioDecode result = state.finalize();
+  CHECK(result.decode_truncated);
+  CHECK(result.decode_truncation_reason == std::string(kDecodeStopChannelLayoutChanged));
+  CHECK(result.total_samples == 1024);
+
+  avcodec_parameters_free(&codecpar);
+}
+
+// 06-15-PLAN.md Task 2 (CR-02): a frame that changes BOTH channels and
+// format reports the channels token -- the check order is channels,
+// format, rate, layout (this file's own action text, first-match-wins).
+TEST_CASE("audio_decode - a frame changing both channels and format reports the channels token first", "[unit]") {
+  AVCodecParameters* codecpar = make_pcm_s16le_codecpar(48000, 2);
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(*codecpar, "auto"));
+
+  AVFrame* first = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_S16);
+  state.consume_frame_for_test(*first);
+  av_frame_free(&first);
+
+  AVFrame* second = make_test_frame(48000, 1, 1024, AV_SAMPLE_FMT_FLT);
+  state.consume_frame_for_test(*second);
+  av_frame_free(&second);
+
+  const StreamAudioDecode result = state.finalize();
+  CHECK(result.decode_truncation_reason == std::string(kDecodeStopChannelsChanged));
+
+  avcodec_parameters_free(&codecpar);
+}
+
+// 06-15-PLAN.md Task 2 (CR-02, D-02): a planar and a packed frame of the
+// SAME format holding the same values are NOT a change -- both samples
+// are counted, and the resulting chain_digest equals a second state fed
+// two PACKED frames with the identical values, proving the
+// packed-equivalent comparison (not a raw format-enum comparison) is what
+// gates the check.
+TEST_CASE("audio_decode - a planar and a packed frame of the same format are not a change", "[unit]") {
+  AVCodecParameters* codecpar = make_pcm_s16le_codecpar(48000, 2);
+
+  mediadiff::detail::AudioDecodeState mixed_state;
+  REQUIRE(mixed_state.ensure_initialized(*codecpar, "auto"));
+  AVFrame* packed_first = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_S16);
+  mixed_state.consume_frame_for_test(*packed_first);
+  av_frame_free(&packed_first);
+  AVFrame* planar_second = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_S16P);
+  mixed_state.consume_frame_for_test(*planar_second);
+  av_frame_free(&planar_second);
+  const StreamAudioDecode mixed_result = mixed_state.finalize();
+  CHECK(!mixed_result.decode_truncated);
+  CHECK(mixed_result.total_samples == 2048);
+
+  mediadiff::detail::AudioDecodeState both_packed_state;
+  REQUIRE(both_packed_state.ensure_initialized(*codecpar, "auto"));
+  AVFrame* packed_a = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_S16);
+  both_packed_state.consume_frame_for_test(*packed_a);
+  av_frame_free(&packed_a);
+  AVFrame* packed_b = make_test_frame(48000, 2, 1024, AV_SAMPLE_FMT_S16);
+  both_packed_state.consume_frame_for_test(*packed_b);
+  av_frame_free(&packed_b);
+  const StreamAudioDecode both_packed_result = both_packed_state.finalize();
+  CHECK(!both_packed_result.decode_truncated);
+
+  CHECK(mixed_result.chain_digest == both_packed_result.chain_digest);
+
+  avcodec_parameters_free(&codecpar);
+}
+
+// 06-15-PLAN.md Task 2 (CR-02): once latched, a LATER frame matching the
+// original configuration is still not counted, and a subsequent
+// feed_packet call is a total no-op -- decode_error_count never moves,
+// mirroring the 06-14 consecutive-error-limit latch's own "stop feeding"
+// behavior (feed_packet's shared early-return guard).
+TEST_CASE("audio_decode - after a latch, a matching frame is not counted and feed_packet is a no-op", "[unit]") {
+  AVCodecParameters* codecpar = make_pcm_s16le_codecpar(48000, 2);
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(*codecpar, "auto"));
+
+  AVFrame* stereo = make_test_frame(48000, 2, 1024);
+  state.consume_frame_for_test(*stereo);
+  av_frame_free(&stereo);
+
+  AVFrame* mono = make_test_frame(48000, 1, 1024);
+  state.consume_frame_for_test(*mono);
+  av_frame_free(&mono);
+
+  AVFrame* stereo_again = make_test_frame(48000, 2, 1024);
+  state.consume_frame_for_test(*stereo_again);
+  av_frame_free(&stereo_again);
+
+  const std::uint8_t garbage_byte = 0xff;
+  state.feed_packet(&garbage_byte, 1);
+
+  const StreamAudioDecode result = state.finalize();
+  CHECK(result.decode_truncated);
+  CHECK(result.total_samples == 1024);
+  CHECK(result.decode_error_count == 0);
+
+  avcodec_parameters_free(&codecpar);
 }

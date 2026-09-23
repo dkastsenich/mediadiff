@@ -716,6 +716,12 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
   if (bytes_per_sample <= 0 || channels <= 0 || nb_samples <= 0) {
     return;
   }
+  // 06-15-PLAN.md (CR-02): nothing after a stop is fed or counted,
+  // including finalize()'s own drain frames -- a stream that already
+  // latched a mismatch reason (T-06-49) never resumes.
+  if (!decode_truncation_reason_.empty()) {
+    return;
+  }
 
   // Resolved lazily, from the FIRST decoded frame: codecpar's own fields
   // do not reliably describe the decoder's actual output format ahead of
@@ -781,6 +787,42 @@ void AudioDecodeState::consume_frame(const AVFrame& frame) {
       dropout_min_span_samples_ = std::max<std::int64_t>(1, sample_rate_ * kDropoutMinSpanMs / 1000);
       const std::int64_t dropout_threshold_linear = dbfs_to_q15_linear(kDropoutThresholdDbfs);
       dropout_threshold_sq_ = dropout_threshold_linear * dropout_threshold_linear;
+    }
+  }
+
+  // 06-15-PLAN.md (CR-02, T-06-49): every decoded frame -- including the
+  // very first, a trivial match against what lazy-init just recorded FROM
+  // it -- is held to the recorded configuration, checked in this fixed
+  // order: channels, the packed-equivalent sample format, the effective
+  // sample rate, then the described channel layout. The FIRST mismatch
+  // latches its own token and returns before this frame is counted,
+  // interleaved, or fed to any sink -- a mid-stream channel narrowing (or
+  // any other shape change) can no longer reach LoudnessSink or the hash
+  // chain, both of which stay pinned to the first frame's own shape.
+  {
+    const AVSampleFormat this_packed_fmt = av_get_alt_sample_fmt(native_fmt, /*planar=*/0);
+    const AVSampleFormat this_name_fmt = this_packed_fmt != AV_SAMPLE_FMT_NONE ? this_packed_fmt : native_fmt;
+    // Mirrors lazy-init's own declared_sample_rate_ fallback rule exactly
+    // (CR-01) -- the same "effective rate" a later frame is held to.
+    const std::int64_t effective_rate =
+        frame.sample_rate > 0 ? static_cast<std::int64_t>(frame.sample_rate) : declared_sample_rate_;
+    char this_layout_buf[64] = {0};
+    const int this_layout_len = av_channel_layout_describe(&frame.ch_layout, this_layout_buf, sizeof(this_layout_buf));
+    const std::string this_layout_string = this_layout_len > 0 ? std::string(this_layout_buf) : std::string();
+
+    std::string_view mismatch_token;
+    if (channels != channels_) {
+      mismatch_token = kDecodeStopChannelsChanged;
+    } else if (static_cast<int>(this_name_fmt) != configured_packed_format_) {
+      mismatch_token = kDecodeStopSampleFormatChanged;
+    } else if (effective_rate != sample_rate_) {
+      mismatch_token = kDecodeStopSampleRateChanged;
+    } else if (this_layout_string != layout_string_) {
+      mismatch_token = kDecodeStopChannelLayoutChanged;
+    }
+    if (!mismatch_token.empty()) {
+      latch_decode_truncation(mismatch_token);
+      return;
     }
   }
 
@@ -956,7 +998,10 @@ void AudioDecodeState::digest_full_blocks() {
 }
 
 void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
-  if (!attempted_ || consecutive_error_limit_hit_ || codec_ctx_ == nullptr) {
+  // 06-15-PLAN.md (CR-02): the decoder is not fed after any stop --
+  // consecutive_error_limit_hit_ (06-14) or a CR-02 per-frame mismatch --
+  // exactly the same "stop feeding" behavior for both stop classes.
+  if (!attempted_ || consecutive_error_limit_hit_ || codec_ctx_ == nullptr || !decode_truncation_reason_.empty()) {
     return;
   }
 
@@ -1028,6 +1073,8 @@ void AudioDecodeState::latch_decode_truncation(std::string_view reason) {
     level_stop_reason_ = std::string(reason);
   }
 }
+
+void AudioDecodeState::consume_frame_for_test(const AVFrame& frame) { consume_frame(frame); }
 
 StreamAudioDecode AudioDecodeState::finalize() {
   StreamAudioDecode result;
