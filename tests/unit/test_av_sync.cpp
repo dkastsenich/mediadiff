@@ -314,12 +314,56 @@ TEST_CASE("av_sync - span_ticks_for_basis treats a genuinely known, ZERO padding
   REQUIRE(result.declared_span_ticks == 4000);
 }
 
-TEST_CASE("av_sync - span_ticks_for_basis falls back to the container field when reconstruction underflows to "
-          "a non-positive span",
+// WR-07 (06-REVIEW.md, 06-19-PLAN.md): the pre-existing assertion here
+// asserted `REQUIRE(result.prefers_declared)` after a reconstruction that
+// underflowed to a non-positive span -- i.e. it claimed the "adjusted"
+// (trimmed) basis was preferred even though no trimmed span was ever
+// actually produced, only the untrimmed container field. That encoded
+// exactly the defect WR-07 names: `prefers_declared` must reflect whether
+// the reconstruction SUCCEEDED, not merely whether its inputs were
+// supplied. Flipped to REQUIRE_FALSE.
+TEST_CASE("av_sync - span_ticks_for_basis does not prefer the adjusted basis when the reconstruction underflows to "
+          "a non-positive span (WR-07)",
           "[unit]") {
   const PtsSpan pts_span{.pts = {0, 100}, .durations = {0, 0}, .span_ticks = 100, .has_span = true};
   const SpanBasisCandidates result = span_ticks_for_basis(90, pts_span, 60, 60);
-  REQUIRE(result.prefers_declared);
+  REQUIRE_FALSE(result.prefers_declared);
   REQUIRE(result.has_declared_span);
   REQUIRE(result.declared_span_ticks == 90);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis does not prefer the adjusted basis when the trimmed span is exactly 0 "
+          "(WR-07 boundary)",
+          "[unit]") {
+  const PtsSpan pts_span{.pts = {0, 100}, .durations = {0, 0}, .span_ticks = 100, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(90, pts_span, 60, 40);
+  REQUIRE_FALSE(result.prefers_declared);
+  REQUIRE(result.has_declared_span);
+  REQUIRE(result.declared_span_ticks == 90);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis prefers it when the trimmed span is exactly 1 tick (WR-07 boundary)",
+          "[unit]") {
+  const PtsSpan pts_span{.pts = {0, 101}, .durations = {0, 0}, .span_ticks = 101, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(90, pts_span, 60, 40);
+  REQUIRE(result.prefers_declared);
+  REQUIRE(result.has_declared_span);
+  REQUIRE(result.declared_span_ticks == 1);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis does not prefer it when the subtraction overflows (WR-07 precision)",
+          "[unit]") {
+  const PtsSpan pts_span{.pts = {0, 4040}, .durations = {0, 0}, .span_ticks = 4040, .has_span = true};
+  const SpanBasisCandidates result = span_ticks_for_basis(std::nullopt, pts_span, INT64_MIN, 0);
+  REQUIRE_FALSE(result.prefers_declared);
+}
+
+TEST_CASE("av_sync - span_ticks_for_basis does not prefer it when no raw span exists, even with priming and "
+          "padding both known (WR-07)",
+          "[unit]") {
+  const PtsSpan pts_span{.pts = {}, .durations = {}, .span_ticks = 0, .has_span = false};
+  const SpanBasisCandidates result = span_ticks_for_basis(4010, pts_span, 23, 17);
+  REQUIRE_FALSE(result.prefers_declared);
+  REQUIRE(result.has_declared_span);
+  REQUIRE(result.declared_span_ticks == 4010);
 }
