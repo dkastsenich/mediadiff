@@ -492,6 +492,8 @@ AudioDecodeState::AudioDecodeState(AudioDecodeState&& other) noexcept
       consecutive_errors_(other.consecutive_errors_),
       decode_error_count_(other.decode_error_count_),
       first_error_reason_(std::move(other.first_error_reason_)),
+      decode_truncation_reason_(std::move(other.decode_truncation_reason_)),
+      level_stop_reason_(std::move(other.level_stop_reason_)),
       decoder_name_(std::move(other.decoder_name_)),
       decoder_class_(other.decoder_class_),
       fallback_reason_(std::move(other.fallback_reason_)),
@@ -546,6 +548,8 @@ AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept
   consecutive_errors_ = other.consecutive_errors_;
   decode_error_count_ = other.decode_error_count_;
   first_error_reason_ = std::move(other.first_error_reason_);
+  decode_truncation_reason_ = std::move(other.decode_truncation_reason_);
+  level_stop_reason_ = std::move(other.level_stop_reason_);
   decoder_name_ = std::move(other.decoder_name_);
   decoder_class_ = other.decoder_class_;
   fallback_reason_ = std::move(other.fallback_reason_);
@@ -969,6 +973,7 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
     // though it stops here.
     if (consecutive_errors_ > kMaxAudioDecodeErrorsPerStream) {
       consecutive_error_limit_hit_ = true;
+      latch_decode_truncation(kDecodeStopConsecutiveErrorLimit);
     }
     return;
   }
@@ -996,6 +1001,15 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
     av_frame_unref(frame);
   }
   av_frame_free(&frame);
+}
+
+void AudioDecodeState::latch_decode_truncation(std::string_view reason) {
+  if (decode_truncation_reason_.empty()) {
+    decode_truncation_reason_ = std::string(reason);
+  }
+  if (level_stop_reason_.empty()) {
+    level_stop_reason_ = std::string(reason);
+  }
 }
 
 StreamAudioDecode AudioDecodeState::finalize() {
@@ -1057,6 +1071,15 @@ StreamAudioDecode AudioDecodeState::finalize() {
   result.block_digests = block_digests_;
   result.decode_error_count = decode_error_count_;
   result.first_error_reason = first_error_reason_;
+  // 06-14-PLAN.md (WR-02, TRUST-02): surfaces the latch set by
+  // latch_decode_truncation() above -- `decode_truncated` and
+  // `level_measurement_stopped` are independent booleans on
+  // StreamAudioDecode, but today's single call site latches both
+  // together, so they always agree in practice.
+  result.decode_truncated = !decode_truncation_reason_.empty();
+  result.decode_truncation_reason = decode_truncation_reason_;
+  result.level_measurement_stopped = !level_stop_reason_.empty();
+  result.level_measurement_stop_reason = level_stop_reason_;
   // 06-10-PLAN.md (D-09): `undecodable` is the narrow case that genuinely
   // could not run -- ZERO decoded frames across the whole sweep (final,
   // post-drain total_samples_) WHILE carrying at least one decode error.
@@ -1083,7 +1106,14 @@ StreamAudioDecode AudioDecodeState::finalize() {
   // was ever decoded, e.g. a zero-sample stream) -- `loudness_measured`
   // then stays false and every other loudness field below stays at its
   // default, never a fabricated 0 LUFS reading.
-  if (loudness_sink_) {
+  //
+  // 06-14-PLAN.md (WR-02, TRUST-02, D-09): when `level_stop_reason_` is
+  // non-empty, this whole block is skipped -- a value measured over a
+  // prefix of the stream is never reported as the stream's own
+  // loudness_measured/true_peak/integrated readout. The analyzers
+  // (loudness.cpp/silence.cpp) read `level_measurement_stopped` and emit
+  // skipped:partial_scan with the reason instead (06-15's own consumer).
+  if (level_stop_reason_.empty() && loudness_sink_) {
     const LoudnessSink::Readout readout = loudness_sink_->finalize();
     if (readout.valid) {
       result.loudness_measured = true;
@@ -1121,7 +1151,11 @@ StreamAudioDecode AudioDecodeState::finalize() {
   // both span lists at their default-constructed empty state, which the
   // analyzer (silence.cpp) must read as "not measured" (SkipReason::
   // insufficient_data), never as "measured, found nothing".
-  if (any_sample_consumed_) {
+  //
+  // 06-14-PLAN.md (WR-02, TRUST-02, D-09): mirrors the loudness gate above
+  // -- a stopped sweep never reports silence/dropout spans computed over
+  // only the part of the stream that was measured.
+  if (level_stop_reason_.empty() && any_sample_consumed_) {
     result.silence_measured = true;
     // Test 5: a run still open when the stream ends is CLOSED here,
     // never dropped -- it touches the final sample by definition

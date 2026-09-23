@@ -109,6 +109,15 @@ inline constexpr std::int64_t kDropoutRmsWindowMs = 100;
 inline constexpr double kDropoutThresholdDbfs = -70.0;
 inline constexpr std::int64_t kDropoutMinSpanMs = 150;
 
+// 06-14-PLAN.md (WR-02, TRUST-02, D-09): the single list of decode-stop
+// tokens `StreamAudioDecode::decode_truncation_reason` /
+// `level_measurement_stop_reason` ever carry. The "Decode stop reasons"
+// table in docs/checks/content.audio.sample_hash.md mirrors this list --
+// a token, once published, is never renamed (this project's own "check
+// IDs are forever" rule, extended here to stop tokens). 06-15/06-16 append
+// further tokens to this list; they never repurpose this one.
+inline constexpr std::string_view kDecodeStopConsecutiveErrorLimit = "consecutive_decode_error_limit";
+
 // One detected silence/dropout span, in the stream's OWN sample-index
 // domain -- a half-open range `[start_sample, end_sample)` of decoded
 // audio frames (one frame = one sample instant across every channel).
@@ -217,6 +226,31 @@ struct StreamAudioDecode {
   // mapping; a non-zero decode_error_count ALONE never does (a baseline
   // with one known-bad, stable frame must stay a usable baseline).
   bool undecodable = false;
+
+  // 06-14-PLAN.md (WR-02, TRUST-02, D-09): true only when T-06-01's own
+  // consecutive-decode-error-limit DoS mitigation latched -- the sweep
+  // stopped feeding the hash chain and every level sink below before the
+  // stream's own end. Never conflated with `undecodable` (D-09: a stream
+  // that already decoded real samples before hitting this limit is not
+  // undecodable) -- `total_samples` above can be, and typically is, > 0
+  // when this is true.
+  bool decode_truncated = false;
+  // One token from this header's own decode-stop vocabulary (e.g.
+  // kDecodeStopConsecutiveErrorLimit) -- empty when `decode_truncated` is
+  // false. The FIRST stop reason latched, never overwritten by a later
+  // one.
+  std::string decode_truncation_reason;
+  // 06-14-PLAN.md: true when the loudness and silence sinks below stopped
+  // receiving samples before the stream's own end -- ALWAYS true when
+  // `decode_truncated` is true (a decode truncation always also stops
+  // level measurement), but reserved as its own field so a future,
+  // narrower stop condition (one that truncates hashing without stopping
+  // level measurement, or vice versa) can set it independently without
+  // renaming either field.
+  bool level_measurement_stopped = false;
+  // Mirrors `decode_truncation_reason` for the level sinks -- empty when
+  // `level_measurement_stopped` is false.
+  std::string level_measurement_stop_reason;
 
   // 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink's own
   // outputs, fed from the SAME decoded frames as the hash sink above --
@@ -488,6 +522,11 @@ class AudioDecodeState {
   // The first recoverable error's own reason (Test 7) -- set once, never
   // overwritten by a later error.
   std::string first_error_reason_;
+  // 06-14-PLAN.md: mirrors StreamAudioDecode::decode_truncation_reason /
+  // level_measurement_stop_reason -- set exclusively through
+  // latch_decode_truncation() below, never assigned directly.
+  std::string decode_truncation_reason_;
+  std::string level_stop_reason_;
 
   std::string decoder_name_;
   int decoder_class_ = 3;
@@ -576,6 +615,14 @@ class AudioDecodeState {
   void consume_frame(const AVFrame& frame);
   void digest_full_blocks();
   void observe_silence_sample(std::int64_t peak_q15);
+  // 06-14-PLAN.md: latches `decode_truncation_reason_` and
+  // `level_stop_reason_` to `reason` -- each ONLY if still empty (the
+  // first reason wins, mirrors `first_error_reason_`'s own "set once"
+  // rule). A decode truncation always also stops level measurement, so
+  // both members are latched together from the single call site
+  // (feed_packet's own consecutive-error-limit branch) -- there is no
+  // separate "stop level measurement only" call today.
+  void latch_decode_truncation(std::string_view reason);
 };
 
 }  // namespace detail

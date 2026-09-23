@@ -176,9 +176,15 @@ void run_content_audio_sample_hash(const ProbeResults& results, Fingerprint& fp)
     // existing key -- no fourth precondition key added.
     const std::string decode_path_class =
         decode_class == 1 ? std::string("class1") : fmt::format("class2 {}", compose_decode_path_signature());
+    // 06-14-PLAN.md (WR-02, TRUST-02): sampling_state is kSamplingStateFull
+    // unless the sweep stopped early (decode.decode_truncated), in which
+    // case it is kSamplingStateTruncated -- one of src/compare/hash.cpp's
+    // kPreconditionKeys, so a truncated-vs-full pair degrades to
+    // skipped:hash_incomparable through the ordinary precondition-mismatch
+    // rule, never a fabricated content verdict.
     measurement.evidence = nlohmann::ordered_json{
         {"decode_path_class", decode_path_class},
-        {"sampling_state", "full"},
+        {"sampling_state", std::string(decode.decode_truncated ? kSamplingStateTruncated : kSamplingStateFull)},
         {"normalization", fmt::format("untrimmed;fmt={};rate={};ch={}", decode.sample_format_packed,
                                         decode.sample_rate, decode.channels)},
         {"decoder_name", decode.decoder_name},
@@ -189,6 +195,12 @@ void run_content_audio_sample_hash(const ProbeResults& results, Fingerprint& fp)
     }
     if (!decode.layout_string.empty()) {
       measurement.evidence["layout"] = decode.layout_string;
+    }
+    // Appended AFTER every existing key (this task's own acceptance
+    // criterion) so a non-truncated stream's evidence keeps its exact key
+    // order unchanged.
+    if (decode.decode_truncated) {
+      measurement.evidence["decode_truncation_reason"] = decode.decode_truncation_reason;
     }
 
     fp.measurements.push_back(std::move(measurement));

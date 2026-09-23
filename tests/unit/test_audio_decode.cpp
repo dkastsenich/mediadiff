@@ -21,25 +21,50 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
 }
 
+#include <nlohmann/json.hpp>
+
+#include "analyzers/content/analyzers.h"
+#include "compare/engine.h"
+#include "core/model.h"
+#include "core/registry.h"
+#include "core/snapshot.h"
 #include "probe/audio_config.h"
 #include "probe/audio_decode.h"
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
+#include "probe/pass.h"
 #include "support/fixture_paths.h"
 
 using mediadiff::AudioDecodeResult;
 using mediadiff::AudioObjectType;
+using mediadiff::builtin_registry;
+using mediadiff::compare_fingerprints;
+using mediadiff::content_audio_sample_hash_analyzer;
 using mediadiff::DemuxOptions;
 using mediadiff::DemuxSession;
 using mediadiff::determinism_class_for_decoder;
+using mediadiff::Finding;
+using mediadiff::Fingerprint;
 using mediadiff::hash_decoder_name_exists;
+using mediadiff::kDecodeStopConsecutiveErrorLimit;
+using mediadiff::kSamplingStateFull;
+using mediadiff::kSamplingStateTruncated;
 using mediadiff::PacketScanLimits;
 using mediadiff::PacketScanRequest;
+using mediadiff::PacketScanResult;
+using mediadiff::Policy;
+using mediadiff::ProbeResults;
+using mediadiff::ProfileId;
+using mediadiff::Scope;
+using mediadiff::SkipReason;
+using mediadiff::Status;
 using mediadiff::StreamAudioDecode;
 using mediadiff::kAudioBlockDivisor;
 using mediadiff::run_audio_decode;
@@ -83,6 +108,135 @@ std::optional<StreamAudioDecode> first_attempted_with_preference(const std::stri
     return std::nullopt;
   }
   return first_attempted(*outputs->audio_decode);
+}
+
+// 06-14-PLAN.md Task 1: the stream-index counterpart of first_attempted()
+// -- AudioDecodeResult::per_stream[i] IS AVStream i (this header's own
+// documented contract), so this is the same "first attempted" search, but
+// returning the index the caller needs to splice a hand-driven
+// StreamAudioDecode back into an AudioDecodeResult.
+std::optional<std::size_t> first_attempted_index(const AudioDecodeResult& result) {
+  for (std::size_t i = 0; i < result.per_stream.size(); ++i) {
+    if (result.per_stream[i].attempted) {
+      return i;
+    }
+  }
+  return std::nullopt;
+}
+
+// 06-14-PLAN.md Task 1: reads every packet belonging to `stream_index` out
+// of `ctx` via a direct av_read_frame loop (never a second DemuxSession
+// sweep on top of an existing one) -- each packet's raw bytes are copied
+// into an owned buffer (av_packet_unref invalidates the original), which
+// is all feed_packet() (probe/audio_decode.h) needs: {data, size}.
+std::vector<std::vector<std::uint8_t>> read_stream_packets(AVFormatContext& ctx, int stream_index) {
+  std::vector<std::vector<std::uint8_t>> packets;
+  AVPacket* pkt = av_packet_alloc();
+  REQUIRE(pkt != nullptr);
+  while (av_read_frame(&ctx, pkt) >= 0) {
+    if (pkt->stream_index == stream_index && pkt->size > 0) {
+      packets.emplace_back(pkt->data, pkt->data + pkt->size);
+    }
+    av_packet_unref(pkt);
+  }
+  av_packet_free(&pkt);
+  return packets;
+}
+
+// 06-14-PLAN.md Task 1 (WR-02, TRUST-02): drives
+// mediadiff::detail::AudioDecodeState directly (mirrors
+// test_loudness_sink.cpp's own "Test 8" precedent of constructing it
+// against a real stream's AVCodecParameters) -- opens `path`, locates its
+// first audio stream, REQUIREs it is PCM with >= 16 bits/sample (so a
+// one-byte packet is provably shorter than one sample frame and pcm.c
+// rejects it at avcodec_send_packet, never a decode that happens to
+// succeed on a short buffer), feeds the first half of the real demuxed
+// packets, then feeds `garbage_packet_count` one-byte packets, and returns
+// finalize(). This is still exactly the sweep AUDIO-10 guarantees --
+// read_stream_packets above is the ONLY av_read_frame loop this helper
+// runs, and it runs once.
+StreamAudioDecode drive_error_limit_decode(const std::string& path, int garbage_packet_count) {
+  auto session = DemuxSession::open(path, DemuxOptions{});
+  REQUIRE(session.has_value());
+  AVFormatContext* ctx = session->native_context();
+  REQUIRE(ctx != nullptr);
+
+  int audio_stream_index = -1;
+  for (unsigned int i = 0; i < ctx->nb_streams; ++i) {
+    if (ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+      audio_stream_index = static_cast<int>(i);
+      break;
+    }
+  }
+  REQUIRE(audio_stream_index >= 0);
+  const AVCodecParameters& codecpar = *ctx->streams[audio_stream_index]->codecpar;
+  REQUIRE(av_get_bits_per_sample(codecpar.codec_id) >= 16);
+
+  const std::vector<std::vector<std::uint8_t>> packets = read_stream_packets(*ctx, audio_stream_index);
+  REQUIRE(packets.size() >= 2);
+
+  mediadiff::detail::AudioDecodeState state;
+  REQUIRE(state.ensure_initialized(codecpar, "auto"));
+  REQUIRE(state.attempted());
+
+  const std::size_t half = packets.size() / 2;
+  for (std::size_t i = 0; i < half; ++i) {
+    state.feed_packet(packets[i].data(), static_cast<int>(packets[i].size()));
+  }
+  const std::uint8_t garbage_byte = 0xff;
+  for (int i = 0; i < garbage_packet_count; ++i) {
+    state.feed_packet(&garbage_byte, 1);
+  }
+  return state.finalize();
+}
+
+// 06-14-PLAN.md Task 1: the scan_with_decode/run_analyzer pattern from
+// tests/unit/test_decode_path_record.cpp, copied file-local per this
+// project's established per-file-duplication convention (that file's own
+// header comment: "no CLI process spawn needed for the population half").
+struct ScanBundle {
+  DemuxSession session;
+  PacketScanResult packets;
+  AudioDecodeResult audio_decode;
+};
+
+ScanBundle scan_with_decode(const std::string& path) {
+  auto session = DemuxSession::open(path, DemuxOptions{});
+  REQUIRE(session.has_value());
+  PacketScanRequest request;
+  request.limits = PacketScanLimits{};
+  request.decode_audio = true;
+  request.hash_decoder = "auto";
+  auto outputs = run_packet_scan(*session, request);
+  REQUIRE(outputs.has_value());
+  REQUIRE(outputs->audio_decode.has_value());
+  return ScanBundle{std::move(*session), std::move(outputs->packets), std::move(*outputs->audio_decode)};
+}
+
+Fingerprint run_content_audio_sample_hash(const ScanBundle& bundle) {
+  ProbeResults results;
+  results.demux = &bundle.session;
+  results.packet_scan = bundle.packets;
+  results.audio_decode = bundle.audio_decode;
+  Fingerprint fp;
+  fp.envelope.schema_version = std::string(mediadiff::kSchemaVersion);
+  fp.envelope.tool_version = "0.1.0";
+  content_audio_sample_hash_analyzer().run(results, fp);
+  return fp;
+}
+
+// Locates the content.audio.sample_hash finding at Scope::Kind::audio
+// among `findings` -- REQUIREs exactly one, since this file's own
+// audio_pcm_base.wav fixture carries exactly one audio stream.
+const Finding& find_sample_hash_finding(const std::vector<Finding>& findings) {
+  for (const Finding& f : findings) {
+    if (f.id == "content.audio.sample_hash" && f.scope.kind == Scope::Kind::audio) {
+      return f;
+    }
+  }
+  FAIL("content.audio.sample_hash finding not found");
+  static const Finding fallback{};
+  return fallback;
 }
 
 }  // namespace
@@ -327,3 +481,59 @@ TEST_CASE("audio_decode - Opus has no fixed-point sibling, always class 2", "[un
 // set before either open attempt) is reviewed by inspection instead; this
 // gap is recorded in 06-05-SUMMARY.md's Known Stubs / deviations section
 // rather than asserted here as tested behavior it is not.
+
+// 06-14-PLAN.md Task 1 (WR-02, TRUST-02, D-09): the 64/65 boundary --
+// T-06-01's own DoS mitigation latches on the 65th CONSECUTIVE
+// avcodec_send_packet failure (the WR-03 correction: `> 64`, never `>=`),
+// and that latch is now observable on StreamAudioDecode instead of being
+// silently absorbed. 64 consecutive failures stay one step below the
+// limit -- the stream still measures in full (D-09 unchanged).
+TEST_CASE("audio_decode - 65 consecutive send failures truncate the decode; 64 do not", "[unit]") {
+  const StreamAudioDecode truncated = drive_error_limit_decode(audio_pcm_base_wav(), 70);
+  CHECK(truncated.decode_error_count == 65);
+  CHECK(truncated.decode_truncated);
+  CHECK(truncated.decode_truncation_reason == std::string(kDecodeStopConsecutiveErrorLimit));
+  CHECK(truncated.level_measurement_stopped);
+  CHECK(!truncated.loudness_measured);
+  CHECK(!truncated.silence_measured);
+  CHECK(truncated.total_samples > 0);
+  CHECK(!truncated.undecodable);
+
+  const StreamAudioDecode boundary = drive_error_limit_decode(audio_pcm_base_wav(), 64);
+  CHECK(boundary.decode_error_count == 64);
+  CHECK(!boundary.decode_truncated);
+  CHECK(boundary.decode_truncation_reason.empty());
+  CHECK(!boundary.level_measurement_stopped);
+  CHECK(boundary.loudness_measured);
+}
+
+// 06-14-PLAN.md Task 1 (WR-02, TRUST-02): end to end -- a real full sweep
+// (baseline) compared against a candidate whose one audio stream is the
+// 70-garbage-packet truncated decode from the test above. Before this
+// plan's sample_hash.cpp change, this reported a real digest-mismatch
+// content FAIL/WARN ("digests differ") -- the fabricated-verdict class
+// TRUST-02 exists to prevent, recorded as the pre-change RED status in
+// 06-14-SUMMARY.md. After the fix, sampling_state disagrees ("full" vs
+// "truncated"), which is one of compare/hash.cpp's own kPreconditionKeys,
+// so the ORDINARY precondition-mismatch rule already degrades this to
+// skipped:hash_incomparable -- no new comparator code is needed for the
+// truncated-vs-full case (only for truncated-vs-truncated, Task 2).
+TEST_CASE("audio_decode - a truncated-vs-full sample_hash pair compares skipped:hash_incomparable, never a "
+          "fabricated verdict",
+          "[unit]") {
+  ScanBundle baseline_bundle = scan_with_decode(audio_pcm_base_wav());
+  const Fingerprint baseline_fp = run_content_audio_sample_hash(baseline_bundle);
+
+  ScanBundle candidate_bundle = scan_with_decode(audio_pcm_base_wav());
+  const std::optional<std::size_t> stream_index = first_attempted_index(candidate_bundle.audio_decode);
+  REQUIRE(stream_index.has_value());
+  candidate_bundle.audio_decode.per_stream[*stream_index] = drive_error_limit_decode(audio_pcm_base_wav(), 70);
+  const Fingerprint candidate_fp = run_content_audio_sample_hash(candidate_bundle);
+
+  auto findings = compare_fingerprints(baseline_fp, candidate_fp, Policy{ProfileId::sw_encoder}, builtin_registry());
+  REQUIRE(findings.has_value());
+  const Finding& finding = find_sample_hash_finding(*findings);
+  CHECK(finding.status == Status::skipped);
+  CHECK(finding.skip_reason == SkipReason::hash_incomparable);
+  CHECK(finding.message.find("sampling_state") != std::string::npos);
+}

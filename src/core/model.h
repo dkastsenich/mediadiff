@@ -86,6 +86,18 @@ struct Scope {
   int index;
 };
 
+// 06-14-PLAN.md (WR-02, TRUST-02): the two values `sampling_state` evidence
+// ever carries. `sampling_state` is one of src/compare/hash.cpp's
+// kPreconditionKeys -- a truncated state is never comparable: a
+// kSamplingStateTruncated side degrades a hash comparison to
+// skipped:hash_incomparable against ANY other side (a kSamplingStateFull
+// side via the ordinary precondition-mismatch rule, and another
+// kSamplingStateTruncated side via compare_hash's own truncated-sampling
+// rule, since a digest match over two independently-truncated prefixes
+// cannot vouch for either side's unread remainder).
+inline constexpr std::string_view kSamplingStateFull = "full";
+inline constexpr std::string_view kSamplingStateTruncated = "truncated";
+
 // What an analyzer emits (doc 01 section 1): one scoped, typed value per
 // check. `check_index` indexes into a CheckRegistry (core/registry.h), not
 // a raw CheckId — core/snapshot.cpp resolves the generated enum's string
