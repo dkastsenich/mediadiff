@@ -83,11 +83,15 @@ const AnalyzerSpec& audio_priming_analyzer();
 // or this build's linked FFmpeg could not open a decoder for this codec at
 // all), then `partial_scan` AGAIN when `StreamAudioDecode::undecodable` is
 // true (06-10-PLAN.md, D-09: the narrow "genuinely could not run" case --
-// zero decoded frames across the whole sweep), then `insufficient_data`
-// when the stream decoded but `loudness_measured` is false (Test 8: a
-// zero-sample stream with zero decode errors) -- mirroring
-// `content_audio_sample_hash_analyzer()`'s own established priority
-// exactly.
+// zero decoded frames across the whole sweep), then `partial_scan` with
+// evidence `reason` when `StreamAudioDecode::level_measurement_stopped` is
+// true (06-14-PLAN.md, WR-02/TRUST-02: the sweep stopped before this
+// stream's own end -- never a value computed from only the part that was
+// measured; distinct from `undecodable` since real samples may already
+// have decoded), then `insufficient_data` when the stream decoded but
+// `loudness_measured` is false (Test 8: a zero-sample stream with zero
+// decode errors) -- mirroring `content_audio_sample_hash_analyzer()`'s own
+// established priority exactly.
 //
 // `audio.loudness.integrated`'s compared value is the quantised
 // `RationalValue` at `src/probe/audio_decode.h`'s `kLoudnessQuantiserDen`,
@@ -119,6 +123,9 @@ const AnalyzerSpec& audio_loudness_analyzer();
 // `std::nullopt` or this stream's own decode was never attempted, then
 // `partial_scan` AGAIN when `StreamAudioDecode::undecodable` is true
 // (06-10-PLAN.md, D-09: the narrow "genuinely could not run" case), then
+// `partial_scan` with evidence `reason` when
+// `StreamAudioDecode::level_measurement_stopped` is true (06-14-PLAN.md,
+// WR-02/TRUST-02: the sweep stopped before this stream's own end), then
 // `insufficient_data` when the stream decoded but `silence_measured` is
 // false (a zero-sample stream, or a native sample format none of the
 // silence detector's four supported feeds accept).

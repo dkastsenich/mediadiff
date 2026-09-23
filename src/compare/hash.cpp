@@ -159,6 +159,25 @@ Status escalate(Severity severity) {
 constexpr std::array<std::string_view, 3> kPreconditionKeys = {"decode_path_class", "sampling_state",
                                                                  "normalization"};
 
+// 06-14-PLAN.md (WR-02, TRUST-02): a truncated-vs-full pair already
+// degrades through the ordinary kPreconditionKeys mismatch above (the two
+// sides' `sampling_state` values literally disagree). What that generic
+// mismatch rule CANNOT catch is truncated-vs-truncated: two independently
+// stopped sweeps whose `sampling_state` values happen to AGREE (both
+// kSamplingStateTruncated) and whose chains happen to match over their
+// respective (different-length, differently-stopped) prefixes -- a digest
+// match there cannot vouch for either side's own unread remainder, so it
+// is exactly as incomparable as the mismatched case. Reads the evidence
+// VALUE only, never `check.id` -- the same genericity kPreconditionKeys
+// itself follows.
+bool is_truncated_sampling(const nlohmann::ordered_json& evidence) {
+  if (!evidence.is_object()) {
+    return false;
+  }
+  const auto it = evidence.find("sampling_state");
+  return it != evidence.end() && it->is_string() && it->get_ref<const std::string&>() == kSamplingStateTruncated;
+}
+
 // Returns the name of the first precondition key that disagrees between
 // the two evidence objects, or an empty string if every key present on
 // either side agrees. A key present on only one side counts as a mismatch
@@ -196,6 +215,25 @@ mediadiff::expected<Finding, Error> compare_hash(const CheckDef& check, const Me
   finding.baseline = baseline.value;
   finding.candidate = candidate.value;
   finding.severity = resolve_severity(check, policy);
+
+  // 06-14-PLAN.md (WR-02, TRUST-02): checked BEFORE the ordinary
+  // precondition-mismatch rule below -- a truncated side is incomparable
+  // even against another truncated side whose `sampling_state` value
+  // happens to agree (see is_truncated_sampling's own doc comment).
+  const bool baseline_truncated = is_truncated_sampling(baseline.evidence);
+  const bool candidate_truncated = is_truncated_sampling(candidate.evidence);
+  if (baseline_truncated || candidate_truncated) {
+    finding.status = Status::skipped;
+    finding.skip_reason = SkipReason::hash_incomparable;
+    const std::string_view which =
+        baseline_truncated && candidate_truncated ? "both sides" : (baseline_truncated ? "the baseline" : "the candidate");
+    finding.message = fmt::format(
+        "hash comparison skipped: 'sampling_state' is 'truncated' on {} -- the decode stopped before the end of "
+        "the stream, so a digest match cannot vouch for the unread remainder; see decode_truncation_reason and "
+        "meta.decode_errors, and re-run on intact media",
+        which);
+    return finding;
+  }
 
   const std::string mismatched_key = first_precondition_mismatch(baseline.evidence, candidate.evidence);
   if (!mismatched_key.empty()) {

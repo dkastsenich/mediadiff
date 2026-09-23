@@ -46,6 +46,20 @@ void push_skip(CheckId id, Scope scope, SkipReason reason, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
+// 06-14-PLAN.md (WR-02, TRUST-02, D-09): the evidence-carrying overload --
+// used for a stopped-sweep skip (evidence {"reason": <stop token>}), so
+// `inspect`/the compare-time skip-reason message can name WHY, mirroring
+// src/analyzers/timeline/av_sync.cpp's own push_skip(evidence) precedent.
+void push_skip(CheckId id, Scope scope, SkipReason reason, nlohmann::ordered_json evidence, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(id);
+  measurement.scope = scope;
+  measurement.value = Absent{};
+  measurement.skip_reason = reason;
+  measurement.evidence = std::move(evidence);
+  fp.measurements.push_back(std::move(measurement));
+}
+
 // StreamMediaType -> Scope::Kind, narrowed to audio only (this analyzer's
 // own scope) -- mirrors src/analyzers/content/sample_hash.cpp's own
 // audio_scope_kind, this project's per-file-copy convention.
@@ -213,6 +227,21 @@ void run_audio_loudness(const ProbeResults& results, Fingerprint& fp) {
       // analyzer is the ONE place Fingerprint::partial is actually set.
       push_skip(CheckId::audio_loudness_integrated, scope, SkipReason::partial_scan, fp);
       push_skip(CheckId::audio_loudness_true_peak, scope, SkipReason::partial_scan, fp);
+      continue;
+    }
+    if (decode.level_measurement_stopped) {
+      // 06-14-PLAN.md (WR-02, TRUST-02, D-09): the sweep stopped before
+      // this stream's own end (T-06-01's consecutive-error-limit DoS
+      // mitigation, or a future stop condition) -- never report a value
+      // computed only from the part that was measured. Distinct from
+      // `undecodable` above (a stream that decoded real samples before
+      // stopping is not undecodable) and from the ordinary zero-sample
+      // case below (this stream DID measure something, it just stopped
+      // early). Per D-09, `fp.partial` is NOT set here -- only an
+      // undecodable stream marks the fingerprint partial.
+      const nlohmann::ordered_json evidence{{"reason", decode.level_measurement_stop_reason}};
+      push_skip(CheckId::audio_loudness_integrated, scope, SkipReason::partial_scan, evidence, fp);
+      push_skip(CheckId::audio_loudness_true_peak, scope, SkipReason::partial_scan, evidence, fp);
       continue;
     }
     if (!decode.loudness_measured) {

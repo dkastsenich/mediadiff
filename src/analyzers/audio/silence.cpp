@@ -52,6 +52,19 @@ void push_skip(CheckId id, Scope scope, SkipReason reason, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
+// 06-14-PLAN.md (WR-02, TRUST-02, D-09): mirrors
+// src/analyzers/audio/loudness.cpp's own evidence-carrying overload -- used
+// for a stopped-sweep skip (evidence {"reason": <stop token>}).
+void push_skip(CheckId id, Scope scope, SkipReason reason, nlohmann::ordered_json evidence, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(id);
+  measurement.scope = scope;
+  measurement.value = Absent{};
+  measurement.skip_reason = reason;
+  measurement.evidence = std::move(evidence);
+  fp.measurements.push_back(std::move(measurement));
+}
+
 // StreamMediaType -> Scope::Kind, narrowed to audio only (this analyzer's
 // own scope) -- mirrors src/analyzers/audio/loudness.cpp's own
 // audio_scope_kind, this project's per-file-copy convention.
@@ -164,6 +177,17 @@ void run_audio_silence(const ProbeResults& results, Fingerprint& fp) {
       // analyzer is the ONE place Fingerprint::partial is actually set.
       push_skip(CheckId::audio_silence_edges, scope, SkipReason::partial_scan, fp);
       push_skip(CheckId::audio_silence_dropouts, scope, SkipReason::partial_scan, fp);
+      continue;
+    }
+    if (decode.level_measurement_stopped) {
+      // 06-14-PLAN.md (WR-02, TRUST-02, D-09): mirrors
+      // src/analyzers/audio/loudness.cpp's own identical branch -- never
+      // report spans computed only from the part of the stream that was
+      // measured. `fp.partial` is NOT set here (D-09: only an undecodable
+      // stream marks the fingerprint partial).
+      const nlohmann::ordered_json evidence{{"reason", decode.level_measurement_stop_reason}};
+      push_skip(CheckId::audio_silence_edges, scope, SkipReason::partial_scan, evidence, fp);
+      push_skip(CheckId::audio_silence_dropouts, scope, SkipReason::partial_scan, evidence, fp);
       continue;
     }
     if (!decode.silence_measured) {

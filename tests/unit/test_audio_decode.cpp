@@ -30,8 +30,10 @@ extern "C" {
 
 #include <nlohmann/json.hpp>
 
+#include "analyzers/audio/analyzers.h"
 #include "analyzers/content/analyzers.h"
 #include "compare/engine.h"
+#include "core/check_id.h"
 #include "core/model.h"
 #include "core/registry.h"
 #include "core/snapshot.h"
@@ -44,7 +46,10 @@ extern "C" {
 
 using mediadiff::AudioDecodeResult;
 using mediadiff::AudioObjectType;
+using mediadiff::audio_loudness_analyzer;
+using mediadiff::audio_silence_analyzer;
 using mediadiff::builtin_registry;
+using mediadiff::CheckId;
 using mediadiff::compare_fingerprints;
 using mediadiff::content_audio_sample_hash_analyzer;
 using mediadiff::DemuxOptions;
@@ -56,6 +61,7 @@ using mediadiff::hash_decoder_name_exists;
 using mediadiff::kDecodeStopConsecutiveErrorLimit;
 using mediadiff::kSamplingStateFull;
 using mediadiff::kSamplingStateTruncated;
+using mediadiff::Measurement;
 using mediadiff::PacketScanLimits;
 using mediadiff::PacketScanRequest;
 using mediadiff::PacketScanResult;
@@ -237,6 +243,20 @@ const Finding& find_sample_hash_finding(const std::vector<Finding>& findings) {
   FAIL("content.audio.sample_hash finding not found");
   static const Finding fallback{};
   return fallback;
+}
+
+// 06-14-PLAN.md Task 2: mirrors test_audio_stream_params.cpp's own `find()`
+// helper -- locates the Measurement for `id` at the given scope by
+// check_index (Measurement carries no id string of its own).
+const Measurement* find_measurement(const Fingerprint& fp, mediadiff::CheckId id,
+                                     Scope::Kind kind = Scope::Kind::audio, int index = 0) {
+  const auto want = static_cast<std::uint32_t>(id);
+  for (const Measurement& m : fp.measurements) {
+    if (m.check_index == want && m.scope.kind == kind && m.scope.index == index) {
+      return &m;
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace
@@ -536,4 +556,83 @@ TEST_CASE("audio_decode - a truncated-vs-full sample_hash pair compares skipped:
   CHECK(finding.status == Status::skipped);
   CHECK(finding.skip_reason == SkipReason::hash_incomparable);
   CHECK(finding.message.find("sampling_state") != std::string::npos);
+  // 06-14-PLAN.md Task 2: the message also names "truncated" -- extended
+  // once compare/hash.cpp's own truncated-sampling rule (checked before
+  // the ordinary precondition-mismatch rule) started handling this exact
+  // pair.
+  CHECK(finding.message.find("truncated") != std::string::npos);
+}
+
+// 06-14-PLAN.md Task 2 (WR-02, TRUST-02, D-09): the level-check consumer
+// side. Baseline is a real full sweep -- non-vacuous: all four ids report
+// real values (skip_reason none), proving the skip assertion below is
+// actually exercising something. The stopped candidate reports
+// skipped:partial_scan with evidence {"reason": "consecutive_decode_error_limit"}
+// for all four -- never a value computed from the part that was measured,
+// and Fingerprint::partial stays false throughout (D-09: truncation is not
+// the same as undecodable).
+TEST_CASE("audio_decode - a stopped stream's loudness and silence checks skip partial_scan with the stop reason",
+          "[unit]") {
+  ScanBundle baseline_bundle = scan_with_decode(audio_pcm_base_wav());
+  ProbeResults baseline_results;
+  baseline_results.demux = &baseline_bundle.session;
+  baseline_results.packet_scan = baseline_bundle.packets;
+  baseline_results.audio_decode = baseline_bundle.audio_decode;
+  Fingerprint baseline_fp;
+  audio_loudness_analyzer().run(baseline_results, baseline_fp);
+  audio_silence_analyzer().run(baseline_results, baseline_fp);
+
+  for (CheckId id : {CheckId::audio_loudness_integrated, CheckId::audio_loudness_true_peak,
+                      CheckId::audio_silence_edges, CheckId::audio_silence_dropouts}) {
+    const Measurement* m = find_measurement(baseline_fp, id);
+    REQUIRE(m != nullptr);
+    CHECK(m->skip_reason == SkipReason::none);
+  }
+  CHECK(!baseline_fp.partial);
+
+  ScanBundle candidate_bundle = scan_with_decode(audio_pcm_base_wav());
+  const std::optional<std::size_t> stream_index = first_attempted_index(candidate_bundle.audio_decode);
+  REQUIRE(stream_index.has_value());
+  candidate_bundle.audio_decode.per_stream[*stream_index] = drive_error_limit_decode(audio_pcm_base_wav(), 70);
+  ProbeResults candidate_results;
+  candidate_results.demux = &candidate_bundle.session;
+  candidate_results.packet_scan = candidate_bundle.packets;
+  candidate_results.audio_decode = candidate_bundle.audio_decode;
+  Fingerprint candidate_fp;
+  audio_loudness_analyzer().run(candidate_results, candidate_fp);
+  audio_silence_analyzer().run(candidate_results, candidate_fp);
+
+  for (CheckId id : {CheckId::audio_loudness_integrated, CheckId::audio_loudness_true_peak,
+                      CheckId::audio_silence_edges, CheckId::audio_silence_dropouts}) {
+    const Measurement* m = find_measurement(candidate_fp, id);
+    REQUIRE(m != nullptr);
+    CHECK(m->skip_reason == SkipReason::partial_scan);
+    REQUIRE(m->evidence.is_object());
+    REQUIRE(m->evidence.contains("reason"));
+    CHECK(m->evidence.at("reason") == std::string(kDecodeStopConsecutiveErrorLimit));
+  }
+  CHECK(!candidate_fp.partial);
+}
+
+// 06-14-PLAN.md Task 2 (WR-02, TRUST-02): a candidate compared against
+// itself (both sides the SAME truncated decode) -- sampling_state AGREES
+// ("truncated" on both), so the ORDINARY kPreconditionKeys mismatch rule
+// would see no disagreement at all. Only compare_hash's own new
+// truncated-sampling rule catches this: a digest match over two identical
+// prefixes still cannot vouch for the unread remainder. Before Task 2's
+// compare/hash.cpp change, this reported a fabricated `pass` ("digests
+// match") -- the RED this task's own SUMMARY records.
+TEST_CASE("audio_decode - two truncated sample_hash chains compare skipped:hash_incomparable", "[unit]") {
+  ScanBundle bundle = scan_with_decode(audio_pcm_base_wav());
+  const std::optional<std::size_t> stream_index = first_attempted_index(bundle.audio_decode);
+  REQUIRE(stream_index.has_value());
+  bundle.audio_decode.per_stream[*stream_index] = drive_error_limit_decode(audio_pcm_base_wav(), 70);
+  const Fingerprint fp = run_content_audio_sample_hash(bundle);
+
+  auto findings = compare_fingerprints(fp, fp, Policy{ProfileId::sw_encoder}, builtin_registry());
+  REQUIRE(findings.has_value());
+  const Finding& finding = find_sample_hash_finding(*findings);
+  CHECK(finding.status == Status::skipped);
+  CHECK(finding.skip_reason == SkipReason::hash_incomparable);
+  CHECK(finding.message.find("truncated") != std::string::npos);
 }
