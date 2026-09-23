@@ -4,7 +4,8 @@
 
 EBU R128 integrated loudness (BS.1770 K-weighted, gated) for every audio stream, computed by
 libebur128 in `EBUR128_MODE_I` from the SAME shared decode sweep `content.audio.sample_hash`
-consumes -- no second decode. Every channel's role is mapped explicitly from the decoded
+consumes -- no second decode. libebur128 is initialised at the DECODED output rate -- the first
+decoded frame's own rate, never the container's declared rate (06-15-PLAN.md, CR-01). Every channel's role is mapped explicitly from the decoded
 `AVChannelLayout`'s own per-position codes into libebur128's channel enum before a single sample
 is fed: libebur128 has no knowledge of `AVChannelLayout` on its own, and the surround channels
 carry a +1.5 dB weighting that a wrong (or default) mapping would silently misapply on exactly the

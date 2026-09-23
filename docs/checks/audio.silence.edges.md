@@ -23,7 +23,8 @@ independent RMS-window criteria), never forwarded between the two.
 
 Each recorded span's `start`/`end` are exact `RationalValue`s in ms, derived from the sample
 index and the stream's own sample rate through checked rational arithmetic (`src/core/
-rational.h`) -- never a pre-divided float. Two spans that touch exactly (`end == start` of the
+rational.h`) -- never a pre-divided float. That sample rate is the DECODED output rate -- the
+first decoded frame's own rate, never the container's declared rate (06-15-PLAN.md, CR-01). Two spans that touch exactly (`end == start` of the
 next) are merged into one, mirroring `timeline.discontinuities`' own merge convention. A stream
 with no detected silence reports an **empty span list** as a real measured value -- never
 `Absent{}` and never a skip: an empty list and an unmeasured stream stay distinguishable.

@@ -7,9 +7,15 @@ via a chained XXH3-128 hash over fixed-length blocks of the decoder's UNTRIMMED 
 every sample decoded from every packet the demuxer delivers, ignoring sample-level trim
 signals (`skip_samples`, edit-list priming, `CodecDelay`). Decoded PCM is regrouped into
 fixed-length blocks (roughly 100 ms, exactly `sample_rate / 10` samples per stream, integer
-division) independent of the decoder's own frame size and independent of container
-packetization, so an MP4, its MKV remux and its MPEG-TS remux of one payload hash equal, and
-so does the same PCM essence packaged as WAV, MOV, or FLAC at any block size.
+division, of the DECODED output rate -- the first decoded frame's own rate, never the
+container's declared rate) independent of the decoder's own frame size and independent of
+container packetization, so an MP4, its MKV remux and its MPEG-TS remux of one payload hash
+equal, and so does the same PCM essence packaged as WAV, MOV, or FLAC at any block size. This
+matters concretely for implicitly-signalled HE-AAC: the container header's declared rate is the
+undoubled core rate, and is only ever corrected to the doubled, decoded rate by
+`avformat_find_stream_info`'s own internal decode having already run before this pass reads it
+(06-15-PLAN.md, CR-01) -- basing the block length on the DECODED rate removes that dependency
+entirely.
 
 The value is a `hash_chain`: an `algorithm` name, a single top-level `digest` (the XXH3-128 of
 the ordered concatenation of every block's own digest -- one stable value for the whole
@@ -110,6 +116,16 @@ here to stop tokens.
 | token | what stopped | effect on this check | effect on the level checks |
 |---|---|---|---|
 | `consecutive_decode_error_limit` | more than 64 consecutive decode failures (`kMaxAudioDecodeErrorsPerStream`), after which the stream's decode stops | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
+| `decoded_channels_changed` | the first decoded frame whose channel count differs from the first frame's | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
+| `decoded_sample_format_changed` | the first decoded frame whose sample format (packed-equivalent spelling) differs from the first frame's | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
+| `decoded_sample_rate_changed` | the first decoded frame whose sample rate differs from the first frame's | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
+| `decoded_channel_layout_changed` | the first decoded frame whose channel layout differs from the first frame's | `sampling_state` becomes `"truncated"` | `skipped:partial_scan` with evidence `reason` naming this token |
+
+06-15-PLAN.md (CR-02): the four `decoded_*` tokens are a per-frame re-validation, checked in this
+fixed order (channels, format, rate, layout) against the configuration the FIRST decoded frame
+established -- a mismatched frame, and every frame after it, never reaches the hash chain, the
+loudness sink, or the silence detector, and is never counted in `total_samples`. A planar and a
+packed spelling of the SAME sample format are never a mismatch (D-02).
 
 ## Why it matters
 
