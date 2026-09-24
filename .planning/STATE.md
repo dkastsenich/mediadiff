@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 06
 current_phase_name: Audio Analysis
 status: executing
-stopped_at: Completed 06-19-PLAN.md
-last_updated: "2026-09-23T21:57:29.688Z"
+stopped_at: Completed 06-20-PLAN.md (06-13 and gap closure certified on CI run 35987510562)
+last_updated: "2026-09-24T12:28:47.530Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 06 execution started
-state_head: c050ccd830399a2f5f729ca849e2441b07498245
+state_head: 07ce4d74e80c187ebd896900c6efbe9175d9ce6e
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 112
-  completed_plans: 111
+  completed_plans: 112
 milestone_name: milestone
 ---
 
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-08-12)
 ## Current Position
 
 Phase: 06 (Audio Analysis) — EXECUTING
-Plan: 7 of 20
-Status: Ready to execute
-Last activity: 2026-09-23 — Phase 06 execution started
+Plan: 20 of 20 (all plan SUMMARYs present; phase-level verification pending)
+Status: 06-20 (final plan) certified on CI run 35987510562; ready for /gsd-verify-work 06
+Last activity: 2026-09-24 — 06-13 and gap closure certified on CI run 35987510562
 
 Progress: [█████████░] 94%
 
@@ -162,6 +162,7 @@ Progress: [█████████░] 94%
 | Phase 06-audio-analysis P17 | 15min | 2 tasks | 5 files |
 | Phase 06-audio-analysis P18 | 30 min | 3 tasks | 8 files |
 | Phase 06 P19 | 14min | 2 tasks | 6 files |
+| Phase 06 P20 | n/a (multi-session; this continuation covers Task 3) | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -397,6 +398,7 @@ Recent decisions affecting current work:
 - [Phase 06]: CR-05 secondary: SbrResolution::decode_observed_rate_hz now populated by every implicit_decoded branch, not only the fallback probe
 - [Phase 06]: 06-19: span_ticks_for_basis's prefers_declared derived from the reconstruction outcome (raw span + both tick counts + in-range subtractions + strictly positive result), not input availability -- closes WR-07 — A preference flag must reflect whether the guarded computation actually succeeded, not merely whether its inputs looked plausible; the container-field fallback's own behavior (WR-07 flagged assumption A1) is unchanged
 - [Phase 06]: 06-19: WINDOWS.md #32 hand-edited via Edit tool (not the windows CLI mutation command) to append a dated note to an existing entry's description cell; status/counts left untouched — The windows CLI tool creates new entries; this plan needed to append to an existing open entry without altering its status or the ledger's frontmatter counts
+- [Phase 06]: 06-13 and the gap closure certified on CI run 35987510562: all four of 06-13's named gates reported Passed on the designated x64-linux leg, both instruction-count ratchets held within tolerance (change=0%), and no baseline/digest file needed a rewrite. — Certified strictly from Task 2's verbatim captures per-line Passed/Failed tokens, not ctest's summary-line 'N Skipped' header (a grep artifact for integration.audio_sample_hash, not a real Skipped status).
 
 ### Pending Todos
 
@@ -438,6 +440,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-23T21:57:29.499Z
-Stopped at: Completed 06-19-PLAN.md
+Last session: 2026-09-24T12:28:47.307Z
+Stopped at: Completed 06-20-PLAN.md (06-13 and gap closure certified on CI run 35987510562)
 Resume file: None
