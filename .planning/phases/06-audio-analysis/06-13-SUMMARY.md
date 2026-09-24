@@ -99,7 +99,7 @@ coverage:
 
 duration: 25min
 completed: 2026-09-22
-status: halted
+status: complete
 ---
 
 # Phase 6 Plan 13: Designated-Leg Round Trip -- Cross-Architecture Proof and Real Baselines Summary
@@ -177,7 +177,65 @@ None - no external service configuration required.
 
 - D-06 is closed with an honest, evidence-backed record: `aac_fixed` is proven cross-architecture, `mp3`/`mp2` are correctly demoted, and `ac3_fixed`'s gap is visible for a future phase to close (a D-10-style hand-written AC-3 bitstream would be the mechanism, WINDOWS.md #39).
 - The audio perf ratchet and corpus digest are both real, designated-leg-sourced gates now -- Phase 7 (or any later phase touching audio decode) inherits a trustworthy baseline rather than a self-consistency check.
-- **Blocker for phase completion:** Task 3's own checkpoint (the second push, human-approved in principle but owned by the orchestrator per this session's instructions) has not been executed. The orchestrator must push this branch, read the confirming CI run, and verify the four named gates (`assert_corpus_digest`, the audio perf ratchet, `integration.audio_sample_hash`, `integration.audio_hash_decoder`, `integration.audio_corpus_sweep`, `integration.doc03_coverage`) all report Passed on the designated leg before this plan can be marked fully certified.
+- **Blocker for phase completion (RESOLVED 2026-09-24, see "Confirmed" below):** Task 3's own checkpoint (the second push, human-approved in principle but owned by the orchestrator per this session's instructions) has not been executed. The orchestrator must push this branch, read the confirming CI run, and verify the four named gates (`assert_corpus_digest`, the audio perf ratchet, `integration.audio_sample_hash`, `integration.audio_hash_decoder`, `integration.audio_corpus_sweep`, `integration.doc03_coverage`) all report Passed on the designated leg before this plan can be marked fully certified.
+
+## Confirmed (2026-09-24)
+
+The blocker above is resolved. 06-20-PLAN.md's Task 2 pushed branch `gsd/phase-06-audio-analysis` with human approval and read the resulting CI run to completion. This is a SECOND confirming run, distinct from this plan's own original run `35735099865` (2026-09-22, commit `e5a16770c00343da91ad8e299773eac9774a1bd3`) referenced throughout this SUMMARY above -- that run confirmed D-06's cross-architecture promotion and transcribed the audio baseline; this run confirms the four gates this plan's Task 3 could not complete before the second push happened.
+
+**Confirming run:** id `35987510562`, head commit `4e9aa01848281d586fd9b38a4c5322f597d96cb1`, event `pull_request`, conclusion `success` (https://github.com/dkastsenich/mediadiff/actions/runs/35987510562). Ratchet steps stamp the pull_request merge commit `e4841be`, not the head sha above -- the same GitHub ephemeral-merge-commit behavior this file's own `PERF_BASELINE.txt` commentary already documents for run 35347845434.
+
+**The four named gates, on the designated x64-linux leg, transcribed verbatim from the confirming run's ctest output (06-20-PLAN.md Task 2's Capture 5):**
+
+```
+--- integration.audio_sample_hash: 15 Passed, 2 Skipped, 0 other
+```
+(The "2 Skipped" in that ctest summary line is a grep artifact of two test NAMES containing the word "skipped" -- `...--no-content leaves content.audio.sample_hash skipped:requires_decode....` and `...compare decodes by default -- content.audio.sample_hash reports a real status, not skipped:requires_decode....`. All 15 of that group's listed lines end `.... Passed`, including both of those two by name; zero tests in the group actually reported a Skipped status.)
+```
+1007/1251 Test #1007: integration.audio_sample_hash - --content and --no-content together exits 64 naming the conflict, on compare, dir and inspect .... Passed    0.01 sec
+1008/1251 Test #1008: integration.audio_sample_hash - --no-content leaves content.audio.sample_hash skipped:requires_decode .... Passed    0.01 sec
+1009/1251 Test #1009: integration.audio_sample_hash - WAV stream-copied to MOV (both decoder_class 1) reports pass on the audio hash .... Passed    0.07 sec
+1010/1251 Test #1010: integration.audio_sample_hash - a HashChain's block_digests array round-trips through write_snapshot/read_snapshot byte-identically .... Passed    0.07 sec
+1011/1251 Test #1011: integration.audio_sample_hash - a snapshot baseline produces the IDENTICAL divergence evidence as a live media baseline .... Passed    0.13 sec
+1012/1251 Test #1012: integration.audio_sample_hash - an MP4, its MKV stream copy and its MPEG-TS stream copy of the same AAC payload all produce the SAME HashChain digest and element_count .... Passed    0.12 sec
+1013/1251 Test #1013: integration.audio_sample_hash - compare --no-content still exits on the normal contract (0, clean) .... Passed    0.01 sec
+1014/1251 Test #1014: integration.audio_sample_hash - compare decodes by default -- content.audio.sample_hash reports a real status, not skipped:requires_decode .... Passed    0.06 sec
+1015/1251 Test #1015: integration.audio_sample_hash - comparing the same pair twice produces byte-identical reports, including the whole evidence object .... Passed    0.12 sec
+1016/1251 Test #1016: integration.audio_sample_hash - comparing two different tones reports the first divergent block, sample range, time and divergent-block count .... Passed    0.06 sec
+1017/1251 Test #1017: integration.audio_sample_hash - dir does not decode by default, and --content enables it .... Passed    0.07 sec
+1018/1251 Test #1018: integration.audio_sample_hash - inspect --content renders decode-derived facts, --no-content marks the same section not measured, never blank .... Passed    0.04 sec
+1019/1251 Test #1019: integration.audio_sample_hash - one PCM payload written as WAV and independently encoded to FLAC at two block sizes all produce the SAME underlying HashChain digest (D-02), and now compare pass now that FLAC is promoted to class 1 (06-05-PLAN.md, D-06) .... Passed    0.18 sec
+1020/1251 Test #1020: integration.audio_sample_hash - snapshot always decodes, and --no-content exits 64 naming the flag .... Passed    0.04 sec
+1021/1251 Test #1021: integration.audio_sample_hash - two independent bitexact encodes of the identical tone report pass on every audio scope .... Passed    0.06 sec
+```
+```
+--- integration.audio_hash_decoder: 14 Passed, 0 Skipped, 0 other
+ 964/1251 Test  #964: integration.audio_hash_decoder - Test 1: auto selects the class-1 fixed-point sibling for AAC (confirmed) and mp2 by name though now recorded class2 (demoted, 06-13-PLAN.md) .... Passed    0.09 sec
+ 965/1251 Test  #965: integration.audio_hash_decoder - Test 2: --hash-decoder default opts out, records class 2 .... Passed    0.06 sec
+ 966/1251 Test  #966: integration.audio_hash_decoder - Test 3: --hash-decoder <name> forces that exact decoder, byte-for-byte .... Passed    0.06 sec
+ 967/1251 Test  #967: integration.audio_hash_decoder - Test 4: Opus is class 2, an unlisted codec (Vorbis) is class 3 hash-disabled .... Passed    0.06 sec
+ 968/1251 Test  #968: integration.audio_hash_decoder - Test 5: --hash-decoder <unresolvable name> exits 64 naming the value .... Passed    0.00 sec
+ 969/1251 Test  #969: integration.audio_hash_decoder - Test 7: a profile never changes decoder selection (D-08) .... Passed    0.12 sec
+ 970/1251 Test  #970: integration.audio_hash_decoder - Test 8: the recorded decoder drives the whole sweep (repeat-run digest stability) .... Passed    0.12 sec
+ 971/1251 Test  #971: integration.audio_hash_decoder - Test 9: the class-1 two-build cross-architecture proof covers aac_fixed only -- ac3_fixed/mp3/mp2 remain unproven cross-architecture and are explicitly excluded by name, never silently .... Passed    0.00 sec
+ 972/1251 Test  #972: integration.audio_hash_decoder - class proof Test 1: audio_aac_handwritten.mp4 matches its D-11 input identity .... Passed    0.00 sec
+ 973/1251 Test  #973: integration.audio_hash_decoder - class proof Test 2: class-1 hash compares equal against a snapshot from a different build .... Passed    0.01 sec
+ 974/1251 Test  #974: integration.audio_hash_decoder - class proof Test 3/4: differing class-2 signatures always skip, even with EQUAL digests, with the exact remediation hint .... Passed    0.06 sec
+ 975/1251 Test  #975: integration.audio_hash_decoder - class proof Test 5: matching class-2 signatures compare normally, both pass and a real non-pass .... Passed    0.12 sec
+ 976/1251 Test  #976: integration.audio_hash_decoder - class proof Test 6: a class-3 stream skips on both sides, never a digest comparison .... Passed    0.03 sec
+ 977/1251 Test  #977: integration.audio_hash_decoder - class proof Test 7: a same-run compare never degrades (identical signatures by construction) .... Passed    0.06 sec
+```
+```
+--- integration.audio_corpus_sweep: 1 Passed, 0 Skipped, 0 other
+ 954/1251 Test  #954: integration.audio_corpus_sweep - every declared clean pair in the corpus reports ONLY its declared non-pass findings (empty by default) across the WHOLE report .... Passed    1.11 sec
+```
+```
+--- integration.doc03_coverage: 2 Passed, 0 Skipped, 0 other
+1106/1251 Test #1106: integration.doc03_coverage - dir-mode-only checks: meta.missing_candidate/meta.extra_candidate trigger on an unpaired file each way and are absent (clean) on a fully-paired directory .... Passed    0.03 sec
+1107/1251 Test #1107: integration.doc03_coverage - every registered check has a declared triggering fixture pair and a declared clean one .... Passed    4.68 sec
+```
+
+All four gates report Passed, zero Skipped, on the designated x64-linux leg. This SUMMARY's `status` is now `complete` on that observed evidence, per 06-20-PLAN.md Task 3.
 
 ---
 *Phase: 06-audio-analysis*
