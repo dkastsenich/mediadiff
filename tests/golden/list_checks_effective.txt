@@ -75,3 +75,17 @@ timeline.av_drift  severity=fail  tolerance=2/10 ms/min
 timeline.av_drift.pattern  severity=fail  tolerance=<none>
 timeline.timecode  severity=info  tolerance=<none>
 timeline.timecode.value  severity=info  tolerance=<none>
+content.audio.sample_hash  severity=fail  tolerance=<none>
+audio.codec  severity=fail  tolerance=<none>
+audio.sample_rate  severity=fail  tolerance=<none>
+audio.sample_fmt  severity=fail  tolerance=<none>
+audio.bit_depth  severity=fail  tolerance=<none>
+audio.channels  severity=fail  tolerance=<none>
+audio.layout  severity=fail  tolerance=<none>
+audio.profile  severity=fail  tolerance=<none>
+audio.priming  severity=fail  tolerance=<none>
+audio.loudness.integrated  severity=fail  tolerance=10/10 LU (warn 5/10)
+audio.loudness.true_peak  severity=warn  tolerance=3/10 dB
+audio.silence.edges  severity=fail  tolerance=<none>
+audio.silence.dropouts  severity=fail  tolerance=<none>
+meta.decode_errors  severity=fail  tolerance=0/1 bytes

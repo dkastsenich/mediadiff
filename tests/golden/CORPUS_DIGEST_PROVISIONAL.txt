@@ -1,6 +1,71 @@
 # tests/golden/CORPUS_DIGEST_PROVISIONAL.txt -- names only, no hashes
 # (D-GAP-01 gap closure, 04-13-PLAN.md Task 2).
 #
+# STATUS (as of debug session true-peak-cross-platform CYCLE 2,
+# .planning/debug/): BOTH timeline_drift_base.mp4 AND
+# timeline_drift_linear.mp4 are listed below -- NEITHER is new; both are
+# here because their RECIPE CHANGED.
+#
+# Cycle 1 found timeline_drift_linear.mp4 was the only fixture in
+# scripts/gen_corpus.sh generated through a resampler (`aresample`), whose
+# per-architecture SIMD made the fixture's own bytes differ on every CI leg;
+# the AAC encoder downstream amplified that into a multi-dB
+# `audio.loudness.true_peak` swing that broke integration.timeline_av_sync
+# on arm64-osx and x64-windows-static-md. That recipe now reaches the
+# identical 0.1% clock error by GENERATING at 47952Hz and relabelling to
+# 48000Hz (`asetrate` only, no DSP). CI run 35723466889 proved that fix
+# NECESSARY but NOT SUFFICIENT: x64-windows-static-md went fully green, but
+# arm64-osx still diverged (+1.299 dB, and the sign FLIPPED relative to
+# x64-linux). The remaining amplifier was the native AAC encoder itself,
+# independently arch-divergent.
+#
+# Cycle 2 therefore moved BOTH fixtures' audio to `-c:a pcm_s16le`, which is
+# why base's line changes too. With PCM the decoded samples ARE the stored
+# bytes (decode class 1 by src/probe/audio_decode.h's own definition), so
+# the true peak is EXACTLY invariant rather than merely close. Both new
+# hashes in tests/golden/CORPUS_DIGEST.txt were PREDICTED on the workstation
+# by regenerating under `TZ=UTC taskset -c 0-3` -- the same method that, in
+# the resolved test-898-ci-nonreproducible session, predicted the designated
+# leg's bytes exactly. Validated here before the change by reproducing BOTH
+# drift fixtures' then-current pinned hashes byte-for-byte, including
+# timeline_drift_base.mp4's fc56ebd7..., which was itself TRANSCRIBED from a
+# real designated leg (run 35269755235) rather than predicted -- the
+# strongest confirmation of this protocol so far. Both entries still need
+# the ordinary designated-leg transcription before they may be cleared.
+#
+# STATUS (as of 06-13-PLAN.md Task 1, CI run 35708992998): the paragraph
+# that used to stand here described the ledger as NOT EMPTY -- Phase 6
+# (06-01-PLAN.md through 06-10-PLAN.md) had added 41 workstation-computed
+# fixture names awaiting designated-leg transcription. Preserved as
+# history below (this whole paragraph is now stale narrative, not a claim
+# about the file's current contents): "Phase 6 added 41 fixture names,
+# listed below, each workstation-computed and awaiting the SAME
+# designated-leg transcription this file's own historical entries below
+# already describe -- see 06-13-PLAN.md Task 3, which transcribes them
+# into tests/golden/CORPUS_DIGEST.txt and clears this ledger back to
+# EMPTY-on-purpose, exactly as 04-21-PLAN.md and 05-13-PLAN.md did for
+# Phase 4 and Phase 5's own additions."
+#
+# STATUS (as of 06-13-PLAN.md Task 3, CI run 35735099865, commit
+# e5a16770c00343da91ad8e299773eac9774a1bd3, real x64-linux designated-leg
+# evidence): EMPTY, and for a stronger reason than "transcribed" alone --
+# NO TRANSCRIPTION WAS EVEN NEEDED. The designated leg's own "Report
+# corpus digest" and "Assert the corpus digest matches the committed pin
+# (D-GAP-01)" steps both SUCCEEDED against the values Phase 6 had already
+# committed (workstation-computed, per the stale paragraph above) --
+# meaning those 41 committed hash lines in tests/golden/CORPUS_DIGEST.txt
+# ALREADY equalled the designated leg's own real computed output, byte for
+# byte, across all 206 listing lines, confirmed independently for
+# audio_51.flac, audio_dropout.flac, audio_hash_base.mp4,
+# timeline_drift_base.mp4 and timeline_drift_linear.mp4 by direct
+# comparison against the leg's own raw digest listing. No committed
+# CORPUS_DIGEST.txt hash was rewritten by this transcription (the
+# no-rewrite guard, clause 4, is unaffected by definition -- nothing
+# changed) -- this status block and the marker below exist purely to
+# retire the "awaiting designated-leg transcription" caveat those 41 names
+# carried and to formally clear this ledger, exactly as 04-21-PLAN.md and
+# 05-13-PLAN.md cleared Phase 4 and Phase 5's own additions.
+#
 # STATUS: EMPTY ON PURPOSE. The two entries added by debug session
 # test-898-ci-nonreproducible (.planning/debug/resolved/) -- the unflagged
 # and flagged TS jump-trigger fixtures, whose bytes changed when
@@ -58,6 +123,8 @@
 #
 # TRANSCRIBED-FROM-DESIGNATED-LEG: run=35347044190 job=105605976648 commit=8c343c790b1601ceea80e3b2fde44bfcaf8e8bad date=2026-09-18
 #
+# TRANSCRIBED-FROM-DESIGNATED-LEG: run=35735099865 commit=e5a16770c00343da91ad8e299773eac9774a1bd3 date=2026-09-22
+#
 # The lines above are machine-readable markers, not decoration:
 # scripts/lint_corpus_digest_provenance.sh clause 3 accepts a zero-entry
 # ledger ONLY when at least one such marker (with a run=<digits> and a
@@ -68,3 +135,42 @@
 # zero-entry branch does not apply -- clause 3 instead checks the entries
 # themselves are LC_ALL=C sorted, unique, and each names a real line in
 # CORPUS_DIGEST.txt.
+#
+# 06-01-PLAN.md added the nine content.audio.sample_hash tracer fixtures
+# (audio_hash_*, audio_pcm_*) -- workstation-computed hashes that awaited
+# designated-leg transcription; 06-13-PLAN.md Task 3 confirmed them already
+# matching (see the STATUS block above) and cleared this entry.
+#
+# 06-02-PLAN.md Task 1 added the five hand-written HE-AAC/class-1 proof
+# fixtures (audio_sbr_*, audio_aac_handwritten*) -- also
+# workstation-computed; also confirmed matching and cleared by 06-13-PLAN.md
+# Task 3.
+#
+# 06-02-PLAN.md Task 2 added the eleven lossless loudness/true-peak/silence
+# FLAC fixtures (audio_dropout*, audio_loud_*, audio_peak_*,
+# audio_silence_*) -- also workstation-computed; also confirmed matching
+# and cleared by 06-13-PLAN.md Task 3.
+#
+# 06-02-PLAN.md Task 3 added the thirteen stream-parameter, layout and
+# priming fixtures (audio_51*, audio_flt_base.ogg, audio_mono_s16.wav,
+# audio_mp2_base.mpg, audio_prime_*, audio_stereo_*), including the
+# multi-edit and fragmented MP4 container-mechanism edge cases -- also
+# workstation-computed; also confirmed matching and cleared by
+# 06-13-PLAN.md Task 3.
+#
+# 06-10-PLAN.md added the meta.decode_errors recoverable-error/undecodable
+# fixture triple (audio_corrupt_clean.mp4, audio_corrupt_frames.mp4,
+# audio_undecodable.mp4) -- also workstation-computed (AAC encoder
+# output is not byte-stable across SIMD levels, 06-CONTEXT.md's own
+# measured finding); also confirmed matching and cleared by 06-13-PLAN.md
+# Task 3.
+#
+# The debug session true-peak-cross-platform CYCLE 2 paragraph near the top
+# of this file added timeline_drift_base.mp4 and timeline_drift_linear.mp4
+# (their audio recipe changed to pcm_s16le) -- also confirmed matching the
+# designated leg's own listing and cleared by 06-13-PLAN.md Task 3.
+#
+# All 41 names Phase 6 added -- every one of the six groups above -- are
+# confirmed and cleared as of the STATUS block near the top of this file
+# (run 35735099865). This ledger is EMPTY on purpose, exactly as it was
+# after Phase 4 and Phase 5's own transcriptions.

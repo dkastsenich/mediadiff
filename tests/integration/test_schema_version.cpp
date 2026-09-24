@@ -105,20 +105,30 @@ TEST_CASE("schema_version - a snapshot missing schema_version entirely is reject
   REQUIRE(result.exit_code == 65);
 }
 
-TEST_CASE("schema_version - compose_decode_path_signature composes three distinct version triples", "[integration]") {
+TEST_CASE("schema_version - compose_decode_path_signature composes three distinct version triples, plus "
+          "06-01-PLAN.md's D-05 triplet and cpuflags fields",
+          "[integration]") {
   const std::string signature = compose_decode_path_signature();
   REQUIRE(signature.find("avcodec/") != std::string::npos);
   REQUIRE(signature.find("avformat/") != std::string::npos);
   REQUIRE(signature.find("swscale/") != std::string::npos);
+  // 06-01-PLAN.md (D-05, TRUST-01/TRUST-02): two additional space-separated
+  // fields -- triplet/{VCPKG_TARGET_TRIPLET} and cpuflags/0x{hex} -- are
+  // inseparable from the three libav version triples above, since
+  // AV_CPU_FLAG_* bit values are not architecture-unique on their own
+  // (06-RESEARCH.md Q2).
+  REQUIRE(signature.find("triplet/") != std::string::npos);
+  REQUIRE(signature.find("cpuflags/0x") != std::string::npos);
 
-  // Three space-separated tokens, each "<name>/<major>.<minor>.<micro>".
+  // Five space-separated tokens: three "<name>/<major>.<minor>.<micro>"
+  // version triples, plus "triplet/<value>" and "cpuflags/0x<hex>".
   std::vector<std::string> tokens;
   std::istringstream stream(signature);
   std::string token;
   while (stream >> token) {
     tokens.push_back(token);
   }
-  REQUIRE(tokens.size() == 3);
+  REQUIRE(tokens.size() == 5);
 }
 
 TEST_CASE("schema_version - a written snapshot's text never contains the input file's absolute directory (T-2-07)",

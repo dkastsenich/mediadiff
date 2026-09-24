@@ -202,7 +202,80 @@ runs it on every leg that runs the repo's shell lints -- no designated-leg
 conditional, since it never hashes a fixture and carries no
 platform-dependence.
 
-## `ts_scan_ts_*.txt` are a different kind of golden (TRUST-09, D-04)
+## `AUDIO_EBUR128_REFERENCE.txt` (D-13, 06-02-PLAN.md Task 2)
+
+`AUDIO_EBUR128_REFERENCE.txt` is a committed text reference of
+`ffmpeg -af ebur128=peak=true` measurements — one line per lossless
+loudness/true-peak/silence fixture, holding the fixture name, its
+integrated loudness in LUFS and its true peak in dBTP. It is the golden
+06-08 asserts within ±0.1 LU of.
+
+**Only `scripts/gen_corpus.sh` writes this file**, at corpus-generation
+time, by running the PINNED generator (`scripts/ffmpeg_pin.json`) against
+each measured fixture immediately after synthesizing it and parsing the
+`Integrated loudness`/`True peak` lines out of ffmpeg's own stderr
+`Summary:` block. Regenerating it is a deliberate, reviewed act — exactly
+`CORPUS_DIGEST.txt`'s own rule above — never something to run casually and
+never something to mix with a different ffmpeg build's output. Committing
+the captured values is what lets 06-08's assertion run on all five CI
+legs without requiring the pinned ffmpeg to be present during `ctest`.
+
+**Why every measured fixture here is FLAC (`-c:a flac`) or raw PCM, never
+`aac`/`ac3`/`eac3`:** D-13's own encoder byte-stability finding is that
+`flac` is byte-identical across SIMD dispatch levels on one host, while
+the three lossy codecs are not (see "Two kinds of golden live here"
+above for the same class of jitter). A loudness/true-peak measurement
+computed over a fixture whose own encoded bytes vary by host CPU would
+confine 06-08's tolerance assertion to the designated leg; measuring
+lossless carriers instead keeps the reference portable to every leg.
+
+Refresh rule: `bash scripts/gen_corpus.sh` regenerates this file every
+run as a normal part of corpus generation (unlike `CORPUS_DIGEST.txt`,
+there is no separate capture script) — running it twice must leave the
+file byte-identical, since it is driven only by the pinned ffmpeg's own
+measurement of freshly-bitexact-synthesized lossless audio, not by
+anything host-CPU-dependent. A diff in this file is either an intentional
+fixture-recipe change (reviewable, expected) or a real regression in
+what the pinned ffmpeg measures — never routine churn to wave through.
+
+## `PERF_BASELINE.txt`'s audio entries (PERF-04, 06-12-PLAN.md)
+
+`PERF_BASELINE.txt` itself is not documented in this file — its own header
+comment carries its full provenance and refresh contract (D-15, Phase 5).
+This section covers only the two lines `scripts/measure_audio_perf.sh`
+adds: `audio_plain_instructions` and `audio_full_instructions`, the
+retired-instruction counts `valgrind --tool=cachegrind` reports for, in
+order: `run_packet_scan` alone with audio decode disabled (no
+`Pass::audio_decode` in the pass union), and the SAME packet scan with the
+shared audio-decode sweep enabled — the fused hash + loudness + silence
+sinks (AUDIO-10) — plus every consuming analyzer's own `run()`. The large
+`audio_full`/`audio_plain` ratio is expected: decoding and analyzing ten
+minutes of 44100Hz stereo AAC is a much larger unit of work than a
+decode-free packet scan.
+
+The reference input these two metrics measure against is a 10-minute
+44100Hz stereo AAC file, audio-only (no video stream), generated on demand
+by `scripts/measure_audio_perf.sh` into the SAME gitignored
+`.mediadiff-bench/` scratch directory `scripts/measure_timeline_perf.sh`
+already uses, cached by reuse-if-present. It follows the SAME
+never-enters-`tests/fixtures/`/never-hashed-into-`CORPUS_DIGEST.txt` rule
+(D-12, Phase 4) as every other on-demand benchmark input in this
+directory.
+
+**STATUS: PROVISIONAL.** Unlike the two timeline lines above this section
+(`plain_instructions`/`full_instructions`, transcribed from a real
+designated-leg CI run), the two audio lines were measured LOCALLY —
+`06-12-PLAN.md`'s own workstation lacked both `valgrind` and passwordless
+root, so the measurement ran inside an `ubuntu:24.04` container instead of
+the designated `x64-linux` CI leg. `06-13-PLAN.md` transcribes the real
+designated-leg numbers over these two lines, exactly as the timeline lines
+were transcribed in `05-12`/`05-13`. Until that transcription lands, the
+`.github/workflows/ci.yml` audio ratchet step runs and self-consistency
+checks on every push, but a real regression on the designated leg is not
+yet provably caught — the provisional baseline is this workstation's own
+number, not that leg's.
+
+
 
 These three (`ts_scan_ts_single.txt`, `ts_scan_ts_multiprogram.txt`,
 `ts_scan_ts_204.txt`) are compared via the same `check_golden` mechanism

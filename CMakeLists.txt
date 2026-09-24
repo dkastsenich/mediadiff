@@ -47,6 +47,18 @@ find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 find_package(xxHash CONFIG REQUIRED)
+# 06-08-PLAN.md (AUDIO-05, AUDIO-06): libebur128 ships no CMake package
+# config (only a pkg-config .pc file) -- discovered the same way this
+# file's own GPL-fast-fail block above already discovers a vcpkg-installed
+# static library with no CMake config of its own: find_library scoped to
+# this triplet's own install tree, NO_DEFAULT_PATH so a system libebur128
+# (if one happens to be installed) can never be silently substituted for
+# the pinned 1.2.6.
+find_library(EBUR128_LIBRARY NAMES ebur128
+             PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib" NO_DEFAULT_PATH)
+if(NOT EBUR128_LIBRARY)
+  message(FATAL_ERROR "libebur128 not found under ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib -- check vcpkg.json's libebur128 dependency")
+endif()
 # src/cli/worker_pool.cpp (DIR-05, plan 02-11): plain std::thread, which on
 # some libstdc++ configurations needs an explicit pthread link even though
 # no code here names pthread_* directly.
@@ -163,6 +175,12 @@ add_library(libmediadiff STATIC
   src/probe/demux_session.cpp
   src/probe/packet_scan.cpp
   src/probe/parser_scan.cpp
+  # 06-01-PLAN.md (AUDIO-10): mediadiff's own MPEG-4 AudioSpecificConfig
+  # bit-reader (USAC/AOT detection ahead of decoder selection) and the
+  # audio decode pass itself, fused inside packet_scan.cpp's own
+  # av_read_frame loop.
+  src/probe/audio_config.cpp
+  src/probe/audio_decode.cpp
   src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
@@ -206,6 +224,26 @@ add_library(libmediadiff STATIC
   # -- a QuickTime tmcd track's SMPTE start timecode, reachable from
   # Pass::demux_header alone (no scan of any kind needed).
   src/analyzers/timeline/timecode.cpp
+  # 06-01-PLAN.md (this phase's tracer): content.audio.sample_hash --
+  # audio decode-sink consumer, first real populator of hash.cpp's
+  # kPreconditionKeys.
+  src/analyzers/content/sample_hash.cpp
+  # 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/sample_fmt/
+  # bit_depth/channels/layout -- the six per-audio-stream identity checks,
+  # codecpar-only extraction mirroring video/stream_params.cpp's own shape.
+  src/analyzers/audio/stream_params.cpp
+  # 06-06-PLAN.md (AUDIO-04): audio.priming -- completes Phase 5's priming
+  # precedence chain, extending src/analyzers/timeline/analyzers.h's own
+  # resolve_priming() in place.
+  src/analyzers/audio/priming.cpp
+  # 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): audio.loudness.integrated/
+  # .true_peak -- a pure consumer of the shared decode sweep's own
+  # libebur128 sink outputs (src/probe/audio_decode.{h,cpp}).
+  src/analyzers/audio/loudness.cpp
+  # 06-09-PLAN.md (AUDIO-07, AUDIO-10): audio.silence.edges/.dropouts --
+  # the third and final consumer of the shared decode sweep's own
+  # silence/dropout span-detector outputs (src/probe/audio_decode.{h,cpp}).
+  src/analyzers/audio/silence.cpp
   "${MEDIADIFF_GENERATED_DIR}/core/check_registry.cpp"
   "${MEDIADIFF_GENERATED_DIR}/core/check_explain.cpp"
 )
@@ -218,7 +256,7 @@ target_include_directories(libmediadiff PUBLIC
 )
 target_include_directories(libmediadiff SYSTEM PUBLIC ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(libmediadiff PUBLIC ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash)
+target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash ${EBUR128_LIBRARY})
 
 # --- Header compilation gate --------------------------------------------------
 # A header nothing includes is a header nothing type-checks, and Phase 2
@@ -258,6 +296,8 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/demux_session.h
   src/probe/packet_scan.h
   src/probe/parser_scan.h
+  src/probe/audio_config.h
+  src/probe/audio_decode.h
   src/probe/cadence.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
@@ -268,6 +308,8 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/analyzers/video/analyzers.h
   src/analyzers/timeline/analyzers.h
   src/analyzers/timeline/unwrap.h
+  src/analyzers/content/analyzers.h
+  src/analyzers/audio/analyzers.h
 )
 set_target_properties(libmediadiff PROPERTIES VERIFY_INTERFACE_HEADER_SETS ON)
 
@@ -283,6 +325,10 @@ if(APPLE)
 endif()
 
 target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VERSION="${PROJECT_VERSION}")
+# 06-CHECK-ROSTER.md's approved D-05 signature format: the build's own
+# vcpkg target triplet, additive to compose_decode_path_signature()'s
+# existing version-triple fields (src/util/version.cpp).
+target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VCPKG_TRIPLET="${VCPKG_TARGET_TRIPLET}")
 if(MEDIADIFF_WITH_VMAF)
   target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_WITH_VMAF)
 endif()
@@ -373,6 +419,14 @@ if(MEDIADIFF_BUILD_BENCH)
   target_link_libraries(mediadiff_timeline_overhead PRIVATE libmediadiff fmt::fmt)
   mediadiff_apply_warnings(mediadiff_timeline_overhead)
   mediadiff_apply_platform_definitions(mediadiff_timeline_overhead)
+
+  # 06-12-PLAN.md Task 1 (PERF-04): the audio-decode-sweep overhead
+  # benchmark, mirroring mediadiff_timeline_overhead's own four lines
+  # exactly -- same opt-in gate, same no-CTest-case rule.
+  add_executable(mediadiff_audio_sweep tools/bench/audio_sweep.cpp)
+  target_link_libraries(mediadiff_audio_sweep PRIVATE libmediadiff fmt::fmt)
+  mediadiff_apply_warnings(mediadiff_audio_sweep)
+  mediadiff_apply_platform_definitions(mediadiff_audio_sweep)
 endif()
 
 enable_testing()

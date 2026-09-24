@@ -9,6 +9,8 @@
 #include <optional>
 #include <string>
 
+#include "analyzers/audio/analyzers.h"
+#include "analyzers/timeline/analyzers.h"
 #include "compare/semantics.h"
 #include "core/error.h"
 #include "core/model.h"
@@ -17,6 +19,7 @@
 #include "core/registry.h"
 #include "core/tolerance.h"
 #include "core/value.h"
+#include "probe/audio_decode.h"
 
 using mediadiff::CheckDef;
 using mediadiff::Error;
@@ -35,7 +38,12 @@ using mediadiff::Status;
 using mediadiff::Tolerance;
 using mediadiff::Unit;
 using mediadiff::ValueKind;
+using mediadiff::builtin_registry;
 using mediadiff::compare_tol;
+using mediadiff::CheckRegistry;
+using mediadiff::kCeilingCrossingDeadbandDen;
+using mediadiff::kCeilingCrossingDeadbandNum;
+using mediadiff::kLoudnessQuantiserDen;
 
 TEST_CASE("tolerance: every valid suffix parses with the expected unit and integer magnitude", "[tolerance]") {
   struct Case {
@@ -492,4 +500,345 @@ TEST_CASE("compare_tol D-10 override: a check with no comparison_basis/adjusted_
   auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
   REQUIRE(finding.has_value());
   CHECK(finding->status == Status::warn);  // ordinary raw-value comparison, unaffected
+}
+
+// --- 06-07-PLAN.md Task 1 (D-16, WINDOWS.md #32): the GENERALISED override
+// -- Test 8 and Test 9 from this task's own <behavior> block, exercised
+// against `make_tol_check`'s own SYNTHETIC "t.synthetic_tol_widen" id
+// (neither `timeline.av_drift` nor `timeline.av_offset`), which is what
+// makes "never gated on check.id" testable rather than merely asserted. ---
+
+namespace {
+
+// A Measurement carrying the SECOND (generic) evidence shape the
+// generalised override reads -- raw value as Measurement::value (always
+// `raw_ms`), `span_basis`/`adjusted_magnitude` in evidence, mirroring
+// av_sync.cpp's own `timeline.av_drift` construction exactly, but declared
+// against a synthetic, non-`av_drift` check id. `adjusted_magnitude` is
+// passed as a raw JSON value so Test 9 can supply a non-numeric one
+// without this helper coercing it.
+Measurement span_basis_measurement(std::int64_t raw_ms, const nlohmann::ordered_json& adjusted_magnitude,
+                                    const std::string& basis) {
+  Measurement m = measurement_at(raw_ms, /*estimated=*/false);
+  m.evidence = nlohmann::ordered_json{
+      {"span_basis", basis},
+      {"adjusted_magnitude", adjusted_magnitude},
+  };
+  return m;
+}
+
+}  // namespace
+
+TEST_CASE("compare_tol D-16 generalised override: both sides declaring span_basis=adjusted on a SYNTHETIC "
+          "non-av_drift, non-av_offset check id swaps the compared magnitude to adjusted_magnitude on both sides "
+          "(Test 8)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Raw values differ by 20ms (would fail the declared 5ms tolerance);
+  // adjusted_magnitude values, both expressed over the SAME
+  // kDriftAdjustedMagnitudeDen convention av_sync.cpp writes, are
+  // identical -- proving the OVERRIDE, not the raw value, decided the
+  // verdict, on a check id that is neither `timeline.av_drift` nor
+  // `timeline.av_offset`.
+  const Measurement baseline =
+      span_basis_measurement(/*raw_ms=*/-20, mediadiff::kDriftAdjustedMagnitudeDen * 5, "adjusted");
+  const Measurement candidate =
+      span_basis_measurement(/*raw_ms=*/0, mediadiff::kDriftAdjustedMagnitudeDen * 5, "adjusted");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+}
+
+TEST_CASE("compare_tol D-16 generalised override: EITHER side declaring span_basis=raw (or omitting the keys "
+          "entirely) falls back to the raw magnitude on BOTH sides, on the SAME synthetic check id (Test 8's "
+          "negative half)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Raw values are identical (0ms delta, would pass); adjusted_magnitude
+  // values differ hugely -- proving the candidate's own "raw" preference
+  // forced the WHOLE comparison to raw-to-raw, exactly D-16's own
+  // extension of D-10's rule.
+  const Measurement baseline = span_basis_measurement(/*raw_ms=*/0, mediadiff::kDriftAdjustedMagnitudeDen * 5,
+                                                       "adjusted");
+  const Measurement candidate =
+      span_basis_measurement(/*raw_ms=*/0, mediadiff::kDriftAdjustedMagnitudeDen * 500, "raw");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+
+  // No evidence at all, on the same synthetic id: unaffected, ordinary
+  // raw-value comparison (mirrors D-10's own "opt-in via evidence shape"
+  // test immediately above, repeated here against the generic key's own
+  // check id to prove the override is not somehow keyed on `av_offset`
+  // specifically).
+  const Measurement plain_baseline = measurement_at(0, /*estimated=*/false);
+  const Measurement plain_candidate = measurement_at(6, /*estimated=*/false);
+  auto plain_finding = compare_tol(check, plain_baseline, plain_candidate, kWidenPolicy);
+  REQUIRE(plain_finding.has_value());
+  CHECK(plain_finding->status == Status::fail);  // 6ms past the declared 5ms, unwidened (neither side estimated)
+}
+
+TEST_CASE("compare_tol D-16 generalised override: a non-numeric adjusted_magnitude leaves the raw magnitude in "
+          "place rather than throwing or coercing (Test 9)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Both sides declare span_basis=adjusted, but the candidate's own
+  // adjusted_magnitude is a STRING, not a number -- CR-03's own "never a
+  // fabricated verdict" discipline, applied to a crafted/malformed
+  // snapshot's evidence rather than its Measurement::value.
+  const Measurement baseline =
+      span_basis_measurement(/*raw_ms=*/0, mediadiff::kDriftAdjustedMagnitudeDen * 5, "adjusted");
+  const Measurement candidate = span_basis_measurement(/*raw_ms=*/6, nlohmann::ordered_json("not-a-number"), "adjusted");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  // The override never fires (candidate's own preference does not parse),
+  // so this is an ordinary raw-value comparison: 6ms past the declared
+  // 5ms, unwidened -- never a crash, never a coerced 0.
+  CHECK(finding->status == Status::fail);
+}
+
+// --- 06-08-PLAN.md Task 2 (AUDIO-06): the THIRD generic, evidence-shape-
+// driven override in this same family -- the asymmetric ceiling escalation
+// (`ceiling_state` == "under"/"above"), exercised here against the SAME
+// SYNTHETIC "t.synthetic_tol_widen" id the D-16 block above uses (neither
+// `audio.loudness.true_peak` nor any other registered id), which is what
+// makes "driven by evidence shape rather than check.id" testable rather
+// than merely asserted (Test 8 from that task's own <behavior> block). The
+// real end-to-end proof against audio_peak_under.flac/audio_peak_over.flac
+// lives in tests/integration/test_audio_loudness.cpp; what a hand-built
+// Measurement pair proves that a real fixture pair cannot is Test 5's own
+// claim that the escalation fires "regardless of whether the magnitude
+// delta fit the tolerance" -- the real fixture pair's ~1.5dB delta already
+// exceeds its own 0.3dB tolerance on magnitude alone, so it cannot isolate
+// the escalation's own effect from the delta's. ---
+
+namespace {
+
+// A Measurement carrying ONLY the ceiling_state evidence key (never
+// comparison_basis/span_basis) -- the raw value as Measurement::value
+// (always `raw_ms`, mirroring `measurement_at` above), so a test can pick a
+// delta that would OTHERWISE pass or fail the declared tolerance
+// independent of the escalation, and observe the escalation's own effect
+// in isolation.
+Measurement ceiling_state_measurement(std::int64_t raw_ms, const std::string& ceiling_state) {
+  Measurement m = measurement_at(raw_ms, /*estimated=*/false);
+  m.evidence = nlohmann::ordered_json{{"ceiling_state", ceiling_state}};
+  return m;
+}
+
+}  // namespace
+
+TEST_CASE("compare_tol ceiling escalation: baseline under, candidate above escalates to fail even when the delta "
+          "alone is WITHIN the declared tolerance, on a SYNTHETIC non-loudness check id (Test 5, Test 8)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  REQUIRE(check.id == "t.synthetic_tol_widen");  // never audio.loudness.true_peak -- proves evidence-shape-driven
+  // A 2ms delta is comfortably WITHIN the declared 5ms tolerance -- absent
+  // the escalation, this pair would report Status::pass. Only the
+  // ceiling_state transition decides the verdict here.
+  const Measurement baseline = ceiling_state_measurement(/*raw_ms=*/0, "under");
+  const Measurement candidate = ceiling_state_measurement(/*raw_ms=*/2, "above");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::fail);
+  CHECK(finding->message.find("asymmetric ceiling crossing") != std::string::npos);
+}
+
+TEST_CASE("compare_tol ceiling escalation: baseline above, candidate under does NOT escalate -- headroom gained is "
+          "not a regression (Test 6)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Same 2ms delta, WITHIN tolerance either way -- the reverse transition
+  // must leave the ordinary tolerance verdict (pass) untouched.
+  const Measurement baseline = ceiling_state_measurement(/*raw_ms=*/0, "above");
+  const Measurement candidate = ceiling_state_measurement(/*raw_ms=*/2, "under");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+  CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+}
+
+TEST_CASE("compare_tol ceiling escalation: both sides already above the ceiling compare on tolerance alone -- an "
+          "unchanged hot pair is not a finding (Test 7)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Identical magnitude (0ms delta) AND identical ceiling_state="above" on
+  // both sides -- no transition at all, so this must report Status::pass
+  // on tolerance alone, never escalated.
+  const Measurement baseline = ceiling_state_measurement(/*raw_ms=*/10, "above");
+  const Measurement candidate = ceiling_state_measurement(/*raw_ms=*/10, "above");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+  CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+}
+
+TEST_CASE("compare_tol ceiling escalation: both sides already under the ceiling never escalates, even with a "
+          "beyond-tolerance delta",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  // Both "under" -- no transition -- ordinary tolerance verdict applies: a
+  // 20ms delta well beyond the declared 5ms reports fail on magnitude
+  // alone, with NO escalation suffix (this is not the P0 case the
+  // escalation exists to catch).
+  const Measurement baseline = ceiling_state_measurement(/*raw_ms=*/0, "under");
+  const Measurement candidate = ceiling_state_measurement(/*raw_ms=*/20, "under");
+
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::fail);
+  CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+}
+
+TEST_CASE("compare_tol ceiling escalation: either side missing or misspelling ceiling_state leaves the ordinary "
+          "tolerance verdict untouched (opt-in via evidence shape, never gated on check.id)",
+          "[tolerance]") {
+  const CheckDef check = make_tol_check("5ms", Severity::fail);
+  {
+    // Baseline declares no evidence at all; candidate declares "above" --
+    // EITHER side missing the key means the pair never qualifies.
+    const Measurement baseline = measurement_at(0, /*estimated=*/false);
+    const Measurement candidate = ceiling_state_measurement(/*raw_ms=*/2, "above");
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);  // 2ms within the declared 5ms, ordinary verdict
+    CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+  }
+  {
+    // A misspelled/unexpected ceiling_state value on one side ("unknown",
+    // never "under"/"above") never satisfies the transition either.
+    const Measurement baseline = ceiling_state_measurement(/*raw_ms=*/0, "unknown");
+    const Measurement candidate = ceiling_state_measurement(/*raw_ms=*/2, "above");
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);
+    CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+  }
+}
+
+// --- CR-04 gap closure (06-17-PLAN.md, 06-REVIEW.md/VERIFICATION.md gap
+// 3, AUDIO-06): the deadband that gates the asymmetric ceiling escalation
+// above so a knife-edge quantiser-noise crossing (the review's own 0.0002
+// dB example) does not hard-fail despite the check's own 0.3 dB tolerance,
+// while every crossing of 0.010 dB or more -- including one comfortably
+// INSIDE that tolerance (SC3) -- still fails. Exercised against the REAL
+// `audio.loudness.true_peak` CheckDef from `builtin_registry()` (unit
+// `db`, tolerance `0.3dB`, severity `warn`), never a synthetic id -- this
+// is the actual production check the gap was found on. Measurements are
+// shaped exactly like `emit_true_peak`'s own output
+// (`src/analyzers/audio/loudness.cpp`): `RationalValue{milli,
+// kLoudnessQuantiserDen, Rational{1,1}}` plus a `ceiling_state` evidence
+// key derived the same way (`milli >= -1000` -> "above", else "under"). ---
+
+namespace {
+
+CheckDef true_peak_check() {
+  const CheckRegistry& registry = builtin_registry();
+  auto index = registry.find("audio.loudness.true_peak");
+  REQUIRE(index.has_value());
+  return registry.at(*index);
+}
+
+// `milli` is the quantised dBTP value at `kLoudnessQuantiserDen` (e.g.
+// -1000 == -1.000 dBTP, the named ceiling) -- mirrors `emit_true_peak`'s
+// own `RationalValue` shape and its own `ceiling_state` derivation
+// (`milli >= -1000` -> "above") exactly, so a hand-built pair here is
+// indistinguishable, from `compare_tol`'s point of view, from a pair
+// `audio_loudness_analyzer()` actually emitted.
+Measurement true_peak_measurement(std::int64_t milli) {
+  Measurement m;
+  m.check_index = 0;
+  m.scope = Scope{Scope::Kind::global, 0};
+  m.value = mediadiff::Value{RationalValue{milli, kLoudnessQuantiserDen, Rational{1, 1}}};
+  m.evidence = nlohmann::ordered_json{{"ceiling_state", milli >= -1000 ? "above" : "under"}};
+  return m;
+}
+
+}  // namespace
+
+TEST_CASE("compare_tol ceiling escalation: a rise below the 0.010 dB deadband does not escalate on the real "
+          "audio.loudness.true_peak check (CR-04)",
+          "[tolerance]") {
+  const CheckDef check = true_peak_check();
+  REQUIRE(check.id == "audio.loudness.true_peak");  // the real check, not a synthetic stand-in
+
+  {
+    // A 1 milli-dB rise (-1.001 -> -1.000 dBTP) -- the review's own
+    // knife-edge class. Before this plan's fix: Status::fail (RED, this
+    // plan's SUMMARY records the pre-fix value).
+    const Measurement baseline = true_peak_measurement(-1001);
+    const Measurement candidate = true_peak_measurement(-1000);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);
+    CHECK(finding->message.find("deadband") != std::string::npos);
+    CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+  }
+  {
+    // A 9 milli-dB rise (-1.005 -> -0.996 dBTP) -- still under the 10
+    // milli-dB deadband.
+    const Measurement baseline = true_peak_measurement(-1005);
+    const Measurement candidate = true_peak_measurement(-996);
+    auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+    REQUIRE(finding.has_value());
+    CHECK(finding->status == Status::pass);
+    CHECK(finding->message.find("deadband") != std::string::npos);
+    CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+  }
+}
+
+TEST_CASE("compare_tol ceiling escalation: a rise of exactly the deadband escalates on the real "
+          "audio.loudness.true_peak check (CR-04)",
+          "[tolerance]") {
+  const CheckDef check = true_peak_check();
+  REQUIRE(kCeilingCrossingDeadbandNum == 10);
+  REQUIRE(kCeilingCrossingDeadbandDen == 1000);
+  // A 10 milli-dB rise (-1.005 -> -0.995 dBTP) -- exactly the deadband's
+  // own boundary (>=), so this still escalates.
+  const Measurement baseline = true_peak_measurement(-1005);
+  const Measurement candidate = true_peak_measurement(-995);
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::fail);
+  CHECK(finding->message.find("asymmetric ceiling crossing") != std::string::npos);
+}
+
+TEST_CASE("compare_tol ceiling escalation: a material crossing inside the 0.3 dB tolerance still fails on the real "
+          "audio.loudness.true_peak check (SC3, CR-04)",
+          "[tolerance]") {
+  const CheckDef check = true_peak_check();
+  // A 100 milli-dB (0.1 dB) rise (-1.050 -> -0.950 dBTP) -- well over the
+  // 10 milli-dB deadband, and comfortably INSIDE the check's own declared
+  // 0.3 dB (300 milli-dB) tolerance. SC3/AUDIO-06's own contract: the
+  // escalation fires regardless of the declared tolerance, so this must
+  // still fail.
+  const Measurement baseline = true_peak_measurement(-1050);
+  const Measurement candidate = true_peak_measurement(-950);
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::fail);
+  CHECK(finding->message.find("asymmetric ceiling crossing") != std::string::npos);
+}
+
+TEST_CASE("compare_tol ceiling escalation: the reverse transition (above -> under) never escalates and never "
+          "carries a deadband suffix, on the real audio.loudness.true_peak check (CR-04)",
+          "[tolerance]") {
+  const CheckDef check = true_peak_check();
+  // -0.995 -> -1.005 dBTP: headroom gained, not lost -- must stay exactly
+  // as before this plan (no escalation, no deadband message either, since
+  // the deadband gate only exists to soften an upward-crossing escalation
+  // that would otherwise have fired).
+  const Measurement baseline = true_peak_measurement(-995);
+  const Measurement candidate = true_peak_measurement(-1005);
+  auto finding = compare_tol(check, baseline, candidate, kWidenPolicy);
+  REQUIRE(finding.has_value());
+  CHECK(finding->status == Status::pass);
+  CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
+  CHECK(finding->message.find("deadband") == std::string::npos);
 }

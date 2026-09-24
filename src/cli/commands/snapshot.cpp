@@ -271,14 +271,47 @@ void register_snapshot_command(CLI::App& app) {
           ->type_name("TEXT");
   CLI::Option* force_flag = cmd->add_flag("--force", "Overwrite an existing git-tracked or CI-protected target");
   ProbeArgs probe_args = add_probe_flags(*cmd);
+  // 06-01-PLAN.md Task 3: snapshot ALWAYS decodes -- there is no "off"
+  // state, since a snapshot taken once is compared under any profile
+  // later and a non-decoding snapshot would be permanently incomparable
+  // against a decoding `compare` (resolve_content_enabled's own
+  // ContentCommandDefault::must_decode rejects --no-content as a usage
+  // error). --content is still accepted (and is simply redundant with the
+  // default) so the flag spelling is consistent across every command.
+  CLI::Option* content_flag = cmd->add_flag("--content", "Decode audio content for hashing (snapshot's own default -- always on)");
+  CLI::Option* no_content_flag =
+      cmd->add_flag("--no-content", "Not valid for snapshot -- a snapshot always decodes (usage error)");
+  // 06-05-PLAN.md (AUDIO-09): a snapshot always decodes, so its own
+  // --hash-decoder choice is what every later `compare` against it
+  // inherits (D-08: decoder selection is a property of the fingerprint).
+  HashDecoderArgs hash_decoder_args = add_hash_decoder_flag(*cmd);
 
   // ENG-16 explicitly reserves exit()/stdout/stderr as "the CLI's
   // prerogative" — see src/cli/commands/compare.cpp's identical rationale.
   // Capturing a raw Option* by value is exactly as safe as the shared_ptr
   // it replaces (D-05): the App owns the Option for the whole program
   // lifetime, and this callback only runs during app.parse().
-  cmd->callback([input_path, out_path, force_flag, probe_args]() {
+  cmd->callback([input_path, out_path, force_flag, probe_args, content_flag, no_content_flag, hash_decoder_args]() {
     const CheckRegistry& registry = builtin_registry();
+
+    // 06-01-PLAN.md Task 3: resolved before any probe budget/timeout
+    // setup, so a usage error (--no-content, or both flags given) exits
+    // before touching the process-wide probe globals below.
+    auto content_enabled_result = resolve_content_enabled(ContentArgs{content_flag, no_content_flag},
+                                                             ContentCommandDefault::must_decode);
+    if (!content_enabled_result) {
+      const Error& err = content_enabled_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    auto hash_decoder_result = resolve_hash_decoder(hash_decoder_args);
+    if (!hash_decoder_result) {
+      const Error& err = hash_decoder_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const ProbeOptions probe_options{/*content_enabled=*/*content_enabled_result,
+                                      /*hash_decoder=*/*hash_decoder_result};
 
     // snapshot reads no mediadiff.toml today (it predates policy
     // resolution entirely), so --probe-timeout has no `[probe]
@@ -319,7 +352,7 @@ void register_snapshot_command(CLI::App& app) {
     // the media bytes only when the input opened but was not a snapshot
     // (PROBE-01, this plan).
     const std::string input_path_text = opt_string(input_path);
-    auto fp = fingerprint_input(input_path_text, registry);
+    auto fp = fingerprint_input(input_path_text, registry, probe_options);
     if (!fp) {
       const Error& err = fp.error();
       report_cli_error(err.message);

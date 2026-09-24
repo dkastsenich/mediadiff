@@ -113,7 +113,45 @@ std::vector<std::string> enumerate_media_fixtures() {
 // scripts/gen_corpus.sh's own recipes to carry no video stream. See the
 // file header for this list's authority, disclosure convention and the
 // report-derived predicate it replaces.
-constexpr std::array<const char*, 1> kNoVideoStreamFixtures = {
+constexpr std::array<const char*, 22> kNoVideoStreamFixtures = {
+    // 06-01-PLAN.md: the seven content.audio.sample_hash tracer fixtures
+    // whose extension matches has_media_extension() above (.mp4/.mkv/.ts)
+    // and which carry an audio-only stream -- audio_pcm_base.wav/.mov are
+    // excluded from enumerate_media_fixtures() entirely, since .wav/.mov
+    // are not in kExtensions.
+    "audio_aac_handwritten.mp4",
+    "audio_aac_handwritten_copy.mp4",
+    // 06-10-PLAN.md (AUDIO-08, D-09): the meta.decode_errors recoverable-
+    // error/undecodable fixture triple -- all three are audio-only MP4s
+    // (a byte-perturbed AAC-in-MP4 carrier, mdat payload only, no video
+    // stream ever muxed in).
+    "audio_corrupt_clean.mp4",
+    "audio_corrupt_frames.mp4",
+    "audio_hash_alt.mp4",
+    "audio_hash_base.mkv",
+    "audio_hash_base.mp4",
+    "audio_hash_base.ts",
+    "audio_hash_base_copy.mp4",
+    "audio_pcm_flac_large.mkv",
+    "audio_pcm_flac_small.mkv",
+    // 06-02-PLAN.md Task 3: the AAC-priming round-trip chain and the two
+    // container-mechanism edge fixtures -- all audio-only (AUDIO-04, D-15).
+    // audio_51.flac/.flac(side), audio_flt_base.ogg, audio_mono_s16.wav,
+    // audio_mp2_base.mpg and audio_stereo_s16/s24.wav are excluded from
+    // enumerate_media_fixtures() entirely, since .flac/.ogg/.mpg/.wav are
+    // not in kExtensions.
+    "audio_prime_base.mp4",
+    "audio_prime_copy.ts",
+    "audio_prime_fragmented.mp4",
+    "audio_prime_multiedit.mp4",
+    "audio_prime_roundtrip.mkv",
+    "audio_prime_roundtrip2.mp4",
+    // 06-02-PLAN.md Task 1: the hand-written HE-AAC explicit/implicit
+    // signaling pair -- MP4 audio-only, no video stream at all (D-10).
+    "audio_sbr_explicit.mp4",
+    "audio_sbr_explicit_copy.mp4",
+    "audio_sbr_implicit.mp4",
+    "audio_undecodable.mp4",
     "tracer_empty.mp4",
 };
 

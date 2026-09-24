@@ -79,7 +79,7 @@ std::string render_fingerprint(const Fingerprint& fp, const CheckRegistry& regis
     nlohmann::ordered_json mj;
     mj["id"] = std::string(registry.at(m.check_index).id);
     mj["scope"] = nlohmann::ordered_json{{"kind", std::string(scope_kind_name(m.scope.kind))}, {"index", m.scope.index}};
-    mj["value"] = value_to_json(m.value);
+    mj["value"] = value_to_json(m.value, registry.at(m.check_index).unit);
     measurements_json.push_back(mj);
   }
   doc["measurements"] = measurements_json;

@@ -18,6 +18,22 @@
 
 namespace mediadiff {
 
+// 06-01-PLAN.md (Claude's Discretion, "Wiring --content/--no-content"):
+// per-invocation probe-layer options a command entry point resolves from
+// its own CLI flags before calling fingerprint_input. `content_enabled`
+// governs whether `Pass::audio_decode` enters the pass union at all --
+// false leaves `ProbeResults::audio_decode` `std::nullopt` and every
+// decode-consuming analyzer reports `skipped:requires_decode`, never a
+// fabricated value. `hash_decoder` is AUDIO-09's own `--hash-decoder`
+// value (06-05-PLAN.md), threaded into the once-per-stream decoder
+// selection via `PacketScanRequest::hash_decoder` -- `--hash-decoder` is
+// the ONLY thing that changes it (D-08): a profile never reaches
+// selection.
+struct ProbeOptions {
+  bool content_enabled = true;
+  std::string hash_decoder = "auto";
+};
+
 // Tries read_snapshot(utf8_path, registry) first and returns its result
 // unchanged on success. On failure, falls through to the probe path ONLY
 // when the error kind is ErrorKind::input_unsupported AND the file is not
@@ -30,8 +46,18 @@ namespace mediadiff {
 // reinterpreted as "try probing it as media instead" -- only a file that
 // is not JSON-shaped at all falls through to a real probe. The probe path
 // is detail::run_probe, below, called with all_analyzers() and no
-// pass-execution log.
+// pass-execution log. Two-argument form delegates to the three-argument
+// overload with ProbeOptions{} (content decode enabled) so no Phase 2-5
+// call site's behavior changes.
 mediadiff::expected<Fingerprint, Error> fingerprint_input(const std::string& utf8_path, const CheckRegistry& registry);
+
+// 06-01-PLAN.md Task 2: the three-argument overload every command entry
+// point migrates to once it resolves its own `--content`/`--no-content`
+// preference. `options.content_enabled == false` removes
+// `Pass::audio_decode` from the executed pass union entirely -- the slot
+// stays `std::nullopt`, never a fabricated or empty value.
+mediadiff::expected<Fingerprint, Error> fingerprint_input(const std::string& utf8_path, const CheckRegistry& registry,
+                                                             const ProbeOptions& options);
 
 // Test-only observation point for pass execution (03-02-PLAN.md Task 3,
 // PROBE-08): records every Pass an orchestrator run actually executed, in
@@ -54,9 +80,14 @@ namespace detail {
 // calls each applicable analyzer's run() with it. `pass_log`, when
 // non-null, additionally records every pass this call executed, in
 // execution order.
+// `options` defaults to ProbeOptions{} (content decode enabled) so every
+// pre-Phase-6 direct call site (tests/unit/test_pass_union.cpp and every
+// other per-family analyzer-injection test) compiles and behaves
+// unchanged.
 mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
                                                      const std::vector<AnalyzerSpec>& analyzers,
-                                                     PassExecutionLog* pass_log);
+                                                     PassExecutionLog* pass_log,
+                                                     const ProbeOptions& options = ProbeOptions{});
 
 }  // namespace detail
 

@@ -1515,3 +1515,257 @@ semantic = "exact"
 unit = "none"
 value_kind = "string"
 severity = "info"
+
+# 06-01-PLAN.md (Phase 6's tracer, AUDIO-08/AUDIO-10, TRUST-01/TRUST-02):
+# content.audio.sample_hash -- the untrimmed-output, fixed-block XXH3-128
+# hash chain over every audio stream's decoded PCM (D-01/D-02/D-04), the
+# first real populator of src/compare/hash.cpp's kPreconditionKeys table.
+# `hash` semantic, `hash_chain` value_kind. Approved at 06-CHECK-ROSTER.md
+# (approve-as-proposed): `hw_encoder` demotes to `info` (an HW encoder's
+# own re-encode is expected to change the audio essence in ways this
+# project does not yet model as tolerable), `transform` demotes to
+# `ignore` (a declared transcode profile's own explicit expectation
+# already covers intentional audio changes elsewhere).
+[[check]]
+id = "content.audio.sample_hash"
+group = "content"
+semantic = "hash"
+unit = "none"
+value_kind = "hash_chain"
+severity = "fail"
+
+[check.profile_severity]
+hw_encoder = "info"
+transform = "ignore"
+
+# 06-03-PLAN.md (AUDIO-01, AUDIO-02), src/analyzers/audio/stream_params.cpp
+# -- the six per-audio-stream identity checks: codec, sample rate, sample
+# format, bit depth, channel count and canonical layout. Approved at
+# 06-CHECK-ROSTER.md (the frozen Phase-6 audio/meta id roster). All six are
+# codec-scoped (ContainerFamily::other): every one extracts directly from
+# AVStream.codecpar after the header pass alone -- no decode pass is
+# required for any of the six, so they report real values under
+# `--no-content` (AUDIO-01). Unlike video.codec/profile/level/resolution
+# above, a file with NO audio stream at all still emits all six of these as
+# `skipped:insufficient_data` rather than nothing -- `skipped != pass` is
+# load-bearing (06-CONTEXT.md's own must_have).
+
+# codecpar->codec_id -> avcodec_get_name, the SAME field/extraction
+# video.codec reads for a video stream.
+[[check]]
+id = "audio.codec"
+group = "audio"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# The CORE rate as the compared value, with BOTH a core and an effective
+# rate key in evidence (equal here) -- 06-04's HE-AAC implicit-SBR
+# detection is what makes the two diverge, without changing this check's
+# own value shape (06-CONTEXT.md).
+[[check]]
+id = "audio.sample_rate"
+group = "audio"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+
+# codecpar->format (AVSampleFormat) -> av_get_sample_fmt_name of its
+# PACKED-equivalent spelling (D-02, 06-CONTEXT.md) -- `fltp` and `flt`
+# record identically, so a planar/packed difference alone is never
+# reported as a format change.
+[[check]]
+id = "audio.sample_fmt"
+group = "audio"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# codecpar->bits_per_raw_sample verbatim, or `Absent{}` plus an explicit
+# `insufficient_data` skip when the codec declares none -- NEVER coerced to
+# the sample format's container width (this plan's own prohibition: a
+# fabricated number is the P0 class this project exists to prevent).
+[[check]]
+id = "audio.bit_depth"
+group = "audio"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+
+# codecpar->ch_layout.nb_channels -- the count alone, never the layout
+# (audio.layout below never reads this field to derive its own string).
+[[check]]
+id = "audio.channels"
+group = "audio"
+semantic = "exact"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+
+# 06-03-PLAN.md Task 2 (AUDIO-02), src/analyzers/audio/stream_params.cpp --
+# av_channel_layout_describe on the stream's own modern channel-layout
+# struct only (the legacy integer channel-mask field and its named bitmask
+# constants are absent from the linked headers this build compiles
+# against). An unspecified layout records its own canonical spelling ("N
+# channels") as a REAL, comparable value -- never Absent{} and never a
+# skip -- so a candidate that LOSES its layout reports a regression rather
+# than matching a wildcard (D-14 of 06-CONTEXT.md, applied here to layout;
+# mirrors src/analyzers/video/color.cpp's established treatment of
+# `unspecified` as a value). This is what makes `5.1` and `5.1(side)`
+# compare as DIFFERENT values on an equal channel count (AUDIO-02's
+# headline war story).
+[[check]]
+id = "audio.layout"
+group = "audio"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 06-04-PLAN.md (AUDIO-03, D-12), src/analyzers/audio/stream_params.cpp --
+# the codec profile's canonical name (render_named_value's own
+# fallback-to-raw-integer rule, mirroring video.profile's VIDEO-01-E2
+# precedent) plus the HE-AAC SBR signaling mode, resolved ONCE in the
+# header pass (src/probe/demux_session.cpp's compute_sbr_signaling) so
+# this value is IDENTICAL under `snapshot`, `compare --content` and
+# `compare --no-content` -- a check's value must never depend on which
+# passes ran (D-12). Doc 05 section 2.1's literal recipe (compare
+# `codecpar` before decode against the first decoded frame) is amended by
+# D-12/06-RESEARCH.md Q4: against the linked FFmpeg 8.1, `codecpar` never
+# carries the doubled rate or the HE profile for an implicitly-signaled
+# stream, and `avformat_find_stream_info()` may never decode a frame at
+# all -- see docs/checks/audio.profile.md for the full amendment, recorded
+# in the open rather than silently applied.
+[[check]]
+id = "audio.profile"
+group = "audio"
+semantic = "exact"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
+# 06-06-PLAN.md (AUDIO-04, D-14/D-15/D-17), src/analyzers/audio/priming.cpp
+# -- completes the precedence chain Phase 5's resolve_priming() (extended
+# in place, src/analyzers/timeline/analyzers.h) started. `exact` over a
+# `string`, not `+/-samples` over an `int64` -- doc 05 section 2's literal
+# "+/-32 samples warn" wording is NOT expressible under this shape (D-14
+# forces it: src/compare/tol.cpp cannot extract a magnitude from `Absent`,
+# and unknown priming must compare as its OWN value, not a skip). The
+# compared value is the decimal sample count, or the literal "unknown" --
+# see docs/checks/audio.priming.md for the full amendment, recorded in the
+# open per this project's own discipline (Phase 5 D-14's PERF-03 precedent).
+[[check]]
+id = "audio.priming"
+group = "audio"
+semantic = "exact"
+unit = "samples"
+value_kind = "string"
+severity = "fail"
+
+# 06-08-PLAN.md (AUDIO-05, D-13), src/analyzers/audio/loudness.cpp -- EBU
+# R128 integrated loudness from libebur128 (EBUR128_MODE_I), quantised to a
+# RationalValue at a fixed denominator (`src/probe/audio_decode.h`'s
+# kLoudnessQuantiserDen) since `src/compare/tol.cpp` supports only
+# `rational`/`int64` under `tol` (a `real` value_kind reaches its
+# internal-error arm) -- libebur128's raw `double` rides in evidence at
+# fixed precision instead. Below the -70 LUFS gating floor, the value is
+# the SAME quantisation of that fixed floor constant (doc 05 §4's "silent"
+# spelling), never the real below-floor reading, so two different silent
+# tracks compare `pass`. `remux` tightens to +/-0.1 LU (D-13's own
+# float-noise allowance); `transform` widens to +/-1.0 LU (an intentional
+# transcode may re-level, doc 05 §5).
+[[check]]
+id = "audio.loudness.integrated"
+group = "audio"
+semantic = "tol"
+unit = "lu"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.5LU,1.0LU"
+
+[check.profile_tolerance]
+remux = "0.1LU"
+transform = "1.0LU"
+
+# 06-08-PLAN.md (AUDIO-06), src/analyzers/audio/loudness.cpp --
+# EBUR128_MODE_TRUE_PEAK, maximum over channels, dBTP. `warn` severity for
+# an ordinary tolerance excursion, but a candidate crossing the -1.0 dBTP
+# ceiling upward from a baseline that was under it escalates to `fail`
+# regardless of the magnitude delta, once the candidate's rise across the
+# ceiling reaches the 0.010 dB deadband (kCeilingCrossingDeadbandNum/Den,
+# src/analyzers/audio/analyzers.h) -- a smaller rise is quantiser-scale
+# noise and keeps its ordinary tolerance verdict (06-17-PLAN.md, CR-04 gap
+# closure). A GENERIC, evidence-shape-gated escalation in
+# `src/compare/tol.cpp` (never a second check id: headroom loss risks
+# clipping after a downstream lossy encode, headroom gained does not, and
+# `src/compare/state.cpp`'s flagged-value membership semantic would fire
+# whenever EITHER side is hot, including on an unchanged pair already above
+# the ceiling -- the P0 false-positive class).
+[[check]]
+id = "audio.loudness.true_peak"
+group = "audio"
+semantic = "tol"
+unit = "db"
+value_kind = "rational"
+severity = "warn"
+tolerance = "0.3dB"
+
+# 06-09-PLAN.md (AUDIO-07), src/analyzers/audio/silence.cpp -- introduced
+# leading/trailing silence, detected by a symmetric-hysteresis peak
+# (-60 dBFS, 5ms hysteresis) run over the shared decode sweep's own
+# per-sample-frame peak. An interior peak-silent run is discarded here
+# entirely (audio.silence.dropouts' own territory); a stream with no
+# detected span reports an EMPTY span list as a real measured value, never
+# `Absent{}` and never a skip (D-14 of 06-CONTEXT.md's "unmeasured vs.
+# empty" distinction). Exact-touch adjacent spans are merged at the probe
+# layer already, ahead of `span`'s own (redundant but harmless) merge.
+[[check]]
+id = "audio.silence.edges"
+group = "audio"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 06-09-PLAN.md (AUDIO-07), src/analyzers/audio/silence.cpp -- interior
+# dropouts, detected by a sliding 100ms RMS window falling below
+# -70 dBFS for at least 150ms, over the SAME shared decode sweep (never a
+# second decode -- AUDIO-10). A run starting at sample 0 or still open at
+# the stream's own end is discarded here -- that physical region is
+# audio.silence.edges' own territory, never double-reported.
+[[check]]
+id = "audio.silence.dropouts"
+group = "audio"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 06-10-PLAN.md (AUDIO-08, AUDIO-10, D-09), src/analyzers/container/meta.cpp
+# -- the count of RECOVERABLE decode errors (a negative avcodec_send_packet/
+# avcodec_receive_frame return libav itself recovers from, never a decoder
+# re-open, D-07) per audio stream, over the SAME shared decode sweep
+# content.audio.sample_hash/audio.loudness.*/audio.silence.* already
+# consume (AUDIO-10). **The D-09 amendment to claude_docs/
+# 01-core-concepts.md section 11**: a recoverable decode error is a
+# counted, GATING finding at exit 1 rather than "could not run" -- only a
+# WHOLLY undecodable stream (zero decoded frames across the whole sweep)
+# still marks the fingerprint partial and exits 66. `tol`/`count` with
+# tolerance `"0"` -- the same zero-magnitude-tolerance shape
+# `timeline.dts_monotonic` already uses, for the identical reason: this
+# behaves like exact equality while leaving `--tol
+# meta.decode_errors=N` meaningful for a pipeline with known, accepted
+# noise. A clean stream reports a real 0, never `Absent{}` and never a
+# skip.
+[[check]]
+id = "meta.decode_errors"
+group = "meta"
+semantic = "tol"
+unit = "count"
+value_kind = "int64"
+severity = "fail"
+tolerance = "0"

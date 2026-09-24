@@ -26,6 +26,23 @@ measurement per audio stream, and skips together with it under identical
 conditions (`skipped:insufficient_data` when there is no audio, no
 video, or too few usable checkpoints).
 
+**The classification depends on the SAME shared-basis checkpoint span
+`timeline.av_drift` documents (D-16).** This check is `exact` (a plain
+string compare, never routed through the tolerance comparator), so it
+never itself swaps bases at compare time -- but the span the K=32
+checkpoints are spread across is measured on the trimmed
+(priming-/padding-excluded) basis only when it was actually reconstructed
+from the packet-derived extent (this audio stream's own priming AND
+padding tick counts both known, both subtractions in range, result
+strictly positive -- WR-07, 06-19-PLAN.md), and on the packet-derived raw
+extent otherwise (`span_basis` in `timeline.av_drift`'s own shared
+evidence). Because the trajectory itself -- and therefore the
+residual and rate this classification is derived from -- comes from
+whichever basis this stream actually used, two files whose priming/padding
+knowledge differs can classify differently even with identical real
+content; that difference is visible in the shared evidence's own
+`span_basis` field, not hidden.
+
 ### Limits of timestamp-only detection
 
 - **A seamlessly re-timestamped trim is undetectable from timestamps alone.**

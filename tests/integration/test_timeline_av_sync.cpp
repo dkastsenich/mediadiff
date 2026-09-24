@@ -185,19 +185,40 @@ TEST_CASE("timeline_av_sync - the MPEG-TS remux (unknown-priming) pair declares 
                                    // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the
                                    // SAME MPEG-TS audio-duration disagreement
                                    // `timeline.duration.coherence` above already documents
-                                   // (a real, structural property of this exact container
-                                   // pairing, not per-checkpoint rounding noise) gives the
-                                   // candidate a genuine -122ms accumulated end delta
-                                   // against the clean MP4 baseline's own 0ms -- D-07's dual
-                                   // gate (a delta-based test, the SAME shape as every other
-                                   // magnitude this comparator checks) clears comfortably
-                                   // past its 2ms epsilon, so `timeline.av_drift` (the RATE)
-                                   // genuinely fails, not just `timeline.av_drift.pattern`
-                                   // (which has no tolerance at all by design, D-04, locked
-                                   // one-way, and reports the resulting classification
-                                   // flip).
+                                   // is a real, structural property of this exact container
+                                   // pairing, not per-checkpoint rounding noise -- D-07's
+                                   // dual gate (a delta-based test, the SAME shape as every
+                                   // other magnitude this comparator checks) clears
+                                   // comfortably past its 2ms epsilon, so `timeline.av_drift`
+                                   // (the RATE) genuinely fails, not just
+                                   // `timeline.av_drift.pattern`. 06-07-PLAN.md (D-16,
+                                   // WINDOWS.md #32) re-measured this pair after extending
+                                   // D-10's shared-basis rule to this span: the candidate's
+                                   // own priming is confirmed genuinely `unknown` after the
+                                   // remux (verified via `audio.priming` evidence -- no
+                                   // skip_samples side data, no initial_padding, no edit list
+                                   // survives), so the shared-basis rule correctly falls back
+                                   // to the packet-derived raw span on BOTH sides rather than
+                                   // fabricating a basis (D-11) -- baseline now reports
+                                   // end_delta_ms=0 (its own true zero drift, span_basis=
+                                   // adjusted) and candidate reports end_delta_ms=39,
+                                   // span_basis=raw (the PRE-D-16 declared-basis reading was
+                                   // -122ms; the basis correction moved the classification
+                                   // from `irregular` to `linear-drift`, a SHAPE change, not a
+                                   // resolution -- WINDOWS.md #32 stays open on this evidence,
+                                   // not fixed). Both ids remain genuine, non-pass members of
+                                   // this set.
                                    "timeline.av_drift",
                                    "timeline.av_drift.pattern",
+                                   // 06-06-PLAN.md (AUDIO-04, D-14): the SAME `-c copy` MPEG-TS
+                                   // remux recipe as test_timeline_start_duration.cpp Test 4 --
+                                   // no AV_PKT_DATA_SKIP_SAMPLES side data on the candidate's
+                                   // audio packets (verified via `mediadiff compare --json`
+                                   // evidence: baseline "1024"/source skip_samples, candidate
+                                   // "unknown"). `unknown` compares as its own value (D-14), so
+                                   // this loss of priming signaling is now a declared,
+                                   // non-pass member of the same remux-caused set (D-02).
+                                   "audio.priming",
                                });
 
   // Note this fixture's own priming becomes unknown (verified via evidence
@@ -300,9 +321,18 @@ TEST_CASE("timeline_av_sync - ROADMAP SC4: comparing an unknown-priming file aga
 //
 // `timeline_drift_base.mp4` vs `timeline_drift_linear.mp4` (05-10-PLAN.md
 // Task 3's own linear-drift recipe, doc 04 section 5's classic 0.1% clock
-// error): `timeline.av_drift` reports `fail` (measured rate ~-60.28ms/min)
-// and `timeline.av_drift.pattern` reports `fail` with candidate value
-// `linear-drift`.
+// error): `timeline.av_drift` reports `fail` (measured rate ~-60.28ms/min,
+// rational -54717060000/907751640) and `timeline.av_drift.pattern` reports
+// `fail` with candidate value `linear-drift`. Both fixtures carry
+// `-c:a pcm_s16le` audio, NOT aac -- see scripts/gen_corpus.sh's own
+// DETERMINISM notes. A lossy encoder in this pair's generation path made
+// `audio.loudness.true_peak` diverge by up to 4 dB between CI legs
+// (fixtures are regenerated per runner, and a decoded lossy peak is codec
+// ringing 2-4.6 dB above the source signal, so the `max` reshuffles under
+// any per-host perturbation). With PCM the decoded samples ARE the stored
+// bytes, so the peak is EXACTLY invariant. The rational rate above is
+// byte-identical under aac and under pcm_s16le -- the codec change does not
+// move this test's flagship measurement by one ULP.
 //
 // `timeline_start_base.mp4` vs `timeline_drift_step.mp4` (05-10-PLAN.md
 // Task 3's own mid-file audio PTS discontinuity recipe):
@@ -364,6 +394,27 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
                                      "container.mp4.edit_list",
                                      "timeline.av_drift",
                                      "timeline.av_drift.pattern",
+                                     // 06-01-PLAN.md: a linearly drifting audio
+                                     // stream is genuinely different decoded
+                                     // audio content from block 0 onward
+                                     // (verified: first divergent block 0,
+                                     // 200 divergent blocks total) -- the
+                                     // drift itself is genuinely retimed
+                                     // audio content, not merely a
+                                     // container-level timestamp change.
+                                     // The count was 201 while this pair's
+                                     // audio was AAC; debug session
+                                     // true-peak-cross-platform cycle 2 moved
+                                     // both fixtures to `-c:a pcm_s16le` so
+                                     // the decoded samples are the stored
+                                     // bytes and audio.loudness.true_peak is
+                                     // EXACTLY invariant across
+                                     // architectures. This declared set is
+                                     // UNCHANGED by that move -- a
+                                     // per-(id, scope) status diff of the
+                                     // whole report against the AAC
+                                     // incumbent showed zero changes.
+                                     "content.audio.sample_hash",
                                  });
     for (const auto& f : report.at("findings")) {
       if (f.at("id").get<std::string>() != "timeline.av_drift.pattern") {
@@ -379,6 +430,27 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
     expect_declared_set(report, {
                                      "timeline.vfr_profile",
                                      "timeline.av_drift.pattern",
+                                     // 06-01-PLAN.md: the splice/trim itself
+                                     // is a genuine audio-content edit
+                                     // (verified: first divergent block 38,
+                                     // ~3800ms in, 3 divergent blocks total,
+                                     // exactly where the step occurs).
+                                     "content.audio.sample_hash",
+                                     // 06-09-PLAN.md (AUDIO-07): the SAME
+                                     // splice/trim removes a genuine ~14ms
+                                     // near-silent trailing stretch this
+                                     // fixture's own baseline carries right at
+                                     // its true audio end (~4026-4040ms, past
+                                     // timeline.duration's own 4023ms
+                                     // presentation figure -- inside the
+                                     // priming/trailing-padding region a raw
+                                     // decode includes) -- a REMOVED span,
+                                     // always `info` under the `span`
+                                     // semantic (src/compare/span.cpp), never
+                                     // gating, but still counted by
+                                     // count_non_pass (D-01: every non-pass,
+                                     // non-skipped finding, `info` included).
+                                     "audio.silence.edges",
                                  });
     for (const auto& f : report.at("findings")) {
       if (f.at("id").get<std::string>() != "timeline.av_drift.pattern") {

@@ -64,3 +64,47 @@
 # workstation -- both comfortably under PERF-01's <=3s budget.
 leg=x64-linux metric=plain_instructions value=257709408 commit=a56dd9b
 leg=x64-linux metric=full_instructions value=344956981 commit=a56dd9b
+
+# --- PERF-04 (06-12-PLAN.md, transcribed by 06-13-PLAN.md Task 3): audio_plain_instructions / audio_full_instructions ---
+#
+# STATUS: TRANSCRIBED FROM THE DESIGNATED LEG. The two lines below are the
+# designated x64-linux CI leg's own `scripts/measure_audio_perf.sh
+# --check-baseline` measurement, copied verbatim from GitHub Actions run
+# 35735099865 (commit e5a16770c00343da91ad8e299773eac9774a1bd3,
+# 2026-09-22), replacing 06-12-PLAN.md's locally-measured provisional seed
+# (A2, 06-12-PLAN.md's own flagged assumption) -- CI computes, a human
+# transcribes, the same convention this file's two lines above already
+# follow. Both were measured WITHIN tolerance of the provisional seed
+# (audio_plain_instructions +0.10%, audio_full_instructions +0.02%,
+# against PERF_RATCHET_TOLERANCE_PERCENT), confirming the container-measured
+# provisional numbers were already a close stand-in -- this transcription
+# replaces them with the designated leg's own real numbers so the ratchet
+# now genuinely gates a real CI regression rather than self-consistency-
+# checking against a workstation approximation.
+#
+# Provisional history (06-12-PLAN.md, superseded by the transcription
+# above): both values were measured with `valgrind --tool=cachegrind`
+# (v3.22.0) against `scripts/measure_audio_perf.sh`'s own on-demand
+# 600s/44100Hz/stereo AAC reference input, at commit fb4bd16, inside an
+# `ubuntu:24.04` container (this workstation's own host OS lacks valgrind
+# and lacks passwordless root to install it) -- the closest available
+# stand-in for the designated leg's own `ubuntu-24.04` runner image, but
+# NOT that runner, hence provisional at the time. RE-MEASURED at fb4bd16,
+# replacing the 4aa37ca values (audio_plain_instructions=108915137,
+# audio_full_instructions=47359100891) -- those were measured while
+# `DemuxSession::open()` still re-opened every AAC file to resolve HE-AAC
+# SBR signaling, which callgrind attributed 19,520,821 Ir of this leg's
+# own 108.5M to; fb4bd16 implements D-12's decided header-pass mechanism
+# instead, dropping the plain leg 18.0% and the full leg 0.04%.
+#
+# `<metric>` is either `audio_plain_instructions` (PacketScan alone, audio
+# decode disabled -- `Pass::audio_decode` never enters the pass union) or
+# `audio_full_instructions` (the SAME packet scan, PLUS the shared audio
+# decode sweep -- hash + loudness + silence sinks fused into ONE
+# `av_read_frame` pass, AUDIO-10 -- PLUS every consuming analyzer's own
+# run()). The large audio_full/audio_plain ratio (roughly 530x) reflects
+# that decoding and analyzing ten minutes of 44100Hz stereo AAC is a much
+# larger unit of work than a decode-free packet scan, not a defect in
+# either leg.
+leg=x64-linux metric=audio_plain_instructions value=89344287 commit=e5a1677
+leg=x64-linux metric=audio_full_instructions value=47339403661 commit=e5a1677

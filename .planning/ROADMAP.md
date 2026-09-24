@@ -449,12 +449,102 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. `mediadiff inspect` renders a complete audio section — codec, profile carrying the HE-AAC SBR signaling mode (implicit vs explicit), sample rate, sample format/bit depth, channel count and canonical layout — and `5.1` vs `5.1(side)` is reported as a regression rather than matching on channel count.
-  2. `audio.priming` resolves through `initial_padding` → container mechanism (MP4 elst / iTunSMPB / MKV CodecDelay) → `unknown` and stays stable across an MP4 → MKV → MP4 round trip, closing the `priming: unknown` gap phase 5's `timeline.av_offset`/`av_drift` shipped with.
+  2. `audio.priming` resolves through `initial_padding` → container mechanism (MP4 elst / iTunSMPB / MKV CodecDelay) → `unknown`, stays stable across an MP4 → MKV remux, and closes the `priming: unknown` gap phase 5's `timeline.av_offset`/`av_drift` shipped with wherever both sides expose a priming basis — with the two cases that cannot carry one, an MP4 → MKV → MP4 round trip and any MPEG-TS side, reported as measured non-passes rather than silently absorbed. (amended 2026-09-22, phase 6 verification)
+
+  > **Amended 2026-09-22.** As originally written this criterion required priming to stay stable across a full MP4 → MKV → MP4 round trip, and to close the phase 5 gap outright. Both halves are contradicted by measurement, and neither is a defect in this project's code.
+  >
+  > **The round trip.** Matroska stores priming as `CodecDelay` in **nanoseconds**. Converting 1024 samples at 44100 Hz to ns and back to an MP4 edit-list `media_time` is lossy: `mediadiff compare tests/fixtures/audio_prime_base.mp4 tests/fixtures/audio_prime_roundtrip2.mp4` reports `1024` vs `1014`, reproduced three times. D-14 makes `audio.priming` `semantic=exact` over a string, so no tolerance can absorb ~10 samples, and relaxing D-14 to admit them would blunt the check on the real priming changes it exists to catch. A single MP4 → MKV hop **is** stable (`tests/integration/test_audio_priming.cpp`, passing). The round-trip residual is now an asserted expected non-pass in that same harness, not an unexplained failure. Ledger: `.planning/WINDOWS.md` #36, open.
+  >
+  > **The phase 5 gap.** D-16's shared-basis span (`src/analyzers/timeline/av_sync.cpp`) verifiably closes the gap for MP4-vs-MP4 priming pairs — `span_basis=adjusted` on both sides, zero drift. It cannot close it for the two MP4-to-TS pairs `.planning/WINDOWS.md` #32 names, because MPEG-TS carries no priming mechanism at all: no `skip_samples`, no `initial_padding`, and no edit list survives the remux. The shared-basis rule correctly declines to fabricate a basis and falls back to raw-to-raw per D-11, which still reports a residual. Closing that needs decode-based priming detection for TS, filed as a follow-up on #32, which stays open.
+  >
+  > Evidence: `.planning/phases/06-audio-analysis/06-VERIFICATION.md` (commit `8b7488e`).
   3. Integrated loudness matches an `ffmpeg -af ebur128` reference within ±0.1 LU on fixtures, true peak fails asymmetrically when the candidate crosses −1.0 dBTP upward from a baseline that was under it, and introduced leading/trailing silence or an interior dropout is reported as a span.
   4. `content.audio.sample_hash` locates the first divergent sample by index and time; the same file hashed via `aac_fixed` on two different builds compares equal; and a float-decoder hash across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail — with decoder name, class, flags and path signature recorded per hashed stream.
   5. Loudness, silence detection and hashing share a single decode sweep per track, and an audio sweep of the 10-minute reference stereo AAC file completes in under 4 s.
 
-**Plans**: TBD
+**Plans**: 19/20 plans executed. 06-01..06-13 were executed in 13 waves. 06-14..06-20 are gap-closure plans (VERIFICATION.md gap 3 plus 06-13's pending CI confirmation) in 7 further waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/orchestrator.cpp`, `CMakeLists.txt` and `tests/integration/test_doc03_coverage.cpp`, and the gap plans share one working tree, one build directory and `src/probe/audio_decode.*`, so no two plans share a wave.
+
+Plans:
+**Wave 1**
+
+- [x] 06-01-PLAN.md — Roster checkpoint (14 ids, the D-05 signature format, the D-09 id) plus the TRACER: `Pass::audio_decode`, the untrimmed fixed-block XXH3-128 chain, extended `HashChain` through the snapshot contract, and `content.audio.sample_hash` end to end (AUDIO-08/10, TRUST-01)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 06-02-PLAN.md — Fixture foundry: `tools/gen_he_aac.py` with a decode-round-trip selftest (D-10/D-11), the lossless loudness/true-peak/silence fixtures with their committed `ffmpeg -af ebur128` text reference (D-13), and the layout, parameter and priming fixtures including the multi-edit and fragmented MP4 edge cases (AUDIO-02/03/04/05/06/07)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 06-03-PLAN.md — The six header-pass parameter checks, `5.1` vs `5.1(side)` as a layout regression, and the corpus-wide declared-set re-baselining they cause (AUDIO-01/02)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [x] 06-04-PLAN.md — `audio.profile` carrying the SBR signaling mode: the no-decode ASC fast path plus the bounded one-packet fallback, both in the header pass (AUDIO-01/03, D-12)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [x] 06-05-PLAN.md — `--hash-decoder`, the determinism-class table with D-06's `mp3`/`mp2` promotion, the per-hashed-stream `decode_path` record, and the three-way class proof (AUDIO-08/09, TRUST-01/02)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [x] 06-06-PLAN.md — `audio.priming`: the resolver extended in place with the container-mechanism tier, `unknown` as a comparable value, trailing padding in evidence (AUDIO-04, D-14/D-15/D-17)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [x] 06-07-PLAN.md — D-16: the priming-state-gated `av_drift` checkpoint span through a generalised evidence-shape-gated override; MP4-vs-MP4 priming pairs now share the trimmed basis and stay clean, but the MP4-to-TS `WINDOWS.md` #32 pairs stay open (TS priming confirmed genuinely unrecoverable after remux) (AUDIO-04)
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [x] 06-08-PLAN.md — libebur128 loudness and true peak in the shared sweep, ±0.1 LU against the committed reference, and the asymmetric −1.0 dBTP ceiling escalation (AUDIO-05/06/10)
+
+**Wave 9** *(blocked on Wave 8)*
+
+- [x] 06-09-PLAN.md — `audio.silence.edges` / `.dropouts` as spans, with every threshold a named constant echoed in `--explain` (AUDIO-07/10)
+
+**Wave 10** *(blocked on Wave 9)*
+
+- [x] 06-10-PLAN.md — D-09: `meta.decode_errors` as a counted gating check at exit 1, the narrowed exit-66 path, the amendment recorded in two places, and the decode pass brought inside the byte-flip fuzz smoke (AUDIO-08/10)
+
+**Wave 11** *(blocked on Wave 10)*
+
+- [x] 06-11-PLAN.md — SC1's `inspect` audio section, registry-enumerated so a later id cannot ship invisible, plus the corpus-wide clean sweep (AUDIO-01/02/03)
+
+**Wave 12** *(blocked on Wave 11)*
+
+- [x] 06-12-PLAN.md — `PERF-04`'s harness: wall clock measured and printed, the instruction-count ratchet gating, wired into the designated CI leg (PERF-04, AUDIO-10)
+
+**Wave 13** *(blocked on Wave 12)*
+
+- [x] 06-13-PLAN.md — Designated-leg round trip: transcribe the digest and perf baseline from the real run, and close D-06's cross-architecture claim on an arm64 measurement — confirmed or demoted (AUDIO-09, TRUST-01, PERF-04)
+
+**Wave 14** *(gap closure; blocked on Wave 13)*
+
+- [x] 06-14-PLAN.md — WR-02: a decode stopped by the error limit is labelled `truncated` and degrades to `skipped:hash_incomparable`; level checks skip `partial_scan` with the stop reason; the single stop-reason vocabulary; the deferred review findings (AUDIO-08, TRUST-02)
+
+**Wave 15** *(blocked on Wave 14)*
+
+- [x] 06-15-PLAN.md — CR-01: sinks configured from the decoded frame's rate, proven in-process on the real divergent codecpar state. CR-02: every frame re-validated against the recorded configuration, so no mismatched shape reaches a sink (AUDIO-08, AUDIO-10)
+
+**Wave 16** *(blocked on Wave 15)*
+
+- [x] 06-16-PLAN.md — CR-03: non-finite or out-of-range float PCM stops level measurement and normalize is bounded. WR-03: receive-side failures count toward the consecutive bound. Plus a corpus differential and the audio ratchet (AUDIO-05, AUDIO-07)
+
+**Wave 17** *(blocked on Wave 16)*
+
+- [x] 06-17-PLAN.md — CR-04: a 0.010 dB rise deadband on the -1.0 dBTP escalation, with SC3's in-tolerance material crossing still failing (AUDIO-06)
+
+**Wave 18** *(blocked on Wave 17)*
+
+- [x] 06-18-PLAN.md — CR-05: `audio.profile` never depends on host timing (a deterministic probe; open failure is an Error), decode-observed rate evidence for every implicit_decoded resolution, and WR-09's stale comment corrected (AUDIO-03)
+
+**Wave 19** *(blocked on Wave 18)*
+
+- [x] 06-19-PLAN.md — WR-07: `span_basis` "adjusted" only when the trim was actually reconstructed; the amended SC2 assertions re-run unchanged (AUDIO-04)
+
+**Wave 20** *(blocked on Wave 19)*
+
+- [ ] 06-20-PLAN.md — Final designated-leg CI round trip behind a human-approved push, folding in 06-13's pending confirmation (PERF-04, AUDIO-09, TRUST-01)
+
 **Source doc**: `claude_docs/05-audio-analysis.md` (design-doc phase 5)
 
 ### Phase 7: Content & Quality
@@ -487,7 +577,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 3. Probe Layer, Container & Size | 22/22 | Complete    | 2026-09-06 |
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
-| 6. Audio Analysis | 0/TBD | Not started | - |
+| 6. Audio Analysis | 19/20 | In Progress|  |
 | 7. Content & Quality | 0/TBD | Not started | - |
 
 ## Coverage

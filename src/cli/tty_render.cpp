@@ -248,7 +248,7 @@ std::string render_summary_line(const Summary& summary, int terminal_width) {
 // "sanitize before eliding" contract (src/util/sanitize.h's own header
 // comment): an escaped form can be longer than its raw form, and eliding
 // against the wrong length would corrupt the truncation decision.
-std::string render_finding_row(const Finding& finding, const ColorDecision& color, int terminal_width) {
+std::string render_finding_row(const Finding& finding, Unit unit, const ColorDecision& color, int terminal_width) {
   const Glyph glyph = make_glyph(finding.status, color);
   const std::string sanitized_id = sanitize_for_display(finding.id);
   const std::string sanitized_scope = sanitize_for_display(scope_to_text(finding.scope));
@@ -261,9 +261,10 @@ std::string render_finding_row(const Finding& finding, const ColorDecision& colo
   // rationale (same canonical std::to_chars float formatter, single line
   // because this text is embedded inline in one wrap_text/elide_value row).
   const std::string sanitized_message = sanitize_for_display(finding.message);
-  const std::string sanitized_baseline = sanitize_for_display(serialize_value_compact(value_to_json(finding.baseline)));
+  const std::string sanitized_baseline =
+      sanitize_for_display(serialize_value_compact(value_to_json(finding.baseline, unit)));
   const std::string sanitized_candidate =
-      sanitize_for_display(serialize_value_compact(value_to_json(finding.candidate)));
+      sanitize_for_display(serialize_value_compact(value_to_json(finding.candidate, unit)));
   const std::string value_text =
       fmt::format("{} (baseline={}, candidate={})", sanitized_message, sanitized_baseline, sanitized_candidate);
 
@@ -350,7 +351,13 @@ std::string render_tty(const ReportModel& model, const CheckRegistry& registry, 
     }
     out += fmt::format("{} ({})\n", group_to_string(block.group), block.findings.size());
     for (const Finding& finding : block.findings) {
-      out += render_finding_row(finding, color, terminal_width);
+      // Resolved per finding id, same id-matched linear scan as
+      // report/json.cpp's finding_to_json / report/junit.cpp's
+      // baseline_candidate_detail -- a finding whose id the registry does
+      // not know renders with Unit::none (no `ms` key).
+      const auto check_idx = registry.find(finding.id);  // control-bytes-allow: lookup key, not rendered
+      const Unit finding_unit = check_idx ? registry.at(*check_idx).unit : Unit::none;
+      out += render_finding_row(finding, finding_unit, color, terminal_width);
       if (is_gating(finding.severity)) {
         append_triple(out, finding, registry, terminal_width);
       }

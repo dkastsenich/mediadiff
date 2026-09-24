@@ -11,7 +11,10 @@
 
 #include "core/check_id.h"
 #include "core/model.h"
+#include "probe/audio_decode.h"
 #include "probe/demux_session.h"
+#include "probe/packet_scan.h"
+#include "probe/pass.h"
 
 namespace mediadiff {
 
@@ -306,6 +309,137 @@ void run(const ProbeResults& results, Fingerprint& fp) {
   emit_meta_language(demux, stream_scopes, fp);
 }
 
+// meta.decode_errors (06-10-PLAN.md, AUDIO-08, AUDIO-10, D-09) -- see
+// container_meta_decode_errors_analyzer()'s own doc comment
+// (src/analyzers/container/analyzers.h) for the full skip-reason priority
+// and why this function is the ONE place `Fingerprint::partial` is set
+// from the decode pass. A SEPARATE AnalyzerSpec from container_meta_
+// analyzer() above (this one needs the full decode sweep; that one is
+// header-pass-only), still emitted from this same "meta.* family" file
+// per this plan's own action text.
+//
+// 04-17/06-01 gap-closure precedent (this project's own established
+// convention, e.g. src/analyzers/content/sample_hash.cpp's identical
+// bracket): measured against this project's pinned GCC 13.3.0 at -O3,
+// the fully inlined merge of every Measurement-constructing call site
+// below trips -Wmaybe-uninitialized. Bracketed from push_decode_errors_skip
+// through run_meta_decode_errors's own closing brace.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
+void push_decode_errors_skip(Scope scope, SkipReason reason, Fingerprint& fp) {
+  Measurement measurement;
+  measurement.check_index = static_cast<std::uint32_t>(CheckId::meta_decode_errors);
+  measurement.scope = scope;
+  measurement.value = Absent{};
+  measurement.skip_reason = reason;
+  fp.measurements.push_back(std::move(measurement));
+}
+
+// StreamMediaType -> Scope::Kind, narrowed to audio only (this analyzer's
+// own scope) -- mirrors every other audio-decode-sweep consumer's own
+// per-file copy of this helper (src/analyzers/audio/loudness.cpp,
+// src/analyzers/content/sample_hash.cpp, this project's established
+// per-file-duplication convention).
+std::optional<Scope::Kind> decode_errors_audio_scope_kind(StreamMediaType type) {
+  return type == StreamMediaType::audio ? std::make_optional(Scope::Kind::audio) : std::nullopt;
+}
+
+// Resolves each stream's own Scope by INDEX -- per_stream[i] IS AVStream i
+// (packet_scan.h's own documented contract), mirroring
+// content/sample_hash.cpp's compute_audio_scopes verbatim.
+std::vector<std::optional<Scope>> compute_decode_errors_audio_scopes(const DemuxSession& demux,
+                                                                       std::size_t stream_count) {
+  std::vector<std::optional<Scope>> scopes;
+  scopes.reserve(stream_count);
+  int audio_rank = 0;
+  for (std::size_t i = 0; i < stream_count; ++i) {
+    const std::optional<Scope::Kind> kind =
+        decode_errors_audio_scope_kind(demux.stream_info(static_cast<int>(i)).media_type);
+    if (!kind.has_value()) {
+      scopes.push_back(std::nullopt);
+      continue;
+    }
+    scopes.push_back(Scope{*kind, audio_rank++});
+  }
+  return scopes;
+}
+
+// run_meta_decode_errors's own skip-reason priority: partial_scan first
+// (Phase 3 D-02, a truncated packet scan), then requires_decode when the
+// slot is std::nullopt or this stream's own decode was never attempted,
+// then a THIRD tier -- partial_scan again -- when this stream is
+// `undecodable` (D-09's narrow "genuinely could not run" case). Only in
+// that last branch does this function set `fp.partial = true`, wiring the
+// narrow undecodable case to exit 66 through src/cli/exit_code.cpp's
+// existing contract (claude_docs/01-core-concepts.md section 11) -- the
+// SINGLE place this happens for the whole decode sweep.
+void run_meta_decode_errors(const ProbeResults& results, Fingerprint& fp) {
+  if (results.demux == nullptr || !results.packet_scan.has_value()) {
+    // Unreachable in practice -- both are unconditionally in this
+    // analyzer's own required_passes; guarded so this analyzer never
+    // dereferences an unset ProbeResults field if that invariant is ever
+    // relaxed.
+    return;
+  }
+  const DemuxSession& demux = *results.demux;
+  const PacketScanResult& packet_scan = *results.packet_scan;
+  const std::vector<std::optional<Scope>> scopes =
+      compute_decode_errors_audio_scopes(demux, packet_scan.per_stream.size());
+
+  bool any_audio = false;
+  for (std::size_t i = 0; i < scopes.size(); ++i) {
+    if (!scopes[i].has_value()) {
+      continue;
+    }
+    any_audio = true;
+    const Scope scope = *scopes[i];
+
+    if (packet_scan.per_stream[i].partial) {
+      push_decode_errors_skip(scope, SkipReason::partial_scan, fp);
+      continue;
+    }
+    if (!results.audio_decode.has_value() || i >= results.audio_decode->per_stream.size()) {
+      push_decode_errors_skip(scope, SkipReason::requires_decode, fp);
+      continue;
+    }
+    const StreamAudioDecode& decode = results.audio_decode->per_stream[i];
+    if (!decode.attempted) {
+      push_decode_errors_skip(scope, SkipReason::requires_decode, fp);
+      continue;
+    }
+    if (decode.undecodable) {
+      fp.partial = true;
+      push_decode_errors_skip(scope, SkipReason::partial_scan, fp);
+      continue;
+    }
+
+    // Test 1: a real 0 on a clean stream, never Absent{} and never a
+    // skip. Test 7: the first error's own reason rides in evidence, only
+    // when at least one error occurred.
+    Measurement measurement;
+    measurement.check_index = static_cast<std::uint32_t>(CheckId::meta_decode_errors);
+    measurement.scope = scope;
+    measurement.value = decode.decode_error_count;
+    if (!decode.first_error_reason.empty()) {
+      measurement.evidence = nlohmann::ordered_json{{"first_error_reason", decode.first_error_reason}};
+    }
+    fp.measurements.push_back(std::move(measurement));
+  }
+
+  if (!any_audio) {
+    const Scope scope{Scope::Kind::audio, 0};
+    const SkipReason reason = packet_scan.partial ? SkipReason::partial_scan : SkipReason::insufficient_data;
+    push_decode_errors_skip(scope, reason, fp);
+  }
+}
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+
 }  // namespace
 
 namespace detail {
@@ -325,6 +459,13 @@ std::vector<std::string> volatile_tag_keys_for_test() {
 
 const AnalyzerSpec& container_meta_analyzer() {
   static const AnalyzerSpec spec{"container_meta", PassSet{Pass::demux_header}, ContainerFamily::other, &run};
+  return spec;
+}
+
+const AnalyzerSpec& container_meta_decode_errors_analyzer() {
+  static const AnalyzerSpec spec{"container_meta_decode_errors",
+                                   PassSet{Pass::demux_header, Pass::packet_scan, Pass::audio_decode},
+                                   ContainerFamily::other, &run_meta_decode_errors};
   return spec;
 }
 

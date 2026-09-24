@@ -1,19 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.6.1
-current_phase: 6
+current_phase: 06
 current_phase_name: Audio Analysis
-status: planning
-stopped_at: Phase 5 complete, ready to plan Phase 6
-last_updated: "2026-09-19T08:35:46.096Z"
-last_activity: 2026-09-19
-last_activity_desc: Phase 5 complete, transitioned to Phase 6
-state_head: dab73d4ae840d087a0f4d1a9ea1bac4fda9b914c
+status: executing
+stopped_at: Completed 06-19-PLAN.md
+last_updated: "2026-09-23T21:57:29.688Z"
+last_activity: 2026-09-23
+last_activity_desc: Phase 06 execution started
+state_head: c050ccd830399a2f5f729ca849e2441b07498245
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 92
-  completed_plans: 92
+  total_plans: 112
+  completed_plans: 111
 milestone_name: milestone
 ---
 
@@ -24,22 +24,22 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-08-12)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 5 — Timeline Analysis
+**Current focus:** Phase 06 — Audio Analysis
 
 ## Current Position
 
-Phase: 6 — Audio Analysis
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-19 — Phase 5 complete, transitioned to Phase 6
+Phase: 06 (Audio Analysis) — EXECUTING
+Plan: 7 of 20
+Status: Ready to execute
+Last activity: 2026-09-23 — Phase 06 execution started
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 68
+- Total plans completed: 69
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -144,6 +144,24 @@ Progress: [█████████░] 92%
 | Phase 05 P23 | ~12min | 3 tasks | 6 files |
 | Phase 05-timeline-analysis P24 | 20min | 3 tasks | 0 files |
 | Phase 05-timeline-analysis P25 | 15min | 2 tasks | 0 files |
+| Phase 06 P01 | 44min | 3 tasks | 46 files |
+| Phase 06 P02 | ~2h | 3 tasks | 11 files |
+| Phase 06 P03 | 50min | 3 tasks | 19 files |
+| Phase 06 P04 | 39min | 2 tasks | 14 files |
+| Phase 06 P05 | unrecorded | 3 tasks | 33 files |
+| Phase 06 P06 | 47min | 3 tasks | 21 files |
+| Phase 06 P07 | ~30min (session resumed after context compaction) | 2 tasks | 11 files |
+| Phase 06 P08 | 60min | 3 tasks | 18 files |
+| Phase 06 P09 | 60 | 2 tasks | 23 files |
+| Phase 06-audio-analysis P10 | 90min | 3 tasks | 24 files |
+| Phase 06 P11 | 55min | 2 tasks | 9 files |
+| Phase 06 P12 | 20min | 2 tasks | 7 files |
+| Phase 06 P14 | 20min | 3 tasks | 14 files |
+| Phase 06 P15 | 35min | 3 tasks | 7 files |
+| Phase 06 P16 | 36min | 3 tasks | 6 files |
+| Phase 06-audio-analysis P17 | 15min | 2 tasks | 5 files |
+| Phase 06-audio-analysis P18 | 30 min | 3 tasks | 8 files |
+| Phase 06 P19 | 14min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -337,6 +355,48 @@ Recent decisions affecting current work:
 - [Phase 5]: 05-24: no digest transcription and no perf-baseline commit needed — the provisional ledger was already empty and the perf ratchet passed both metrics (plain -0.033%, full +0.254%) well within +/-2% tolerance on the designated leg (run 35389474602, job 105744204442); this is the second CI cross-run confirmation of the 05-13 baseline, with zero commits beyond planning metadata
 - [Phase 5]: 05-25: reply push-all recorded verbatim; push 8ad53f1..d40c040 (docs-only) updates PR #6, redundant for confirmation but keeps branch in sync — Human's explicit choice at the blocking-human checkpoint
 - [Phase 5]: 05-25: arm64-linux WINDOWS.md attribution corrected to #11 (NuGet feed registration exit 1) -- prior 'no mono' claim in 05-24-SUMMARY.md was wrong; Install mono step completes cleanly — Direct log inspection at arm64linux.log:5729-5733 (mono install success) vs :5798 (NuGet feed exit 1)
+- [Phase 06]: 06-CHECK-ROSTER.md's class-3 interpretation: no decoder available in this build, never 'hash discarded for a successfully-decoded stream'.
+- [Phase 06]: Audio decode sweep fused inside run_packet_scan's existing av_read_frame loop, not a separate pass (structural AUDIO-10/PROBE-08 requirement).
+- [Phase 06]: compare/engine.cpp's evidence assignment changed from overwrite to merge-if-object so a comparator can populate finding.evidence itself (D-03).
+- [Phase 06]: NOISE_BT scalefactor bands give a hand-written AAC fixture non-zero PCM with zero spectral bits, enabling a byte-identical-on-every-leg class-1 proof input
+- [Phase 06]: audio_flt_base built as .ogg/native-vorbis instead of the plan's literal .flac, since FLAC's decoder can never emit a float sample format
+- [Phase 06]: New CORPUS_DIGEST.txt fixture hash lines follow the project's own committed provenance policy (never rewriting an existing line) for all three tasks, overriding one plan acceptance-criteria bullet that contradicted its own required verify gate
+- [Phase 06]: checks.def registration sequenced task-by-task (5 ids+docs in Task 1, audio.layout+doc in Task 2) because tools/gen_registry.py hard-fails the build on any registered check missing its docs/checks/<id>.md doc
+- [Phase 06]: GCC 13.3/-O3 -Wmaybe-uninitialized false positive required one pragma bracket around the ENTIRE push_skip-through-run_audio_stream_params block, not a narrow bracket per function -- the warning is a property of the whole merged/inlined function set
+- [Phase 06]: audio.sample_fmt canonicalizes to packed-equivalent via av_get_alt_sample_fmt(fmt, planar=0), mirroring D-02's existing audio_decode.cpp convention, applied identically at the header-pass/codecpar level
+- [Phase 06]: T-06-09 sanitization threat confirmed already mitigated generically: tty_render.cpp routes every finding.baseline/candidate through sanitize_for_display and junit.cpp XML-escapes generically (T-2-33 precedent), so audio.codec/audio.layout needed no per-check sanitization code
+- [Phase 06]: 06-04: SBR signaling resolved entirely in DemuxSession's header pass via a no-decode ASC fast path plus a bounded one-packet decode fallback, keeping audio.profile pass-independent (D-12).
+- [Phase 06]: 06-04: effective_sample_rate_hz caches the bounded probe's own directly-observed decoded rate rather than a formulaic core_rate*2, since avformat_find_stream_info() can already resolve codecpar->sample_rate to the SBR-doubled value for a short implicit stream.
+- [Phase 06]: By-name-only decoder classification, re-derived from the recorded decoder NAME at measurement time rather than trusted from a stored class integer (T-06-15)
+- [Phase 06]: mp3/mp2 promoted to determinism class 1 (D-06), provisional pending an arm64 CI leg confirming cross-architecture bit-exactness (06-13)
+- [Phase 06]: USAC fallback (Test 6) documented as a known gap -- no USAC bitstream/encoder available in this LGPL decode-only pin to prove end-to-end
+- [Phase 06]: Container-mechanism priming tier is presence-gated (not magnitude-gated): resolved zero and absent priming stay distinguishable end to end.
+- [Phase 06]: audio_prime_multiedit.mp4's libav fold does NOT hold (resolves via mp4_edit_list to a real 0); audio_prime_fragmented.mp4's fold DOES hold (resolves via tier-1 skip_samples directly) -- measured per 06-RESEARCH.md A3, not assumed.
+- [Phase 06]: DEVIATION: substituted audio_prime_roundtrip.mkv for audio_prime_roundtrip2.mp4 as the must-pass round-trip fixture -- the MP4->MKV->MP4 double hop measures a real ~10-sample CodecDelay-ns rounding artifact (1024 vs 1014) that audio.priming's exact-over-string semantics (D-14) cannot tolerance away, and the fixture cannot be regenerated without rewriting an existing CORPUS_DIGEST.txt line.
+- [Phase 06]: 06-07: D-16 extends D-10's shared-basis rule from timeline.av_offset's offset to timeline.av_drift's checkpoint span -- detail::span_ticks_for_basis() reconstructs a trimmed span directly from the packet-derived raw extent (raw minus priming minus padding ticks) rather than trusting a container's own declared-duration field, since MPEG-TS's own field is itself an untrimmed PTS-range estimate (WINDOWS.md #32's own root cause). src/compare/tol.cpp's D-10 override generalised to a second evidence shape (span_basis/adjusted_magnitude), still never gated on check.id.
+- [Phase 06]: 06-07: Rejected an unconditional raw-forced Measurement::value design after it regressed a currently-clean, real-priming MP4-vs-MP4 constant-offset pair to a spurious linear-drift -- kept a single fit per measurement, computed on the audio stream's own shared basis preference.
+- [Phase 06]: 06-07: Fixed a real gap -- resolve_priming()'s call site in av_sync.cpp was missing the D-17 last_packet_discard_padding argument, and padding-tick conversion was gated on `> 0`, silently treating a genuinely known, zero padding count as unknown.
+- [Phase 06]: 06-07: WINDOWS.md #32 moved from waived to OPEN (not fixed) on new measured evidence -- audio.priming's own evidence confirms the MP4-to-TS pairs' TS-side priming is genuinely unrecoverable after remux (no skip_samples, no initial_padding, no edit list survives), a structural limitation this plan's own A2 flagged_assumption explicitly sanctions leaving open rather than closing on an assumption.
+- [Phase 06]: Gating-floor comparison made inclusive (<=) not strict (<): audio_loud_floor.flac decodes to exactly -70.0 LUFS, so a strict less-than never fired on the fixture built to prove doc 05's silent sentinel rule.
+- [Phase 06]: Ceiling-escalation invariants (Tests 5-8) proven at unit level against a synthetic check id (tests/unit/test_tolerance.cpp) since the real fixture pair's own delta already exceeds tolerance on magnitude alone, unable to isolate the escalation's own effect.
+- [Phase 06]: Channel-role mapping tested as a pure exported function (loudness_channel_role_for_avchannel) against real libebur128 enum constants, since libebur128's own weighting table applies an identical factor to side- and back-surround roles in this version.
+- [Phase 06]: Silence edges detected via symmetric (open+close) hysteresis debounce on peak amplitude, to avoid a plain sine tone's exact-zero first sample spuriously opening a one-sample leading run
+- [Phase 06]: Dropout detection uses trailing sliding-window sum-of-squares RMS with cross-multiplied integer threshold comparison, discarding runs touching sample 0 or EOF (edge detector's territory)
+- [Phase 06]: audio.silence.edges and audio.silence.dropouts registered as span-semantic checks: introduced spans gate on severity, removed spans are always info
+- [Phase 06]: D-09 amendment (06-10): recoverable decode errors counted as meta.decode_errors gating findings at exit 1; only a wholly undecodable stream (zero decoded frames) marks Fingerprint::partial and exits 66
+- [Phase 06]: Restored three DOC-03 cross-dimension clean pairs (audio.bit_depth/sample_fmt/channels) after human review; corpus sweep now declares each pair's real non-pass findings by name (expect_declared_set) instead of forcing self-compares, preserving cross-dimension coverage while still failing loudly on any undeclared non-pass.
+- [Phase 06]: Audio inspect section renders block-per-stream, registry-enumerated from builtin_registry(), with decode-dependent rows explicitly not-blank under --no-content and a data-driven no-audio-streams sentinel.
+- [Phase 06]: PERF-04's audio ratchet reuses Phase 5's exact three-mode harness shape; provisional baseline measured via Docker (ubuntu:24.04) since the workstation lacks valgrind/root — Keeps both perf harnesses' failure modes identical and readable; avoids fabricating a baseline number when the host cannot run cachegrind
+- [Phase 06]: D-06 cross-architecture proof closed on real arm64-osx evidence: aac_fixed CONFIRMED class 1, mp3/mp2 DEMOTED to class 2 (no trustworthy cross-architecture proof exists for either), ac3_fixed left unchanged with the gap recorded (WINDOWS.md #39). — The must-have text forbids closing on assumption; only aac_fixed had a real committed two-build proof that ran on arm64 this round.
+- [Phase 06]: 06-14: compare_hash's new truncated-sampling rule is checked before the generic kPreconditionKeys mismatch, so it now also owns the truncated-vs-full case (message text changed to name truncated explicitly; status/skip_reason unchanged). — Subsumes truncated-vs-full and truncated-vs-truncated in one rule, since the generic mismatch rule cannot catch two independently-truncated sides whose sampling_state values happen to agree.
+- [Phase 06]: 06-15: The sweep's configuration moved from codecpar's declared rate to the first decoded frame's rate (CR-01) -- codecpar was correct only because avformat_find_stream_info's own internal decode had already corrected it, an undocumented external invariant. StreamAudioDecode gained declared_sample_rate as a diagnostic-only field. — No ordinary corpus fixture exercises the divergence (0 of 144 streams per the debug session), so the fix is proven with an in-process test that drives AudioDecodeState against a pre-find_stream_info codecpar directly rather than a claimed-but-nonexistent real fixture.
+- [Phase 06]: 06-15: Every decoded frame is re-validated against the first frame's channels/format/rate/layout (CR-02); the first mismatch latches a decoded_* stop token and the sweep feeds nothing further to any sink, closing the T-06-49 heap-over-read shape a mid-stream channel narrowing produced. — No real fixture can construct a mid-stream shape change, so CR-02 is proven with a new consume_frame_for_test seam driving hand-built AVFrames directly.
+- [Phase 06]: 06-16: closed CR-03 (non-finite/out-of-range float guard, level-only stop) and WR-03 (receive-side failures count toward the consecutive-error bound); corpus-wide differential and audio ratchet both confirm no output regression.
+- [Phase 06-audio-analysis]: CR-04: audio ceiling-crossing escalation gated by a 0.010 dB deadband (kCeilingCrossingDeadbandNum/Den) computed on the signed exact delta, in src/analyzers/audio/analyzers.h + src/compare/tol.cpp — Closes a knife-edge false-positive class (a 0.0002 dB quantiser-noise crossing hard-failing) while every crossing of 0.010 dB or more, including one inside the 0.3 dB tolerance, still escalates (SC3/AUDIO-06 intact); no evidence key or value changed
+- [Phase 06]: CR-05 fixed via deterministic probe + hard Error propagation (review's second option), not by rendering a timeout the same as unknown
+- [Phase 06]: CR-05 secondary: SbrResolution::decode_observed_rate_hz now populated by every implicit_decoded branch, not only the fallback probe
+- [Phase 06]: 06-19: span_ticks_for_basis's prefers_declared derived from the reconstruction outcome (raw span + both tick counts + in-range subtractions + strictly positive result), not input availability -- closes WR-07 — A preference flag must reflect whether the guarded computation actually succeeded, not merely whether its inputs looked plausible; the container-field fallback's own behavior (WR-07 flagged assumption A1) is unchanged
+- [Phase 06]: 06-19: WINDOWS.md #32 hand-edited via Edit tool (not the windows CLI mutation command) to append a dated note to an existing entry's description cell; status/counts left untouched — The windows CLI tool creates new entries; this plan needed to append to an existing open entry without altering its status or the ledger's frontmatter counts
 
 ### Pending Todos
 
@@ -346,6 +406,7 @@ None yet.
 
 - **VIDEO-11 placement is a judgment call.** `video.closed_captions` is mapped to Phase 7 (needs the decode pass) rather than Phase 4 where its namespace lives. Phase 4 still registers the check and ships the `skipped:requires_decode` path. Revisit if Phase 4 planning finds a parser-level detection route.
 - **Priming extraction spike is open.** Research flagged (v2 EXT-05) whether lightweight audio-priming extraction from container metadata is feasible ahead of the Phase 6 decode path. Until answered, Phase 5's `timeline.av_offset`/`av_drift` ship with `priming: unknown` on the common case — covered by TIME-10 fixtures, not closed.
+- **WINDOWS.md #32 remains open after 06-07.** The MP4-to-TS `timeline.av_drift`/`.pattern` false-positive-class residual is confirmed structurally unrecoverable within 06-07's scope: `audio.priming` evidence shows the TS side's priming is genuinely unknown after a `-c copy` remux (no `skip_samples`, no `initial_padding`, no edit list survives). Closing it fully needs a decode-based priming-discovery mechanism, out of scope for Phase 6's remaining plans (none of which touch `timeline.av_drift`/`av_sync.cpp`).
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
 - **RESOLVED by 03-14 (real CI evidence, PR #3, run 33951407521; WINDOWS.md #8 marked fixed).** `scripts/gen_corpus.sh` is now invoked, unconditionally, before `Configure` on every matrix leg. **Correction to the original scope:** the gap covered all 5 legs, not 4 — the Windows leg's `gen_corpus.ps1` generated zero fixtures and ran after `Test`, so the `Test` step ran without media fixtures on every leg, not just Linux/macOS. The real run confirmed the corpus steps execute in the correct order on all five legs; the macOS legs' only failure was `check_corpus.sh`'s own bash-3.2 incompatibility (`mapfile`), fixed same-plan (`91d9d2f`). Full five-leg green is **not yet achieved**: x64-windows-static-md and x64-linux both fail for reasons unrelated to the corpus (WINDOWS.md #9: `ebml_scan.cpp:348` NOMINMAX/`std::max` macro clash on MSVC; WINDOWS.md #10: committed byte-level goldens generated against a different ffmpeg build than CI's installed 9.0.1). arm64-linux's non-blocking `Register vcpkg NuGet feed` credentials failure is WINDOWS.md #11. BUILD-01/BUILD-05/BUILD-06 (below) remain unproven pending a fully green run.
@@ -365,6 +426,7 @@ None yet.
 | 260914-ryu | Replace GPL-only tinterlace with the LGPL interlace filter in the three interlace fixture recipes | 2026-09-14 | bf9a42f | [260914-ryu-replace-gpl-only-tinterlace-with-the-lgp](./quick/260914-ryu-replace-gpl-only-tinterlace-with-the-lgp/) |
 | 260914-t47 | Replace the GPL-gated interlace filter with an LGPL separatefields/select/weave chain in the three interlace fixture recipes | 2026-09-14 | d137242 | [260914-t47-replace-the-gpl-only-interlace-filter-in](./quick/260914-t47-replace-the-gpl-only-interlace-filter-in/) |
 | 260914-tzq | Fix the x64-windows-static-md build failure: read MEDIADIFF_DESIGNATED_LEG through the getenv_utf8 shim in test_golden.cpp and add the getenv shim lint to the CI lint job | 2026-09-14 | 47f02c4 | [260914-tzq-fix-the-x64-windows-static-md-build-fail](./quick/260914-tzq-fix-the-x64-windows-static-md-build-fail/) |
+| 260922-wtc | Fix the cross-phase `ms` serialization defect (emit `ms` only for a declared time unit, at its true magnitude) and amend 06-REVIEW.md's three claims disproved by measurement | 2026-09-22 | 9d2ceb6 | [260922-wtc-fix-the-ms-serialization-defect-and-amen](./quick/260922-wtc-fix-the-ms-serialization-defect-and-amen/) |
 
 ## Deferred Items
 
@@ -376,6 +438,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-18T20:36:29.202Z
-Stopped at: Phase 5 complete, ready to plan Phase 6
+Last session: 2026-09-23T21:57:29.499Z
+Stopped at: Completed 06-19-PLAN.md
 Resume file: None

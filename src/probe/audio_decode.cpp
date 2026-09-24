@@ -1,0 +1,1360 @@
+#include "probe/audio_decode.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <utility>
+
+#include <fmt/format.h>
+#include <xxhash.h>
+
+extern "C" {
+#include <libavcodec/avcodec.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/error.h>
+#include <libavutil/samplefmt.h>
+}
+
+// 06-08-PLAN.md (AUDIO-05, AUDIO-06): the ONLY translation unit that
+// includes <ebur128.h> -- confined here exactly as libavcodec/libavutil
+// are confined to this file's own decode loop (this file's own top-of-file
+// promise). C linkage: libebur128's own header wraps its declarations in
+// `extern "C"` when __cplusplus is defined, so no explicit block is needed
+// here (mirrors this file's own libav includes, whose headers do the same).
+#include <ebur128.h>
+
+#include "probe/audio_config.h"
+#include "probe/demux_session.h"
+#include "probe/packet_scan.h"
+#include "util/version.h"
+
+namespace mediadiff {
+
+namespace {
+
+std::string render_xxh3_128(std::uint64_t high64, std::uint64_t low64) { return fmt::format("{:016x}{:016x}", high64, low64); }
+
+std::string digest_bytes(const void* data, std::size_t size) {
+  const XXH128_hash_t h = XXH3_128bits(data, size);
+  return render_xxh3_128(h.high64, h.low64);
+}
+
+// D-06's fixed-point sibling table, including mp3/mp2 (06-05-PLAN.md:
+// both proved SIMD-stable on x86_64 in 06-CONTEXT.md's own recorded check
+// -- SELECTION preference, independent of CLASSIFICATION; 06-13-PLAN.md
+// Task 2 demoted mp3/mp2 to class 2 below for want of a real
+// cross-architecture proof, but "auto" still prefers them by name here,
+// exactly as any other class-2 decoder is still selected and still
+// hashed, just compared only within one machine class). Selected
+// by NAME, never by AV_CODEC_ID (D-07's own requirement) -- FFmpeg
+// registers the fixed MP3/MP2 decoders under the plain names "mp3"/"mp2"
+// while the float ones are the separately-named "mp3float"/"mp2float", and
+// an ID-based lookup resolves to whichever decoder is registered first.
+struct FixedSibling {
+  AVCodecID id;
+  const char* fixed_decoder_name;
+};
+
+constexpr std::array<FixedSibling, 4> kFixedSiblings = {{
+    {AV_CODEC_ID_AAC, "aac_fixed"},
+    {AV_CODEC_ID_AC3, "ac3_fixed"},
+    {AV_CODEC_ID_MP3, "mp3"},
+    {AV_CODEC_ID_MP2, "mp2"},
+}};
+
+const char* fixed_sibling_name(AVCodecID id) {
+  for (const FixedSibling& sibling : kFixedSiblings) {
+    if (sibling.id == id) {
+      return sibling.fixed_decoder_name;
+    }
+  }
+  return nullptr;
+}
+
+// 06-05-PLAN.md: the flags actually set on every decode context this file
+// opens (TRUST-01's own `flags` record) -- constant today since both flags
+// are set unconditionally (this file's own top comment), recorded as text
+// rather than re-derived from AVCodecContext at record-construction time.
+constexpr std::string_view kDecodeFlagsRecorded = "bitexact,skip_manual";
+
+// 06-08-PLAN.md (AUDIO-05, AUDIO-06): the loudness sink's own feed-function
+// dispatch, chosen ONCE at sweep start from the decoder's native output
+// format (D-08) -- never per frame. `none` is the "this sample format is
+// not one of the four ebur128_add_frames_* accepts" case (Test 3): the
+// sink is never constructed for such a stream.
+enum class Ebur128Feed {
+  none = -1,
+  short_fmt,
+  int_fmt,
+  float_fmt,
+  double_fmt,
+};
+
+// Dispatches on the PACKED equivalent of `fmt` -- a planar and a packed
+// spelling of the same underlying format resolve identically (Test 4: the
+// sink always interleaves before feeding, exactly like the hash sink's own
+// pending_block_).
+Ebur128Feed ebur128_feed_for_format(AVSampleFormat fmt) {
+  const AVSampleFormat packed = av_get_packed_sample_fmt(fmt);
+  switch (packed) {
+    case AV_SAMPLE_FMT_S16:
+      return Ebur128Feed::short_fmt;
+    case AV_SAMPLE_FMT_S32:
+      return Ebur128Feed::int_fmt;
+    case AV_SAMPLE_FMT_FLT:
+      return Ebur128Feed::float_fmt;
+    case AV_SAMPLE_FMT_DBL:
+      return Ebur128Feed::double_fmt;
+    default:
+      return Ebur128Feed::none;
+  }
+}
+
+// 06-RESEARCH.md Common Pitfall 3: libebur128 has NO knowledge of
+// AVChannelLayout -- every channel's role must be mapped explicitly, or a
+// surround channel silently gets the wrong (or no) BS.1770 weighting.
+// `EBUR128_LEFT_SURROUND`/`EBUR128_RIGHT_SURROUND` (== `EBUR128_Mp110`/
+// `EBUR128_Mm110`) are a DIFFERENT enumerator identity from
+// `EBUR128_Mp090`/`EBUR128_Mm090`, so a back-surround position and a
+// side-surround position are never folded onto one shared default (this
+// plan's own must_have), even though libebur128's own gating-block
+// weighting table (ebur128.c) happens to apply the identical 1.41x factor
+// to both roles today -- the distinction is about correct, non-default
+// MAPPING per se, not (for this specific pair of roles) a different
+// resulting number.
+int ebur128_role_for_channel(AVChannel channel, int position_index) {
+  switch (channel) {
+    case AV_CHAN_FRONT_LEFT:
+      return EBUR128_LEFT;
+    case AV_CHAN_FRONT_RIGHT:
+      return EBUR128_RIGHT;
+    case AV_CHAN_FRONT_CENTER:
+      return EBUR128_CENTER;
+    case AV_CHAN_LOW_FREQUENCY:
+    case AV_CHAN_LOW_FREQUENCY_2:
+      // BS.1770 excludes the LFE channel from the loudness sum entirely.
+      return EBUR128_UNUSED;
+    case AV_CHAN_BACK_LEFT:
+      return EBUR128_LEFT_SURROUND;
+    case AV_CHAN_BACK_RIGHT:
+      return EBUR128_RIGHT_SURROUND;
+    case AV_CHAN_SIDE_LEFT:
+      return EBUR128_Mp090;
+    case AV_CHAN_SIDE_RIGHT:
+      return EBUR128_Mm090;
+    default:
+      break;
+  }
+  // `AV_CHAN_NONE` (an AV_CHANNEL_ORDER_UNSPEC layout, which carries a
+  // channel COUNT but no per-position identity at all -- a real, observed
+  // case in this project's own corpus, per audio.layout's own "N channels"
+  // rendering) or a position code doc 05 does not discuss: fall back to
+  // libebur128's OWN documented positional default (ebur128.h's own
+  // ebur128_set_channel doc comment: 0=L, 1=R, 2=C, 3=UNUSED, 4=Ls, 5=Rs)
+  // rather than excluding an unidentified channel from the sum outright,
+  // which would silently under-measure an ordinary unspecified-layout
+  // stereo/mono file.
+  switch (position_index) {
+    case 0:
+      return EBUR128_LEFT;
+    case 1:
+      return EBUR128_RIGHT;
+    case 2:
+      return EBUR128_CENTER;
+    case 3:
+      return EBUR128_UNUSED;
+    case 4:
+      return EBUR128_LEFT_SURROUND;
+    case 5:
+      return EBUR128_RIGHT_SURROUND;
+    default:
+      return EBUR128_UNUSED;
+  }
+}
+
+// 06-09-PLAN.md (AUDIO-07): normalizes ONE decoded sample (at byte offset
+// `ptr` within the SAME interleaved scratch buffer the hash/loudness sinks
+// already read) to a common Q15-scaled fixed-point amplitude -- full scale
+// +/-32768, matching a native s16 sample's own range. s32 is right-shifted
+// by 16 (coarser than s32's own noise floor, but ample resolution for a
+// coarse dBFS threshold comparison). This is FORMAT NORMALIZATION, not the
+// RMS/peak DERIVATION itself (this file's own acceptance criterion targets
+// the latter): every windowed-sum, threshold comparison and run-length
+// decision downstream of this call is plain int64 arithmetic, never
+// floating point -- the conversion step alone cannot avoid interpreting a
+// genuinely floating-point native sample format (AAC/Opus/Vorbis all
+// decode to planar float), exactly the same unavoidable boundary
+// `loudness_feed_dispatch_for_sample_fmt`'s own four native formats cross.
+// Dispatches on the SAME `Ebur128Feed` identity the loudness sink already
+// resolved (never a second, independent format table) -- `none` (a native
+// format none of the four accept) returns 0, unreachable in practice since
+// the silence detector is gated on `feed_kind != Ebur128Feed::none`
+// exactly like the loudness sink.
+//
+// 06-16-PLAN.md (CR-03): the float/double arms are the ONLY place a
+// hostile or corrupt sample value can enter this file (pcm_f32le/
+// pcm_f64le reinterpret raw file bytes as float with no decoder
+// clamping -- ANY bit pattern arrives here). Before this plan, a non-finite
+// input reached std::llround directly (UB: llround(NaN)/llround(inf) is
+// unspecified, and the un-clamped result could then negate INT64_MIN or
+// square-overflow in the caller's peak-squared computation), and the raw
+// float bytes fed LoudnessSink without any check at all (fabricating a
+// libebur128 reading from garbage). Both arms now return 0 for a
+// non-finite input (the same "no signal" answer digital silence already
+// gets), and otherwise clamp the scaled value to
+// +/-kMaxMeasurableFloatSampleMagnitude BEFORE std::llround -- so every
+// arm's output, including these two, lies in [-32768, 32768] with no
+// exception. The clamp is decision-neutral for the silence/dropout
+// detector: a single full-scale sample (32768^2 = 2^30) already exceeds
+// the whole dropout window's threshold-sum bound at any rate this
+// project's memory budget admits, so the clamp can only ever additionally
+// suppress a below-floor reading libebur128 would already have reported as
+// silent -- it never turns a genuinely audible sample into a different
+// classification (this plan's own corpus-wide differential proves this
+// empirically: 0 changed snapshots, float-decoded fixtures included).
+std::int64_t normalize_amplitude_q15(Ebur128Feed feed_kind, const std::uint8_t* ptr) {
+  switch (feed_kind) {
+    case Ebur128Feed::short_fmt:
+      return static_cast<std::int64_t>(*reinterpret_cast<const std::int16_t*>(ptr));
+    case Ebur128Feed::int_fmt:
+      return static_cast<std::int64_t>(*reinterpret_cast<const std::int32_t*>(ptr)) >> 16;
+    case Ebur128Feed::float_fmt: {
+      const float v = *reinterpret_cast<const float*>(ptr);
+      if (!std::isfinite(v)) {
+        return 0;
+      }
+      const double scaled = static_cast<double>(v) * 32768.0;
+      const double clamped =
+          std::clamp(scaled, -kMaxMeasurableFloatSampleMagnitude, kMaxMeasurableFloatSampleMagnitude);
+      return static_cast<std::int64_t>(std::llround(clamped));
+    }
+    case Ebur128Feed::double_fmt: {
+      const double v = *reinterpret_cast<const double*>(ptr);
+      if (!std::isfinite(v)) {
+        return 0;
+      }
+      const double scaled = v * 32768.0;
+      const double clamped =
+          std::clamp(scaled, -kMaxMeasurableFloatSampleMagnitude, kMaxMeasurableFloatSampleMagnitude);
+      return static_cast<std::int64_t>(std::llround(clamped));
+    }
+    case Ebur128Feed::none:
+      return 0;
+  }
+  return 0;
+}
+
+// dBFS -> a Q15-scale linear amplitude, computed ONCE per stream (never
+// per sample) -- kEdgeSilenceThresholdDbfs/kDropoutThresholdDbfs are the
+// only two callers, both at first-frame lazy-init. `std::pow` here is a
+// one-time SETUP computation, not part of the per-sample RMS/peak
+// derivation loop this file's own acceptance criterion targets (which
+// stays plain int64 comparisons throughout).
+std::int64_t dbfs_to_q15_linear(double dbfs) {
+  return static_cast<std::int64_t>(std::llround(std::pow(10.0, dbfs / 20.0) * 32768.0));
+}
+
+// Ties away from zero, at kLoudnessQuantiserDen -- std::llround is
+// specified (since C++11) to round half away from zero unconditionally,
+// independent of the current floating-point rounding mode, so this is
+// byte-identical across GCC/Clang/MSVC/AppleClang (TRUST-05). `value` must
+// already be finite -- callers clamp a non-finite libebur128 read-out to
+// kNonFiniteLoudnessReadoutSentinel before reaching here.
+std::int64_t quantize_loudness_milli(double value) {
+  return static_cast<std::int64_t>(std::llround(value * static_cast<double>(kLoudnessQuantiserDen)));
+}
+
+// 06-10-PLAN.md (AUDIO-08, Test 7): records the FIRST recoverable decode
+// error's own reason into `*out`, if `*out` is still empty -- a later
+// error never overwrites the first (this file's own "first error only"
+// contract). `call` names which libav call failed (a static label, never
+// user-controlled); `averror` is that call's own negative return code,
+// rendered via av_strerror -- the SAME error-text call every project
+// diagnostic path already uses, never a bare numeric code alone.
+void record_first_error(std::string* out, std::string_view call, int averror) {
+  if (!out->empty()) {
+    return;
+  }
+  char buf[AV_ERROR_MAX_STRING_SIZE] = {0};
+  av_strerror(averror, buf, sizeof buf);
+  *out = fmt::format("{}: {}", call, buf);
+}
+
+}  // namespace
+
+int loudness_feed_dispatch_for_sample_fmt(int av_sample_fmt_id) {
+  return static_cast<int>(ebur128_feed_for_format(static_cast<AVSampleFormat>(av_sample_fmt_id)));
+}
+
+// 06-16-PLAN.md (CR-03): dispatches through the SAME ebur128_feed_for_format
+// resolution loudness_feed_dispatch_for_sample_fmt above already exposes --
+// never a second, independent format table -- then forwards to
+// normalize_amplitude_q15 itself, so tests can assert its boundary
+// behavior (including the clamp and the non-finite-returns-0 rule) without
+// needing a real decode.
+std::int64_t normalize_amplitude_q15_for_sample_fmt(int av_sample_fmt_id, const std::uint8_t* sample) {
+  const Ebur128Feed feed_kind = ebur128_feed_for_format(static_cast<AVSampleFormat>(av_sample_fmt_id));
+  return normalize_amplitude_q15(feed_kind, sample);
+}
+
+int loudness_channel_role_for_avchannel(int av_channel_id, int position_index) {
+  return ebur128_role_for_channel(static_cast<AVChannel>(av_channel_id), position_index);
+}
+
+std::vector<SampleSpan> merge_touching_sample_spans(std::vector<SampleSpan> spans) {
+  std::vector<SampleSpan> merged;
+  for (const SampleSpan& span : spans) {
+    if (!merged.empty() && merged.back().end_sample == span.start_sample) {
+      merged.back().end_sample = span.end_sample;
+      continue;
+    }
+    merged.push_back(span);
+  }
+  return merged;
+}
+
+int determinism_class_for_decoder(std::string_view decoder_name) {
+  // Every PCM decoder is bit-exact by construction (a straight byte
+  // reshuffle -- no algorithm to diverge across SIMD levels or
+  // architectures) and FFmpeg names every one of them with this prefix
+  // (pcm_s16le, pcm_alaw, ...).
+  if (decoder_name.rfind("pcm_", 0) == 0) {
+    return 1;
+  }
+  // 06-13-PLAN.md Task 2 (D-06): `mp3`/`mp2` DEMOTED from class 1 back to
+  // class 2. D-06's own text required bit-exact output across
+  // architectures (arm64 as well as x86 SIMD levels) before promoting
+  // them, not proof on one x86 host alone. The real arm64 CI round trip
+  // (run 35735099865) only proved AAC's `aac_fixed` two-build proof
+  // (D-11, tests/integration/test_audio_hash_decoder.cpp's class proof
+  // Test 2) -- `mp2`'s only real corpus fixture (audio_mp2_base.mpg) is
+  // ffmpeg-encoder output, not guaranteed byte-identical across
+  // architectures (WINDOWS.md #12's already-documented class), so no
+  // trustworthy cross-architecture decode proof was ever run for it; `mp3`
+  // has no real corpus fixture at all in this LGPL decode-only pin. Per
+  // this plan's own must-have ("either CONFIRMED... or DEMOTED... never
+  // closed on assumption"), absence of proof demotes rather than assumes.
+  // See docs/checks/content.audio.sample_hash.md and .planning/WINDOWS.md
+  // #39 for the full record. `mp3`/`mp2` are still SELECTED by name under
+  // "auto" (kFixedSiblings above is unaffected -- selection and
+  // classification are deliberately independent, D-06's own T-06-15
+  // rule), so this is a pure classification change: the fixed-point
+  // decoders are still preferred and still hash, just now compared only
+  // within one machine class via the class-2 `path_signature_` path
+  // (compose_decode_path_signature(), already exercised by every other
+  // class-2 decoder below).
+  static constexpr std::array<std::string_view, 2> kClass1Names = {
+      "flac", "alac",
+  };
+  for (std::string_view name : kClass1Names) {
+    if (decoder_name == name) {
+      return 1;
+    }
+  }
+  // 06-13-PLAN.md Task 2: `aac_fixed` is CONFIRMED class 1 by real
+  // arm64-osx evidence (the D-11 two-build proof passed on CI run
+  // 35735099865, comparing a fresh arm64 measurement against the
+  // designated-leg-committed snapshot). `ac3_fixed` predates D-06's own
+  // reopening (it was already class 1 before this plan) and has no real
+  // corpus fixture to exercise a cross-architecture proof against in this
+  // LGPL decode-only pin -- its arm64 status remains genuinely unmeasured
+  // and is recorded as an open gap (.planning/WINDOWS.md #39) rather than
+  // silently assumed, but it is not the subject of this plan's own
+  // confirm-or-demote must-have (which is scoped to the mp3/mp2
+  // promotion), so its pre-existing class is left unchanged here.
+  if (decoder_name == "aac_fixed" || decoder_name == "ac3_fixed") {
+    return 1;
+  }
+  static constexpr std::array<std::string_view, 8> kClass2Names = {
+      "aac", "ac3", "eac3", "opus", "mp3float", "mp2float", "mp3", "mp2",
+  };
+  for (std::string_view name : kClass2Names) {
+    if (decoder_name == name) {
+      return 2;
+    }
+  }
+  // doc 05 section 3's own class-3 case: a codec the table does not list --
+  // not proven deterministic, hashing disabled (D-06).
+  return 3;
+}
+
+bool hash_decoder_name_exists(std::string_view name) {
+  return avcodec_find_decoder_by_name(std::string(name).c_str()) != nullptr;
+}
+
+namespace detail {
+
+// 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink,
+// constructed once per audio stream (AudioDecodeState's own lazy-init
+// block, alongside the hash sink's own once-per-stream setup) and fed the
+// SAME one-frame-in-flight decoded output the hash sink already
+// interleaves -- no second decode, no retained PCM, no second file read.
+// Defined here (not in the header) since it is the only type in this file
+// that needs libebur128's own complete `ebur128_state` -- AudioDecodeState
+// holds one only by pointer-to-incomplete-type.
+struct LoudnessSink {
+  ebur128_state* state = nullptr;
+  Ebur128Feed feed_kind = Ebur128Feed::none;
+
+  LoudnessSink() = default;
+  LoudnessSink(const LoudnessSink&) = delete;
+  LoudnessSink& operator=(const LoudnessSink&) = delete;
+
+  ~LoudnessSink() {
+    if (state != nullptr) {
+      ebur128_destroy(&state);
+    }
+  }
+
+  // `channels`/`sample_rate` are the SAME values the hash sink's own
+  // lazy-init block just resolved from the first decoded frame -- never
+  // re-derived. Returns false (leaving `state` null) for a channel count
+  // <= 0, a sample rate <= 0, a native format none of the four feed
+  // functions accept, or an ebur128_init allocation failure -- every
+  // failure degrades to "this stream's loudness is not measured"
+  // (StreamAudioDecode::loudness_measured stays false), never a crash and
+  // never a fabricated value.
+  bool init(int channels, int sample_rate, AVSampleFormat native_fmt) {
+    feed_kind = ebur128_feed_for_format(native_fmt);
+    if (feed_kind == Ebur128Feed::none || channels <= 0 || sample_rate <= 0) {
+      return false;
+    }
+    // 06-RESEARCH.md Q8: EBUR128_MODE_I already implies momentary mode,
+    // EBUR128_MODE_TRUE_PEAK already implies sample peak -- this mask is
+    // the confirmed minimal, sufficient set for both read-outs below.
+    state = ebur128_init(static_cast<unsigned int>(channels), static_cast<unsigned long>(sample_rate),
+                          EBUR128_MODE_I | EBUR128_MODE_TRUE_PEAK);
+    return state != nullptr;
+  }
+
+  // Maps EVERY channel's role explicitly from `layout`'s own per-position
+  // codes (06-RESEARCH.md Common Pitfall 3) -- called ONCE, immediately
+  // after a successful init(), never per frame.
+  void set_channel_map(const AVChannelLayout& layout) {
+    if (state == nullptr) {
+      return;
+    }
+    for (int c = 0; c < layout.nb_channels; ++c) {
+      const AVChannel channel = av_channel_layout_channel_from_index(&layout, static_cast<unsigned int>(c));
+      ebur128_set_channel(state, static_cast<unsigned int>(c), ebur128_role_for_channel(channel, c));
+    }
+  }
+
+  // Dispatches to the ONE feed function chosen at init() time -- never
+  // re-evaluated per call. `interleaved` holds `frames * channels *
+  // bytes_per_sample` bytes in the native (packed-equivalent) layout the
+  // hash sink's own scratch buffer already produced.
+  void feed(const std::uint8_t* interleaved, int frames) {
+    if (state == nullptr || frames <= 0) {
+      return;
+    }
+    const std::size_t count = static_cast<std::size_t>(frames);
+    switch (feed_kind) {
+      case Ebur128Feed::short_fmt:
+        ebur128_add_frames_short(state, reinterpret_cast<const short*>(interleaved), count);
+        break;
+      case Ebur128Feed::int_fmt:
+        ebur128_add_frames_int(state, reinterpret_cast<const int*>(interleaved), count);
+        break;
+      case Ebur128Feed::float_fmt:
+        ebur128_add_frames_float(state, reinterpret_cast<const float*>(interleaved), count);
+        break;
+      case Ebur128Feed::double_fmt:
+        ebur128_add_frames_double(state, reinterpret_cast<const double*>(interleaved), count);
+        break;
+      case Ebur128Feed::none:
+        break;
+    }
+  }
+
+  struct Readout {
+    bool valid = false;
+    double integrated_lufs = 0.0;
+    double true_peak_dbtp = 0.0;
+  };
+
+  // Reads out `ebur128_loudness_global` and the MAXIMUM over channels of
+  // `ebur128_true_peak` (converted from libebur128's own linear 1.0 ==
+  // 0 dBTP scale via 20*log10, per ebur128.h's own doc comment on both
+  // functions). `valid` stays false when this sink was never constructed
+  // (init() failed) or the global read-out itself reports
+  // EBUR128_ERROR_INVALID_MODE -- unreachable in practice, since init()
+  // never leaves `state` non-null without EBUR128_MODE_I set, but guarded
+  // rather than assumed (Test 1: "both read-out calls succeed rather than
+  // returning EBUR128_ERROR_INVALID_MODE").
+  Readout finalize() {
+    Readout out;
+    if (state == nullptr) {
+      return out;
+    }
+    double integrated = 0.0;
+    if (ebur128_loudness_global(state, &integrated) != EBUR128_SUCCESS) {
+      return out;
+    }
+    double max_peak_linear = 0.0;
+    for (unsigned int c = 0; c < state->channels; ++c) {
+      double peak = 0.0;
+      if (ebur128_true_peak(state, c, &peak) == EBUR128_SUCCESS) {
+        max_peak_linear = std::max(max_peak_linear, peak);
+      }
+    }
+    out.valid = true;
+    out.integrated_lufs = integrated;
+    out.true_peak_dbtp = max_peak_linear > 0.0 ? 20.0 * std::log10(max_peak_linear) : -HUGE_VAL;
+    return out;
+  }
+};
+
+struct AudioDecodeState::BlockAccumulator {};
+
+AudioDecodeState::AudioDecodeState() = default;
+
+AudioDecodeState::~AudioDecodeState() {
+  if (codec_ctx_ != nullptr) {
+    avcodec_free_context(&codec_ctx_);
+  }
+}
+
+AudioDecodeState::AudioDecodeState(AudioDecodeState&& other) noexcept
+    : codec_ctx_(other.codec_ctx_),
+      attempted_init_(other.attempted_init_),
+      attempted_(other.attempted_),
+      error_bound_(other.error_bound_),
+      decode_error_count_(other.decode_error_count_),
+      first_error_reason_(std::move(other.first_error_reason_)),
+      decode_truncation_reason_(std::move(other.decode_truncation_reason_)),
+      level_stop_reason_(std::move(other.level_stop_reason_)),
+      decoder_name_(std::move(other.decoder_name_)),
+      decoder_class_(other.decoder_class_),
+      fallback_reason_(std::move(other.fallback_reason_)),
+      hash_enabled_(other.hash_enabled_),
+      flags_recorded_(std::move(other.flags_recorded_)),
+      path_signature_(std::move(other.path_signature_)),
+      sample_format_packed_(std::move(other.sample_format_packed_)),
+      configured_packed_format_(other.configured_packed_format_),
+      sample_rate_(other.sample_rate_),
+      declared_sample_rate_(other.declared_sample_rate_),
+      channels_(other.channels_),
+      layout_string_(std::move(other.layout_string_)),
+      block_samples_(other.block_samples_),
+      block_stride_bytes_(other.block_stride_bytes_),
+      total_samples_(other.total_samples_),
+      pending_block_(std::move(other.pending_block_)),
+      block_digests_(std::move(other.block_digests_)),
+      interleave_scratch_(std::move(other.interleave_scratch_)),
+      loudness_sink_(std::move(other.loudness_sink_)),
+      silence_supported_(other.silence_supported_),
+      silence_feed_kind_(other.silence_feed_kind_),
+      any_sample_consumed_(other.any_sample_consumed_),
+      next_sample_index_(other.next_sample_index_),
+      edge_hysteresis_samples_(other.edge_hysteresis_samples_),
+      edge_in_run_(other.edge_in_run_),
+      edge_run_start_(other.edge_run_start_),
+      edge_below_streak_(other.edge_below_streak_),
+      edge_candidate_start_(other.edge_candidate_start_),
+      edge_above_streak_(other.edge_above_streak_),
+      edge_spans_(std::move(other.edge_spans_)),
+      dropout_window_samples_(other.dropout_window_samples_),
+      dropout_threshold_sq_(other.dropout_threshold_sq_),
+      dropout_sum_sq_(other.dropout_sum_sq_),
+      dropout_window_(std::move(other.dropout_window_)),
+      dropout_in_run_(other.dropout_in_run_),
+      dropout_run_start_(other.dropout_run_start_),
+      dropout_spans_(std::move(other.dropout_spans_)) {
+  other.codec_ctx_ = nullptr;
+  other.attempted_init_ = false;
+  other.attempted_ = false;
+}
+
+AudioDecodeState& AudioDecodeState::operator=(AudioDecodeState&& other) noexcept {
+  if (this == &other) {
+    return *this;
+  }
+  if (codec_ctx_ != nullptr) {
+    avcodec_free_context(&codec_ctx_);
+  }
+  codec_ctx_ = other.codec_ctx_;
+  attempted_init_ = other.attempted_init_;
+  attempted_ = other.attempted_;
+  error_bound_ = other.error_bound_;
+  decode_error_count_ = other.decode_error_count_;
+  first_error_reason_ = std::move(other.first_error_reason_);
+  decode_truncation_reason_ = std::move(other.decode_truncation_reason_);
+  level_stop_reason_ = std::move(other.level_stop_reason_);
+  decoder_name_ = std::move(other.decoder_name_);
+  decoder_class_ = other.decoder_class_;
+  fallback_reason_ = std::move(other.fallback_reason_);
+  hash_enabled_ = other.hash_enabled_;
+  flags_recorded_ = std::move(other.flags_recorded_);
+  path_signature_ = std::move(other.path_signature_);
+  sample_format_packed_ = std::move(other.sample_format_packed_);
+  configured_packed_format_ = other.configured_packed_format_;
+  sample_rate_ = other.sample_rate_;
+  declared_sample_rate_ = other.declared_sample_rate_;
+  channels_ = other.channels_;
+  layout_string_ = std::move(other.layout_string_);
+  block_samples_ = other.block_samples_;
+  block_stride_bytes_ = other.block_stride_bytes_;
+  total_samples_ = other.total_samples_;
+  pending_block_ = std::move(other.pending_block_);
+  block_digests_ = std::move(other.block_digests_);
+  interleave_scratch_ = std::move(other.interleave_scratch_);
+  loudness_sink_ = std::move(other.loudness_sink_);
+  silence_supported_ = other.silence_supported_;
+  silence_feed_kind_ = other.silence_feed_kind_;
+  any_sample_consumed_ = other.any_sample_consumed_;
+  next_sample_index_ = other.next_sample_index_;
+  edge_hysteresis_samples_ = other.edge_hysteresis_samples_;
+  edge_in_run_ = other.edge_in_run_;
+  edge_run_start_ = other.edge_run_start_;
+  edge_below_streak_ = other.edge_below_streak_;
+  edge_candidate_start_ = other.edge_candidate_start_;
+  edge_above_streak_ = other.edge_above_streak_;
+  edge_spans_ = std::move(other.edge_spans_);
+  dropout_window_samples_ = other.dropout_window_samples_;
+  dropout_threshold_sq_ = other.dropout_threshold_sq_;
+  dropout_sum_sq_ = other.dropout_sum_sq_;
+  dropout_window_ = std::move(other.dropout_window_);
+  dropout_in_run_ = other.dropout_in_run_;
+  dropout_run_start_ = other.dropout_run_start_;
+  dropout_spans_ = std::move(other.dropout_spans_);
+  other.codec_ctx_ = nullptr;
+  other.attempted_init_ = false;
+  other.attempted_ = false;
+  return *this;
+}
+
+bool AudioDecodeState::ensure_initialized(const AVCodecParameters& codecpar, std::string_view hash_decoder_preference) {
+  if (attempted_init_) {
+    return attempted_;
+  }
+  attempted_init_ = true;
+
+  if (codecpar.codec_type != AVMEDIA_TYPE_AUDIO) {
+    return false;
+  }
+
+  const AVCodec* decoder = nullptr;
+  const char* fixed_name = fixed_sibling_name(codecpar.codec_id);
+  bool is_usac = false;
+  if (codecpar.codec_id == AV_CODEC_ID_AAC && codecpar.extradata != nullptr && codecpar.extradata_size > 0) {
+    const auto asc = parse_audio_specific_config(
+        std::span<const std::uint8_t>(codecpar.extradata, static_cast<std::size_t>(codecpar.extradata_size)));
+    if (asc.has_value() && asc->object_type == static_cast<std::int32_t>(AudioObjectType::usac)) {
+      is_usac = true;
+    }
+  }
+
+  // 06-05-PLAN.md (AUDIO-09, D-06/D-07/D-08): decoder SELECTION is now
+  // entirely driven by hash_decoder_preference -- "auto" is the pre-06-05
+  // fixed-sibling/USAC-steering path unchanged, "default" opts out
+  // unconditionally (doc 05 section 3's own opt-out), and any other text
+  // forces that NAME explicitly. D-07's fallback-to-default-on-open-
+  // failure rule applies identically to an explicitly forced name that
+  // turns out to be the USAC-incompatible fixed sibling (Test 6) -- the
+  // decoder is still chosen once, before the sweep, from what the
+  // selected preference can actually open.
+  if (hash_decoder_preference == "default") {
+    decoder = avcodec_find_decoder(codecpar.codec_id);
+  } else if (hash_decoder_preference == "auto") {
+    if (is_usac) {
+      // D-07: avcodec_open2() succeeds unconditionally for aac_fixed on
+      // USAC content -- open success is not a capability signal, so this
+      // stream is steered away from the fixed sibling proactively, ahead
+      // of ever opening it.
+      fallback_reason_ = "usac_unsupported";
+    } else if (fixed_name != nullptr) {
+      decoder = avcodec_find_decoder_by_name(fixed_name);
+      if (decoder == nullptr) {
+        fallback_reason_ = "fixed_decoder_unavailable";
+      }
+    }
+    if (decoder == nullptr) {
+      decoder = avcodec_find_decoder(codecpar.codec_id);
+    }
+  } else {
+    // An explicitly forced NAME (AUDIO-09's third accepted value form) --
+    // decoder-name existence for a forced preference is already validated
+    // once, at CLI-parse time, by resolve_hash_decoder (src/cli/options.cpp)
+    // via hash_decoder_name_exists() (this file's own exported helper).
+    if (is_usac && fixed_name != nullptr && hash_decoder_preference == fixed_name) {
+      fallback_reason_ = "usac_unsupported";
+      decoder = avcodec_find_decoder(codecpar.codec_id);
+    } else {
+      decoder = avcodec_find_decoder_by_name(std::string(hash_decoder_preference).c_str());
+    }
+  }
+
+  if (decoder == nullptr) {
+    // No decoder resolves at all for this codec in this build (or the
+    // forced name genuinely does not exist, which resolve_hash_decoder
+    // should already have rejected at parse time -- guarded here anyway,
+    // never a crash) -- this stream is never attempted.
+    return false;
+  }
+
+  codec_ctx_ = avcodec_alloc_context3(decoder);
+  if (codec_ctx_ == nullptr) {
+    return false;
+  }
+  if (avcodec_parameters_to_context(codec_ctx_, &codecpar) < 0) {
+    avcodec_free_context(&codec_ctx_);
+    return false;
+  }
+  // D-01's untrimmed hash basis (this file's own top-of-file comment):
+  // AV_CODEC_FLAG2_SKIP_MANUAL is what makes discard_samples() return
+  // before both the trim and the frame-discard branches.
+  codec_ctx_->flags |= AV_CODEC_FLAG_BITEXACT;
+  codec_ctx_->flags2 |= AV_CODEC_FLAG2_SKIP_MANUAL;
+
+  if (avcodec_open2(codec_ctx_, decoder, nullptr) < 0) {
+    avcodec_free_context(&codec_ctx_);
+    return false;
+  }
+
+  decoder_name_ = decoder->name != nullptr ? decoder->name : "";
+  // 06-15-PLAN.md (CR-01): recorded for diagnostics only -- `sample_rate_`
+  // itself is no longer seeded here. It stays 0 until consume_frame()'s
+  // own lazy-init block resolves it from the first DECODED frame, which
+  // is the sweep's actual configuring value (see audio_decode.h's own doc
+  // comment on StreamAudioDecode::sample_rate for why codecpar's rate
+  // cannot be trusted at this point).
+  declared_sample_rate_ = codecpar.sample_rate > 0 ? static_cast<std::int64_t>(codecpar.sample_rate) : 0;
+  // 06-05-PLAN.md (D-06, T-06-15): CLASSIFICATION is derived from the
+  // decoder's own recorded NAME through the single normative table,
+  // regardless of which of the three selection paths above chose it --
+  // never trusted from is_pcm_codec_id or the fixed-sibling table's own
+  // membership, both of which only inform SELECTION.
+  decoder_class_ = determinism_class_for_decoder(decoder_name_);
+  hash_enabled_ = decoder_class_ != 3;
+  flags_recorded_ = std::string(kDecodeFlagsRecorded);
+  if (decoder_class_ == 2) {
+    path_signature_ = compose_decode_path_signature();
+  }
+  attempted_ = true;
+  return true;
+}
+
+void AudioDecodeState::consume_frame(const AVFrame& frame) {
+  const AVSampleFormat native_fmt = static_cast<AVSampleFormat>(frame.format);
+  const int bytes_per_sample = av_get_bytes_per_sample(native_fmt);
+  const bool planar = av_sample_fmt_is_planar(native_fmt) != 0;
+  const int channels = frame.ch_layout.nb_channels;
+  const int nb_samples = frame.nb_samples;
+
+  if (bytes_per_sample <= 0 || channels <= 0 || nb_samples <= 0) {
+    return;
+  }
+  // 06-15-PLAN.md (CR-02): nothing after a stop is fed or counted,
+  // including finalize()'s own drain frames -- a stream that already
+  // latched a mismatch reason (T-06-49) never resumes.
+  if (!decode_truncation_reason_.empty()) {
+    return;
+  }
+
+  // Resolved lazily, from the FIRST decoded frame: codecpar's own fields
+  // do not reliably describe the decoder's actual output format ahead of
+  // decode for a compressed codec.
+  if (sample_format_packed_.empty()) {
+    const AVSampleFormat packed_fmt = av_get_alt_sample_fmt(native_fmt, /*planar=*/0);
+    const AVSampleFormat name_fmt = packed_fmt != AV_SAMPLE_FMT_NONE ? packed_fmt : native_fmt;
+    const char* fmt_name = av_get_sample_fmt_name(name_fmt);
+    sample_format_packed_ = fmt_name != nullptr ? fmt_name : "unknown";
+    configured_packed_format_ = static_cast<int>(name_fmt);
+    channels_ = channels;
+    // 06-15-PLAN.md (CR-01): the sweep's configuring rate is the DECODED
+    // frame's own rate, not codecpar's declared one -- codecpar is right
+    // only after find_stream_info's own internal decode has already
+    // corrected it (.planning/debug/audio-sweep-rate-truncation.md, Phase
+    // 2 question (b): a real stream, audio_sbr_implicit.mp4, measurably
+    // diverges 44100 -> 88200 across that call). Falls back to
+    // declared_sample_rate_ only when the frame itself reports a
+    // non-positive rate.
+    sample_rate_ = frame.sample_rate > 0 ? static_cast<std::int64_t>(frame.sample_rate) : declared_sample_rate_;
+    block_samples_ = std::max<std::int64_t>(1, sample_rate_ > 0 ? sample_rate_ / kAudioBlockDivisor : 1);
+    block_stride_bytes_ =
+        block_samples_ * static_cast<std::int64_t>(channels_) * static_cast<std::int64_t>(bytes_per_sample);
+
+    char layout_buf[64] = {0};
+    const int layout_len = av_channel_layout_describe(&frame.ch_layout, layout_buf, sizeof(layout_buf));
+    layout_string_ = layout_len > 0 ? std::string(layout_buf) : std::string();
+
+    if (hash_enabled_) {
+      pending_block_.reserve(static_cast<std::size_t>(std::max<std::int64_t>(block_stride_bytes_, 0)));
+    }
+
+    // 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the loudness sink is
+    // constructed here too, on the SAME first-decoded-frame lazy-init
+    // block, from the SAME resolved packed format and the SAME frame's
+    // own channel layout -- independent of hash_enabled_ (a class-3
+    // codec's hash is disabled, but its loudness is not). Dispatch and
+    // channel mapping are each chosen/set exactly once, here, never
+    // per frame (D-08).
+    auto sink = std::make_unique<LoudnessSink>();
+    if (sink->init(static_cast<int>(channels_), static_cast<int>(sample_rate_), name_fmt)) {
+      sink->set_channel_map(frame.ch_layout);
+      loudness_sink_ = std::move(sink);
+    }
+
+    // 06-09-PLAN.md (AUDIO-07, AUDIO-10): the silence/dropout detector's
+    // own one-time setup, on the SAME lazy-init block -- gated on the
+    // IDENTICAL Ebur128Feed dispatch the loudness sink above just
+    // resolved (never a second, independent format table: a native
+    // format none of the four feed functions accept leaves silence
+    // detection permanently unmeasured for this stream, exactly like
+    // `loudness_sink_` staying null for the same reason). The two
+    // threshold-linear constants and the RMS window/hysteresis lengths
+    // are derived ONCE here, from the resolved sample rate -- never
+    // per-sample, and never a bare literal at any later call site.
+    const Ebur128Feed silence_feed = ebur128_feed_for_format(name_fmt);
+    silence_feed_kind_ = static_cast<int>(silence_feed);
+    silence_supported_ = silence_feed != Ebur128Feed::none && sample_rate_ > 0;
+    if (silence_supported_) {
+      edge_hysteresis_samples_ = std::max<std::int64_t>(1, sample_rate_ * kEdgeSilenceHysteresisMs / 1000);
+      edge_threshold_linear_ = dbfs_to_q15_linear(kEdgeSilenceThresholdDbfs);
+      dropout_window_samples_ = std::max<std::int64_t>(1, sample_rate_ * kDropoutRmsWindowMs / 1000);
+      dropout_min_span_samples_ = std::max<std::int64_t>(1, sample_rate_ * kDropoutMinSpanMs / 1000);
+      const std::int64_t dropout_threshold_linear = dbfs_to_q15_linear(kDropoutThresholdDbfs);
+      dropout_threshold_sq_ = dropout_threshold_linear * dropout_threshold_linear;
+    }
+  }
+
+  // 06-15-PLAN.md (CR-02, T-06-49): every decoded frame -- including the
+  // very first, a trivial match against what lazy-init just recorded FROM
+  // it -- is held to the recorded configuration, checked in this fixed
+  // order: channels, the packed-equivalent sample format, the effective
+  // sample rate, then the described channel layout. The FIRST mismatch
+  // latches its own token and returns before this frame is counted,
+  // interleaved, or fed to any sink -- a mid-stream channel narrowing (or
+  // any other shape change) can no longer reach LoudnessSink or the hash
+  // chain, both of which stay pinned to the first frame's own shape.
+  {
+    const AVSampleFormat this_packed_fmt = av_get_alt_sample_fmt(native_fmt, /*planar=*/0);
+    const AVSampleFormat this_name_fmt = this_packed_fmt != AV_SAMPLE_FMT_NONE ? this_packed_fmt : native_fmt;
+    // Mirrors lazy-init's own declared_sample_rate_ fallback rule exactly
+    // (CR-01) -- the same "effective rate" a later frame is held to.
+    const std::int64_t effective_rate =
+        frame.sample_rate > 0 ? static_cast<std::int64_t>(frame.sample_rate) : declared_sample_rate_;
+    char this_layout_buf[64] = {0};
+    const int this_layout_len = av_channel_layout_describe(&frame.ch_layout, this_layout_buf, sizeof(this_layout_buf));
+    const std::string this_layout_string = this_layout_len > 0 ? std::string(this_layout_buf) : std::string();
+
+    std::string_view mismatch_token;
+    if (channels != channels_) {
+      mismatch_token = kDecodeStopChannelsChanged;
+    } else if (static_cast<int>(this_name_fmt) != configured_packed_format_) {
+      mismatch_token = kDecodeStopSampleFormatChanged;
+    } else if (effective_rate != sample_rate_) {
+      mismatch_token = kDecodeStopSampleRateChanged;
+    } else if (this_layout_string != layout_string_) {
+      mismatch_token = kDecodeStopChannelLayoutChanged;
+    }
+    if (!mismatch_token.empty()) {
+      latch_decode_truncation(mismatch_token);
+      return;
+    }
+  }
+
+  total_samples_ += nb_samples;
+
+  // 06-08-PLAN.md: interleave ONCE per frame into a reusable scratch
+  // buffer, regardless of hash_enabled_ -- a byte-level interleave is
+  // format-agnostic (moving whole sample-width byte groups, never
+  // reinterpreting their contents), so the SAME bytes correctly feed both
+  // the hash sink (below, when hash_enabled_) and the loudness sink
+  // (below, unconditionally) with no second interleave pass.
+  const std::size_t frame_bytes =
+      static_cast<std::size_t>(nb_samples) * static_cast<std::size_t>(channels) * static_cast<std::size_t>(bytes_per_sample);
+  interleave_scratch_.resize(frame_bytes);
+  std::uint8_t* scratch = interleave_scratch_.data();
+
+  if (planar) {
+    for (int s = 0; s < nb_samples; ++s) {
+      for (int c = 0; c < channels; ++c) {
+        const std::uint8_t* src =
+            frame.extended_data[c] + static_cast<std::size_t>(s) * static_cast<std::size_t>(bytes_per_sample);
+        std::uint8_t* dst =
+            scratch + (static_cast<std::size_t>(s) * static_cast<std::size_t>(channels) + static_cast<std::size_t>(c)) *
+                          static_cast<std::size_t>(bytes_per_sample);
+        std::memcpy(dst, src, static_cast<std::size_t>(bytes_per_sample));
+      }
+    }
+  } else {
+    std::memcpy(scratch, frame.extended_data[0], frame_bytes);
+  }
+
+  // 06-05-PLAN.md (D-06): a class-3 stream (doc 05 section 3 does not list
+  // its decoder) still decodes in full -- other audio.* checks need the
+  // real sample count/format/layout above -- but no PCM byte is ever
+  // copied into pending_block_ and no digest is ever computed for it,
+  // "hashing disabled" rather than "decoding disabled".
+  if (hash_enabled_) {
+    const std::size_t old_size = pending_block_.size();
+    pending_block_.resize(old_size + frame_bytes);
+    std::memcpy(pending_block_.data() + old_size, scratch, frame_bytes);
+    digest_full_blocks();
+  }
+
+  // 06-16-PLAN.md (CR-03, T-06-52/T-06-53): scan this frame's own decoded
+  // values for a non-finite or out-of-range float/double sample BEFORE
+  // either level sink below ever sees it -- the hash feed above already
+  // ran unconditionally (the hash chain keeps consuming this stream in
+  // full; T-06-53's own "sampling_state stays full" contract). Only the
+  // float/double native formats carry this risk at all (S16/S32 read
+  // straight off already-finite decoder integers, never reinterpreted file
+  // bytes) -- gated on the SAME silence_feed_kind_ the loudness sink and
+  // silence detector below already resolved, never a second, independent
+  // format check. The integer feed kinds skip this scan entirely, so the
+  // aac_fixed perf reference path gains no per-sample work from this
+  // block.
+  if (level_stop_reason_.empty() && (silence_feed_kind_ == static_cast<int>(Ebur128Feed::float_fmt) ||
+                                      silence_feed_kind_ == static_cast<int>(Ebur128Feed::double_fmt))) {
+    const bool is_double_scan = silence_feed_kind_ == static_cast<int>(Ebur128Feed::double_fmt);
+    const std::size_t value_count = static_cast<std::size_t>(nb_samples) * static_cast<std::size_t>(channels);
+    for (std::size_t i = 0; i < value_count; ++i) {
+      const std::uint8_t* value_ptr = scratch + i * static_cast<std::size_t>(bytes_per_sample);
+      const double v = is_double_scan ? *reinterpret_cast<const double*>(value_ptr)
+                                       : static_cast<double>(*reinterpret_cast<const float*>(value_ptr));
+      if (!std::isfinite(v) || std::fabs(v) > kMaxMeasurableFloatSampleMagnitude) {
+        latch_level_stop(kLevelStopNonFiniteOrOutOfRange);
+        break;
+      }
+    }
+  }
+
+  // 06-08-PLAN.md (AUDIO-10): independent of hash_enabled_ -- the loudness
+  // sink measures every successfully decoded stream, whether or not its
+  // hash is comparable.
+  //
+  // 06-16-PLAN.md (CR-03): also gated on level_stop_reason_ being empty --
+  // a hostile sample latched by the scan just above must never reach
+  // libebur128 at all, not even the frame that holds it (T-06-53).
+  if (level_stop_reason_.empty() && loudness_sink_) {
+    loudness_sink_->feed(scratch, nb_samples);
+  }
+
+  // 06-09-PLAN.md (AUDIO-07, AUDIO-10): the silence/dropout detector, fed
+  // from the SAME interleaved scratch buffer, independent of
+  // hash_enabled_ -- every successfully decoded stream's silence is
+  // measured, whether or not its hash is comparable (mirrors the loudness
+  // sink's own independence immediately above).
+  //
+  // 06-16-PLAN.md (CR-03): also gated on level_stop_reason_ being empty --
+  // mirrors the loudness gate immediately above, for the same reason
+  // (normalize_amplitude_q15's own clamp already bounds this loop's own
+  // arithmetic regardless, but a hostile frame is stopped here entirely,
+  // never partially measured).
+  if (level_stop_reason_.empty() && silence_supported_) {
+    any_sample_consumed_ = true;
+    const auto feed_kind = static_cast<Ebur128Feed>(silence_feed_kind_);
+    for (int s = 0; s < nb_samples; ++s) {
+      std::int64_t peak = 0;
+      for (int c = 0; c < channels; ++c) {
+        const std::uint8_t* sample_ptr =
+            scratch + (static_cast<std::size_t>(s) * static_cast<std::size_t>(channels) +
+                       static_cast<std::size_t>(c)) *
+                          static_cast<std::size_t>(bytes_per_sample);
+        const std::int64_t amplitude = normalize_amplitude_q15(feed_kind, sample_ptr);
+        const std::int64_t abs_amplitude = amplitude < 0 ? -amplitude : amplitude;
+        if (abs_amplitude > peak) {
+          peak = abs_amplitude;
+        }
+      }
+      observe_silence_sample(peak);
+      ++next_sample_index_;
+    }
+  }
+}
+
+void AudioDecodeState::observe_silence_sample(std::int64_t peak_q15) {
+  const std::int64_t i = next_sample_index_;
+
+  // -- Edge (peak) detector: a Schmitt-trigger-style symmetric hysteresis
+  // debounce -- see audio_decode.h's own doc comment on
+  // kEdgeSilenceThresholdDbfs for why the OPEN side needs the same
+  // debounce as the close side (a plain tone's own exactly-zero first
+  // sample would otherwise open a spurious one-sample "leading" run). --
+  const bool below_edge = peak_q15 < edge_threshold_linear_;
+  if (!edge_in_run_) {
+    if (below_edge) {
+      if (edge_below_streak_ == 0) {
+        edge_candidate_start_ = i;
+      }
+      ++edge_below_streak_;
+      if (edge_below_streak_ >= edge_hysteresis_samples_) {
+        edge_in_run_ = true;
+        edge_run_start_ = edge_candidate_start_;
+        edge_above_streak_ = 0;
+      }
+    } else {
+      edge_below_streak_ = 0;
+    }
+  } else {
+    if (below_edge) {
+      edge_above_streak_ = 0;
+    } else {
+      ++edge_above_streak_;
+      if (edge_above_streak_ >= edge_hysteresis_samples_) {
+        const std::int64_t run_end = i - edge_above_streak_ + 1;
+        // Emit only the LEADING run here (starts at sample 0) -- an
+        // interior peak-silent run is discarded outright (this project's
+        // own must_have: "an interior run is the dropout detector's
+        // business"); TRAILING is handled at finalize() for a run still
+        // open when the stream ends (Test 5: closed, never dropped).
+        if (edge_run_start_ == 0) {
+          edge_spans_.push_back(SampleSpan{edge_run_start_, run_end});
+        }
+        edge_in_run_ = false;
+        edge_below_streak_ = 0;
+      }
+    }
+  }
+
+  // -- Dropout (RMS) detector: a trailing sliding window of squared,
+  // Q15-normalized peak amplitude.
+  //
+  // 06-16-PLAN.md (CR-03, WR-03's sibling correctness argument): the real
+  // bound, now that normalize_amplitude_q15's own clamp guarantees every
+  // arm's output lies in [-32768, 32768] (S16/S32 unchanged; FLT/DBL
+  // clamped and non-finite-mapped-to-0) -- `peak_q15` here is already an
+  // abs() of that output, so |peak_q15| <= 2^15 and `sq` below is at most
+  // 2^30. `dropout_window_samples_` is `sample_rate * kDropoutRmsWindowMs /
+  // 1000`, i.e. sample_rate/10 -- at most INT_MAX*100/1000 (~2^28) samples
+  // even at a pathological INT_MAX-Hz declared rate, so the running sum
+  // (at most that many 2^30 terms) stays below 2^58, comfortably inside
+  // int64_t (2^63-1) with no checked arithmetic needed, mirroring D-04's
+  // own "block math is bounded, checked_mul not required" precedent. --
+  const std::int64_t sq = peak_q15 * peak_q15;
+  dropout_window_.push_back(sq);
+  dropout_sum_sq_ += sq;
+  if (static_cast<std::int64_t>(dropout_window_.size()) > dropout_window_samples_) {
+    dropout_sum_sq_ -= dropout_window_.front();
+    dropout_window_.pop_front();
+  }
+  if (static_cast<std::int64_t>(dropout_window_.size()) == dropout_window_samples_) {
+    // mean_square < threshold^2  <=>  sum_sq < threshold^2 * window_samples
+    // -- cross-multiplied to avoid a division, this file's own established
+    // convention for a threshold comparison against a running sum.
+    const bool below_dropout = dropout_sum_sq_ < dropout_threshold_sq_ * dropout_window_samples_;
+    if (below_dropout) {
+      if (!dropout_in_run_) {
+        dropout_in_run_ = true;
+        dropout_run_start_ = i - dropout_window_samples_ + 1;
+      }
+    } else if (dropout_in_run_) {
+      const std::int64_t run_end = i - dropout_window_samples_ + 1;
+      // A run starting at sample 0 is LEADING silence, not an interior
+      // dropout -- edge_spans_' own territory (docs/checks/audio.silence.
+      // dropouts.md's own stated exclusion, proven by Test 6). A run
+      // shorter than kDropoutMinSpanMs is doc 05 §4's own minimum-span
+      // gate (Test 6's own "100ms hole produces NONE" claim) -- computed
+      // AFTER the trailing-window's own boundary-shrinkage (this file's
+      // own documented property: the reported span is systematically
+      // shorter than the true silent duration by roughly one window
+      // width), never before it.
+      if (dropout_run_start_ != 0 && (run_end - dropout_run_start_) >= dropout_min_span_samples_) {
+        dropout_spans_.push_back(SampleSpan{dropout_run_start_, run_end});
+      }
+      dropout_in_run_ = false;
+    }
+  }
+}
+
+void AudioDecodeState::digest_full_blocks() {
+  if (block_stride_bytes_ <= 0) {
+    return;
+  }
+  while (static_cast<std::int64_t>(pending_block_.size()) >= block_stride_bytes_) {
+    block_digests_.push_back(digest_bytes(pending_block_.data(), static_cast<std::size_t>(block_stride_bytes_)));
+    pending_block_.erase(pending_block_.begin(), pending_block_.begin() + static_cast<std::ptrdiff_t>(block_stride_bytes_));
+  }
+}
+
+void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
+  // 06-15-PLAN.md (CR-02) / 06-16-PLAN.md (WR-03): the decoder is not fed
+  // after any stop -- error_bound_.exhausted (06-14, now latched by EITHER
+  // a send or a receive failure) or a CR-02 per-frame mismatch -- exactly
+  // the same "stop feeding" behavior for both stop classes.
+  if (!attempted_ || error_bound_.exhausted || codec_ctx_ == nullptr || !decode_truncation_reason_.empty()) {
+    return;
+  }
+
+  AVPacket* pkt = av_packet_alloc();
+  if (pkt == nullptr) {
+    ++decode_error_count_;
+    if (first_error_reason_.empty()) {
+      first_error_reason_ = "av_packet_alloc_failed";
+    }
+    return;
+  }
+  // A non-refcounted reference to the caller's own live packet buffer --
+  // valid for the duration of this call only, which is all
+  // avcodec_send_packet needs (the decoder either consumes it
+  // synchronously or references it internally for exactly this call).
+  pkt->data = const_cast<std::uint8_t*>(data);
+  pkt->size = size;
+
+  const int send_rc = avcodec_send_packet(codec_ctx_, pkt);
+  av_packet_free(&pkt);
+  if (send_rc < 0 && send_rc != AVERROR(EAGAIN)) {
+    ++decode_error_count_;
+    record_first_error(&first_error_reason_, "avcodec_send_packet", send_rc);
+    // 06-10-PLAN.md (D-09): `undecodable` is NEVER decided here -- it is
+    // derived once, at finalize(), from the FINAL total_samples_/
+    // decode_error_count_. Stopping further feeding at the consecutive-
+    // error limit (T-06-01's own DoS mitigation) is orthogonal to whether
+    // this stream turns out undecodable: a stream that already decoded
+    // real samples before hitting this limit is not undecodable, even
+    // though it stops here.
+    //
+    // 06-16-PLAN.md (WR-03): routed through the shared error_bound_ seam --
+    // the receive-error arm below now goes through the SAME bound.
+    if (error_bound_.record_error()) {
+      latch_decode_truncation(kDecodeStopConsecutiveErrorLimit);
+    }
+    return;
+  }
+
+  AVFrame* frame = av_frame_alloc();
+  if (frame == nullptr) {
+    ++decode_error_count_;
+    if (first_error_reason_.empty()) {
+      first_error_reason_ = "av_frame_alloc_failed";
+    }
+    return;
+  }
+  for (;;) {
+    const int recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+    if (recv_rc == AVERROR(EAGAIN) || recv_rc == AVERROR_EOF) {
+      break;
+    }
+    if (recv_rc < 0) {
+      ++decode_error_count_;
+      record_first_error(&first_error_reason_, "avcodec_receive_frame", recv_rc);
+      // 06-16-PLAN.md (WR-03): before this plan, a receive-side failure
+      // never reached the consecutive-error bound at all -- only the
+      // send-error arm above did. An interleaved success/receive-failure
+      // pattern (T-06-54) could therefore decode forever without ever
+      // tripping it. Now both arms share the SAME error_bound_.
+      if (error_bound_.record_error()) {
+        latch_decode_truncation(kDecodeStopConsecutiveErrorLimit);
+      }
+      break;
+    }
+    error_bound_.record_success();
+    consume_frame(*frame);
+    av_frame_unref(frame);
+  }
+  av_frame_free(&frame);
+}
+
+void AudioDecodeState::latch_decode_truncation(std::string_view reason) {
+  if (decode_truncation_reason_.empty()) {
+    decode_truncation_reason_ = std::string(reason);
+  }
+  if (level_stop_reason_.empty()) {
+    level_stop_reason_ = std::string(reason);
+  }
+}
+
+// 06-16-PLAN.md (CR-03): level-ONLY latch -- deliberately never touches
+// decode_truncation_reason_, unlike latch_decode_truncation above. The
+// hash chain (gated on decode_truncation_reason_ alone, consume_frame's
+// own early-return guard) keeps consuming this stream in full; only the
+// loudness/silence sinks (both gated on level_stop_reason_) stop.
+void AudioDecodeState::latch_level_stop(std::string_view reason) {
+  if (level_stop_reason_.empty()) {
+    level_stop_reason_ = std::string(reason);
+  }
+}
+
+void AudioDecodeState::consume_frame_for_test(const AVFrame& frame) { consume_frame(frame); }
+
+StreamAudioDecode AudioDecodeState::finalize() {
+  StreamAudioDecode result;
+  result.attempted = attempted_;
+  if (!attempted_) {
+    return result;
+  }
+
+  if (codec_ctx_ != nullptr) {
+    // Drain: a null-packet avcodec_send_packet, per libav's own flush
+    // contract, so any frame the decoder was still buffering internally
+    // is accounted for in the final chain. 06-10-PLAN.md: run this
+    // UNCONDITIONALLY (never gated on an early undecodable guess) --
+    // `undecodable` below is decided AFTER this drain, from the FINAL
+    // total_samples_/decode_error_count_, since a buffered frame the
+    // decoder was still holding can be exactly what turns a
+    // zero-samples-so-far stream into a real, comparable one. A single
+    // bounded flush call on an already-broken codec context is safe
+    // (the receive loop breaks on its first non-success return) and
+    // costs nothing on the common, healthy path.
+    avcodec_send_packet(codec_ctx_, nullptr);
+    AVFrame* frame = av_frame_alloc();
+    if (frame != nullptr) {
+      for (;;) {
+        const int recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+        if (recv_rc < 0) {
+          break;
+        }
+        consume_frame(*frame);
+        av_frame_unref(frame);
+      }
+      av_frame_free(&frame);
+    }
+  }
+
+  // D-04: the trailing partial block -- never zero-padded, never dropped
+  // (Test 4). pending_block_ only ever accumulates bytes when
+  // hash_enabled_ is true (consume_frame's own `if (hash_enabled_)`
+  // guard), so this naturally stays empty -- and block_digests_/
+  // chain_digest below stay empty -- for a class-3 stream without a
+  // separate branch here.
+  if (!pending_block_.empty()) {
+    block_digests_.push_back(digest_bytes(pending_block_.data(), pending_block_.size()));
+    pending_block_.clear();
+  }
+
+  result.decoder_name = decoder_name_;
+  result.decoder_class = decoder_class_;
+  result.fallback_reason = fallback_reason_;
+  result.flags_recorded = flags_recorded_;
+  result.path_signature = path_signature_;
+  result.sample_format_packed = sample_format_packed_;
+  result.sample_rate = sample_rate_;
+  result.declared_sample_rate = declared_sample_rate_;
+  result.channels = channels_;
+  result.layout_string = layout_string_;
+  result.block_samples = block_samples_;
+  result.total_samples = total_samples_;
+  result.block_digests = block_digests_;
+  result.decode_error_count = decode_error_count_;
+  result.first_error_reason = first_error_reason_;
+  // 06-14-PLAN.md (WR-02, TRUST-02): surfaces the latch set by
+  // latch_decode_truncation() above -- `decode_truncated` and
+  // `level_measurement_stopped` are independent booleans on
+  // StreamAudioDecode, but today's single call site latches both
+  // together, so they always agree in practice.
+  result.decode_truncated = !decode_truncation_reason_.empty();
+  result.decode_truncation_reason = decode_truncation_reason_;
+  result.level_measurement_stopped = !level_stop_reason_.empty();
+  result.level_measurement_stop_reason = level_stop_reason_;
+  // 06-10-PLAN.md (D-09): `undecodable` is the narrow case that genuinely
+  // could not run -- ZERO decoded frames across the whole sweep (final,
+  // post-drain total_samples_) WHILE carrying at least one decode error.
+  // Test 5: a stream that decodes to zero samples with ZERO errors (no
+  // packets at all, or a genuinely empty/silent stream) is NOT
+  // undecodable -- it is a real, comparable "nothing decoded" outcome the
+  // caller reports as SkipReason::insufficient_data, never a hard
+  // failure. A non-zero decode_error_count alone (Test 2/3: some frames
+  // still decoded) never sets this either -- that is exactly the
+  // recoverable, GATING case meta.decode_errors reports instead.
+  result.undecodable = total_samples_ == 0 && decode_error_count_ > 0;
+
+  if (!block_digests_.empty()) {
+    std::string concat;
+    concat.reserve(block_digests_.size() * 32);
+    for (const std::string& d : block_digests_) {
+      concat += d;
+    }
+    result.chain_digest = digest_bytes(concat.data(), concat.size());
+  }
+
+  // 06-08-PLAN.md (AUDIO-05, AUDIO-06, AUDIO-10): the loudness sink's own
+  // read-out. `loudness_sink_` stays null for Test 8's own case (no frame
+  // was ever decoded, e.g. a zero-sample stream) -- `loudness_measured`
+  // then stays false and every other loudness field below stays at its
+  // default, never a fabricated 0 LUFS reading.
+  //
+  // 06-14-PLAN.md (WR-02, TRUST-02, D-09): when `level_stop_reason_` is
+  // non-empty, this whole block is skipped -- a value measured over a
+  // prefix of the stream is never reported as the stream's own
+  // loudness_measured/true_peak/integrated readout. The analyzers
+  // (loudness.cpp/silence.cpp) read `level_measurement_stopped` and emit
+  // skipped:partial_scan with the reason instead (06-15's own consumer).
+  if (level_stop_reason_.empty() && loudness_sink_) {
+    const LoudnessSink::Readout readout = loudness_sink_->finalize();
+    if (readout.valid) {
+      result.loudness_measured = true;
+      const double integrated =
+          std::isfinite(readout.integrated_lufs) ? readout.integrated_lufs : kNonFiniteLoudnessReadoutSentinel;
+      const double true_peak =
+          std::isfinite(readout.true_peak_dbtp) ? readout.true_peak_dbtp : kNonFiniteLoudnessReadoutSentinel;
+      result.integrated_lufs_raw = integrated;
+      result.true_peak_dbtp_raw = true_peak;
+      // doc 05 §4's own wording ("< -70 LUFS gating floor") reads as
+      // strict, but this comparison is INCLUSIVE (<=) of the floor itself --
+      // a Rule 1 fix discovered while proving Test 5 (06-08-SUMMARY.md's own
+      // deviation record): tests/fixtures/audio_loud_floor.flac (gen_corpus.sh's
+      // own "-80dB" fixture, built specifically to exercise this branch, and
+      // tests/golden/AUDIO_EBUR128_REFERENCE.txt's own committed
+      // integrated_lufs=-70.0 for it) decodes to EXACTLY -70.0 LUFS to full
+      // double precision under libebur128 -- a strict `<` would silently
+      // never fire on the one fixture this whole rule exists to exercise.
+      // "gating floor" is ordinarily inclusive in broadcast-loudness usage
+      // (a level AT the floor is already inaudible/unmeasurable content, not
+      // merely approaching it), and flagged_assumption A1 in 06-08-PLAN.md
+      // already named this exact boundary as an unresolved reading -- the
+      // check's fixed `silent` sentinel value, not a real number.
+      result.loudness_below_floor = integrated <= kLoudnessGatingFloorLufs;
+      result.integrated_lufs_milli =
+          quantize_loudness_milli(result.loudness_below_floor ? kLoudnessGatingFloorLufs : integrated);
+      result.true_peak_dbtp_milli = quantize_loudness_milli(true_peak);
+    }
+  }
+
+  // 06-09-PLAN.md (AUDIO-07, AUDIO-10): the silence/dropout detector's own
+  // finalize -- `any_sample_consumed_` stays false for Test 10's own case
+  // (a stream that decodes to zero samples, or a native format none of
+  // the four feed functions accept), leaving `silence_measured` false and
+  // both span lists at their default-constructed empty state, which the
+  // analyzer (silence.cpp) must read as "not measured" (SkipReason::
+  // insufficient_data), never as "measured, found nothing".
+  //
+  // 06-14-PLAN.md (WR-02, TRUST-02, D-09): mirrors the loudness gate above
+  // -- a stopped sweep never reports silence/dropout spans computed over
+  // only the part of the stream that was measured.
+  if (level_stop_reason_.empty() && any_sample_consumed_) {
+    result.silence_measured = true;
+    // Test 5: a run still open when the stream ends is CLOSED here,
+    // never dropped -- it touches the final sample by definition
+    // (`total_samples_`), so it is always TRAILING (regardless of where
+    // it started, even if that start is also 0, in which case it is
+    // simultaneously leading+trailing -- the whole stream is silent, and
+    // this single emitted span already covers that correctly with no
+    // separate merge needed).
+    if (edge_in_run_) {
+      edge_spans_.push_back(SampleSpan{edge_run_start_, total_samples_});
+    }
+    // A dropout run still open at end-of-stream is TRAILING silence, not
+    // an interior dropout -- discarded here for the SAME reason a
+    // sample-0-starting run is discarded in observe_silence_sample above
+    // (edge_spans_' own territory, Test 6).
+    result.edge_silence_spans = merge_touching_sample_spans(std::move(edge_spans_));
+    result.dropout_spans = merge_touching_sample_spans(std::move(dropout_spans_));
+  }
+
+  return result;
+}
+
+}  // namespace detail
+
+mediadiff::expected<AudioDecodeResult, Error> run_audio_decode(DemuxSession& session) {
+  PacketScanRequest request;
+  request.limits = PacketScanLimits{};
+  request.decode_audio = true;
+  auto outputs = run_packet_scan(session, request);
+  if (!outputs) {
+    return mediadiff::unexpected(outputs.error());
+  }
+  if (!outputs->audio_decode.has_value()) {
+    return AudioDecodeResult{};
+  }
+  return std::move(*outputs->audio_decode);
+}
+
+}  // namespace mediadiff

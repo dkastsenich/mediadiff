@@ -201,6 +201,77 @@ mediadiff::expected<std::int64_t, Error> resolve_probe_memory_budget_bytes(const
 // flags.
 ProbeArgs default_probe_args();
 
+// 06-01-PLAN.md Task 3: shared option storage for the `--content`/
+// `--no-content` flag pair, mirroring PolicyArgs/ReportArgs/ColorArgs/
+// ProbeArgs's own borrowed-`CLI::Option*` shape (D-05). Each command
+// registers its OWN pair with its own help text (src/cli/commands/dir.cpp's
+// existing registration is the precedent every other command's own
+// registration copies) -- there is no shared add_content_flags registration
+// helper, since each command's help text differs (compare "decodes by
+// default", snapshot "always decodes", dir/inspect "opt-in"); only the
+// RESOLUTION logic below is shared.
+struct ContentArgs {
+  CLI::Option* content_flag = nullptr;
+  CLI::Option* no_content_flag = nullptr;
+};
+
+// A command's own stated default when NEITHER `--content` nor
+// `--no-content` is given (06-CHECK-ROSTER.md's approved per-command
+// table): `decode_by_default` (compare), `opt_in` (dir, inspect -- decode
+// stays off unless explicitly requested), and `must_decode` (snapshot --
+// there is no "off" state at all, see resolve_content_enabled below).
+enum class ContentCommandDefault { decode_by_default, opt_in, must_decode };
+
+// Resolves whether this invocation's probe pass should include the audio
+// decode sweep, from `args` and `command_default`'s own three-way
+// contract:
+//   - both flags given: `ErrorKind::usage` naming BOTH spellings
+//     verbatim, regardless of command (06-01-PLAN.md Task 3 behavior
+//     Test 6) -- never silently prefers one.
+//   - `command_default == must_decode`: `--no-content` is ITSELF a usage
+//     error (snapshot's own must-decode rule -- a snapshot taken once is
+//     compared under any profile later, so a non-decoding snapshot would
+//     be permanently incomparable against a decoding `compare`); `
+//     --content` or neither flag both resolve to `true`.
+//   - otherwise: `--content` resolves `true`, `--no-content` resolves
+//     `false`, and neither flag resolves to `command_default ==
+//     decode_by_default`.
+// `args`' own text is never re-parsed (unlike resolve_probe_timeout_ms's
+// numeric re-validation) since a bare flag carries no value to
+// mis-parse -- `opt_flag`'s own `count() > 0` check is already the
+// complete, correct read.
+mediadiff::expected<bool, Error> resolve_content_enabled(const ContentArgs& args,
+                                                            ContentCommandDefault command_default);
+
+// 06-05-PLAN.md (AUDIO-09, D-06/D-07/D-08): shared option storage for
+// `--hash-decoder`, mirroring ContentArgs/ProbeArgs's own borrowed-
+// `CLI::Option*` shape (D-05). Unlike `--content`/`--no-content`, every
+// command shares the SAME help text and the SAME resolution contract, so
+// this one flag is registered via a single add_hash_decoder_flag helper
+// (mirroring add_probe_flags) rather than one per-command registration
+// site.
+struct HashDecoderArgs {
+  CLI::Option* hash_decoder_flag = nullptr;
+};
+
+// Registers `--hash-decoder <auto|default|NAME>` on `cmd`.
+HashDecoderArgs add_hash_decoder_flag(CLI::App& cmd);
+
+// Resolves and re-validates `--hash-decoder`'s text (D-05's own
+// "re-validate, don't trust blindly" convention, mirroring
+// resolve_profile_selection/resolve_probe_timeout_ms): absent or `auto`
+// resolves to `"auto"` (the default -- prefer the class-1 fixed-point
+// sibling automatically); `default` resolves to `"default"` (doc 05
+// section 3's own opt-out, records class 2); any other text is re-checked
+// against `avcodec_find_decoder_by_name` via
+// `hash_decoder_name_exists()` (src/probe/audio_decode.h) -- a name this
+// build's linked FFmpeg does not register is `ErrorKind::usage` naming
+// the value verbatim, never a silent fall back to `"auto"` (D-06's own
+// by-name-only rule: this is the one CLI-facing existence check, so a
+// slopsquatted or mistyped decoder name fails loudly at parse time rather
+// than silently degrading a whole stream to class 3 inside the probe).
+mediadiff::expected<std::string, Error> resolve_hash_decoder(const HashDecoderArgs& args);
+
 // All-null PolicyArgs/ReportArgs/ColorArgs, with no CLI11 flags registered
 // on any App -- used by main.cpp's implicit two-positional dispatch
 // (CLI-01), which intentionally carries none of `compare`'s own optional

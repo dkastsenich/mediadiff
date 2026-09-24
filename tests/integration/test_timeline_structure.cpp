@@ -193,6 +193,31 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
           // same splice root cause (D-02).
           "timeline.av_drift",
           "timeline.av_drift.pattern",
+          // 06-01-PLAN.md: the splice itself edits the decoded audio
+          // sample stream (verified: first divergent block 19, ~1900ms
+          // in, exactly the splice point, 22 divergent blocks total) --
+          // one more legitimate effect of the same splice root cause.
+          "content.audio.sample_hash",
+          // 06-06-PLAN.md (AUDIO-04, D-14): the fresh re-encode's own
+          // MPEG-TS output carries no AV_PKT_DATA_SKIP_SAMPLES side data at
+          // all (verified via `mediadiff compare --json` evidence:
+          // baseline "1024"/source skip_samples, candidate "unknown") --
+          // the SAME MP4-to-TS container-family effect
+          // test_timeline_av_sync.cpp's own unknown-priming pair declares,
+          // now a comparable non-pass finding rather than a skip because
+          // `unknown` is a real value (D-14). One more legitimate effect of
+          // the same splice/re-encode root cause (D-02).
+          "audio.priming",
+          // 06-09-PLAN.md (AUDIO-07): the SAME splice/re-encode root cause
+          // shifts the fresh encode's own genuine ~14-17ms near-silent
+          // trailing stretch to a slightly different position than the
+          // clean baseline's own (verified via `mediadiff compare --json`
+          // evidence: baseline {4026ms,4040ms}, candidate {4069ms,4086ms} --
+          // non-overlapping, so `src/compare/span.cpp`'s own interval
+          // algebra reports this as +1 introduced (never a false pass from
+          // a coincidental match) -- one more legitimate effect of the same
+          // splice/re-encode root cause.
+          "audio.silence.edges",
       });
 }
 
@@ -568,12 +593,53 @@ TEST_CASE(
           // 10 -> 36) clears D-07's 2ms epsilon by a wide margin, so
           // (unlike Test 1's dts_backward pair, where the effect stays
           // sub-epsilon on the RATE) the dual gate does NOT suppress
-          // this one: `timeline.av_drift` genuinely fails. Both sides
-          // classify as `linear-drift` (verified via evidence), so
-          // `timeline.av_drift.pattern` itself stays `pass` and is
-          // deliberately absent here. One more legitimate effect of the
-          // same splice root cause (D-02).
+          // this one: `timeline.av_drift` genuinely fails. One more
+          // legitimate effect of the same splice root cause (D-02).
           "timeline.av_drift",
+          // 06-07-PLAN.md (D-16): both audio streams' own priming is
+          // genuinely `unknown` here (verified via `audio.priming`
+          // evidence), so both sides' checkpoint span is now measured on
+          // the PACKET-DERIVED raw extent (`detail::span_ticks_for_basis`'s
+          // own raw candidate) rather than the container's own
+          // `declared_duration_ticks` field this file's pre-D-16 default
+          // used unconditionally regardless of priming state -- on an
+          // MPEG-TS stream with no true edit list, that field is itself
+          // only a PTS-range ESTIMATE, and on this fixture's own
+          // splice-corrupted PTS sequence it estimated a smoother span
+          // than the packet-derived one actually measures across the
+          // ~3.02s jump. The packet-derived span is the more faithful
+          // measurement of what the candidate's own audio stream actually
+          // did across the splice: its checkpoint trajectory now shows
+          // several checkpoints CLAMPED to the same packet on both sides
+          // of the jump (evidence: residual_max_ms 721) rather than a
+          // smooth ramp, which is doc 04 section 3.4's own "large
+          // residual, no plateau-based step class in the current
+          // vocabulary" `irregular` case -- an arguably MORE honest
+          // classification of a genuine, unflagged single-step splice
+          // than the smoothed-over `linear-drift` this fixture's own
+          // baseline-vs-candidate comparison happened to produce before
+          // this task. The baseline side's own trajectory is unaffected
+          // in kind (still classifies `linear-drift`, `end_delta_ms`
+          // unchanged at 39), so this is `timeline.av_drift.pattern`
+          // gaining a genuine, causally-explained non-pass member from a
+          // basis correction, not a weakened assertion -- narrowing the
+          // FIXTURE was not needed since the change reflects the fixture's
+          // real content more accurately, not test noise.
+          "timeline.av_drift.pattern",
+          // 06-01-PLAN.md: the same splice edits the decoded audio
+          // sample stream (verified: first divergent block 19, ~1900ms
+          // in, 22 divergent blocks total) -- one more legitimate effect
+          // of the same splice root cause.
+          "content.audio.sample_hash",
+          // 06-09-PLAN.md (AUDIO-07): the same splice/re-encode shifts the
+          // fresh encode's own genuine ~14-17ms near-silent trailing
+          // stretch to a slightly different position than the baseline's
+          // own (verified via `mediadiff compare --json` evidence:
+          // baseline {4026ms,4040ms}, candidate {4069ms,4086ms} --
+          // non-overlapping, so `src/compare/span.cpp`'s own interval
+          // algebra reports this as +1 introduced) -- one more legitimate
+          // effect of the same splice root cause.
+          "audio.silence.edges",
       });
 }
 

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "core/model.h"
+#include "probe/audio_decode.h"
 #include "probe/bmff_scan.h"
 #include "probe/ebml_scan.h"
 #include "probe/packet_scan.h"
@@ -38,6 +39,16 @@ enum class Pass : std::uint8_t {
   bmff_scan,
   ebml_scan,
   ts_scan,
+  // 06-01-PLAN.md (AUDIO-10, PROBE-08): the audio decode sweep -- fused
+  // INSIDE run_packet_scan's own av_read_frame loop (probe/packet_scan.cpp),
+  // mirroring Pass::parser_scan's own fusion, never a second sweep (a
+  // stream's packet bytes are not retained after PacketScan's own append
+  // loop, so a later, independent decode pass could not read them again
+  // without re-opening the file, which this plan's own prohibition
+  // forbids). Populates ProbeResults::audio_decode below. Implied into the
+  // union alongside Pass::packet_scan by src/probe/orchestrator.cpp
+  // exactly as Pass::parser_scan already is.
+  audio_decode,
   kCount,
 };
 
@@ -55,6 +66,11 @@ class PassSet {
   }
 
   constexpr void set(Pass p) { bits_ |= (1u << static_cast<unsigned>(p)); }
+  // 06-01-PLAN.md (--content/--no-content): the one removal operation
+  // this bitset needs -- clearing Pass::audio_decode from an
+  // already-computed union when content decode was not requested for
+  // this invocation.
+  constexpr void clear(Pass p) { bits_ &= ~(1u << static_cast<unsigned>(p)); }
   constexpr bool test(Pass p) const { return (bits_ & (1u << static_cast<unsigned>(p))) != 0; }
   constexpr PassSet operator|(const PassSet& other) const { return PassSet(bits_ | other.bits_); }
   constexpr PassSet& operator|=(const PassSet& other) {
@@ -148,6 +164,16 @@ struct ProbeResults {
   // 03-08-PLAN.md's `container.ts.*` checks) is the real, registered
   // production consumer.
   std::optional<TsScanResult> ts;
+  // 06-01-PLAN.md (AUDIO-10, PROBE-08): the audio decode sweep's own SINK
+  // OUTPUTS only (decoder identity/class, per-block hash digests, decode
+  // error counts) -- never retained PCM. Populated ONLY when
+  // `Pass::audio_decode` was requested (which the orchestrator always
+  // implies alongside `Pass::packet_scan`, mirroring `parser_scan`'s own
+  // implication), `std::nullopt` otherwise. `content.audio.sample_hash`
+  // (06-01) is this slot's first consumer; loudness/silence (06-08/06-09)
+  // read the SAME slot, never their own decode. No analyzer may take a
+  // non-const reference or copy this member (PROBE-10).
+  std::optional<AudioDecodeResult> audio_decode;
 };
 
 // One analyzer family's registration (PROBE-08): the passes it needs, the

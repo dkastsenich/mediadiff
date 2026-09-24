@@ -43,11 +43,19 @@ mediadiff <BASELINE> <CANDIDATE> [flags]        # implicit compare
 mediadiff compare|snapshot|dir|inspect|list-checks|explain ...
 ```
 
-Flags: `--profile --config --set --tol --no-content --content --ssim --psnr --vmaf
+Flags: `--profile --config --set --tol --no-content --content --hash-decoder auto|default|NAME --ssim --psnr --vmaf
 --sample N --first-divergence --hwaccel auto|none|cuda --threads N
 --json[=path] --report md=path --report junit=path --strict -q -v --no-color --ascii`
 
 Exit codes: `0` clean · `1` fail findings · `2` warn + `--strict` · `64` usage · `65` unreadable input · `66` decode failure mid-analysis (partial JSON still emitted) · `70` internal. The `<3` vs `≥64` split is a CI contract: "regression" vs "could not run".
+
+**`--content` / `--no-content` (06-01-PLAN.md Task 3, D-05):** resolved per command via `resolve_content_enabled` (`src/cli/options.{h,cpp}`), a three-way `explicit flag > (per-command default)` precedence — there is no config-file layer for this one, unlike `--probe-timeout`. Both flags given together is always `ErrorKind::usage` (exit 64), naming both spellings. Per-command default when NEITHER flag is given:
+  - `compare`: decodes (`--no-content` disables it).
+  - `snapshot`: ALWAYS decodes — there is no "off" state; `--no-content` is ITSELF a usage error (exit 64), because a snapshot taken once is compared under any profile later and a non-decoding snapshot would be permanently incomparable against a decoding `compare`.
+  - `dir`: opt-in — decode stays off unless `--content` is given (corpus-speed default).
+  - `inspect`: opt-in — decodes on request, matching `dir`'s own default.
+
+**`--hash-decoder <auto|default|NAME>` (06-05-PLAN.md Task 1, AUDIO-09, D-06/D-07/D-08):** registered on `compare`, `snapshot`, `dir` and `inspect` (`resolve_hash_decoder`, `src/cli/options.{h,cpp}`), resolved into `ProbeOptions::hash_decoder` and threaded through to the once-per-stream audio decoder selection (`src/probe/audio_decode.{h,cpp}`) -- fingerprint-time only, D-08's own rule that a profile never reaches this selection. Three accepted values: `auto` (the default) prefers the class-1 fixed-point sibling decoder (`aac_fixed`, `ac3_fixed`, `mp3`, `mp2`) when one exists and can open the stream; `default` opts out unconditionally and always records class 2; a decoder NAME forces that exact decoder, falling back to the codec's own default (recorded as class 2 with a `fallback_reason`) if the named decoder cannot open the stream. A NAME `avcodec_find_decoder_by_name` cannot resolve is `ErrorKind::usage` (exit 64), naming the value -- never a silent fall back to `auto`.
 
 ### 3.2 Parsing design — CLI11
 

@@ -44,6 +44,7 @@ meta:
   meta.tags.language video[0]: "und"
   meta.tags.language audio[0]: "und"
   meta.tags.language subtitle[0]: "und"
+  meta.decode_errors audio[0]: 0
 == mkv: topo_chapters.mkv ==
 container:
   container.format global: "matroska"
@@ -80,6 +81,7 @@ meta:
       evidence: {"ENCODER":"Lavc aac"}
   meta.tags.language video[0]: "und"
   meta.tags.language audio[0]: "und"
+  meta.decode_errors audio[0]: 0
 == ts: ts_multiprogram.ts ==
 container:
   container.format global: "mpegts"
@@ -101,17 +103,17 @@ container:
   container.ts.cc_errors global: 0
       evidence: {"per_pid_errors":{}}
   container.ts.cc_discontinuities global: 0
-  container.ts.pcr_interval program[1]: {"num":87,"den":1,"tb":{"num":1,"den":1},"ms":87000.0}
+  container.ts.pcr_interval program[1]: {"num":87,"den":1,"tb":{"num":1,"den":1},"ms":87.0}
       evidence: {"pcr_pid":256,"sample_count":25,"mean_ms":{"num":854,"den":24}}
-  container.ts.pcr_interval program[2]: {"num":87,"den":1,"tb":{"num":1,"den":1},"ms":87000.0}
+  container.ts.pcr_interval program[2]: {"num":87,"den":1,"tb":{"num":1,"den":1},"ms":87.0}
       evidence: {"pcr_pid":258,"sample_count":25,"mean_ms":{"num":887,"den":24}}
-  container.ts.psi_interval program[1]: {"num":106,"den":1,"tb":{"num":1,"den":1},"ms":106000.0}
+  container.ts.psi_interval program[1]: {"num":106,"den":1,"tb":{"num":1,"den":1},"ms":106.0}
       evidence: {"pat_max_ms":106,"pmt_max_ms":106}
-  container.ts.psi_interval program[2]: {"num":111,"den":1,"tb":{"num":1,"den":1},"ms":111000.0}
+  container.ts.psi_interval program[2]: {"num":111,"den":1,"tb":{"num":1,"den":1},"ms":111.0}
       evidence: {"pat_max_ms":111,"pmt_max_ms":111}
   container.ts.pmt_version_churn program[1]: 0
   container.ts.pmt_version_churn program[2]: 0
-  container.ts.null_ratio global: {"num":0,"den":2540,"tb":{"num":1,"den":1},"ms":0.0}
+  container.ts.null_ratio global: {"num":0,"den":2540,"tb":{"num":1,"den":1}}
       evidence: {"null_packets":0,"total_packets":2540}
 meta:
   meta.tags global: []
@@ -123,3 +125,5 @@ meta:
   meta.tags.language video[1]: "und"
   meta.tags.language audio[0]: "und"
   meta.tags.language audio[1]: "und"
+  meta.decode_errors audio[0]: 0
+  meta.decode_errors audio[1]: 0
