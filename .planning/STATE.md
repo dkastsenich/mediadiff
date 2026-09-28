@@ -21,10 +21,10 @@ milestone_name: milestone
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-12)
+See: .planning/PROJECT.md (updated 2026-09-28)
 
 **Core value:** A media-aware diff CI can trust — a no-change re-run under the right profile is clean out of the box, every real regression is caught, explained, and actionable. False positives are P0.
-**Current focus:** Phase 06 — Audio Analysis
+**Current focus:** Phase 7 — Content & Quality
 
 ## Current Position
 
@@ -33,7 +33,7 @@ Plan: Not started
 Status: Ready to plan
 Last activity: 2026-09-28 — Phase 06 complete, transitioned to Phase 7
 
-Progress: [█████████░] 94%
+Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not yet planned)
 
 ## Performance Metrics
 
@@ -399,6 +399,8 @@ Recent decisions affecting current work:
 - [Phase 06]: CR-05 secondary: SbrResolution::decode_observed_rate_hz now populated by every implicit_decoded branch, not only the fallback probe
 - [Phase 06]: 06-19: span_ticks_for_basis's prefers_declared derived from the reconstruction outcome (raw span + both tick counts + in-range subtractions + strictly positive result), not input availability -- closes WR-07 — A preference flag must reflect whether the guarded computation actually succeeded, not merely whether its inputs looked plausible; the container-field fallback's own behavior (WR-07 flagged assumption A1) is unchanged
 - [Phase 06]: 06-19: WINDOWS.md #32 hand-edited via Edit tool (not the windows CLI mutation command) to append a dated note to an existing entry's description cell; status/counts left untouched — The windows CLI tool creates new entries; this plan needed to append to an existing open entry without altering its status or the ledger's frontmatter counts
+- [Phase 06]: Gap-closure code review is a delta review. Round 1 is archived as 06-REVIEW-round1.md with its resolution notes. Round 2 (06-REVIEW.md) covers only the 44 files changed since ebe25cc and continues round 1's numbering (CR-06+, WR-17+), so source comments that cite "06-REVIEW.md CR-05" or "WR-07" still resolve unambiguously.
+- [Phase 06]: Re-verified 2026-09-28 after gap closure: passed 5/5 (was 3/5). SC2 is judged against its 2026-09-22 amendment, and CR-01..CR-05 are confirmed closed both in source and by named regression tests.
 - [Phase 06]: 06-13 and the gap closure certified on CI run 35987510562: all four of 06-13's named gates reported Passed on the designated x64-linux leg, both instruction-count ratchets held within tolerance (change=0%), and no baseline/digest file needed a rewrite. — Certified strictly from Task 2's verbatim captures per-line Passed/Failed tokens, not ctest's summary-line 'N Skipped' header (a grep artifact for integration.audio_sample_hash, not a real Skipped status).
 
 ### Pending Todos
@@ -408,8 +410,12 @@ None yet.
 ### Blockers/Concerns
 
 - **VIDEO-11 placement is a judgment call.** `video.closed_captions` is mapped to Phase 7 (needs the decode pass) rather than Phase 4 where its namespace lives. Phase 4 still registers the check and ships the `skipped:requires_decode` path. Revisit if Phase 4 planning finds a parser-level detection route.
-- **Priming extraction spike is open.** Research flagged (v2 EXT-05) whether lightweight audio-priming extraction from container metadata is feasible ahead of the Phase 6 decode path. Until answered, Phase 5's `timeline.av_offset`/`av_drift` ship with `priming: unknown` on the common case — covered by TIME-10 fixtures, not closed.
-- **WINDOWS.md #32 remains open after 06-07.** The MP4-to-TS `timeline.av_drift`/`.pattern` false-positive-class residual is confirmed structurally unrecoverable within 06-07's scope: `audio.priming` evidence shows the TS side's priming is genuinely unknown after a `-c copy` remux (no `skip_samples`, no `initial_padding`, no edit list survives). Closing it fully needs a decode-based priming-discovery mechanism, out of scope for Phase 6's remaining plans (none of which touch `timeline.av_drift`/`av_sync.cpp`).
+- **Priming extraction: resolved by Phase 6 for the common case.** `audio.priming` now resolves through `initial_padding` → container mechanism (MP4 elst / iTunSMPB / MKV CodecDelay) → `unknown` (06-06), and D-16's shared-basis span gives MP4-vs-MP4 priming pairs a trimmed basis with zero drift (06-07). Two cases remain, both reported as measured non-passes per the amended ROADMAP SC2: the MPEG-TS side (#32 below) and the MP4 → MKV → MP4 round-trip residual (WINDOWS.md #36).
+- **[Phase 6] WINDOWS.md #32 stays open by design.** The MP4-to-TS `timeline.av_drift`/`.pattern` residual is structurally unrecoverable today. `audio.priming` evidence shows the TS side's priming is genuinely unknown after a `-c copy` remux: no `skip_samples`, no `initial_padding`, and no edit list survives. The fix is decode-based priming detection for MPEG-TS, a follow-up. Until then the amended SC2 requires this case to be reported as a measured non-pass, which the 2026-09-28 re-verification confirmed.
+- **[Phase 6] Review WR-17 needs an explicit accept or fix.** CR-05's fix (06-18) makes a fallback SBR-probe timeout or open failure abort the whole `compare`/`inspect`/`snapshot` command, where it used to degrade only `audio.profile` to `unknown`. That trade is deliberate, but `docs/checks/audio.profile.md` doesn't state the availability cost, and in `dir` mode it costs a whole file's report. See `06-REVIEW.md` WR-17.
+- **[Phase 6] Twelve round-1 review warnings stay deferred:** WR-01, WR-04..06, WR-08 and WR-10..16. 06-14 deferred them as outside gap 3, and the round-2 review confirmed they are still present. Each deferral's rationale is in `06-REVIEW-round1.md`.
+- **[Phase 6] `ac3_fixed`'s cross-architecture class-1 status is unmeasured** (06-13). It is recorded as an open gap, not assumed proven.
+- **[Phase 6] No `06-SECURITY.md` yet.** Security enforcement is on, and phases 2–5 each have one. Run `/gsd-secure-phase 06` before advancing.
 - **Phase 2 is large** (48 requirements). Expect it to decompose into several plans; it is one phase because doc 01 is one acceptance unit and no analyzer can be tested before it lands.
 - BUILD-01/BUILD-05/BUILD-06 remain unproven: .github/workflows/ci.yml was authored and passes every locally-verifiable check (YAML validity, both tasks' automated verify scripts, all grep-based acceptance criteria), but no commit was pushed to origin during 01-05's execution, so the matrix actually reporting green, the two-run vcpkg cache restore proof, and fork-PR read/write behavior are all unverified pending a real CI run
 - **RESOLVED by 03-14 (real CI evidence, PR #3, run 33951407521; WINDOWS.md #8 marked fixed).** `scripts/gen_corpus.sh` is now invoked, unconditionally, before `Configure` on every matrix leg. **Correction to the original scope:** the gap covered all 5 legs, not 4 — the Windows leg's `gen_corpus.ps1` generated zero fixtures and ran after `Test`, so the `Test` step ran without media fixtures on every leg, not just Linux/macOS. The real run confirmed the corpus steps execute in the correct order on all five legs; the macOS legs' only failure was `check_corpus.sh`'s own bash-3.2 incompatibility (`mapfile`), fixed same-plan (`91d9d2f`). Full five-leg green is **not yet achieved**: x64-windows-static-md and x64-linux both fail for reasons unrelated to the corpus (WINDOWS.md #9: `ebml_scan.cpp:348` NOMINMAX/`std::max` macro clash on MSVC; WINDOWS.md #10: committed byte-level goldens generated against a different ffmpeg build than CI's installed 9.0.1). arm64-linux's non-blocking `Register vcpkg NuGet feed` credentials failure is WINDOWS.md #11. BUILD-01/BUILD-05/BUILD-06 (below) remain unproven pending a fully green run.
@@ -441,6 +447,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-24T12:28:47.307Z
-Stopped at: Phase 06 complete, ready to plan Phase 7
+Last session: 2026-09-28T12:35:05Z
+Stopped at: Phase 6 complete (re-verified 5/5 after gap closure), ready to plan Phase 7
 Resume file: None

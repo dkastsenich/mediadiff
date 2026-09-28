@@ -16,7 +16,8 @@ The contract: **"Tell me what changed about this output, whether it was probably
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Audio decode path with determinism-class-aware decoder selection — Phase 6 (design-doc phase 5; `06-VERIFICATION.md`, passed 5/5 on 2026-09-28)
+- ✓ All `audio.*` parameter, loudness, true-peak and silence checks, plus `content.audio.sample_hash` — Phase 6 (same verification)
 
 ### Active
 
@@ -46,10 +47,6 @@ The contract: **"Tell me what changed about this output, whether it was probably
 **Timeline (phase 4)**
 - [ ] All `timeline.*` checks on pure integer/rational math
 - [ ] The A/V drift algorithm — rate in ms/min, end delta, pattern class (`constant-offset`/`linear-drift`/`step`)
-
-**Audio (phase 5)**
-- [ ] Audio decode path with determinism-class-aware decoder selection
-- [ ] All `audio.*` parameter, loudness, true-peak and silence checks, plus `content.audio.sample_hash`
 
 **Content & size (phase 6)**
 - [ ] `DecodeSession` video path; `content.video.*` frame hashing, perceptual, frozen/black runs
@@ -146,6 +143,12 @@ Each doc carries its own per-phase acceptance section. Ship gate for v1 is the p
 | Apache-2.0, trunk-based on `main`, releases built by CI from `v0.x.y` tags | — | — Pending |
 | **FFmpeg baseline pinned to `version: "8.1"`, `port-version: 4`** (bare `8.1` vcpkg port entry — not the later `8.1.1`/`8.1.2` patch-line entries, which are distinct vcpkg entries with different git-tree hashes; this is the A3 resolution from Phase 1 Plan 01, matching D-01's literal "8.1 Hoare" wording), pinned via `vcpkg.json` `overrides` (not `builtin-baseline` hunting) so only ffmpeg is held back while every other dependency tracks the current baseline | Phase 1's only job is a green matrix — building the foundation on FFmpeg 9.0 (an 8-day-old major release at research time) would make a red build ambiguous between an upstream port problem and a mediadiff problem. Holding at 8.1 and bumping later turns the eventual 8→9 migration into a deliberate, recorded exercise of TRUST-08 (cross-release idempotence) and TRUST-04 (path-signature guards on perceptual checks) rather than spending that dogfooding opportunity on day one. **Known cost:** FFmpeg 9.0 rewrote swscale from float to exact-rational math, so Phase 7's SSIM/perceptual baselines will shift across the eventual bump — intended behavior, since TRUST-04's guards exist to make that bump produce `skipped:` rather than a false failure. | Locked 2026-08-12 (Phase 1 Plan 01) — satisfies BUILD-10 |
 | `mediadiff::expected<T,E>` aliased in `src/util/expected.h` over `tl-expected` (vcpkg 1.3.1) | C++20 target predates `std::expected` (C++23); `tl-expected` is header-only, CC0-1.0, vcpkg-current, and tracks the standard proposal closely, avoiding a hand-rolled `and_then`/`transform`/`or_else`. The alias header — not the library choice — is the load-bearing part: no file outside `src/util/expected.h` may name `tl::expected` directly, so a future move to `std::expected` on a C++23 bump touches exactly one header. | Locked 2026-08-12 (Phase 1 Plan 01) — satisfies BUILD-07 |
+| Decoder determinism classes are proven, not assumed: `aac_fixed` is class 1, `mp3`/`mp2` are class 2 | `aac_fixed`'s cross-architecture class-1 promotion passed a real two-build proof on the arm64-osx CI leg; `mp3`/`mp2` had no trustworthy cross-architecture proof, so they were demoted rather than trusted. `ac3_fixed`'s cross-architecture status is still unmeasured. | Locked 2026-09-24 (06-13, CI run 35735099865) — TRUST-01 |
+| A recoverable audio decode error is a gating `meta.decode_errors` finding (exit 1); only a wholly undecodable stream marks the fingerprint partial (exit 66) | One corrupt packet should not turn a real comparison into "could not run". A stream with zero decoded frames still cannot be compared, so it keeps the could-not-run signal. | Locked 2026-09-20 (06-10, D-09 amendment approved at checkpoint) |
+| `audio.priming` is `exact` over a string, and `unknown` compares as itself; an MP4 → MKV → MP4 round trip and any MPEG-TS side are reported as measured non-passes | Matroska stores priming in nanoseconds, so a round trip loses about 10 samples (1024 → 1014). A tolerance wide enough to absorb that would blunt the check on the real priming changes it exists to catch, and MPEG-TS carries no priming mechanism at all. | ROADMAP SC2 amended 2026-09-22; `.planning/WINDOWS.md` #32 and #36 stay open |
+| The −1.0 dBTP ceiling escalation is asymmetric (under → above only) and needs a 0.010 dB material crossing | Without a deadband, a quantiser-noise shift that straddled the milli-dB-quantised ceiling hard-failed regardless of the 0.3 dB tolerance: the P0 false-positive class | Locked 2026-09-23 (06-17, closes review CR-04) |
+| The audio sweep is configured from the decoder's actual output rate, and every decoded frame is re-validated against the first frame's shape | `codecpar` carries the undoubled core rate for implicitly signalled HE-AAC, which would halve every loudness window and hash block; an unchecked mid-stream format change was a heap over-read | Locked 2026-09-23 (06-15, closes review CR-01/CR-02) |
+| The HE-AAC SBR fallback probe is deterministic, and its failure is a hard `Error`, never a flipped `(sbr: unknown)` value | A compared value that can differ between two runs of the same input breaks the determinism constraint. Accepted cost: a probe timeout now aborts the whole command instead of degrading one value (round-2 review WR-17). | Locked 2026-09-23 (06-18, closes review CR-05) |
 
 ## Conventions
 
@@ -187,4 +190,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-12 after initialization*
+*Last updated: 2026-09-28 after Phase 6*
