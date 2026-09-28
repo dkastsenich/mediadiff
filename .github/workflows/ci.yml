@@ -253,6 +253,29 @@ jobs:
       - name: Add vcpkg to PATH
         run: echo "${{ github.workspace }}/vcpkg" >> "$GITHUB_PATH"
 
+      # The ubuntu-24.04-arm runner image exports VCPKG_FORCE_SYSTEM_BINARIES
+      # to every step; nothing in this file sets it. In that mode vcpkg's
+      # tool cache only searches PATH and never downloads a tool, including
+      # nuget.exe, which the binary-cache feed needs. So arm64-linux died at
+      # its first vcpkg call on every run. The NuGet registration step's
+      # capture surfaced the message in CI run 36456833852, job 109045187685
+      # (WINDOWS.md #11): "Could not fetch nuget. A downloadable copy of this
+      # tool is available and can be used by unsetting
+      # $VCPKG_FORCE_SYSTEM_BINARIES".
+      #
+      # A step cannot unset a variable for the steps after it. $GITHUB_ENV can
+      # only set one, and vcpkg treats a set-but-empty variable as set. So this
+      # leg opts back in with VCPKG_FORCE_DOWNLOADED_BINARIES=1. vcpkg-tool's
+      # tool cache then stops considering system copies of any tool that has
+      # a download (tools.cpp get_path) and fetches the same pinned versions
+      # the other legs get from vcpkg/scripts/vcpkg-tools.json. Scoped to this
+      # leg only, so tool resolution on the three blocking legs is unchanged.
+      - name: Prefer vcpkg's pinned tool downloads over the image's system-binaries default (arm64-linux only)
+        if: matrix.preset == 'arm64-linux'
+        run: |
+          echo "VCPKG_FORCE_SYSTEM_BINARIES as exported by the runner image: '${VCPKG_FORCE_SYSTEM_BINARIES-<unset>}'"
+          echo "VCPKG_FORCE_DOWNLOADED_BINARIES=1" >> "$GITHUB_ENV"
+
       # Fork PRs use the plain `pull_request` trigger (never the
       # fork-privileged variant), so GitHub does not expose repository
       # secrets — including VCPKG_PAT_TOKEN — to those runs at all. This
