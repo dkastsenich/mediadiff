@@ -273,13 +273,46 @@ jobs:
       # access to the cache feed, authenticated with the PAT. The ambient
       # workflow token cannot push to a GitHub Packages NuGet feed (Pitfall
       # 3, 01-RESEARCH.md) — a Personal Access Token is required.
+      #
+      # The fetch block below captures `vcpkg fetch nuget`'s stdout and
+      # stderr to files instead of piping stdout straight into `tail -n 1`.
+      # The old form kept only the last stdout line, but vcpkg writes its
+      # error text to STDOUT (verified at planning time: a real failing
+      # fetch put its whole error message on stdout and left stderr empty).
+      # Under this file's `bash -e -o pipefail`, a fetch failure therefore
+      # killed the step with its own message silently discarded — exactly
+      # CI run 36429527347, job 108951822104 on arm64-linux: exit 1 in 13 ms
+      # with zero bytes of output (WINDOWS.md #11). This capture is a
+      # permanent readability improvement on every leg, not just an
+      # arm64-linux probe: a file redirect yields the same bytes as the old
+      # pipe (both are non-tty sinks), so the success path below is
+      # unchanged on all five legs, including the three blocking ones.
       - name: Register vcpkg NuGet feed (read-write, trusted runs only)
         if: steps.cache_gate.outputs.trusted == 'true'
         env:
           VCPKG_NUGET_TOKEN: ${{ secrets.VCPKG_PAT_TOKEN }}
           FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         run: |
-          NUGET_EXE="$(vcpkg fetch nuget | tail -n 1)"
+          FETCH_OUT="$RUNNER_TEMP/vcpkg-fetch-nuget.stdout"
+          FETCH_ERR="$RUNNER_TEMP/vcpkg-fetch-nuget.stderr"
+          FETCH_RC=0
+          vcpkg fetch nuget > "$FETCH_OUT" 2> "$FETCH_ERR" || FETCH_RC=$?
+          if [ "$FETCH_RC" -ne 0 ]; then
+            echo "::error::vcpkg fetch nuget exited $FETCH_RC — captured stdout (where vcpkg writes its error text) and stderr follow"
+            echo "--- captured stdout ($FETCH_OUT) ---"
+            cat "$FETCH_OUT"
+            echo "--- captured stderr ($FETCH_ERR) ---"
+            cat "$FETCH_ERR"
+            echo "--- diagnostic re-run, exit status ignored: vcpkg fetch nuget --debug ---"
+            vcpkg fetch nuget --debug 2>&1 || true
+            exit "$FETCH_RC"
+          fi
+          cat "$FETCH_ERR" >&2
+          NUGET_EXE="$(tail -n 1 "$FETCH_OUT")"
+          if [ -z "$NUGET_EXE" ]; then
+            echo "::error::vcpkg fetch nuget exited 0 but stdout ended without a nuget.exe path"
+            exit 1
+          fi
           if [ "$RUNNER_OS" = "Windows" ]; then RUN_NUGET=("$NUGET_EXE"); else RUN_NUGET=(mono "$NUGET_EXE"); fi
           "${RUN_NUGET[@]}" sources add -source "$FEED_URL" -storepasswordincleartext \
             -name GitHubPackages -username "${{ github.repository_owner }}" -password "$VCPKG_NUGET_TOKEN"
@@ -293,13 +326,37 @@ jobs:
       # `pull_request` runs regardless of the `permissions:` block above, so
       # a fork contributor benefits from the cache but can never obtain a
       # credential that writes to it.
+      #
+      # Same fetch-capture rationale as the read-write step above (WINDOWS.md
+      # #11, CI run 36429527347 job 108951822104): a fetch failure's error
+      # text lands on stdout, so it is captured to a file instead of being
+      # discarded by the old `| tail -n 1` pipe under `bash -e -o pipefail`.
       - name: Register vcpkg NuGet feed (read-only, fork-originated runs)
         if: steps.cache_gate.outputs.trusted != 'true'
         env:
           VCPKG_NUGET_TOKEN: ${{ github.token }}
           FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         run: |
-          NUGET_EXE="$(vcpkg fetch nuget | tail -n 1)"
+          FETCH_OUT="$RUNNER_TEMP/vcpkg-fetch-nuget.stdout"
+          FETCH_ERR="$RUNNER_TEMP/vcpkg-fetch-nuget.stderr"
+          FETCH_RC=0
+          vcpkg fetch nuget > "$FETCH_OUT" 2> "$FETCH_ERR" || FETCH_RC=$?
+          if [ "$FETCH_RC" -ne 0 ]; then
+            echo "::error::vcpkg fetch nuget exited $FETCH_RC — captured stdout (where vcpkg writes its error text) and stderr follow"
+            echo "--- captured stdout ($FETCH_OUT) ---"
+            cat "$FETCH_OUT"
+            echo "--- captured stderr ($FETCH_ERR) ---"
+            cat "$FETCH_ERR"
+            echo "--- diagnostic re-run, exit status ignored: vcpkg fetch nuget --debug ---"
+            vcpkg fetch nuget --debug 2>&1 || true
+            exit "$FETCH_RC"
+          fi
+          cat "$FETCH_ERR" >&2
+          NUGET_EXE="$(tail -n 1 "$FETCH_OUT")"
+          if [ -z "$NUGET_EXE" ]; then
+            echo "::error::vcpkg fetch nuget exited 0 but stdout ended without a nuget.exe path"
+            exit 1
+          fi
           if [ "$RUNNER_OS" = "Windows" ]; then RUN_NUGET=("$NUGET_EXE"); else RUN_NUGET=(mono "$NUGET_EXE"); fi
           "${RUN_NUGET[@]}" sources add -source "$FEED_URL" -storepasswordincleartext \
             -name GitHubPackages -username "${{ github.repository_owner }}" -password "$VCPKG_NUGET_TOKEN"
