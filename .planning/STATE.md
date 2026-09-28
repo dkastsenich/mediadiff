@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 Phase: 7 — Content & Quality
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-28 — Phase 06 complete, transitioned to Phase 7
+Last activity: 2026-09-28 — Completed quick task 260928-q80: Fix the x64-osx and arm64-linux CI legs
 
 Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not yet planned)
 
@@ -437,6 +437,7 @@ None yet.
 | 260914-t47 | Replace the GPL-gated interlace filter with an LGPL separatefields/select/weave chain in the three interlace fixture recipes | 2026-09-14 | d137242 | [260914-t47-replace-the-gpl-only-interlace-filter-in](./quick/260914-t47-replace-the-gpl-only-interlace-filter-in/) |
 | 260914-tzq | Fix the x64-windows-static-md build failure: read MEDIADIFF_DESIGNATED_LEG through the getenv_utf8 shim in test_golden.cpp and add the getenv shim lint to the CI lint job | 2026-09-14 | 47f02c4 | [260914-tzq-fix-the-x64-windows-static-md-build-fail](./quick/260914-tzq-fix-the-x64-windows-static-md-build-fail/) |
 | 260922-wtc | Fix the cross-phase `ms` serialization defect (emit `ms` only for a declared time unit, at its true magnitude) and amend 06-REVIEW.md's three claims disproved by measurement | 2026-09-22 | 9d2ceb6 | [260922-wtc-fix-the-ms-serialization-defect-and-amen](./quick/260922-wtc-fix-the-ms-serialization-defect-and-amen/) |
+| 260928-q80 | Fix the x64-osx and arm64-linux CI legs: x86_64 preset arch + Rosetta gate + lipo assertion (x64-osx, WINDOWS.md #14); readable NuGet fetch failures, then VCPKG_FORCE_DOWNLOADED_BINARIES over the image's VCPKG_FORCE_SYSTEM_BINARIES (arm64-linux, #11); both green on CI run 36462961841 (PR #8) | 2026-09-28 | 486941f | [260928-q80-fix-the-x64-osx-and-arm64-linux-ci-legs](./quick/260928-q80-fix-the-x64-osx-and-arm64-linux-ci-legs/) |
 
 ## Deferred Items
 

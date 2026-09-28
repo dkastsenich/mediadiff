@@ -17,7 +17,7 @@
     { "name": "arm64-osx", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "arm64-osx" } },
     { "name": "x64-windows-static-md", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-windows-static-md" } },
     { "name": "arm64-linux", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "arm64-linux" } },
-    { "name": "x64-osx", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-osx" } }
+    { "name": "x64-osx", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-osx", "CMAKE_OSX_ARCHITECTURES": "x86_64" } }
   ],
   "buildPresets": [
     { "name": "x64-linux", "configurePreset": "x64-linux" },
