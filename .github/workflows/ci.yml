@@ -58,12 +58,26 @@ jobs:
             blocking: false
           # No free Intel-hosted macOS runner exists on GitHub Actions as of
           # this plan's execution date (only paid "-large"/"-intel" tiers
-          # remain) — cross-built from the same arm64 host as arm64-osx via
-          # Xcode's native -arch x86_64 support and this preset's own
-          # VCPKG_TARGET_TRIPLET=x64-osx. See 01-05-SUMMARY.md for the full
-          # reasoning; non-blocking status is exactly what makes this
-          # acceptable turbulence per research/STACK.md's known failure
-          # classes note.
+          # remain), so this leg cross-builds on the same arm64 macos-15
+          # host as arm64-osx. Two separate knobs do that, and they govern
+          # different things:
+          #   - VCPKG_TARGET_TRIPLET=x64-osx governs ONLY vcpkg's own
+          #     dependency builds. It also feeds vcpkg's ABI hash, which is
+          #     why the NuGet binary cache keeps hitting across runs.
+          #   - CMAKE_OSX_ARCHITECTURES=x86_64, set on the x64-osx preset in
+          #     CMakePresets.json, governs the project's OWN compile and
+          #     link.
+          # With only the triplet set (this leg's original form), the
+          # project's own objects followed the host arch (arm64) and ld
+          # ignored every vcpkg archive at the first link — "fat file
+          # missing arch 'arm64'" — CI run 36429527347, job 108951821998,
+          # WINDOWS.md #14. The "Ensure Rosetta 2 can execute x86_64
+          # binaries" step below (immediately before Configure) makes sure
+          # the resulting x86_64 test binaries can actually run on this
+          # arm64 host. See 01-05-SUMMARY.md and research/STACK.md's known
+          # failure classes note for the rest of the cross-build reasoning;
+          # non-blocking status is what makes this leg's turbulence
+          # acceptable.
           - preset: x64-osx
             runner: macos-15
             blocking: false
@@ -291,6 +305,39 @@ jobs:
             -name GitHubPackages -username "${{ github.repository_owner }}" -password "$VCPKG_NUGET_TOKEN"
           echo "VCPKG_BINARY_SOURCES=clear;nuget,GitHubPackages,read" >> "$GITHUB_ENV"
 
+      # x64-osx's project binaries are x86_64 (CMAKE_OSX_ARCHITECTURES=x86_64,
+      # CMakePresets.json) running on an arm64 macos-15 host. They execute
+      # during the BUILD step itself, not only in Test: catch_discover_tests'
+      # default POST_BUILD discovery mode (tests/unit/CMakeLists.txt:455,
+      # tests/integration/CMakeLists.txt:301) runs each freshly linked test
+      # binary with --list-tests right after linking, and ctest runs them
+      # again in the Test step. Whether the macos-15 image ships Rosetta 2
+      # preinstalled is unverified, so this probes first and only installs on
+      # a miss. The step sits directly before Configure so a missing
+      # translator fails fast, ahead of the 15-40 minute vcpkg restore,
+      # rather than surfacing later as an opaque "Bad CPU type in executable"
+      # deep inside Build. The probe uses absolute paths (/usr/bin/arch,
+      # /usr/sbin/softwareupdate) so a Homebrew-installed `arch` earlier on
+      # PATH can never shadow the system tool. See CI run 36429527347 and
+      # WINDOWS.md #14.
+      - name: Ensure Rosetta 2 can execute x86_64 binaries (x64-osx only)
+        if: matrix.preset == 'x64-osx'
+        run: |
+          echo "Host architecture (uname -m): $(uname -m)"
+          if /usr/bin/arch -x86_64 /usr/bin/true; then
+            echo "x86_64 execution is already available on this runner image (Rosetta 2 preinstalled)."
+          else
+            echo "x86_64 execution is not available yet — installing Rosetta 2."
+            INSTALL_RC=0
+            sudo /usr/sbin/softwareupdate --install-rosetta --agree-to-license || INSTALL_RC=$?
+            if /usr/bin/arch -x86_64 /usr/bin/true; then
+              echo "Rosetta 2 installed successfully — x86_64 execution is now available."
+            else
+              echo "::error::x86_64 binaries still cannot execute after the Rosetta 2 install attempt (softwareupdate exit $INSTALL_RC)"
+              exit 1
+            fi
+          fi
+
       - name: Configure
         run: cmake --preset ${{ matrix.preset }} 2>&1 | tee configure.log
 
@@ -306,6 +353,27 @@ jobs:
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
+
+      # A leg named x64-osx that silently fell back to building the host arch
+      # (arm64) would duplicate arm64-osx and report a false green, exactly
+      # the "gate that quietly stops gating" defect class this file already
+      # guards against elsewhere. This step asserts the one property the leg
+      # exists to prove: its own binaries are genuinely x86_64.
+      - name: Assert the x64-osx build produced x86_64 binaries (x64-osx only)
+        if: matrix.preset == 'x64-osx'
+        run: |
+          for BIN in build/x64-osx/mediadiff build/x64-osx/tests/unit/mediadiff_unit_tests build/x64-osx/tests/integration/mediadiff_integration_tests; do
+            if [ ! -f "$BIN" ]; then
+              echo "::error::expected binary not found: $BIN"
+              exit 1
+            fi
+            ARCHS="$(lipo -archs "$BIN")"
+            if [ "$ARCHS" != "x86_64" ]; then
+              echo "::error::$BIN is not x86_64 (lipo -archs reported: $ARCHS)"
+              exit 1
+            fi
+            echo "$BIN: $ARCHS"
+          done
 
       # ctest --preset only exists for the 3 blocking triplets in
       # CMakePresets.json (owned by Plan 01, not modified here) — every
