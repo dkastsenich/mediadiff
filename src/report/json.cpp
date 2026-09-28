@@ -119,8 +119,15 @@ nlohmann::ordered_json finding_to_json(const Finding& finding, Group group, cons
   j["status"] = std::string(status_to_string(finding.status));
   j["severity"] = std::string(severity_to_string(finding.severity));
   j["gating"] = is_gating(finding.severity);
-  j["baseline"] = value_to_json(finding.baseline);
-  j["candidate"] = value_to_json(finding.candidate);
+  // Resolved once, ahead of both value_to_json calls below and the
+  // existing `unit_text` lookup further down, so a single registry lookup
+  // per finding decides the unit `baseline`/`candidate` are rendered in --
+  // an id the registry does not know keeps today's fallback (Unit::none,
+  // no `ms` key), matching unit_text's own pre-existing fallback to "none".
+  const auto check_idx = registry.find(finding.id);
+  const Unit finding_unit = check_idx ? registry.at(*check_idx).unit : Unit::none;
+  j["baseline"] = value_to_json(finding.baseline, finding_unit);
+  j["candidate"] = value_to_json(finding.candidate, finding_unit);
   // core/model.h's Finding carries no structured per-comparator delta (the
   // tol comparator folds its computed delta into Finding::message's
   // human-readable text only, compare/tol.cpp) -- rendering `null` here is
@@ -132,10 +139,7 @@ nlohmann::ordered_json finding_to_json(const Finding& finding, Group group, cons
   j["delta"] = nullptr;
 
   const ResolvedCheck* resolved = find_resolved(policy, finding.id);
-  std::string_view unit_text = "none";
-  if (auto idx = registry.find(finding.id)) {
-    unit_text = unit_suffix(registry.at(*idx).unit);
-  }
+  const std::string_view unit_text = unit_suffix(finding_unit);
   j["tolerance"] = (resolved != nullptr && resolved->tolerance.has_value()) ? tolerance_to_json(*resolved->tolerance)
                                                                              : nlohmann::ordered_json(nullptr);
   j["unit"] = std::string(unit_text);

@@ -2001,11 +2001,88 @@ python3 tools/gen_ts_discontinuity.py \
 #
 # `timeline_drift_linear.mp4` / `timeline_drift_base.mp4`: the LINEAR-DRIFT
 # arm, doc 04 section 5's own "classic 0.1% clock error" recipe --
-# `asetrate=48048,aresample=48000` reads the sine source at 48048Hz then
-# resamples it down to a DECLARED 48000Hz, so the encoded content plays
-# 48048/48000 = 1.001x faster than its own declared rate: a genuine,
+# `sample_rate=47952,asetrate=48000` GENERATES the sine already at 47952Hz
+# and then RELABELS it as 48000Hz, so the encoded content plays
+# 48000/47952 = 1.001x faster than its own declared rate: a genuine,
 # uniform clock-rate mismatch between the audio and video timelines, not a
-# PTS-level artifact. 20 SECONDS, not doc 04's own unqualified duration --
+# PTS-level artifact.
+#
+# DETERMINISM (debug session true-peak-cross-platform, .planning/debug/):
+# this recipe used to read `sample_rate=48000,asetrate=48048,aresample=48000`
+# -- the same 0.1% error reached by RESAMPLING instead of by generating at
+# the target rate. That made this the ONLY fixture in this entire script
+# with a resampler in its path, and libswresample carries hand-written
+# per-architecture SIMD, so the fixture's own PCM came out different on
+# x86, on aarch64 and on the C reference path. Because fixtures are
+# gitignored and regenerated on EVERY CI runner (.gitignore: "the media it
+# describes is never committed"), each leg was encoding a different audio
+# stream. The native AAC encoder downstream then amplified that few-LSB
+# input difference NON-LINEARLY into a multi-dB swing in the DECODED true
+# peak -- measured -15.964 dBTP on x64-linux, -13.500 on the C reference
+# path, -17.697 on arm64-osx -- which surfaced as an undeclared
+# `audio.loudness.true_peak` (and `audio.silence.edges`) finding breaking
+# integration.timeline_av_sync on the arm64-osx and x64-windows-static-md
+# legs while x64-linux stayed green. `asetrate` alone is a pure metadata
+# relabel with no DSP whatsoever, so this form is bit-identical across
+# architectures -- exactly like `timeline_drift_base.mp4` below, which was
+# never affected precisely because it has no resampler.
+#
+# That substitution was measurement-neutral, verified against the real
+# binary: `timeline.av_drift` reports the IDENTICAL rational rate
+# (-54717060000/907751640 ms/min) and `timeline.av_drift.pattern` still
+# classifies `linear-drift`. Do NOT reintroduce `aresample` here.
+#
+# DETERMINISM, CYCLE 2 (same debug session, CI run 35723466889): the above
+# was NECESSARY but NOT SUFFICIENT. It turned x64-windows-static-md fully
+# GREEN -- proof on a genuinely foreign DSP path that the resampler really
+# was a cause -- but arm64-osx still failed, now at +1.299 dB and with the
+# SIGN FLIPPED relative to x64-linux (candidate -14.765 where linux reads
+# -15.976, previously -17.697). A sign flip under a SMALLER magnitude is the
+# signature of a chaotic `max` reshuffle, not of a shrinking proportional
+# error. The remaining amplifier is the NATIVE AAC ENCODER itself, which the
+# same session had already proved is independently DSP-divergent: every AAC
+# elementary stream in this pair differs across DSP paths, including
+# `timeline_drift_base.mp4`'s, whose PCM input is bit-identical. Removing
+# the resampler removed the larger INPUT to that amplifier; it did not
+# remove the amplifier.
+#
+# So the audio codec here is `pcm_s16le`, not `aac`. This is the escalation
+# that session pre-registered in its own blind_spots, and it is structural
+# rather than empirical: with PCM the stored audio IS the filter-graph
+# output and the decoded samples ARE the stored bytes, so the decoded true
+# peak cannot vary with the host at all. src/probe/audio_decode.h classifies
+# a PCM codec as decode class 1 BY DEFINITION -- "bit-exact by construction,
+# no algorithm exists to diverge across SIMD levels or architectures".
+# Verified against the real binary on both the x86-SIMD and the
+# `-cpuflags 0` C-reference DSP path: the decoded PCM is byte-identical on
+# both arms, `audio.loudness.true_peak` reads -18.056 dBTP on BOTH files
+# (delta EXACTLY 0, not merely small), `audio.loudness.integrated` likewise
+# delta 0, `timeline.av_drift` still reports the IDENTICAL rational rate
+# -54717060000/907751640 ms/min, `timeline.av_drift.pattern` still
+# classifies `linear-drift`, `container.mp4.edit_list` still warns on the
+# audio track (now on `segment_duration` 960000 vs 959040 -- the clock error
+# itself, no longer masked by AAC's `media_time=1024` priming), and
+# `content.audio.sample_hash` still diverges from block 0 (200 divergent
+# blocks, was 201 under AAC). A per-(id, scope) status diff of the whole
+# report against the AAC incumbent shows ZERO changes.
+#
+# `alac` and `flac` were both evaluated and REJECTED. flac's encoder makes
+# architecture-dependent coding decisions (the linear arm's elementary
+# stream differs across DSP paths), so the fixture's own bytes would still
+# be per-host. alac's audio stream differs between the two arms by -1.188%,
+# an encoder-determined number only 1.8pp clear of `size.stream_bitrate`'s
+# 3% warn line -- exactly the near-threshold calibration the resolved
+# test-898-ci-nonreproducible session was opened for. pcm_s16le's arm-to-arm
+# delta is -0.100%: not an encoder output at all, but the 0.1% clock error
+# itself (1920000 vs 1918080 bytes = 960000 vs 959040 samples x 2).
+#
+# Do NOT put a LOSSY audio codec back in this pair. The decoded true peak of
+# a lossy encode sits 2-4.6 dB ABOVE the source signal's own peak and is
+# dominated by codec ringing, so which of many near-equal ringing candidates
+# wins the `max` is effectively a coin flip under ANY per-host perturbation
+# -- and the tolerance must never be widened to hide that.
+#
+# 20 SECONDS, not doc 04's own unqualified duration --
 # this task's own empirical finding: at 30s/60s, the K=32 least-squares
 # fit's own reduced slope denominator exceeds `kMaxDriftDenominator`
 # (analyzers.h) at MILLISECOND-tick granularity over that span, correctly
@@ -2013,25 +2090,28 @@ python3 tools/gen_ts_discontinuity.py \
 # usable measurement -- 20s stays comfortably inside the safe range while
 # still landing close to doc 04's own "~60ms/min" worked prediction
 # (measured: -60.28ms/min against `timeline_drift_base.mp4` below).
-# `sample_rate=48000` explicit on `sine=` is REQUIRED: the `sine` lavfi
-# source's own default rate is 44100Hz, not 48000Hz, so omitting it turns
-# the intended 0.1% error into a ~8.9% one (44100/48048 =/= 48000/48048;
-# this task's own measured regression while iterating this recipe).
+# An explicit `sample_rate=` on `sine=` is REQUIRED in BOTH recipes: the
+# `sine` lavfi source's own default rate is 44100Hz, so omitting it turns
+# the intended 0.1% error into a ~8.9% one (this task's own measured
+# regression while iterating this recipe). 47952 is exactly 48000/1.001,
+# and 47952 x 20s = 959040 whole samples, so the drifted arm needs no
+# fractional-sample rounding to land on the intended ratio.
 # `timeline_drift_base.mp4` is the CLEAN, same-duration companion -- doc 02's
 # "every fixture produces exactly the intended findings and no others"
 # clause needs a duration-matched baseline, not `timeline_start_base.mp4`'s
 # own 4s tracer, or `timeline.duration`'s own triple-comparison would fire
 # as an unrelated collateral finding on every compare against this pair.
-# `-c:v mpeg4 -c:a aac`, never libx264/GPL, matching every other fixture in
-# this script.
+# `-c:v mpeg4`, never libx264/GPL, matching every other fixture in this
+# script. The AUDIO codec is deliberately NOT `aac` here -- see the
+# DETERMINISM (CYCLE 2) note above.
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
-  -f lavfi -i "sine=frequency=440:duration=20:sample_rate=48000,asetrate=48048,aresample=48000" \
-  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -f lavfi -i "sine=frequency=440:duration=20:sample_rate=47952,asetrate=48000" \
+  -c:v mpeg4 -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/timeline_drift_linear.mp4"
 
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=20" \
   -f lavfi -i "sine=frequency=440:duration=20:sample_rate=48000" \
-  -c:v mpeg4 -c:a aac -flags +bitexact -fflags +bitexact -y \
+  -c:v mpeg4 -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/timeline_drift_base.mp4"
 
 # `timeline_drift_step.mp4`: the STEP arm -- a genuine, isolated mid-file
@@ -2131,4 +2211,578 @@ cp "$OUT_DIR/timeline_tc_ndf.mp4" "$OUT_DIR/timeline_tc_ndf_copy.mp4"
   -c:v mpeg4 -c:a aac -timecode "00:00:10;00" -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/timeline_tc_df.mp4"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4."
+# --- 06-01-PLAN.md (Phase 6's tracer, content.audio.sample_hash) ----------
+# `audio_hash_base.mp4`: a 4s 44100Hz stereo AAC payload, audio-only (no
+# video stream at all -- the untrimmed-hash tracer needs only the audio
+# essence). `audio_hash_base_copy.mp4` is a SECOND, independent encoder
+# invocation with byte-identical arguments (this script's own
+# idem_a.mp4/idem_b.mp4 precedent: proves the ENCODER's own determinism,
+# never a `cp` of one output onto the other) -- the clean pair for
+# content.audio.sample_hash and DOC-03's own trigger/clean discipline.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_base.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_base_copy.mp4"
+
+# D-01's own cross-container proof: `-c copy` stream copies of the SAME
+# encoded AAC payload into Matroska and MPEG-TS -- no re-encode, so any
+# hash difference would be purely a container/trim-mechanism artifact
+# (exactly what AV_CODEC_FLAG2_SKIP_MANUAL's untrimmed basis neutralises).
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_hash_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_base.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_hash_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_base.ts"
+
+# The TRIGGER pair's own candidate: the identical recipe at a different
+# tone -- a genuinely different audio essence, never a container/trim
+# artifact.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=880:duration=4:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_hash_alt.mp4"
+
+# D-02's own fixed-block-not-decoder-frame proof: one PCM payload,
+# packaged four ways (WAV, a `-c copy` MOV remux, and FLAC at two
+# different `-frame_size` values) -- every packetization decodes to the
+# identical sample stream, so all four must hash equal despite radically
+# different packet sizes.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_pcm_base.wav"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_pcm_base.wav" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_pcm_base.mov"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_pcm_base.wav" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_pcm_flac_small.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_pcm_base.wav" -c:a flac -frame_size 8192 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_pcm_flac_large.mkv"
+
+# --- 06-02-PLAN.md Task 1 (AUDIO-03, D-10, D-11): the hand-written HE-AAC
+# explicit/implicit signaling pair and the non-silent class-1 two-build
+# proof input. No ffmpeg pin this project ships carries an HE-AAC encoder
+# (06-CONTEXT.md D-10), and the native aac/ac3/eac3 encoders are not
+# byte-stable across SIMD levels even where an encoder exists -- so these
+# five fixtures are hand-constructed bitstreams from tools/gen_he_aac.py,
+# an MP4-only writer with its own minimal `esds` muxer, byte-identical on
+# every leg by construction. The python3 >= 3.11 interpreter gate this
+# invocation relies on already ran earlier in this script (04-05-PLAN.md's
+# gate, above) -- every output is still passed as a literal
+# $OUT_DIR/<name> token in one invocation, the only form
+# scripts/check_corpus.sh's mechanical extraction can read.
+python3 tools/gen_he_aac.py \
+  --sbr-explicit "$OUT_DIR/audio_sbr_explicit.mp4" \
+  --sbr-implicit "$OUT_DIR/audio_sbr_implicit.mp4" \
+  --sbr-explicit-copy "$OUT_DIR/audio_sbr_explicit_copy.mp4" \
+  --aac-handwritten "$OUT_DIR/audio_aac_handwritten.mp4" \
+  --aac-handwritten-copy "$OUT_DIR/audio_aac_handwritten_copy.mp4"
+
+# --- 06-02-PLAN.md Task 2 (AUDIO-05, AUDIO-06, AUDIO-07, D-13): lossless
+# loudness/true-peak/silence fixtures, with the pinned generator's own
+# `ffmpeg -af ebur128` reference captured to a committed text golden.
+#
+# Every recipe below is `-c:a flac` or `-c:a pcm_s16le` -- NEVER aac/ac3/
+# eac3, whose encoders proved byte-UNSTABLE across SIMD levels (WINDOWS.md
+# #12's class); `flac` proved byte-stable, so the reference captured here
+# on THIS workstation is valid evidence on all five CI legs, not only the
+# designated one (D-13). The reference is captured with the SAME pinned
+# `$FFMPEG_BIN` this script already resolved, immediately after each
+# fixture is written -- never a separately-installed ffmpeg, and never
+# computed at `ctest` time (which would require the pinned binary present
+# during tests on every leg, exactly what D-13 rejects).
+AUDIO_EBUR128_REFERENCE="tests/golden/AUDIO_EBUR128_REFERENCE.txt"
+
+# capture_ebur128_reference NAME -- runs the pinned ffmpeg's own
+# `-af ebur128=peak=true` summary over "$OUT_DIR/$NAME" and appends one
+# "<name> integrated_lufs=<I> true_peak_dbtp=<Peak>" line to
+# $AUDIO_EBUR128_REFERENCE. `Integrated loudness:`/`True peak:` are
+# ffmpeg's own literal, unique Summary-block headers (unlike the bare "I:"/
+# "Peak:" tokens, which also appear once per analysis window in ffmpeg's
+# per-second progress lines) -- anchoring on the header line, then reading
+# exactly the next line, is what makes this extraction immune to matching
+# the wrong occurrence. Rejects (rather than writes an empty/partial line)
+# when either value fails to parse -- T-06-07's mitigation: a parse miss
+# fails corpus generation loudly, never silently mints a bad golden line.
+capture_ebur128_reference() {
+  local name="$1"
+  local fixture_path="$OUT_DIR/$name"
+  local ffmpeg_output
+  ffmpeg_output="$("$FFMPEG_BIN" -hide_banner -i "$fixture_path" -af ebur128=peak=true -f null - 2>&1 || true)"
+
+  local integrated_line
+  integrated_line="$(printf '%s\n' "$ffmpeg_output" | grep -A1 'Integrated loudness:' | tail -n1)"
+  local integrated_lufs
+  integrated_lufs="$(printf '%s\n' "$integrated_line" | awk '{print $2}')"
+
+  local true_peak_line
+  true_peak_line="$(printf '%s\n' "$ffmpeg_output" | grep -A1 'True peak:' | tail -n1)"
+  local true_peak_dbtp
+  true_peak_dbtp="$(printf '%s\n' "$true_peak_line" | awk '{print $2}')"
+
+  if [ -z "$integrated_lufs" ] || [ -z "$true_peak_dbtp" ]; then
+    echo "gen_corpus error: capture_ebur128_reference could not parse Integrated loudness/True peak for '${name}' from the pinned ffmpeg's own -af ebur128 output." >&2
+    echo "--- ffmpeg -af ebur128 output for ${name} ---" >&2
+    printf '%s\n' "$ffmpeg_output" >&2
+    exit 1
+  fi
+
+  printf '%s integrated_lufs=%s true_peak_dbtp=%s\n' "$name" "$integrated_lufs" "$true_peak_dbtp" >> "$AUDIO_EBUR128_REFERENCE"
+}
+
+: > "$AUDIO_EBUR128_REFERENCE"
+{
+  echo "# tests/golden/AUDIO_EBUR128_REFERENCE.txt -- committed ffmpeg -af ebur128"
+  echo "# reference for every lossless loudness/true-peak/silence fixture"
+  echo "# (06-02-PLAN.md Task 2, D-13). See tests/golden/README.md for this"
+  echo "# file's full provenance and regeneration rule."
+  echo "#"
+  echo "# Format: one line per measured fixture, LC_ALL=C sorted:"
+  echo "#   <fixture-name> integrated_lufs=<I dB LUFS> true_peak_dbtp=<Peak dBTP>"
+  echo "# Regenerated ONLY by scripts/gen_corpus.sh, from the PINNED ffmpeg"
+  echo "# (scripts/ffmpeg_pin.json) -- a deliberate, reviewed act, exactly like"
+  echo "# CORPUS_DIGEST.txt's own regeneration rule (never mixed with a"
+  echo "# different ffmpeg build's output)."
+} >> "$AUDIO_EBUR128_REFERENCE"
+
+# Loudness: a comfortably-above-floor reference tone, its DOC-03 clean pair
+# (a second, independent encode, never a `cp`), a +3dB delta (far outside
+# the 0.5lu/1.0lu tolerance), and one fixture below the < -70 LUFS gating
+# floor so 06-08 can prove the `silent` value rather than a number.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_loud_ref.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_loud_ref_copy.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=3dB" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_loud_plus3.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=-80dB" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_loud_floor.flac"
+
+# True peak: the same tone at +19dB (measured empirically against the
+# pinned ffmpeg: peaks at -2.1 dBTP, comfortably under the -1.0 dBTP
+# ceiling) and at +20.5dB (-0.6 dBTP, comfortably above it) -- AUDIO-06's
+# asymmetric upward-crossing gate. sine='s own default amplitude peaks
+# around -21 dBTP with no gain applied (confirmed empirically, not assumed
+# to be 0 dBFS/full-scale), which is why these gains are ~19-20dB, not the
+# ~1-2dB a full-scale assumption would suggest.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=19dB" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_peak_under.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=20.5dB" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_peak_over.flac"
+
+# Silence: a continuous tone (no silence at all -- the negative control),
+# leading silence touching the very FIRST sample (`adelay=250`), trailing
+# silence touching the very LAST sample (`apad` then `-t` past the tone's
+# own natural end), a 400ms interior dropout comfortably above doc 05's
+# 150ms minimum span, and that dropout's DOC-03 clean pair.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_silence_none.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -af "adelay=250|250" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_silence_lead.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=4:sample_rate=44100" -ac 2 \
+  -af "apad" -t 4.5 -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_silence_trail.flac"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -af "volume=enable='between(t,3,3.4)':volume=0" -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_dropout.flac"
+
+# 06-09-PLAN.md Task 2 (Rule 1 fix): audio_dropout_clean.flac is the
+# DOC-03 "clean" pair for the interior-dropout trigger above -- it must
+# NOT carry the same volume=0 mute, or comparing it against audio_dropout
+# .flac would compare two byte-identical files and never trigger
+# audio.silence.dropouts at all. The plan's own literal recipe (copied
+# verbatim from audio_dropout.flac, including the mute) could never have
+# delivered its stated "clean pair" purpose; fixed here to a plain,
+# unmuted 6s tone.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_dropout_clean.flac"
+
+for f in audio_dropout.flac audio_dropout_clean.flac audio_loud_floor.flac audio_loud_plus3.flac \
+         audio_loud_ref.flac audio_loud_ref_copy.flac audio_peak_over.flac audio_peak_under.flac \
+         audio_silence_lead.flac audio_silence_none.flac audio_silence_trail.flac; do
+  capture_ebur128_reference "$f"
+done
+
+# --- 06-02-PLAN.md Task 3 (AUDIO-01/02/03/04, D-15): stream-parameter,
+# layout and priming fixtures, including the two container-mechanism edge
+# cases 06-RESEARCH.md Q7 names. `pan`/`channelmap` are native libavfilter
+# filters (never GPL-gated); the `vorbis` encoder used below is FFmpeg's
+# own NATIVE encoder (distinct from `libvorbis`, already used elsewhere in
+# this script for decoding), needing no external library at all -- both
+# confirmed present against `ffmpeg -h filter=pan`/`-h filter=channelmap`/
+# `-h encoder=vorbis` on this workstation's pinned build, and safe for the
+# win64-lgpl Windows pin the same way the existing `libopus` recipes are
+# (T-06-08).
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 2 \
+  -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_stereo_s16.wav"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 2 \
+  -c:a pcm_s24le -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_stereo_s24.wav"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 1 \
+  -c:a pcm_s16le -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_mono_s16.wav"
+
+# `audio_flt_base.ogg` (D-GAP: the plan's own action text names this fixture
+# `audio_flt_base.flac`, but FLAC's bitstream format has no float sample
+# representation at all -- confirmed directly against the linked FFmpeg
+# 8.1 `flacdec.c`, whose decoder only ever sets AV_SAMPLE_FMT_S16(P) or
+# S32(P) -- so a `.flac` file can never be the "float-format sibling"
+# audio.sample_fmt needs; a genuinely float-native decode path requires a
+# codec whose OWN decoder emits AV_SAMPLE_FMT_FLT(P), which FLAC
+# structurally cannot. Extension corrected to `.ogg`/Vorbis, whose native
+# decoder unconditionally sets AV_SAMPLE_FMT_FLTP (confirmed directly
+# against `vorbisdec.c`, and empirically: this fixture's own
+# `content.audio.sample_hash` evidence reports
+# `normalization":"untrimmed;fmt=flt;...`). `-strict -2` is required only
+# because the native `vorbis` ENCODER (not the always-stable decoder) is
+# still marked experimental by FFmpeg's own quality classification; the
+# fixture's correctness here rests on the DECODE side, which carries no
+# such caveat.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 2 \
+  -c:a vorbis -strict -2 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_flt_base.ogg"
+
+# `audio_mp2_base.mpg`: the existing `-c:a mp2` recipe (already used
+# elsewhere in this script for TS/size fixtures) reused audio-only, in the
+# MPEG-PS container the `.mpg` extension autodetects -- audio.codec's
+# non-AAC trigger.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" -ac 2 \
+  -c:a mp2 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_mp2_base.mpg"
+
+# `audio_51.flac`/`audio_51_side.flac` (AUDIO-02's own headline war story):
+# the same mono tone panned to 6 real channels under the `5.1` layout
+# (FL/FR/FC/LFE/BL/BR), then the SECOND fixture built FROM that file's own
+# samples via `channelmap=channel_layout=5.1(side)` -- an identity channel
+# map that only re-declares which nominal layout the SAME six channels
+# belong to (BL/BR reinterpreted as SL/SR), never touching a PCM sample.
+# Confirmed via direct ffmpeg probe: both report 6 channels, `5.1` vs
+# `5.1(side)` respectively -- same count, different canonical layout, the
+# exact pair AUDIO-02 is judged on.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=2:sample_rate=44100" \
+  -af "pan=5.1|FL=c0|FR=c0|FC=c0|LFE=c0|BL=c0|BR=c0" \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_51.flac"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_51.flac" \
+  -af "channelmap=channel_layout=5.1(side)" \
+  -c:a flac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_51_side.flac"
+
+# `audio_prime_base.mp4` / `audio_prime_roundtrip.mkv` /
+# `audio_prime_roundtrip2.mp4` / `audio_prime_copy.ts` (AUDIO-04, D-15 §6's
+# mp4 -> mkv -> mp4 priming round trip): a real AAC encoder-priming chain,
+# confirmed via direct inspection at every leg --
+# `audio_prime_base.mp4`'s own `container.mp4.edit_list` reports
+# `media_time=1024` (the native AAC encoder's own priming, captured by
+# ffmpeg's iTunSMPB/elst fold per 06-RESEARCH.md Q7); the `-c copy` remux
+# to Matroska turns that into a `container.mkv.codec_delay` of `1024`
+# samples (`codec_delay_ns=23219955`, exactly 1024/44100 s); the `-c copy`
+# remux back to MP4 shows an edit list again, this time `media_time=1014`
+# -- confirmed empirically, NOT assumed identical to the original 1024:
+# the ~10-sample discrepancy is an authentic property of the MKV
+# CodecDelay intermediate's own ns-granularity rounding on the trip back,
+# not a fixture defect, and is exactly the kind of stability question this
+# pair exists to let 06-06 measure rather than assume. `audio_prime_copy.ts`
+# (`-c copy` to MPEG-TS from the base) carries NEITHER mechanism at all
+# (both `container.mp4.edit_list` and `container.mkv.codec_delay` report
+# `not_applicable_container`) -- the `unknown` side D-14 compares against
+# a known one.
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=3:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_base.mp4"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_prime_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_roundtrip.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_prime_roundtrip.mkv" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_roundtrip2.mp4"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/audio_prime_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_copy.ts"
+
+# `audio_prime_multiedit.mp4` (06-RESEARCH.md Q7's `multiple_edits` case,
+# `mov.c:4341-4351`): the pinned ffmpeg CAN express a genuinely non-empty,
+# multi-entry MP4 audio edit list directly, with no byte-level patch
+# needed -- `-itsoffset` at a value that does not land on an AAC frame
+# boundary (0.3s against 1024-sample/44100Hz ~= 0.02322s frames) makes the
+# muxer split the resulting edit into TWO entries rather than one.
+# Confirmed via direct `container.mp4.edit_list` inspection: this fixture's
+# audio track carries exactly two entries,
+# `{"type":"empty_edit","segment_duration":12206,"media_time":-1}` followed
+# by `{"type":"trim","segment_duration":120094,"media_time":0}` -- a real
+# `multiple_edits` case (entry_count > 1), not a hand-crafted one.
+"$FFMPEG_BIN" -itsoffset 0.3 -f lavfi -i "sine=frequency=220:duration=2.7:sample_rate=44100" \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_prime_multiedit.mp4"
+
+# `audio_prime_fragmented.mp4` (06-RESEARCH.md Q7: `advanced_editlist`
+# auto-disables itself for a fragmented file with no populated `stts`,
+# `mov.c:5231-5236`): the pinned ffmpeg's own `frag_keyframe+empty_moov`
+# path never writes an `elst` at all (confirmed empirically: an
+# `-itsoffset` + `frag_keyframe+empty_moov` combination produces zero
+# `edts`/`elst` bytes), so this fixture is built by patching a plain
+# fragmented, audio-only MP4 with a hand-crafted single-entry edit list
+# (`media_time=1024`, mirroring `audio_prime_base.mp4`'s own real AAC
+# priming length) -- the same "patch an already-generated carrier with a
+# python3 heredoc" precedent `mkv_tscale_a.mkv`/`mkv_tscale_b.mkv` already
+# uses. The base encode is written to a scratch directory, never under
+# $OUT_DIR, so scripts/check_corpus.sh's textual `$OUT_DIR/<name>`
+# extraction never mistakes it for a fixture of its own (the
+# `timeline_dts_backward.ts` precedent above).
+AUDIO_PRIME_FRAG_TMP="$(mktemp -d)"
+
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=3:sample_rate=44100" \
+  -c:a aac -movflags frag_keyframe+empty_moov -frag_duration 500000 \
+  -flags +bitexact -fflags +bitexact -y \
+  "$AUDIO_PRIME_FRAG_TMP/audio_frag_base.mp4"
+
+python3 - "$AUDIO_PRIME_FRAG_TMP/audio_frag_base.mp4" "$OUT_DIR/audio_prime_fragmented.mp4" <<'PYEOF'
+import struct
+import sys
+
+
+def read_box_header(data, pos):
+    size = int.from_bytes(data[pos:pos + 4], 'big')
+    typ = data[pos + 4:pos + 8]
+    hdr = 8
+    if size == 1:
+        size = int.from_bytes(data[pos + 8:pos + 16], 'big')
+        hdr = 16
+    return typ, size, hdr
+
+
+def find_child(data, start, end, want):
+    pos = start
+    while pos < end:
+        typ, size, hdr = read_box_header(data, pos)
+        if typ == want:
+            return pos, size, hdr
+        pos += size if size > 0 else (end - pos)
+    raise SystemExit("gen_corpus error: box not found: " + want.decode())
+
+
+src, dst = sys.argv[1], sys.argv[2]
+data = bytearray(open(src, 'rb').read())
+
+moov_off, moov_size, moov_hdr = find_child(data, 0, len(data), b'moov')
+trak_off, trak_size, trak_hdr = find_child(data, moov_off + moov_hdr, moov_off + moov_size, b'trak')
+tkhd_off, tkhd_size, tkhd_hdr = find_child(data, trak_off + trak_hdr, trak_off + trak_size, b'tkhd')
+insert_at = tkhd_off + tkhd_size  # right after tkhd, before mdia -- the standard edts position.
+
+# Single non-empty trim entry: skip the first 1024 samples (this file's
+# own encoder priming length, mirroring audio_prime_base.mp4's real
+# value), in this file's mdhd/mvhd timescale (44100, confirmed equal).
+media_time = 1024
+segment_duration = 132300 - media_time
+elst_entry = struct.pack('>ii hh', segment_duration, media_time, 1, 0)
+elst_payload = b'\x00\x00\x00\x00' + struct.pack('>I', 1) + elst_entry
+elst_box = struct.pack('>I', 8 + len(elst_payload)) + b'elst' + elst_payload
+edts_box = struct.pack('>I', 8 + len(elst_box)) + b'edts' + elst_box
+inserted_len = len(edts_box)
+
+data[insert_at:insert_at] = edts_box
+
+
+def rewrite_size(data, box_off, delta):
+    size = int.from_bytes(data[box_off:box_off + 4], 'big')
+    assert size != 1
+    data[box_off:box_off + 4] = struct.pack('>I', size + delta)
+
+
+rewrite_size(data, trak_off, inserted_len)
+rewrite_size(data, moov_off, inserted_len)
+
+# Every moof's tfhd carries an ABSOLUTE base_data_offset (tfhd flag 0x1)
+# equal to that moof's OWN start offset in the file ffmpeg just wrote
+# (confirmed empirically against this exact recipe's output) -- inserting
+# bytes earlier in the file (inside moov, which precedes every moof/mdat
+# pair here) shifts every subsequent moof/mdat pair's absolute position,
+# so each tfhd's stored base_data_offset must be advanced by the SAME
+# inserted_len to keep pointing at its own (now-shifted) moof. This is the
+# one absolute-offset table this fragmented layout actually has (stco
+# itself carries zero entries, confirmed empirically) -- left unpatched,
+# it breaks decode silently (ffmpeg exits 0 but emits zero decoded
+# samples), never a loud parse failure.
+pos = 0
+end = len(data)
+patched_moof_count = 0
+while pos < end:
+    typ, size, hdr = read_box_header(data, pos)
+    if typ == b'moof':
+        p = pos + hdr
+        while p < pos + size:
+            t2, s2, h2 = read_box_header(data, p)
+            if t2 == b'traf':
+                q = p + h2
+                while q < p + s2:
+                    t3, s3, h3 = read_box_header(data, q)
+                    if t3 == b'tfhd':
+                        flags = int.from_bytes(data[q + 8:q + 12], 'big') & 0xFFFFFF
+                        if flags & 0x000001:
+                            bdo_off = q + 16
+                            old_bdo = int.from_bytes(data[bdo_off:bdo_off + 8], 'big')
+                            data[bdo_off:bdo_off + 8] = struct.pack('>Q', old_bdo + inserted_len)
+                            patched_moof_count += 1
+                    q += s3
+            p += s2
+    pos += size if size > 0 else (end - pos)
+
+if patched_moof_count == 0:
+    raise SystemExit("gen_corpus error: expected to patch at least one tfhd base_data_offset, patched zero")
+
+# Drop the trailing mfra box: growing moov shifts every subsequent
+# moof/mdat pair, which would leave mfra's own tfra entries (absolute
+# moof offsets, used only for optional random-access seeking) stale.
+# mfra is not walked by mediadiff's bmff_scan (top-level box list only
+# records it as an opaque, unwalked entry) or read by ffmpeg's own linear
+# demux path, so dropping it is a safe, well-understood choice mirroring
+# how many from-scratch/streamed muxers never emit one at all.
+pos = 0
+mfra_off = None
+while pos < end:
+    typ, size, hdr = read_box_header(data, pos)
+    if typ == b'mfra':
+        mfra_off = pos
+        break
+    pos += size if size > 0 else (end - pos)
+if mfra_off is not None:
+    data = data[:mfra_off]
+
+with open(dst, 'wb') as fh:
+    fh.write(bytes(data))
+PYEOF
+
+rm -rf "$AUDIO_PRIME_FRAG_TMP"
+
+# --- 06-10-PLAN.md (AUDIO-08, AUDIO-10, D-09): meta.decode_errors' own
+# recoverable-error / undecodable fixture triple ----------------------------
+#
+# `audio_corrupt_clean.mp4`: a plain 6s 44100Hz stereo AAC-in-MP4 payload,
+# long enough (~259 AAC access units) to leave plenty of clean margin on
+# both sides of the perturbed spots below.
+#
+# The other two fixtures are byte-perturbations of THIS SAME carrier's own
+# `mdat` payload -- following the `ts_ccgap.ts` precedent above (python3
+# heredoc, sys.argv paths, every output a literal `$OUT_DIR/<name>` token) --
+# never touching `moov`/`stsz`/`stco` (so every packet's DECLARED size and
+# demux-time boundary stay byte-for-byte identical; only packet CONTENT
+# changes). This is safe because MP4's `mdat` carries the concatenated raw
+# AAC access units with no inline self-framing at all (framing lives
+# entirely in `stsz`, outside `mdat`) -- a byte flip anywhere inside `mdat`
+# corrupts exactly the one access unit it falls within, never resyncs the
+# demuxer, and never changes any box's own declared size.
+#
+# VERIFIED EMPIRICALLY against the real `mediadiff` binary (06-10-SUMMARY.md
+# records the transcript): `audio_corrupt_frames.mp4` (6 scattered 24-byte
+# PRNG-garbage runs) decodes to `meta.decode_errors` = 7 on both sides
+# together in aggregate, `content.audio.sample_hash`/`audio.loudness.*`/
+# `audio.silence.*` all still report real measurements over the frames that
+# DID decode, `Fingerprint::partial` stays false, and
+# `mediadiff compare audio_corrupt_clean.mp4 audio_corrupt_frames.mp4` exits
+# 1 -- the recoverable, GATING case. `audio_undecodable.mp4` (the WHOLE
+# `mdat` replaced with PRNG garbage) decodes ZERO frames while
+# `avcodec_send_packet` errors on every packet, `Fingerprint::partial`
+# becomes true, every decode-dependent audio check reports
+# `skipped:partial_scan`, and `mediadiff compare audio_undecodable.mp4
+# audio_corrupt_clean.mp4` exits 66 -- the narrow "genuinely could not run"
+# case (D-09).
+"$FFMPEG_BIN" -f lavfi -i "sine=frequency=440:duration=6:sample_rate=44100" -ac 2 \
+  -c:a aac -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/audio_corrupt_clean.mp4"
+
+python3 - "$OUT_DIR/audio_corrupt_clean.mp4" "$OUT_DIR/audio_corrupt_frames.mp4" "$OUT_DIR/audio_undecodable.mp4" <<'PYEOF'
+import sys
+
+
+def find_mdat_payload(data):
+    """Locates the top-level `mdat` box's PAYLOAD (offset, size), walking
+    top-level boxes exactly like this script's own read_box_header helpers
+    elsewhere -- never assuming a fixed offset, since box order is an
+    encoder implementation detail this script does not otherwise pin."""
+    pos = 0
+    end = len(data)
+    while pos < end:
+        size = int.from_bytes(data[pos:pos + 4], 'big')
+        typ = data[pos + 4:pos + 8]
+        hdr = 8
+        if size == 1:
+            size = int.from_bytes(data[pos + 8:pos + 16], 'big')
+            hdr = 16
+        if typ == b'mdat':
+            return pos + hdr, size - hdr
+        if size == 0:
+            return pos + hdr, end - (pos + hdr)
+        pos += size
+    raise SystemExit("gen_corpus error: no mdat box found in audio_corrupt_clean.mp4")
+
+
+def prng_bytes(seed, n):
+    """A tiny, dependency-free, fully-specified xorshift32 stream --
+    deterministic on every platform (integer ops only, no floating point,
+    no library-specific PRNG mapping -- the same T-3-52 reproducibility
+    argument tests/support/mutate.h's own top comment makes for why this
+    project never uses std::uniform_int_distribution for a mutation
+    offset)."""
+    x = seed & 0xFFFFFFFF
+    out = bytearray()
+    for _ in range(n):
+        x ^= (x << 13) & 0xFFFFFFFF
+        x ^= (x >> 17)
+        x ^= (x << 5) & 0xFFFFFFFF
+        out.append(x & 0xFF)
+    return bytes(out)
+
+
+clean_path, frames_path, undecodable_path = sys.argv[1], sys.argv[2], sys.argv[3]
+base = bytearray(open(clean_path, 'rb').read())
+mdat_off, mdat_size = find_mdat_payload(bytes(base))
+if mdat_size <= 0:
+    raise SystemExit("gen_corpus error: audio_corrupt_clean.mp4's mdat payload is empty")
+
+# audio_corrupt_frames.mp4: six scattered 24-byte PRNG-garbage runs, spread
+# evenly through mdat -- corrupts a handful of AAC access units (measured:
+# meta.decode_errors = 7, one run happens to straddle two packets) while
+# leaving the great majority of the stream to decode cleanly.
+frames_data = bytearray(base)
+run_len = 24
+spot_count = 6
+for i in range(spot_count):
+    spot = mdat_off + (mdat_size * (i + 1)) // (spot_count + 2)
+    frames_data[spot:spot + run_len] = prng_bytes(0x4D443130 + i, run_len)
+with open(frames_path, 'wb') as fh:
+    fh.write(bytes(frames_data))
+
+# audio_undecodable.mp4: the ENTIRE mdat payload replaced with PRNG
+# garbage -- every AAC access unit fails to decode, so total_samples stays
+# 0 for the whole stream while decode_error_count is non-zero, the exact
+# StreamAudioDecode::undecodable boundary (06-10-PLAN.md).
+undecodable_data = bytearray(base)
+undecodable_data[mdat_off:mdat_off + mdat_size] = prng_bytes(0x4D443130, mdat_size)
+with open(undecodable_path, 'wb') as fh:
+    fh.write(bytes(undecodable_data))
+PYEOF
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac, audio_stereo_s16.wav, audio_stereo_s24.wav, audio_mono_s16.wav, audio_flt_base.ogg, audio_mp2_base.mpg, audio_51.flac, audio_51_side.flac, audio_prime_base.mp4, audio_prime_roundtrip.mkv, audio_prime_roundtrip2.mp4, audio_prime_copy.ts, audio_prime_multiedit.mp4, audio_prime_fragmented.mp4, audio_corrupt_clean.mp4, audio_corrupt_frames.mp4, audio_undecodable.mp4."

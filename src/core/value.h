@@ -70,6 +70,20 @@ struct HashChain {
   std::string algorithm;
   std::string digest;
   std::int64_t element_count;
+  // D-04 (06-01-PLAN.md, content.audio.sample_hash): one hex digest per
+  // fixed-length block, in stream order -- the snapshot text holds one
+  // hex digest per line (doc 01 section 8's "one value per line"
+  // requirement is met structurally, since every array element is its own
+  // scalar leaf under src/core/serializer.cpp's own layout rule). Empty
+  // for every pre-Phase-6 HashChain value -- a default-constructed vector
+  // serializes as `[]`, so no pre-existing golden's shape changes.
+  // Phase 7's video hashing inherits this exact shape.
+  std::vector<std::string> block_digests;
+  // The block length in samples (src/probe/audio_decode.h's
+  // kAudioBlockDivisor-derived block_samples) -- carried alongside
+  // block_digests so a reader of a stored snapshot can interpret the
+  // array's own granularity without re-deriving it from sample_rate.
+  std::int64_t element_stride = 0;
 
   bool operator==(const HashChain&) const = default;
 };

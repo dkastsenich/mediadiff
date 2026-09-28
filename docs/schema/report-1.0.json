@@ -124,7 +124,8 @@
             "no_prior_release",
             "partial_scan",
             "insufficient_data",
-            "no_timing_data"
+            "no_timing_data",
+            "hash_disabled"
           ]
         },
         "evidence": {},

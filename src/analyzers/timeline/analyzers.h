@@ -495,25 +495,102 @@ std::optional<JitterSigmaResult> compute_jitter_sigma(std::int64_t ideal_num, st
 // (`start_skip=1024`); a resolver that checked `initial_padding` FIRST
 // would silently report every MP4 as `priming: unknown` while the signal
 // is present and free. `Source` is OPEN TO EXTENSION without renaming its
-// existing members -- Phase 6 adds the container-mechanism tier (MP4
-// `elst` / iTunSMPB / MKV `CodecDelay`) as further fallback arms, never a
-// second, independently-written resolver.
+// existing members -- Phase 6 (06-06-PLAN.md, D-15) adds the
+// container-mechanism tier (MP4 `elst` / iTunSMPB, MKV `CodecDelay`) as
+// further arms AFTER `unknown`, never a second, independently-written
+// resolver: `skip_samples`, `initial_padding` and `unknown` keep their
+// original spelling and relative order exactly as this comment always
+// promised.
 struct PrimingResult {
   enum class Source : std::uint8_t {
     skip_samples,
     initial_padding,
     unknown,
+    // 06-06-PLAN.md (D-15): additive-only arms. 06-RESEARCH.md Q7 proved
+    // libavformat already folds MP4 `elst`/iTunSMPB and MKV `CodecDelay`
+    // into `skip_samples`/`initial_padding` upstream of this resolver, so
+    // these three are reached only via the EXPLICIT `container_reading`
+    // parameter below -- when the first two tiers report nothing AND a
+    // caller supplies a raw container-mechanism reading (evidence
+    // `bmff_scan`/`ebml_scan` already captured for an unrelated check).
+    // `mp4_itunsmpb` is declared for roster completeness (06-CHECK-ROSTER.md)
+    // but is not currently reachable from a real caller: no probe-layer
+    // field captures the raw iTunSMPB integer separately from what already
+    // folds into `skip_samples` (06-RESEARCH.md Q7) -- named honestly here,
+    // mirroring `timeline.timecode`'s own S12M "declared, not built out"
+    // precedent, rather than silently wired to a value that isn't real
+    // container evidence.
+    mp4_edit_list,
+    mp4_itunsmpb,
+    mkv_codec_delay,
   };
+
+  // One source's own raw reading, in SAMPLES -- used both as
+  // resolve_priming()'s optional container-mechanism input below and to
+  // record a disagreeing reading in `conflicting_readings` (D-15's "the
+  // highest-precedence source wins and disagreements ride in evidence").
+  struct Reading {
+    Source source = Source::unknown;
+    std::int64_t samples = 0;
+
+    bool operator==(const Reading&) const = default;
+  };
+
   Source source = Source::unknown;
   std::int64_t samples = 0;
+  // D-17 (06-06-PLAN.md): trailing padding, carried HERE rather than in a
+  // second check -- check IDs are forever, and promoting padding to its
+  // own id later is additive. std::optional distinguishes "no packet
+  // carried AV_PKT_DATA_SKIP_SAMPLES's own discard_padding half" from "it
+  // was present and reported zero", the same absent-vs-zero convention
+  // this project's sibling fields (StreamPacketScan::first_packet_skip_samples,
+  // EbmlTrack::codec_delay_ns) already establish.
+  std::optional<std::int64_t> padding_samples;
+  // D-15: every reading that DISAGREED with the resolved `source`/`samples`
+  // above -- both the winning reading and the disagreeing container
+  // reading are recorded (never just one side), so `inspect`/`--explain`
+  // can show the discrepancy while the resolution itself stays
+  // deterministic (the highest-precedence source still wins). Empty when
+  // no container reading was supplied, or when the supplied reading agreed
+  // with the resolved value.
+  std::vector<Reading> conflicting_readings;
 };
 
 // `first_packet_skip_samples`/`codecpar_initial_padding` both follow the
 // "0 if absent" convention `StreamPacketScan::first_packet_skip_samples`'s
 // own caller resolves via `.value_or(0)` before this call -- resolve_priming
-// itself stays a pure, allocation-free function over two plain integers so
-// it is trivially unit-testable without a `StreamPacketScan` on hand.
-PrimingResult resolve_priming(std::int64_t first_packet_skip_samples, std::int64_t codecpar_initial_padding);
+// itself stays a pure, allocation-free function over plain values so it is
+// trivially unit-testable without a `StreamPacketScan` on hand.
+//
+// `discard_padding_samples` (D-17) is `StreamPacketScan::
+// last_packet_discard_padding` verbatim, copied straight into the result's
+// own `padding_samples` -- resolve_priming performs no derivation over it,
+// it is carried through so a caller has exactly one place to build a
+// complete `PrimingResult` from.
+//
+// `container_reading` (D-15) is the container-mechanism tier's own raw
+// reading (an `elst` media_time-derived sample count under
+// `Source::mp4_edit_list`, or an `ebml_scan`-derived `CodecDelay` sample
+// count under `Source::mkv_codec_delay`), supplied by the CALLER --
+// resolve_priming itself never reads `bmff_scan`/`ebml_scan` (it would stop
+// being a plain-value pure function if it did). Consulted for RESOLUTION
+// only when both `first_packet_skip_samples` and `codecpar_initial_padding`
+// report nothing (06-RESEARCH.md Q7: the common cases are already folded
+// upstream by libav into those two fields, so this tier's real job is
+// evidence transparency and the two edge cases 06-06-PLAN.md measures).
+// Consulted for EVIDENCE always: whenever it is supplied and its own
+// `samples` disagrees with the resolved value, BOTH readings land in
+// `conflicting_readings` -- the resolution itself never changes because a
+// disagreement was found (D-15's own determinism requirement).
+//
+// Both new parameters default to `std::nullopt` so every existing 2-arg
+// call site (this project's own Phase-5 unit tests, `av_sync.cpp`'s own
+// consumer) keeps compiling and behaving identically -- neither trailing
+// padding nor a container reading was ever in scope for `timeline.av_offset`
+// itself.
+PrimingResult resolve_priming(std::int64_t first_packet_skip_samples, std::int64_t codecpar_initial_padding,
+                               std::optional<std::int64_t> discard_padding_samples = std::nullopt,
+                               std::optional<PrimingResult::Reading> container_reading = std::nullopt);
 
 // timeline.av_offset (05-09-PLAN.md, TIME-06/TIME-09/TIME-10, D-09/D-10/
 // D-11): the signed offset between the first audible sample (audio-side
@@ -554,6 +631,37 @@ PrimingResult resolve_priming(std::int64_t first_packet_skip_samples, std::int64
 // `insufficient_data` for every "nothing to measure" case (no audio, no
 // video, or any checked-arithmetic overflow in the offset computation,
 // T-05-01-style).
+//
+// D-16 (06-07-PLAN.md, WINDOWS.md #32): `timeline.av_drift`'s own K=32
+// checkpoint span extends D-10's offset rule to the SPAN each stream's
+// trajectory is measured against (`detail::span_ticks_for_basis` above).
+// `Measurement::value` (and the reported `end_delta_ms`/`residual_max_ms`/
+// trajectory/pattern) is the fit computed on THIS measurement's own shared
+// preference -- the trimmed ("adjusted") span whenever the audio stream's
+// own priming AND padding are both known and convertible, raw otherwise --
+// the SAME well-defined, single-side-computable convention every other
+// evidence-shape-gated check in this file already reports. THIS side's own
+// preference is additionally recorded as `span_basis` evidence
+// (`"adjusted"`/`"raw"`, the SAME two spellings `comparison_basis` uses),
+// and that SAME reported fit's own rate is rescaled into the generic
+// `adjusted_magnitude` evidence key (`kDriftAdjustedMagnitudeDen` above)
+// whenever the rescale succeeds -- `src/compare/tol.cpp`'s Rule 2 override
+// reads `span_basis`/`adjusted_magnitude` as a SECOND evidence-shape it
+// recognises, generically, alongside `comparison_basis`/`adjusted_offset_ms`
+// -- never gated on `check.id`, exactly D-10's own mechanism, extended
+// rather than duplicated. Because both sides of a pair only ever report
+// their OWN shared-preference fit (never a second, alternate-basis fit),
+// the override fires exactly when both sides' own `span_basis` values
+// agree on "adjusted" -- a mixed pair (one side's priming/padding known,
+// the other's not) always falls back to comparing each side's own
+// raw-vs-adjusted REPORTED magnitude directly, which is itself already the
+// raw-to-raw comparison D-11 requires whenever either side lacks full
+// priming knowledge. The span rule and the offset rule are decided
+// independently per side (an audio stream's own offset can prefer
+// "adjusted" while its span prefers "raw", or vice versa -- they answer
+// different questions: is the FIRST SAMPLE'S timestamp priming-adjusted,
+// versus is the STREAM'S OWN EXTENT measured on a priming-trimmed basis)
+// but both extend the SAME D-10 shared-basis rule.
 const AnalyzerSpec& timeline_av_sync_analyzer();
 
 namespace detail {
@@ -627,7 +735,92 @@ namespace detail {
 // computation and the sort/median cost bounds).
 PtsSpan sorted_pts_with_span(std::span<const PacketRecord> packets);
 
+// D-16 (06-07-PLAN.md, WINDOWS.md #32, AUDIO-04 follow-up): the checkpoint
+// span `timeline.av_drift`'s own K=32 construction measures a stream's
+// trajectory against has TWO candidate bases -- a TRIMMED (priming- and
+// padding-EXCLUDED) span and the packet-derived RAW extent
+// (`PtsSpan::span_ticks` above, the first packet's presentation start to
+// the last packet's presentation end -- NEVER priming-trimmed, since it is
+// built purely from what libav actually delivered).
+//
+// `WINDOWS.md` #32's own root cause: MPEG-TS declares no per-stream
+// duration, so libavformat instead ESTIMATES one from the raw PTS range --
+// an estimate that, unlike MP4's own box-declared (edit-list-trimmed)
+// duration, still includes the AAC priming/padding samples. Naively
+// trusting `StreamInfo::declared_duration_ticks` as "the trimmed span"
+// therefore only works for a container whose declared-duration mechanism
+// actually performs the trim (MP4's edit list); on MPEG-TS that field IS
+// the untrimmed estimate, so comparing MP4's genuinely-trimmed declared
+// span against TS's untrimmed one still compares two different bases for
+// the SAME payload -- the exact defect #32 records, unaffected by which of
+// the two container fields a naive "declared vs raw" switch would pick.
+//
+// This function instead RECONSTRUCTS the trimmed span directly from the
+// packet-derived RAW extent, by subtracting the resolved priming and
+// padding tick counts the caller supplies (already converted to this
+// stream's own native timebase via `detail::priming_samples_to_ticks`) --
+// a derivation that works identically regardless of which container muxed
+// the stream, since it never consults the container's own duration field
+// at all once both tick counts are known. It falls back to the
+// container's own `declared_duration_ticks` field only when the
+// reconstruction cannot be performed (`priming_ticks` or `padding_ticks`
+// is `std::nullopt`, or the subtraction underflows to a non-positive
+// result) -- this fallback branch is also the ONLY one a VIDEO stream ever
+// takes, since video has no priming/padding concept and its own caller
+// passes `std::nullopt` for both tick arguments unconditionally (passing
+// AUDIO's own tick counts, which are expressed in audio's native
+// timebase, into a video-timebase subtraction would silently mix units).
+//
+// Returns BOTH candidate spans -- it never itself picks one -- plus THIS
+// CALL's own preference for the trimmed ("adjusted") basis. WR-07
+// (06-REVIEW.md, 06-19-PLAN.md): `prefers_declared` is true only when the
+// trimmed span was ACTUALLY RECONSTRUCTED, which requires all four of:
+// (1) a raw (packet-derived) span exists, (2) both `priming_ticks` and
+// `padding_ticks` carry a value, (3) both checked subtractions (raw minus
+// priming, then minus padding) stayed in range, and (4) the resulting
+// trimmed value is strictly positive. It is NOT true merely because
+// `priming_ticks`/`padding_ticks` carry a value -- a side whose
+// reconstruction fails for any of those four reasons falls back to the
+// container's own declared-duration field and reports `prefers_declared
+// == false` for that fallback, never claiming the "adjusted" basis over a
+// span that was never actually trimmed. The caller reads this preference
+// from the AUDIO call alone and applies that SAME shared decision to both
+// the audio-side span AND the video-side span (D-16's own "measured raw
+// ... applied symmetrically" requirement) -- one boolean, shared, decided
+// once from the audio stream's own reconstruction outcome, never decided
+// per-stream independently, which would let video and audio disagree
+// about which basis a SINGLE measurement is reporting.
+struct SpanBasisCandidates {
+  bool has_declared_span = false;
+  std::int64_t declared_span_ticks = 0;
+  bool has_raw_span = false;
+  std::int64_t raw_span_ticks = 0;
+  bool prefers_declared = false;
+};
+
+SpanBasisCandidates span_ticks_for_basis(std::optional<std::int64_t> declared_duration_ticks,
+                                          const PtsSpan& pts_span, std::optional<std::int64_t> priming_ticks,
+                                          std::optional<std::int64_t> padding_ticks);
+
 }  // namespace detail
+
+// D-16 (06-07-PLAN.md): the FIXED denominator `timeline.av_drift`'s own
+// generic `adjusted_magnitude` evidence key (av_sync.cpp) is expressed
+// against -- shared verbatim between the writer (av_sync.cpp, which
+// rescales the declared-basis fit's own arbitrarily-reduced rate onto
+// this denominator) and the reader (compare/tol.cpp's generalised Rule 2
+// override, which reads `adjusted_magnitude` back as `{num, den}` using
+// this SAME constant for `den` on BOTH sides). Unlike `timeline.av_offset`'s
+// own `adjusted_offset_ms` (always den=1, a plain millisecond integer by
+// construction), `timeline.av_drift`'s rate is an arbitrary reduced
+// rational (`DriftFit::rate_ms_per_min_den` varies per fit) -- a single
+// bare integer cannot represent it without a shared, fixed scale. 1e9
+// gives sub-nanosecond-per-minute precision, far finer than any
+// registered tolerance (`"0.2ms/min"`) will ever resolve, so the rounding
+// this rescale performs (nearest, ties away from zero -- the SAME
+// convention `priming_samples_to_ticks` above already uses) never moves a
+// verdict.
+inline constexpr std::int64_t kDriftAdjustedMagnitudeDen = 1'000'000'000;
 
 // --- 05-10-PLAN.md (TIME-07/TIME-08), doc 04 section 3: the flagship A/V
 // drift algorithm, as a pure, unit-testable function. -----------------------

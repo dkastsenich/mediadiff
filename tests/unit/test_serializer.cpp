@@ -36,6 +36,7 @@ using mediadiff::RationalValue;
 using mediadiff::Span;
 using mediadiff::SpanList;
 using mediadiff::StringSet;
+using mediadiff::Unit;
 using mediadiff::Value;
 using mediadiff::ValueKind;
 using mediadiff::serialize_document;
@@ -47,16 +48,20 @@ namespace {
 // Renders a Value through the full write path a snapshot actually uses:
 // value_to_json then serialize_document — never a raw nlohmann `dump()`,
 // which would go through nlohmann's own (different) float formatter.
-std::string render(const Value& v) { return serialize_document(value_to_json(v)); }
+// `unit` defaults to Unit::none since only a RationalValue's rendered `ms`
+// key depends on it at all (unit_is_time, core/registry.h) -- every other
+// test in this file exercises a non-rational Value alternative, for which
+// the unit is inert; tests specifically about `ms` pass a unit explicitly.
+std::string render(const Value& v, Unit unit = Unit::none) { return serialize_document(value_to_json(v, unit)); }
 
 // write -> parse -> value_from_json -> write again; asserts every stage
 // succeeds and the final text is byte-identical to the first.
-void assert_round_trip(const Value& v, ValueKind kind) {
-  const std::string text1 = render(v);
+void assert_round_trip(const Value& v, ValueKind kind, Unit unit = Unit::none) {
+  const std::string text1 = render(v, unit);
   const nlohmann::ordered_json parsed = nlohmann::ordered_json::parse(text1);
   auto back = value_from_json(parsed, kind);
   REQUIRE(back.has_value());
-  const std::string text2 = render(*back);
+  const std::string text2 = render(*back, unit);
   REQUIRE(text1 == text2);
 }
 
@@ -108,12 +113,12 @@ TEST_CASE("serializer - int64 round-trips byte-identically", "[serializer]") {
 TEST_CASE("serializer - RationalValue round-trips byte-identically and ignores a wrong 'ms' field on read",
           "[serializer]") {
   const RationalValue rv{30000, 1001, mediadiff::Rational{1, 1000}};
-  assert_round_trip(Value{rv}, ValueKind::rational);
+  assert_round_trip(Value{rv}, ValueKind::rational, Unit::ms);
 
   // The derived "ms" field is deliberately WRONG here — proving
   // value_from_json never reads it back (Task 1's checkpoint decision):
   // if it did, rv.num/rv.den below would come back corrupted.
-  nlohmann::ordered_json j = value_to_json(Value{rv});
+  nlohmann::ordered_json j = value_to_json(Value{rv}, Unit::ms);
   j["ms"] = -999999.0;
   auto back = value_from_json(j, ValueKind::rational);
   REQUIRE(back.has_value());
@@ -121,6 +126,59 @@ TEST_CASE("serializer - RationalValue round-trips byte-identically and ignores a
   REQUIRE(back_rv.num == rv.num);
   REQUIRE(back_rv.den == rv.den);
   REQUIRE(back_rv.tb == rv.tb);
+}
+
+// The regression class this quick task fixes
+// (.planning/debug/audio-sweep-rate-truncation.md): `rational_value_to_json`
+// previously derived `ms` as (num/den)*1000 on the false assumption that
+// num/den held seconds; every producer actually emits the check's own
+// declared unit. `ms` must now equal num/den exactly, and only when `unit`
+// is a declared time unit.
+TEST_CASE("serializer - a RationalValue under a time unit renders 'ms' as exactly num/den", "[serializer]") {
+  {
+    const nlohmann::ordered_json j = value_to_json(Value{RationalValue{20000, 1, mediadiff::Rational{1, 1}}}, Unit::ms);
+    REQUIRE(j.contains("ms"));
+    REQUIRE(j.at("ms").get<double>() == 20000.0);
+  }
+  {
+    const nlohmann::ordered_json j = value_to_json(Value{RationalValue{3000, 2, mediadiff::Rational{1, 1}}}, Unit::ms);
+    REQUIRE(j.contains("ms"));
+    REQUIRE(j.at("ms").get<double>() == 1500.0);
+  }
+}
+
+TEST_CASE("serializer - a RationalValue under a non-time unit renders no 'ms' key at all", "[serializer]") {
+  const RationalValue rv{1, 1, mediadiff::Rational{1, 1}};
+  for (const Unit unit : {Unit::none, Unit::ms_per_min, Unit::frames, Unit::percent, Unit::db, Unit::lu,
+                          Unit::samples, Unit::ticks, Unit::count}) {
+    const nlohmann::ordered_json j = value_to_json(Value{rv}, unit);
+    REQUIRE_FALSE(j.contains("ms"));
+  }
+}
+
+TEST_CASE("serializer - a RationalValue with den == 0 under a time unit renders 'ms' as 0.0, not a division",
+          "[serializer]") {
+  const nlohmann::ordered_json j = value_to_json(Value{RationalValue{5, 0, mediadiff::Rational{1, 1}}}, Unit::ms);
+  REQUIRE(j.contains("ms"));
+  REQUIRE(j.at("ms").get<double>() == 0.0);
+}
+
+TEST_CASE("serializer - a SpanList's start/end each carry 'ms' only when the unit is a time unit", "[serializer]") {
+  SpanList list;
+  list.spans.push_back(Span{RationalValue{0, 1, mediadiff::Rational{1, 1000}},
+                             RationalValue{500, 1, mediadiff::Rational{1, 1000}}});
+
+  const nlohmann::ordered_json time_json = value_to_json(Value{list}, Unit::ms);
+  REQUIRE(time_json.is_array());
+  REQUIRE(time_json.size() == 1);
+  REQUIRE(time_json.at(0).at("start").contains("ms"));
+  REQUIRE(time_json.at(0).at("end").contains("ms"));
+  REQUIRE(time_json.at(0).at("start").at("ms").get<double>() == 0.0);
+  REQUIRE(time_json.at(0).at("end").at("ms").get<double>() == 500.0);
+
+  const nlohmann::ordered_json non_time_json = value_to_json(Value{list}, Unit::percent);
+  REQUIRE_FALSE(non_time_json.at(0).at("start").contains("ms"));
+  REQUIRE_FALSE(non_time_json.at(0).at("end").contains("ms"));
 }
 
 TEST_CASE("serializer - double round-trips byte-identically", "[serializer]") {

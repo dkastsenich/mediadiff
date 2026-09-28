@@ -209,19 +209,40 @@ TEST_CASE("timeline_start_duration - the MP4-to-TS tracer pair declares its comp
                                    // as a full `one_tick` regardless of magnitude).
                                    // 05-10-PLAN.md Task 2's own K=32 checkpoint fit: the SAME
                                    // MPEG-TS audio-duration disagreement `timeline.
-                                   // duration.coherence` above already documents (3877ms vs
-                                   // 4023ms, a real structural property of this exact
-                                   // container pairing, not per-checkpoint rounding noise)
-                                   // gives the candidate a genuine -122ms accumulated end
-                                   // delta against the clean MP4 baseline's own 0ms -- D-07's
-                                   // dual gate (a delta-based test, the SAME shape as every
-                                   // other magnitude this comparator checks) clears comfortably
-                                   // past its 2ms epsilon, so `timeline.av_drift` (the RATE)
-                                   // genuinely fails, not just `timeline.av_drift.pattern`
-                                   // (which has no tolerance at all by design, D-04, locked
-                                   // one-way, and reports the resulting classification flip).
+                                   // duration.coherence` above already documents is a real
+                                   // structural property of this exact container pairing, not
+                                   // per-checkpoint rounding noise -- D-07's dual gate (a
+                                   // delta-based test, the SAME shape as every other magnitude
+                                   // this comparator checks) clears comfortably past its 2ms
+                                   // epsilon, so `timeline.av_drift` (the RATE) genuinely
+                                   // fails, not just `timeline.av_drift.pattern`. 06-07-PLAN.md
+                                   // (D-16, WINDOWS.md #32) re-measured this pair after
+                                   // extending D-10's shared-basis rule to this span: the
+                                   // candidate's own priming is confirmed genuinely `unknown`
+                                   // after the remux (verified via `audio.priming` evidence --
+                                   // no skip_samples side data, no initial_padding, no edit
+                                   // list survives), so the shared-basis rule correctly falls
+                                   // back to the packet-derived raw span on BOTH sides rather
+                                   // than fabricating a basis (D-11) -- baseline now reports
+                                   // end_delta_ms=0 (its own true zero drift, span_basis=
+                                   // adjusted) and candidate reports end_delta_ms=39,
+                                   // span_basis=raw (the PRE-D-16 declared-basis reading was
+                                   // -122ms; the basis correction moved the classification
+                                   // from `irregular` to `linear-drift`, a SHAPE change, not a
+                                   // resolution -- WINDOWS.md #32 stays open on this evidence,
+                                   // not fixed). Both ids remain genuine, non-pass members of
+                                   // this set.
                                    "timeline.av_drift",
                                    "timeline.av_drift.pattern",
+                                   // 06-06-PLAN.md (AUDIO-04, D-14): the SAME `-c copy` MPEG-TS
+                                   // remux carries no AV_PKT_DATA_SKIP_SAMPLES side data on its
+                                   // audio packets at all (verified via `mediadiff compare --json`
+                                   // evidence: baseline "1024"/source skip_samples, candidate
+                                   // "unknown") -- `unknown` is now a real, comparable value
+                                   // (D-14) rather than a skip, so the remux's loss of priming
+                                   // signaling is a genuine, declared member of this same-cause
+                                   // set (D-02), not new noise.
+                                   "audio.priming",
                                });
 }
 
@@ -411,5 +432,66 @@ TEST_CASE("timeline_start_duration - the duration-short trigger pair (timeline_s
                                    "size.file",
                                    "size.stream_bitrate",
                                    "size.overhead",
+                                   // 06-01-PLAN.md: half the duration is
+                                   // genuinely half the decoded audio-sample
+                                   // content -- the chains differ starting
+                                   // at the point the shorter encode ends.
+                                   "content.audio.sample_hash",
+                                   // 06-09-PLAN.md (AUDIO-07): timeline_start_base.mp4's own baseline
+                                   // audio carries a genuine ~14ms near-silent trailing stretch right
+                                   // at its true audio end (~4026-4040ms, past timeline.duration's own
+                                   // 4023ms presentation figure), which the halved-duration candidate
+                                   // (ending around 2s) does not reach at all -- a REMOVED span,
+                                   // always `info` under the `span` semantic (src/compare/span.cpp),
+                                   // never gating, but still counted by count_non_pass (D-01: every
+                                   // non-pass, non-skipped finding, `info` included).
+                                   "audio.silence.edges",
                                });
+}
+
+// The permanent regression guard for the `ms` serialization defect fixed by
+// this quick task (.planning/debug/audio-sweep-rate-truncation.md):
+// `rational_value_to_json` (src/core/serializer.cpp) previously derived
+// `ms` as (num/den)*1000 on the false assumption that num/den held
+// seconds; every producer actually emits the check's own declared unit,
+// milliseconds for every time check. `timeline_drift_base.mp4` is a
+// fixture whose real duration is known INDEPENDENTLY of mediadiff (its own
+// recipe, corroborated across this test suite) to be exactly 20 seconds --
+// so a correct render reports `ms` == 20000.0, and a reintroduced 1000x
+// regression would report 20000000.0 here.
+TEST_CASE("timeline_start_duration - timeline.duration renders 'ms' at its true magnitude on a 20-second fixture, "
+          "and video.sar carries no 'ms' key at all",
+          "[timeline]") {
+  const std::string path = fixture("timeline_drift_base.mp4");
+  require_fixture(path);
+  const CliResult result = run_cli({"inspect", path, "--json"});
+  REQUIRE(result.exit_code == 0);
+  const nlohmann::ordered_json doc = nlohmann::ordered_json::parse(result.out, nullptr, false);
+  REQUIRE_FALSE(doc.is_discarded());
+
+  const nlohmann::ordered_json& timeline_group = doc.at("groups").at("timeline");
+  std::size_t duration_entries_checked = 0;
+  for (const auto& entry : timeline_group) {
+    if (entry.at("id").get<std::string>() != "timeline.duration") {
+      continue;
+    }
+    const nlohmann::ordered_json& value = entry.at("value");
+    REQUIRE(value.at("num").get<std::int64_t>() == 20000);
+    REQUIRE(value.at("den").get<std::int64_t>() == 1);
+    REQUIRE(value.contains("ms"));
+    REQUIRE(value.at("ms").get<double>() == 20000.0);
+    ++duration_entries_checked;
+  }
+  REQUIRE(duration_entries_checked > 0);
+
+  const nlohmann::ordered_json& video_group = doc.at("groups").at("video");
+  bool sar_checked = false;
+  for (const auto& entry : video_group) {
+    if (entry.at("id").get<std::string>() != "video.sar") {
+      continue;
+    }
+    REQUIRE_FALSE(entry.at("value").contains("ms"));
+    sar_checked = true;
+  }
+  REQUIRE(sar_checked);
 }

@@ -102,6 +102,33 @@ TEST_CASE("timeline_jitter - the jitter trigger pair declares its complete expec
           // effect timeline_structure's own dts_backward pair declares.
           "size.file",
           "size.stream_bitrate",
+          // 06-01-PLAN.md: twice the source duration is genuinely twice
+          // the decoded audio-sample content -- audio_hash correctly
+          // reports the chains differ (verified: baseline element_count
+          // 41 vs candidate 81, first divergent block 39, the exact
+          // 4s/44100Hz boundary where the original sine ends and the
+          // independently-generated longer encode's own audio continues).
+          "content.audio.sample_hash",
+          // 06-08-PLAN.md (AUDIO-06): the SAME independently-generated
+          // longer encode's own audio content genuinely peaks ~5.3dB
+          // higher (verified: -17.7 vs -12.4 dBTP, both comfortably under
+          // the -1.0 dBTP ceiling on both sides -- no escalation, an
+          // ordinary tolerance-exceeding `warn`). audio.loudness.integrated
+          // itself stays `pass` (within the 0.5/1.0LU two-threshold
+          // tolerance).
+          "audio.loudness.true_peak",
+          // 06-09-PLAN.md (AUDIO-07): timeline_start_base.mp4's own
+          // baseline audio carries a genuine ~14ms near-silent trailing
+          // stretch right at its true audio end (~4026-4040ms, past
+          // timeline.duration's own 4023ms presentation figure -- inside
+          // the priming/trailing-padding region a raw decode includes),
+          // which the independently-generated, twice-as-long jitter
+          // candidate does not share at the same relative position -- a
+          // REMOVED span, always `info` under the `span` semantic
+          // (src/compare/span.cpp), never gating, but still counted by
+          // count_non_pass (D-01: every non-pass, non-skipped finding,
+          // `info` included).
+          "audio.silence.edges",
       });
 }
 

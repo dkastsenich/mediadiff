@@ -51,15 +51,22 @@
 #include <string>
 #include <vector>
 
+#include "probe/audio_decode.h"
 #include "probe/bmff_scan.h"
+#include "probe/demux_session.h"
 #include "probe/ebml_scan.h"
 #include "probe/ts_scan.h"
 #include "support/fixture_paths.h"
 #include "support/mutate.h"
 
+using mediadiff::AudioDecodeResult;
+using mediadiff::DemuxOptions;
+using mediadiff::DemuxSession;
+using mediadiff::run_audio_decode;
 using mediadiff::run_bmff_scan;
 using mediadiff::run_ebml_scan;
 using mediadiff::run_ts_scan;
+using mediadiff::StreamAudioDecode;
 using mediadiff::test::flip_byte_at;
 using mediadiff::test::kMutationSeed;
 using mediadiff::test::prng_offsets;
@@ -91,6 +98,14 @@ void require_fixture_present(const std::string& name) {
 constexpr const char* kMp4Fixture = "mp4_faststart.mp4";
 constexpr const char* kMkvFixture = "tracer_a.mkv";
 constexpr const char* kTsFixture = "ts_single.ts";
+
+// 06-10-PLAN.md (AUDIO-10, D-09, T-06-33/T-06-34/T-06-35): the audio decode
+// pass' own representative fixture -- an audio-carrying MP4, unlike the
+// three structural fixtures above -- for Behavior 3's own PRNG byte-flip
+// sweep extended to the decode pass (06-RESEARCH.md Security Domain V5:
+// this is the first place this phase feeds attacker-controlled bytes into
+// a decoder in bulk).
+constexpr const char* kAudioFixture = "audio_hash_base.mp4";
 
 // MPEG-TS's own fixed packet size -- the only one of the three formats
 // with a stride an arbitrary byte-fraction truncation can coincidentally
@@ -333,6 +348,50 @@ TEST_CASE("probe_fuzz_smoke - fixed-seed PRNG byte flips never crash ts_scan", "
     const std::string path = write_mutated("probe_fuzz_smoke_ts", "prng_" + std::to_string(offset) + ".ts", mutated);
     assert_survives_without_crash(run_ts_scan, path, static_cast<std::int64_t>(mutated.size()),
                                    "ts PRNG flip at offset " + std::to_string(offset));
+  }
+}
+
+// 06-10-PLAN.md (AUDIO-10, D-09, T-06-33/T-06-34/T-06-35): the SAME
+// fixed-seed PRNG byte-flip sweep, extended to the audio decode pass --
+// this project's own PROBE-09 "never crash, never read out of bounds,
+// always terminate" contract applies just as much to the decode pass as
+// to the three structural scanners above (06-RESEARCH.md Security Domain
+// V5). Drives `DemuxSession::open` + `run_audio_decode` directly (never
+// through the CLI, matching this file's own established shape) --
+// `DemuxSession::open` itself refusing to open a mutation is already
+// covered by this file's own header-pass canaries elsewhere, so a
+// mutation that breaks the header entirely is a legitimate no-op here,
+// not a gap. For every stream this build DID attempt, asserts the T-06-35
+// mitigation directly: `undecodable` (a degraded stream) never coexists
+// with a non-zero `total_samples` -- a degraded decode reports a skip
+// rather than a fabricated measurement, never both a partial marker AND a
+// number computed from it.
+TEST_CASE("probe_fuzz_smoke - fixed-seed PRNG byte flips never crash the audio decode pass", "[unit]") {
+  require_fixture_present(kAudioFixture);
+  const std::string full_bytes = read_whole(fixture(kAudioFixture));
+  const auto offsets = prng_offsets(kMutationSeed, 8, full_bytes.size());
+  for (std::size_t offset : offsets) {
+    const std::string mutated = flip_byte_at(full_bytes, offset);
+    const std::string path =
+        write_mutated("probe_fuzz_smoke_audio_decode", "prng_" + std::to_string(offset) + ".mp4", mutated);
+    INFO("audio decode PRNG flip at offset " << offset);
+    REQUIRE_NOTHROW([&] {
+      auto session = DemuxSession::open(path, DemuxOptions{});
+      if (!session.has_value()) {
+        return;
+      }
+      const auto result = run_audio_decode(*session);
+      REQUIRE(result.has_value());
+      for (const StreamAudioDecode& stream : result->per_stream) {
+        if (!stream.attempted) {
+          continue;
+        }
+        REQUIRE(stream.decode_error_count >= 0);
+        if (stream.undecodable) {
+          REQUIRE(stream.total_samples == 0);
+        }
+      }
+    }());
   }
 }
 

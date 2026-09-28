@@ -183,8 +183,38 @@ mediadiff::expected<Fingerprint, Error> read_snapshot(const std::string& utf8_pa
   // (Phase 3+) can produce a genuine mid-analysis partial fingerprint.
   fp.partial = doc.contains("partial") && doc.at("partial").is_boolean() && doc.at("partial").get<bool>();
 
-  if (doc.contains("decode_path") && doc.at("decode_path").is_array()) {
-    fp.envelope.decode_path = doc.at("decode_path");
+  if (doc.contains("decode_path")) {
+    // TRUST-01 (06-05-PLAN.md): a malformed record -- missing
+    // stream_index/decoder/class, or a class outside 1-3 -- is rejected
+    // outright, never silently defaulted or dropped. The array itself
+    // stays ordered exactly as stored (never re-sorted): TRUST-01's own
+    // "ascending stream index, byte-identical across runs" guarantee is a
+    // producer-side invariant this reader only verifies structurally, not
+    // one it re-derives.
+    const auto& decode_path_json = doc.at("decode_path");
+    if (!decode_path_json.is_array()) {
+      return mediadiff::unexpected(
+          Error{ErrorKind::input_unsupported, "snapshot 'decode_path' is not an array: " + utf8_path});
+    }
+    for (const auto& record : decode_path_json) {
+      if (!record.is_object() || !record.contains("stream_index") || !record.contains("decoder") ||
+          !record.contains("class")) {
+        return mediadiff::unexpected(Error{
+            ErrorKind::input_unsupported,
+            "snapshot decode_path record missing stream_index/decoder/class: " + utf8_path});
+      }
+      if (!record.at("class").is_number_integer()) {
+        return mediadiff::unexpected(
+            Error{ErrorKind::input_unsupported, "snapshot decode_path record 'class' is not an integer: " + utf8_path});
+      }
+      const std::int64_t record_class = record.at("class").get<std::int64_t>();
+      if (record_class < 1 || record_class > 3) {
+        return mediadiff::unexpected(
+            Error{ErrorKind::input_unsupported,
+                  "snapshot decode_path record 'class' is outside 1-3: " + utf8_path});
+      }
+    }
+    fp.envelope.decode_path = decode_path_json;
   }
   if (doc.contains("sampling") && doc.at("sampling").is_object()) {
     fp.envelope.sampling = doc.at("sampling");
@@ -350,7 +380,7 @@ mediadiff::expected<void, Error> write_snapshot(const Fingerprint& fp, const std
     nlohmann::ordered_json mj;
     mj["id"] = std::string(def.id);
     mj["scope"] = scope_to_json(m->scope);
-    mj["value"] = value_to_json(m->value);
+    mj["value"] = value_to_json(m->value, def.unit);
     // Emitted only when true, so every pre-existing golden written before
     // this field existed stays byte-identical (D-03). Positioned after
     // `value` and before `evidence` -- the canonical key order this

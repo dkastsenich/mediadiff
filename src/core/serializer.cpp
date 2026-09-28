@@ -13,21 +13,39 @@ namespace mediadiff {
 namespace {
 
 // Encodes a RationalValue exactly as approved in Task 1 of
-// 02-01-PLAN.md's checkpoint: {num, den, tb:{num,den}, ms} where `ms` is a
-// derived convenience field EXCLUDED from comparison — value_from_json
-// never reads it back. It exists purely so a human skimming a snapshot's
-// git diff sees a familiar millisecond figure next to the exact rational.
-nlohmann::ordered_json rational_value_to_json(const RationalValue& rv) {
+// 02-01-PLAN.md's checkpoint, amended by the quick task fixing the `ms`
+// serialization defect (.planning/debug/audio-sweep-rate-truncation.md):
+// {num, den, tb:{num,den}, ms?} where `ms` is a derived convenience field
+// EXCLUDED from comparison — value_from_json never reads it back.
+//
+// `num`/`den` carry the rational VALUE ITSELF, already expressed in the
+// owning check's DECLARED unit (`compare/tol.cpp`'s own documented
+// contract for `compare_tol`) — `tb` is provenance recording the timebase
+// the original tick count was measured in, never a second multiplier. The
+// prior comment here asserted `num`/`den` held seconds and derived `ms` as
+// `(num/den)*1000`; no producer in this codebase ever emitted seconds
+// (`detail::ticks_to_ms`, src/analyzers/timeline/start_duration.cpp,
+// emits milliseconds directly), so that assumption inflated every
+// time-valued check's rendered `ms` by 1000x and stamped a meaningless
+// `ms` onto every non-time RationalValue besides (origin: commit 19d51ed,
+// phase 02-01, written before any real analyzer existed to contradict it).
+// `ms` is therefore emitted, as num/den with no multiplier, ONLY when
+// `unit` is a declared time unit (`unit_is_time`, core/registry.h) — a
+// non-time unit (sar, dar, frame_rate, gop.length, bitrate, dB/LU
+// loudness, the container.ts.* intervals, ...) carries no `ms` key at
+// all, since `(num/den)` in ITS unit is not a millisecond count.
+nlohmann::ordered_json rational_value_to_json(const RationalValue& rv, Unit unit) {
   nlohmann::ordered_json j;
   j["num"] = rv.num;
   j["den"] = rv.den;
   j["tb"] = nlohmann::ordered_json{{"num", rv.tb.num}, {"den", rv.tb.den}};
-  // `num`/`den` already carry the rational VALUE itself (seconds, for a
-  // time measurement); `tb` is provenance recording the timebase the
-  // original tick count was measured in, not a second multiplier — so the
-  // derived "ms" convenience field is simply (num/den)*1000.
-  const double seconds = rv.den != 0 ? static_cast<double>(rv.num) / static_cast<double>(rv.den) : 0.0;
-  j["ms"] = seconds * 1000.0;
+  if (unit_is_time(unit)) {
+    // den == 0 is a degenerate in-process Measurement (never a value that
+    // reached a snapshot, which value_from_json rejects at den <= 0) —
+    // render 0.0 rather than dividing (D-6, preserved from the prior
+    // revision of this function).
+    j["ms"] = rv.den != 0 ? static_cast<double>(rv.num) / static_cast<double>(rv.den) : 0.0;
+  }
   return j;
 }
 
@@ -225,16 +243,16 @@ std::string serialize_value_compact(const nlohmann::ordered_json& node) {
   return out;
 }
 
-nlohmann::ordered_json value_to_json(const Value& value) {
+nlohmann::ordered_json value_to_json(const Value& value, Unit unit) {
   return std::visit(
-      [](const auto& v) -> nlohmann::ordered_json {
+      [unit](const auto& v) -> nlohmann::ordered_json {
         using T = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<T, Absent>) {
           return nullptr;
         } else if constexpr (std::is_same_v<T, std::int64_t>) {
           return v;
         } else if constexpr (std::is_same_v<T, RationalValue>) {
-          return rational_value_to_json(v);
+          return rational_value_to_json(v, unit);
         } else if constexpr (std::is_same_v<T, double>) {
           return double_to_json(v);
         } else if constexpr (std::is_same_v<T, std::string>) {
@@ -254,13 +272,25 @@ nlohmann::ordered_json value_to_json(const Value& value) {
         } else if constexpr (std::is_same_v<T, SpanList>) {
           nlohmann::ordered_json arr = nlohmann::ordered_json::array();
           for (const auto& span : v.spans) {
-            arr.push_back(nlohmann::ordered_json{{"start", rational_value_to_json(span.start)},
-                                                   {"end", rational_value_to_json(span.end)}});
+            arr.push_back(nlohmann::ordered_json{{"start", rational_value_to_json(span.start, unit)},
+                                                   {"end", rational_value_to_json(span.end, unit)}});
           }
           return arr;
         } else if constexpr (std::is_same_v<T, HashChain>) {
-          return nlohmann::ordered_json{
-              {"algorithm", v.algorithm}, {"digest", v.digest}, {"element_count", v.element_count}};
+          nlohmann::ordered_json j{{"algorithm", v.algorithm}, {"digest", v.digest}, {"element_count", v.element_count}};
+          // D-04: emitted only when non-empty, so every pre-Phase-6
+          // HashChain golden (element_count-only) stays byte-identical --
+          // mirrors Measurement::estimated/skip_reason's own
+          // emit-only-when-non-default convention in core/snapshot.cpp.
+          if (!v.block_digests.empty()) {
+            nlohmann::ordered_json digests = nlohmann::ordered_json::array();
+            for (const std::string& d : v.block_digests) {
+              digests.push_back(d);
+            }
+            j["block_digests"] = std::move(digests);
+            j["element_stride"] = v.element_stride;
+          }
+          return j;
         } else {
           static_assert(!sizeof(T*), "value_to_json: unhandled Value alternative");
         }
@@ -429,6 +459,29 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
       chain.algorithm = json.at("algorithm").get<std::string>();
       chain.digest = json.at("digest").get<std::string>();
       chain.element_count = json.at("element_count").get<std::int64_t>();
+      // D-04: block_digests/element_stride are optional -- absent on
+      // every pre-Phase-6 snapshot, and on any HashChain whose producer
+      // did not populate a per-block array.
+      if (json.contains("block_digests")) {
+        if (!json.at("block_digests").is_array()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "hash_chain 'block_digests' is not an array"});
+        }
+        for (const auto& digest_json : json.at("block_digests")) {
+          if (!digest_json.is_string()) {
+            return mediadiff::unexpected(
+                Error{ErrorKind::input_unsupported, "hash_chain 'block_digests' element is not a string"});
+          }
+          chain.block_digests.push_back(digest_json.get<std::string>());
+        }
+      }
+      if (json.contains("element_stride")) {
+        if (!json.at("element_stride").is_number_integer()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "hash_chain 'element_stride' is not an integer"});
+        }
+        chain.element_stride = json.at("element_stride").get<std::int64_t>();
+      }
       return Value{std::move(chain)};
     }
   }

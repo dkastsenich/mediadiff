@@ -500,6 +500,51 @@ jobs:
             echo "This leg (${{ matrix.preset }}) is NOT the designated leg ($DESIGNATED_LEG) for tests/golden/PERF_BASELINE.txt -- the instruction-count ratchet (05-12-PLAN.md, D-16) only runs there, mirroring the byte-exact fixture-derived goldens' own designated-leg scoping above. This leg's perf gate is deliberately NOT run."
           fi
 
+      # 06-12-PLAN.md (PERF-04): the audio-decode-sweep sibling of the
+      # timeline ratchet immediately above -- same designated-leg scoping,
+      # same read-only-against-the-ledger contract. Reuses the valgrind
+      # install above (already unconditional for this leg); no second
+      # install step needed.
+      - name: Build the audio sweep benchmark target (designated leg only)
+        if: matrix.preset == 'x64-linux'
+        run: |
+          cmake -S . -B build/${{ matrix.preset }} -DMEDIADIFF_BUILD_BENCH=ON
+          cmake --build build/${{ matrix.preset }} --target mediadiff_audio_sweep
+
+      # The gate itself runs UNCONDITIONALLY (no `if:`) and decides
+      # designated-vs-not INSIDE its own script, printing an explicit skip
+      # reason on every other leg -- mirrors the timeline ratchet step
+      # immediately above verbatim, so a leg-only gate that silently did
+      # not run fails the leg rather than reporting green having checked
+      # nothing. CI is READ-ONLY against tests/golden/PERF_BASELINE.txt
+      # (D-15): this step only measures, compares, and prints -- it never
+      # commits, pushes, opens a pull request, or writes any file back into
+      # the repository.
+      - name: Audio instruction-count ratchet (PERF-04, designated leg only)
+        run: |
+          DESIGNATED_LEG="x64-linux"
+          if [ "${{ matrix.preset }}" = "$DESIGNATED_LEG" ]; then
+            set +e
+            bash scripts/measure_audio_perf.sh --instructions --check-baseline > audio-perf-output.log 2>&1
+            PERF_RC=$?
+            set -e
+            # Surfaced unconditionally (success AND failure): the
+            # pasteable replacement line scripts/measure_audio_perf.sh
+            # prints on every run (a ratchet tightens only by human
+            # review) must be visible in the job log either way.
+            cat audio-perf-output.log
+            if ! grep -q 'instruction counts (valgrind --tool=cachegrind' audio-perf-output.log; then
+              echo "::error::the audio perf step produced no measurement output at all on the designated leg -- a gate that produced nothing cannot have checked anything."
+              exit 1
+            fi
+            if [ "$PERF_RC" -ne 0 ]; then
+              echo "::error::the audio instruction-count ratchet failed on the designated leg -- see the output above for the specific regressed metric and its pasteable replacement line."
+              exit 1
+            fi
+          else
+            echo "This leg (${{ matrix.preset }}) is NOT the designated leg ($DESIGNATED_LEG) for tests/golden/PERF_BASELINE.txt -- the audio instruction-count ratchet (06-12-PLAN.md, PERF-04) only runs there, mirroring the timeline ratchet's own designated-leg scoping above. This leg's audio perf gate is deliberately NOT run."
+          fi
+
       # CLI-09's remaining checkpoint needs a real Windows console, which CI
       # structurally cannot provide: Actions redirects stdout to a pipe, so
       # GetConsoleMode fails and enable_vt_output() correctly no-ops. Publish

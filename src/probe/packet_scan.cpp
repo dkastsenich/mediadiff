@@ -127,6 +127,16 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     parser_states.resize(stream_count);
   }
 
+  // 06-01-PLAN.md (AUDIO-10, PROBE-08): mirrors the parser_states
+  // allocation immediately above -- only paid for when a caller actually
+  // requested the decode pass.
+  std::vector<detail::AudioDecodeState> audio_decode_states;
+  if (request.decode_audio) {
+    outputs.audio_decode = AudioDecodeResult{};
+    outputs.audio_decode->per_stream.resize(stream_count);
+    audio_decode_states.resize(stream_count);
+  }
+
   ScratchPacket pkt;
   if (!pkt.valid()) {
     return mediadiff::unexpected(Error{ErrorKind::internal, "could not allocate AVPacket for a packet scan"});
@@ -205,33 +215,48 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     }
     accounted_bytes = next_total;
 
-    // D-09 (05-09-PLAN.md, TIME-06): the stream's OWN first accepted
-    // packet -- and ONLY that packet -- is inspected for
-    // `AV_PKT_DATA_SKIP_SAMPLES` side data, gated on `stream.packets`
-    // still being empty at this point in the loop (true exactly once per
-    // stream, regardless of whether this first packet actually carries
-    // the side data) -- a later packet's own side data never overwrites
-    // this capture, and a first packet with no side data at all is never
-    // "rechecked" on packet two. Read from the still-live `pkt` BEFORE
-    // `pkt.unref()` below, inside this SAME existing loop -- no second
-    // av_read_frame sweep, no avcodec_* call of any kind (this file's own
-    // top-of-file promise stays literally true).
-    if (stream.packets.empty()) {
+    // D-09 (05-09-PLAN.md, TIME-06) / D-17 (06-06-PLAN.md, AUDIO-04): every
+    // accepted packet is inspected for `AV_PKT_DATA_SKIP_SAMPLES` side
+    // data, inside this SAME existing sweep -- no second av_read_frame
+    // sweep, no avcodec_* call of any kind (this file's own top-of-file
+    // promise stays literally true). Read from the still-live `pkt` BEFORE
+    // `pkt.unref()` below. The wire format (libavcodec/packet.h's own
+    // AV_PKT_DATA_SKIP_SAMPLES doc comment): u32le start_skip, u32le
+    // end_skip, u8 reason_start, u8 reason_end.
+    {
       std::size_t side_data_size = 0;
       const std::uint8_t* side_data = av_packet_get_side_data(pkt.get(), AV_PKT_DATA_SKIP_SAMPLES, &side_data_size);
-      // The wire format (libavcodec/packet.h's own AV_PKT_DATA_SKIP_SAMPLES
-      // doc comment): u32le start_skip, u32le end_skip, u8 reason_start, u8
-      // reason_end -- only the first 4 bytes (start_skip) are read here.
-      // T-4-48-style short-payload guard: a present-but-too-short payload
-      // is never read past its end, and is treated as "no side data"
-      // rather than a fabricated value (first_packet_skip_samples stays
-      // std::nullopt).
       if (side_data != nullptr && side_data_size >= sizeof(std::uint32_t)) {
-        const std::uint32_t start_skip = static_cast<std::uint32_t>(side_data[0]) |
-                                          (static_cast<std::uint32_t>(side_data[1]) << 8) |
-                                          (static_cast<std::uint32_t>(side_data[2]) << 16) |
-                                          (static_cast<std::uint32_t>(side_data[3]) << 24);
-        stream.first_packet_skip_samples = static_cast<std::int64_t>(start_skip);
+        // start_skip -- captured from the stream's OWN FIRST accepted
+        // packet ONLY (`stream.packets` still empty at this point in the
+        // loop, true exactly once per stream): a later packet's own side
+        // data never overwrites this capture, and a first packet with no
+        // side data at all is never "rechecked" on packet two.
+        // T-4-48-style short-payload guard: a present-but-too-short
+        // payload is never read past its end, and is treated as "no side
+        // data" rather than a fabricated value (first_packet_skip_samples
+        // stays std::nullopt).
+        if (stream.packets.empty()) {
+          const std::uint32_t start_skip = static_cast<std::uint32_t>(side_data[0]) |
+                                            (static_cast<std::uint32_t>(side_data[1]) << 8) |
+                                            (static_cast<std::uint32_t>(side_data[2]) << 16) |
+                                            (static_cast<std::uint32_t>(side_data[3]) << 24);
+          stream.first_packet_skip_samples = static_cast<std::int64_t>(start_skip);
+        }
+        // D-17/T-06-19: end_skip (discard_padding) -- REFRESHED from every
+        // packet in this stream that carries at least the full 8-byte
+        // start_skip+end_skip pair (never just the leading 4 bytes: a
+        // record between 4 and 7 bytes has a real start_skip but no
+        // complete end_skip, and is treated as "no discard_padding for
+        // this packet" rather than reading past the buffer), so this field
+        // ends the sweep holding the LAST such packet's own value.
+        if (side_data_size >= 2 * sizeof(std::uint32_t)) {
+          const std::uint32_t end_skip = static_cast<std::uint32_t>(side_data[4]) |
+                                          (static_cast<std::uint32_t>(side_data[5]) << 8) |
+                                          (static_cast<std::uint32_t>(side_data[6]) << 16) |
+                                          (static_cast<std::uint32_t>(side_data[7]) << 24);
+          stream.last_packet_discard_padding = static_cast<std::int64_t>(end_skip);
+        }
       }
     }
 
@@ -282,7 +307,28 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
       pstream.ref_frame_count = pstate.ref_frame_count();
     }
 
+    // 06-01-PLAN.md (AUDIO-10, PROBE-08): the audio decode fusion point --
+    // AFTER the PacketRecord append and the parser fusion above, BEFORE
+    // pkt.unref(), inside this SAME loop iteration (never a second
+    // av_read_frame sweep). Lazily initializes on the stream's own first
+    // accepted packet; every later packet on the same stream is a no-op
+    // re-check via AudioDecodeState::ensure_initialized's own
+    // attempted_init_ guard.
+    if (request.decode_audio) {
+      detail::AudioDecodeState& astate = audio_decode_states[stream_index];
+      astate.ensure_initialized(*ctx->streams[stream_index]->codecpar, request.hash_decoder);
+      if (astate.attempted()) {
+        astate.feed_packet(pkt.get()->data, pkt.get()->size);
+      }
+    }
+
     pkt.unref();
+  }
+
+  if (request.decode_audio) {
+    for (std::size_t i = 0; i < audio_decode_states.size(); ++i) {
+      outputs.audio_decode->per_stream[i] = audio_decode_states[i].finalize();
+    }
   }
 
   result.accounted_bytes = accounted_bytes;

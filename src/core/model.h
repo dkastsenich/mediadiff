@@ -61,6 +61,13 @@ enum class SkipReason {
   // A stream whose packets all carry AV_NOPTS_VALUE for dts has no axis to
   // window size.peak_bitrate's rate computation on.
   no_timing_data,
+  // 06-05-PLAN.md (D-06, TRUST-01): a stream decoded successfully through a
+  // codec doc 05 section 3's determinism-class table does not list --
+  // `determinism_class_for_decoder()` (src/probe/audio_decode.h) returned
+  // class 3. The stream's decode-path record still exists (TRUST-01 never
+  // omits it), but content.audio.sample_hash reports no digest for it --
+  // never an unproven digest nobody can trust.
+  hash_disabled,
 };
 
 // Which stream/program a Measurement or Finding applies to. `global` covers
@@ -78,6 +85,18 @@ struct Scope {
   Kind kind;
   int index;
 };
+
+// 06-14-PLAN.md (WR-02, TRUST-02): the two values `sampling_state` evidence
+// ever carries. `sampling_state` is one of src/compare/hash.cpp's
+// kPreconditionKeys -- a truncated state is never comparable: a
+// kSamplingStateTruncated side degrades a hash comparison to
+// skipped:hash_incomparable against ANY other side (a kSamplingStateFull
+// side via the ordinary precondition-mismatch rule, and another
+// kSamplingStateTruncated side via compare_hash's own truncated-sampling
+// rule, since a digest match over two independently-truncated prefixes
+// cannot vouch for either side's unread remainder).
+inline constexpr std::string_view kSamplingStateFull = "full";
+inline constexpr std::string_view kSamplingStateTruncated = "truncated";
 
 // What an analyzer emits (doc 01 section 1): one scoped, typed value per
 // check. `check_index` indexes into a CheckRegistry (core/registry.h), not
@@ -158,6 +177,8 @@ inline std::string_view skip_reason_to_string(SkipReason reason) {
       return "insufficient_data";
     case SkipReason::no_timing_data:
       return "no_timing_data";
+    case SkipReason::hash_disabled:
+      return "hash_disabled";
   }
   // Unreachable for any valid SkipReason -- see src/cli/exit_code.h's own
   // no-default:-arm-plus-trailing-return pattern for why this shape.
@@ -179,6 +200,7 @@ inline std::optional<SkipReason> skip_reason_from_string(std::string_view text) 
   if (text == "partial_scan") return SkipReason::partial_scan;
   if (text == "insufficient_data") return SkipReason::insufficient_data;
   if (text == "no_timing_data") return SkipReason::no_timing_data;
+  if (text == "hash_disabled") return SkipReason::hash_disabled;
   return std::nullopt;
 }
 

@@ -8,6 +8,7 @@
 
 #include <fmt/format.h>
 
+#include "analyzers/audio/analyzers.h"
 #include "analyzers/timeline/analyzers.h"
 #include "core/exact_int.h"
 #include "core/rational.h"
@@ -121,14 +122,60 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   // side missing the keys, or either side reporting `"raw"`) leaves the RAW
   // magnitude from Measurement::value in place, which is exactly
   // raw-to-raw.
-  const auto side_prefers_adjusted_magnitude = [](const Measurement& side) {
-    return side.evidence.is_object() && side.evidence.value("comparison_basis", std::string()) == "adjusted" &&
-           side.evidence.contains("adjusted_offset_ms") &&
-           side.evidence.at("adjusted_offset_ms").is_number_integer();
+  //
+  // D-16 (06-07-PLAN.md, WINDOWS.md #32) -- GENERALISES this override to a
+  // SECOND evidence-shape pair, rather than adding a second, independently
+  // written override: `timeline.av_drift`'s own span-basis rule
+  // (`"span_basis": "adjusted"` + a numeric `"adjusted_magnitude"`) is
+  // recognised alongside the ORIGINAL `"comparison_basis"` +
+  // `"adjusted_offset_ms"` pair above -- still never gated on `check.id`,
+  // still requiring BOTH sides to agree before anything swaps. The two
+  // pairs differ in one respect: `adjusted_offset_ms` is always a plain
+  // millisecond integer (den=1 by construction, matching `Measurement::
+  // value`'s own den for every av_offset-shaped check), so swapping only
+  // `.num` while leaving `.den` untouched keeps `timeline.av_offset`
+  // working BYTE-FOR-BYTE (unchanged from D-10). `adjusted_magnitude`
+  // instead carries `timeline.av_drift`'s own rate, which has an
+  // arbitrary, per-fit REDUCED denominator (`DriftFit::
+  // rate_ms_per_min_den`) that a bare `.num` swap could not represent --
+  // it is written by `av_sync.cpp` (`detail::rescale_rate_to_fixed_den`)
+  // against the FIXED `kDriftAdjustedMagnitudeDen` denominator instead, so
+  // this override swaps BOTH `.num` and `.den` for that shape, keeping the
+  // magnitude exact on both sides.
+  struct AdjustedMagnitudePreference {
+    bool prefers_adjusted = false;
+    std::int64_t num = 0;
+    // nullopt => leave Magnitude::den untouched (the `adjusted_offset_ms`
+    // shape, always den=1 by construction); a value overwrites BOTH num
+    // and den together (the generic `adjusted_magnitude` shape, whose
+    // implied denominator is `kDriftAdjustedMagnitudeDen`, not 1).
+    std::optional<std::int64_t> den;
   };
-  if (side_prefers_adjusted_magnitude(baseline) && side_prefers_adjusted_magnitude(candidate)) {
-    baseline_mag->num = baseline.evidence.at("adjusted_offset_ms").get<std::int64_t>();
-    candidate_mag->num = candidate.evidence.at("adjusted_offset_ms").get<std::int64_t>();
+  const auto side_adjusted_preference = [](const Measurement& side) -> AdjustedMagnitudePreference {
+    if (!side.evidence.is_object()) {
+      return {};
+    }
+    if (side.evidence.value("comparison_basis", std::string()) == "adjusted" &&
+        side.evidence.contains("adjusted_offset_ms") && side.evidence.at("adjusted_offset_ms").is_number_integer()) {
+      return {true, side.evidence.at("adjusted_offset_ms").get<std::int64_t>(), std::nullopt};
+    }
+    if (side.evidence.value("span_basis", std::string()) == "adjusted" &&
+        side.evidence.contains("adjusted_magnitude") && side.evidence.at("adjusted_magnitude").is_number_integer()) {
+      return {true, side.evidence.at("adjusted_magnitude").get<std::int64_t>(), kDriftAdjustedMagnitudeDen};
+    }
+    return {};
+  };
+  const AdjustedMagnitudePreference baseline_adjusted_preference = side_adjusted_preference(baseline);
+  const AdjustedMagnitudePreference candidate_adjusted_preference = side_adjusted_preference(candidate);
+  if (baseline_adjusted_preference.prefers_adjusted && candidate_adjusted_preference.prefers_adjusted) {
+    baseline_mag->num = baseline_adjusted_preference.num;
+    candidate_mag->num = candidate_adjusted_preference.num;
+    if (baseline_adjusted_preference.den.has_value()) {
+      baseline_mag->den = *baseline_adjusted_preference.den;
+    }
+    if (candidate_adjusted_preference.den.has_value()) {
+      candidate_mag->den = *candidate_adjusted_preference.den;
+    }
   }
 
   // Sign only, purely for rendering "+"/"-" on the delta -- the magnitude
@@ -228,6 +275,94 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     }
   };
 
+  // 06-08-PLAN.md (AUDIO-06) -- a THIRD generic, evidence-shape-driven
+  // override in this SAME family (D-10's comparison_basis/adjusted_
+  // offset_ms above, D-07's end_delta_ms/D-16's span_basis above that):
+  // when BOTH sides declare a `ceiling_state` string ("under"/"above") AND
+  // the baseline reads "under" while the candidate reads "above", the
+  // candidate crossed a declared ceiling UPWARD -- escalate to the check's
+  // FAIL status regardless of whether the magnitude delta fit the
+  // tolerance (doc 05 section 4's asymmetric -1.0 dBTP rule: headroom loss
+  // risks clipping after a downstream lossy encode, headroom gained does
+  // not). Any other combination -- both under, both above, candidate under
+  // with baseline above, or either side missing/misspelling the key --
+  // leaves the normal tolerance verdict computed below untouched.
+  //
+  // Never gated on `check.id`: a `state`-semantic second id (src/compare/
+  // state.cpp) was the obvious alternative and is wrong here, because
+  // `state` tests flagged-value MEMBERSHIP, not difference -- it would
+  // fire whenever EITHER side's value is flagged, including on an
+  // UNCHANGED pair that is already above the ceiling on both sides, which
+  // is exactly the P0 false-positive class this project exists to
+  // prevent. Reading the evidence shape instead means an unchanged
+  // above-ceiling pair (both sides "above") never escalates, only a
+  // genuine under-to-above TRANSITION does.
+  //
+  // CR-04 gap closure (06-17-PLAN.md, 06-REVIEW.md/VERIFICATION.md gap 3):
+  // the escalation above used to fire on ANY under->above transition,
+  // however small -- a 0.0002 dB shift that happened to straddle the
+  // milli-dB-quantised ceiling hard-failed despite the check's own 0.3 dB
+  // tolerance, exactly the false-positive class this project treats as P0.
+  // `ceiling_crossing_material` (computed below, once `delta_num`/
+  // `delta_den` exist) gates the escalation to crossings whose OWN signed
+  // rise is at least `kCeilingCrossingDeadbandNum`/`Den`
+  // (`src/analyzers/audio/analyzers.h`, 0.010 dB) -- a crossing smaller
+  // than that keeps its ordinary tolerance verdict, with a message suffix
+  // naming the deadband, never a fabricated pass or a new evidence value.
+  // Two shapes considered and rejected during that plan's own review:
+  //   - gating on `!within_warn` -- `audio.loudness.true_peak` declares a
+  //     single threshold, so `within_warn` is always false here and the
+  //     gate would be a no-op; read as its evident intent, `!within_fail`,
+  //     it would pass EVERY crossing inside 0.3 dB, contradicting AUDIO-06
+  //     and this check's own "regardless of tolerance" rule.
+  //   - a third analyzer-side "at" `ceiling_state` value within
+  //     +/-deadband -- an evidence-CONTRACT change (a new value in
+  //     snapshots/--json/inspect/goldens) that would also hide a large
+  //     crossing landing inside the band (e.g. -1.5 -> -0.995 dBTP, a
+  //     0.505 dB rise) from ever escalating.
+  const auto side_ceiling_state = [](const Measurement& side) -> std::optional<std::string> {
+    if (!side.evidence.is_object() || !side.evidence.contains("ceiling_state") ||
+        !side.evidence.at("ceiling_state").is_string()) {
+      return std::nullopt;
+    }
+    return side.evidence.at("ceiling_state").get<std::string>();
+  };
+  const std::optional<std::string> baseline_ceiling_state = side_ceiling_state(baseline);
+  const std::optional<std::string> candidate_ceiling_state = side_ceiling_state(candidate);
+  const bool ceiling_crossed_upward = baseline_ceiling_state.has_value() && candidate_ceiling_state.has_value() &&
+                                       *baseline_ceiling_state == "under" && *candidate_ceiling_state == "above";
+  // CR-04: whether an upward crossing detected above actually escalates --
+  // computed below, once `delta_num`/`delta_den` exist, from the SIGNED
+  // delta against `kCeilingCrossingDeadbandNum`/`Den`. Declared here (ahead
+  // of `apply_ceiling_escalation`, which captures it by reference) so the
+  // lambda's own definition stays adjacent to `ceiling_crossed_upward`.
+  // Stays `false` -- never escalates -- when `ceiling_crossed_upward` is
+  // false, matching the pre-existing no-op behavior exactly.
+  bool ceiling_crossing_material = false;
+  // Applied at every return point below, after `finding.status`/`finding.
+  // message` are set -- an unconditional escalation to `fail` (never
+  // `escalate(severity)`: the risk this rule guards against is real
+  // regardless of the check's own configured severity) when the crossing
+  // is both upward AND material; a no-op when the evidence shape above did
+  // not detect an upward crossing at all; and, for an upward crossing that
+  // is NOT material (its own rise stayed under the deadband), the ordinary
+  // tolerance verdict computed below is left untouched but the message
+  // gains a suffix naming the deadband, so a reader can see why a
+  // ceiling-crossing pair did not escalate.
+  const auto apply_ceiling_escalation = [&]() {
+    if (!ceiling_crossed_upward) {
+      return;
+    }
+    if (ceiling_crossing_material) {
+      finding.status = Status::fail;
+      finding.message += " (asymmetric ceiling crossing: baseline under, candidate above -- escalated regardless of "
+                          "tolerance)";
+    } else {
+      finding.message += " (ceiling crossing inside the 0.010 deadband: baseline under, candidate above, rise below "
+                          "the deadband -- not escalated)";
+    }
+  };
+
   // delta = candidate - baseline, as an exact rational over
   // baseline_den*candidate_den -- cross-multiplication, never a division.
   //
@@ -273,6 +408,26 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
     return range_finding("delta_num (cross-product subtraction)");
   }
   const ExactInt abs_delta_num = delta_num.abs();
+
+  // CR-04: `ceiling_crossing_material` (declared above, beside
+  // `ceiling_crossed_upward`) is set here, now that the EXACT signed delta
+  // exists -- `delta_num`/`delta_den`, never `abs_delta_num`: a candidate
+  // that reads BELOW its baseline (delta_num negative) never clears the
+  // deadband even if the evidence shape above flagged an upward crossing.
+  // Comparison is delta_num/delta_den >= kCeilingCrossingDeadbandNum/Den,
+  // cross-multiplied (delta_den > 0 always -- A2, the same assumption the
+  // absolute-tolerance comparison below already makes for `delta_den`).
+  // Skipped entirely when `ceiling_crossed_upward` is false: no crossing to
+  // gate, and the flag stays at its declared `false` default.
+  if (ceiling_crossed_upward) {
+    ExactInt ceiling_crossing_lhs;
+    ExactInt ceiling_crossing_rhs;
+    if (!ExactInt::try_mul(delta_num, ExactInt::from_i64(kCeilingCrossingDeadbandDen), &ceiling_crossing_lhs) ||
+        !ExactInt::try_mul(ExactInt::from_i64(kCeilingCrossingDeadbandNum), delta_den, &ceiling_crossing_rhs)) {
+      return range_finding("ceiling crossing deadband comparison (delta * deadband cross-product)");
+    }
+    ceiling_crossing_material = ExactInt::compare(ceiling_crossing_lhs, ceiling_crossing_rhs) >= 0;
+  }
 
   // D-03: either side carrying `estimated` widens the effective threshold
   // magnitudes by kEstimatedToleranceFactor -- exact integer
@@ -369,12 +524,14 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
                                      tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
     }
     apply_end_delta_gate();
+    apply_ceiling_escalation();
     return finding;
   }
 
   if (within_fail) {
     finding.status = Status::pass;
     finding.message = "delta within tolerance" + widened_suffix;
+    apply_ceiling_escalation();
     return finding;
   }
 
@@ -382,6 +539,7 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   finding.message = fmt::format("delta {}{}/{}{} exceeds tolerance{}", sign, abs_delta_num_text, delta_den_text,
                                  tolerance->is_relative ? "%" : std::string(unit_text), widened_suffix);
   apply_end_delta_gate();
+  apply_ceiling_escalation();
   return finding;
 }
 

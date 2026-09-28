@@ -85,6 +85,21 @@ Pair by relative path; unpaired → `meta.missing_candidate` (fail) / `meta.extr
 
 `Error.kind ∈ usage | input_open | input_unsupported | decode | internal`. Mapping to exit codes in `cli/main`: 64 / 65 / 65 / 66 / 70. Decode errors mid-file: analyzer records what it has, fingerprint marked `partial:true`, findings computed where possible, exit 66 — partial truth beats silence, and CI can distinguish it.
 
+**Amendment (06-10-PLAN.md, D-09, approved at that plan's Task 1 checkpoint):** the paragraph
+above, read literally, marks `partial:true` and exits 66 for ANY mid-file decode error — which
+would make a baseline carrying one known-bad, stable frame exit 66 on every future comparison
+forever. A permanently "could not run" gate is a muted gate, and this project treats a muted gate
+as worth nothing. `meta.decode_errors` (`docs/checks/meta.decode_errors.md`) narrows this: a
+RECOVERABLE decode error — one libav itself rejects and recovers from, continuing the sweep with
+the same decoder (never a mid-sweep decoder switch, D-07) — is counted per stream and compared as
+a registered, gating check instead. A candidate that gains corrupt frames relative to its
+baseline is caught as an ordinary regression at exit 1, while hash, loudness and silence still
+report what actually decoded. Only a stream that decodes **zero frames across its whole sweep**
+is `undecodable`; only THAT narrow case still sets `Fingerprint::partial = true` and reaches exit
+66 through this section's own mapping — the case that genuinely could not run. This amendment is
+recorded here, in the open, exactly as `PERF-03` was amended in `.planning/REQUIREMENTS.md` by
+05-12-PLAN.md — never as a silent divergence between this document and the shipped behavior.
+
 ## 12. Testing strategy for the engine
 
 - Unit: semantics table-driven tests (every semantic × edge values × unit parsing); glob matcher; precedence merger (property: last-writer-wins under permutation); snapshot round-trip byte-identity; JSON schema validation.

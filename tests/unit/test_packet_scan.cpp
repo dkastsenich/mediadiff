@@ -36,6 +36,11 @@ std::string tracer_mkv() { return mediadiff::test::fixture_dir() + "/tracer_a.mk
 // Pattern 3's AAC-in-MPEG-TS case: the remux carries NEITHER signal
 // (initial_padding=0, no AV_PKT_DATA_SKIP_SAMPLES side data at all).
 std::string timeline_start_shift_ts() { return mediadiff::test::fixture_dir() + "/timeline_start_shift.ts"; }
+// 06-02-PLAN.md's own MP4->MKV->MP4 priming round-trip fixture -- its
+// audio stream's LAST packet carries a genuinely nonzero
+// AV_PKT_DATA_SKIP_SAMPLES discard_padding (820), verified directly
+// against the linked FFmpeg 8.1 (06-06-PLAN.md Task 1).
+std::string audio_prime_roundtrip_mkv() { return mediadiff::test::fixture_dir() + "/audio_prime_roundtrip.mkv"; }
 
 DemuxSession open_or_fail(const std::string& path) {
   auto session = DemuxSession::open(path, DemuxOptions{});
@@ -281,3 +286,58 @@ TEST_CASE("packet_scan - the first-packet-only capture is deterministic and posi
 // already re-run as part of this same file's own existing TEST_CASEs
 // above; this comment records that Task 1's own <behavior> Test 7 is
 // satisfied by the file's pre-existing coverage, not a new TEST_CASE.
+
+// --- Test 8 (06-06-PLAN.md, D-17): last_packet_discard_padding's own
+// absent-vs-zero-vs-real-value contract, verified against real fixtures
+// via a standalone probe linked against the SAME vcpkg-pinned FFmpeg 8.1
+// this project builds against (never the system `ffprobe`, which is a
+// materially newer, unrelated FFmpeg build -- re-verified directly this
+// task after the system tool's own reported values did not reproduce
+// against the linked library) before writing these expected values --------
+
+// tracer_a.mp4's audio stream carries the side data on exactly one packet
+// (the FIRST: skip_samples=1024, discard_padding=0) under the linked
+// FFmpeg 8.1 -- last_packet_discard_padding tracks that same packet here,
+// reporting a REAL, PRESENT 0.
+TEST_CASE("packet_scan - AAC-in-MP4: last_packet_discard_padding is present and holds a real 0", "[unit]") {
+  DemuxSession session = open_or_fail(tracer_mp4());
+  auto result = run_packet_scan(session, PacketScanLimits{});
+  REQUIRE(result.has_value());
+  const auto& audio = result->per_stream[1];
+  REQUIRE(audio.last_packet_discard_padding.has_value());
+  REQUIRE(*audio.last_packet_discard_padding == 0);
+}
+
+// audio_prime_roundtrip.mkv (06-02-PLAN.md's own MP4->MKV priming
+// round-trip fixture) carries the side data on TWO packets: the FIRST
+// (start_skip=1024, discard_padding=0) and the LAST (start_skip=0,
+// discard_padding=820) -- a genuinely NONZERO trailing-padding value,
+// proving last_packet_discard_padding tracks the LAST carrying packet
+// (never the first) and holds a real, nonzero value when one is present.
+TEST_CASE("packet_scan - a genuine nonzero trailing discard_padding is captured from the LAST packet carrying it, "
+          "not the first",
+          "[unit]") {
+  DemuxSession session = open_or_fail(audio_prime_roundtrip_mkv());
+  auto result = run_packet_scan(session, PacketScanLimits{});
+  REQUIRE(result.has_value());
+  REQUIRE_FALSE(result->per_stream.empty());
+  const auto& audio = result->per_stream[0];
+  REQUIRE(audio.first_packet_skip_samples.has_value());
+  REQUIRE(*audio.first_packet_skip_samples == 1024);
+  REQUIRE(audio.last_packet_discard_padding.has_value());
+  REQUIRE(*audio.last_packet_discard_padding == 820);
+}
+
+// timeline_start_shift.ts's audio stream carries no AV_PKT_DATA_SKIP_SAMPLES
+// side data on any packet at all (confirmed via ffprobe: only "MPEGTS
+// Stream ID" side data appears, never "Skip Samples") --
+// last_packet_discard_padding stays std::nullopt, never a fabricated 0.
+TEST_CASE("packet_scan - AAC-in-MPEG-TS: last_packet_discard_padding is absent (no packet ever carried the side "
+          "data)",
+          "[unit]") {
+  DemuxSession session = open_or_fail(timeline_start_shift_ts());
+  auto result = run_packet_scan(session, PacketScanLimits{});
+  REQUIRE(result.has_value());
+  const auto& audio = result->per_stream[1];
+  REQUIRE_FALSE(audio.last_packet_discard_padding.has_value());
+}

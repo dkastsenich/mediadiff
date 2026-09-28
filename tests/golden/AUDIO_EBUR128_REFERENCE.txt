@@ -1,0 +1,22 @@
+# tests/golden/AUDIO_EBUR128_REFERENCE.txt -- committed ffmpeg -af ebur128
+# reference for every lossless loudness/true-peak/silence fixture
+# (06-02-PLAN.md Task 2, D-13). See tests/golden/README.md for this
+# file's full provenance and regeneration rule.
+#
+# Format: one line per measured fixture, LC_ALL=C sorted:
+#   <fixture-name> integrated_lufs=<I dB LUFS> true_peak_dbtp=<Peak dBTP>
+# Regenerated ONLY by scripts/gen_corpus.sh, from the PINNED ffmpeg
+# (scripts/ffmpeg_pin.json) -- a deliberate, reviewed act, exactly like
+# CORPUS_DIGEST.txt's own regeneration rule (never mixed with a
+# different ffmpeg build's output).
+audio_dropout.flac integrated_lufs=-22.0 true_peak_dbtp=-21.1
+audio_dropout_clean.flac integrated_lufs=-21.8 true_peak_dbtp=-21.1
+audio_loud_floor.flac integrated_lufs=-70.0 true_peak_dbtp=-100.9
+audio_loud_plus3.flac integrated_lufs=-18.8 true_peak_dbtp=-18.1
+audio_loud_ref.flac integrated_lufs=-21.8 true_peak_dbtp=-21.1
+audio_loud_ref_copy.flac integrated_lufs=-21.8 true_peak_dbtp=-21.1
+audio_peak_over.flac integrated_lufs=-1.3 true_peak_dbtp=-0.6
+audio_peak_under.flac integrated_lufs=-2.8 true_peak_dbtp=-2.1
+audio_silence_lead.flac integrated_lufs=-21.9 true_peak_dbtp=-21.1
+audio_silence_none.flac integrated_lufs=-21.8 true_peak_dbtp=-21.1
+audio_silence_trail.flac integrated_lufs=-21.9 true_peak_dbtp=-21.1

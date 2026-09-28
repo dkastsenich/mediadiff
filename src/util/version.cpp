@@ -6,8 +6,18 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libavutil/cpu.h>
 #include <libswscale/swscale.h>
 }
+
+#ifndef MEDIADIFF_VCPKG_TRIPLET
+// Defensive only -- CMakeLists.txt always defines this via
+// target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VCPKG_TRIPLET=...)
+// beside MEDIADIFF_VERSION. A build system that somehow skipped that
+// definition still compiles, with an honestly-labelled placeholder rather
+// than a build failure over a diagnostic-string detail.
+#define MEDIADIFF_VCPKG_TRIPLET "unknown-triplet"
+#endif
 
 namespace mediadiff {
 
@@ -58,11 +68,14 @@ std::string compose_decode_path_signature() {
   // substring slice of a rendered "8.1.100"-style string, which is the
   // exact class of bug TRUST-03 calls out (a version bump that happens to
   // share a substring with the old one would otherwise go unnoticed).
+  // 06-CHECK-ROSTER.md's approved D-05 format: two additional
+  // space-separated fields, additive to the existing three.
   return fmt::format(
-      "avcodec/{}.{}.{} avformat/{}.{}.{} swscale/{}.{}.{}",
+      "avcodec/{}.{}.{} avformat/{}.{}.{} swscale/{}.{}.{} triplet/{} cpuflags/0x{:x}",
       AV_VERSION_MAJOR(avcodec_version()), AV_VERSION_MINOR(avcodec_version()), AV_VERSION_MICRO(avcodec_version()),
       AV_VERSION_MAJOR(avformat_version()), AV_VERSION_MINOR(avformat_version()), AV_VERSION_MICRO(avformat_version()),
-      AV_VERSION_MAJOR(swscale_version()), AV_VERSION_MINOR(swscale_version()), AV_VERSION_MICRO(swscale_version()));
+      AV_VERSION_MAJOR(swscale_version()), AV_VERSION_MINOR(swscale_version()), AV_VERSION_MICRO(swscale_version()),
+      MEDIADIFF_VCPKG_TRIPLET, static_cast<unsigned>(av_get_cpu_flags()));
 }
 
 }  // namespace mediadiff

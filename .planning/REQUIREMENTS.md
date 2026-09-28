@@ -137,16 +137,16 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Audio Checks
 
-- [ ] **AUDIO-01**: Stream-parameter checks work: `codec`, `profile`, `sample_rate`, `sample_fmt`/`bit_depth`, `channels`, `layout`
-- [ ] **AUDIO-02**: `audio.layout` distinguishes `5.1` from `5.1(side)` using the modern `AVChannelLayout` API only, and treats loss of layout as a regression
-- [ ] **AUDIO-03**: HE-AAC SBR signaling mode (implicit vs explicit) is detected and carried as part of `audio.profile`'s value
-- [ ] **AUDIO-04**: `audio.priming` resolves through the precedence chain `initial_padding` → container mechanism (MP4 elst / iTunSMPB / MKV CodecDelay) → `unknown`, and stays stable across container round-trips
-- [ ] **AUDIO-05**: `audio.loudness.integrated` uses libebur128 EBU R128 mode-I and matches an `ffmpeg -af ebur128` reference within ±0.1 LU on fixtures
-- [ ] **AUDIO-06**: `audio.loudness.true_peak` reports dBTP and fails asymmetrically when the candidate crosses −1.0 dBTP upward from a baseline that was under it
-- [ ] **AUDIO-07**: `audio.silence.edges` and `audio.silence.dropouts` detect introduced leading/trailing silence and interior dropouts as spans
-- [ ] **AUDIO-08**: `content.audio.sample_hash` chains XXH3-128 over decoded PCM per track and reports the first divergent sample index and time
-- [ ] **AUDIO-09**: Hashing automatically prefers class-1 fixed-point decoder siblings (`aac_fixed`, `ac3_fixed`) when available, and `--hash-decoder default` opts out while recording class 2
-- [ ] **AUDIO-10**: Loudness, silence detection, and hashing share a single decode sweep per track
+- [x] **AUDIO-01**: Stream-parameter checks work: `codec`, `profile`, `sample_rate`, `sample_fmt`/`bit_depth`, `channels`, `layout`
+- [x] **AUDIO-02**: `audio.layout` distinguishes `5.1` from `5.1(side)` using the modern `AVChannelLayout` API only, and treats loss of layout as a regression
+- [x] **AUDIO-03**: HE-AAC SBR signaling mode (implicit vs explicit) is detected and carried as part of `audio.profile`'s value
+- [x] **AUDIO-04**: `audio.priming` resolves through the precedence chain `initial_padding` → container mechanism (MP4 elst / iTunSMPB / MKV CodecDelay) → `unknown`, and stays stable across container round-trips
+- [x] **AUDIO-05**: `audio.loudness.integrated` uses libebur128 EBU R128 mode-I and matches an `ffmpeg -af ebur128` reference within ±0.1 LU on fixtures
+- [x] **AUDIO-06**: `audio.loudness.true_peak` reports dBTP and fails asymmetrically when the candidate crosses −1.0 dBTP upward from a baseline that was under it
+- [x] **AUDIO-07**: `audio.silence.edges` and `audio.silence.dropouts` detect introduced leading/trailing silence and interior dropouts as spans
+- [x] **AUDIO-08**: `content.audio.sample_hash` chains XXH3-128 over decoded PCM per track and reports the first divergent sample index and time
+- [x] **AUDIO-09**: Hashing automatically prefers class-1 fixed-point decoder siblings (`aac_fixed`, `ac3_fixed`) when available, and `--hash-decoder default` opts out while recording class 2
+- [x] **AUDIO-10**: Loudness, silence detection, and hashing share a single decode sweep per track
 
 ### Content, Quality & Size Checks
 
@@ -165,8 +165,8 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 
 ### Trust & Determinism Guarantees
 
-- [ ] **TRUST-01**: Every fingerprint records, per hashed stream, the decoder name, determinism class, flags, and (class 2) a path signature
-- [ ] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
+- [x] **TRUST-01**: Every fingerprint records, per hashed stream, the decoder name, determinism class, flags, and (class 2) a path signature
+- [x] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
 - [x] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
 - [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
 - [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
@@ -187,7 +187,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **PERF-01**: Metadata plus timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s
 - [ ] **PERF-02**: A full content pass runs at ≥ 4× realtime with software decode
 - [x] **PERF-03**: The parser pass adds < 10% over plain PacketScan, and full timeline analysis adds < 15% (amended, 05-12-PLAN.md, 2026-09-17: Phase 4 measured 43-53% parser overhead against the <10% target, at an absolute cost near 1.5 ms — the ratio is high because the baseline PacketScan-alone pass is very cheap, not because the parser is slow. Phase 5's own measurement of the full timeline analyzer set found the identical shape: 33% overhead against the <15% target, at an absolute wall-clock cost of 32-50 ms on the 10-minute 1080p reference file — comfortably inside PERF-01's 3 s budget. Both absolute-percentage targets are superseded by D-13/D-14's ratchet: the gate is a regression check against a committed retired-instruction-count baseline (`tests/golden/PERF_BASELINE.txt`, `scripts/measure_timeline_perf.sh --check-baseline`), not the absolute ratio; the absolute ratios above are measured and printed on every run rather than asserted. Optimising either pass to meet its original absolute target is recorded here as deferred, unowned work, not a target that quietly disappeared.)
-- [ ] **PERF-04**: An audio sweep of the 10-minute reference stereo AAC completes in < 4 s
+- [x] **PERF-04**: An audio sweep of the 10-minute reference stereo AAC completes in < 4 s (amended, 06-12-PLAN.md, 2026-09-22; closed, 06-13-PLAN.md, 2026-09-22: Per D-13/D-14 (05-CONTEXT.md, applied unchanged), the enforced gate is a regression check against a committed retired-instruction-count baseline (`tests/golden/PERF_BASELINE.txt`'s `audio_plain_instructions`/`audio_full_instructions` lines, `scripts/measure_audio_perf.sh --check-baseline`), not the absolute wall-clock figure — matching PERF-01's/PERF-03's own already-established pattern. 06-13-PLAN.md Task 3 transcribed both baseline lines from the designated x64-linux CI leg's own real measurement (GitHub Actions run 35735099865, commit e5a16770c00343da91ad8e299773eac9774a1bd3: audio_plain_instructions=89344287, audio_full_instructions=47339403661, both within tolerance of 06-12's local-container-measured provisional seed), replacing that provisional seed exactly as 05-12-PLAN.md's own timeline baseline was transcribed. The ratchet now gates a real CI regression rather than self-consistency-checking against a workstation approximation, which is what this requirement's own gating mechanism requires to be considered closed. 06-12-PLAN.md's locally-measured full-leg wall clock (~3.14 s on a developer workstation, plain leg ~6 ms, comfortably inside the original <4s target) is informational context only — never gated, exactly as PERF-01's own budget is measured and printed rather than asserted — and was NOT re-measured on the designated leg this round (only the instruction-count ratchet, the actual gate, was); no designated-leg wall-clock figure is recorded here on that basis, to avoid presenting an unmeasured number as a real one. Unlike PERF-03, no optimisation work is deferred here — the measured absolute cost already sits well inside the original <4s target, it is simply no longer the mechanism that gates.)
 - [x] **PERF-05**: Performance targets are measured in CI on the reference file with regression tracking over time
 
 ## v2 Requirements
@@ -342,16 +342,16 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TIME-09 | Phase 5 | Complete |
 | TIME-10 | Phase 5 | Complete |
 | TIME-11 | Phase 5 | Complete |
-| AUDIO-01 | Phase 6 | Pending |
-| AUDIO-02 | Phase 6 | Pending |
-| AUDIO-03 | Phase 6 | Pending |
-| AUDIO-04 | Phase 6 | Pending |
-| AUDIO-05 | Phase 6 | Pending |
-| AUDIO-06 | Phase 6 | Pending |
-| AUDIO-07 | Phase 6 | Pending |
-| AUDIO-08 | Phase 6 | Pending |
-| AUDIO-09 | Phase 6 | Pending |
-| AUDIO-10 | Phase 6 | Pending |
+| AUDIO-01 | Phase 6 | Complete |
+| AUDIO-02 | Phase 6 | Complete |
+| AUDIO-03 | Phase 6 | Complete |
+| AUDIO-04 | Phase 6 | Complete |
+| AUDIO-05 | Phase 6 | Complete |
+| AUDIO-06 | Phase 6 | Complete |
+| AUDIO-07 | Phase 6 | Complete |
+| AUDIO-08 | Phase 6 | Complete |
+| AUDIO-09 | Phase 6 | Complete |
+| AUDIO-10 | Phase 6 | Complete |
 | SIZE-01 | Phase 3 | Complete |
 | CONTENT-01 | Phase 7 | Pending |
 | CONTENT-02 | Phase 7 | Pending |
@@ -364,8 +364,8 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONTENT-09 | Phase 7 | Pending |
 | CONTENT-10 | Phase 7 | Pending |
 | CONTENT-11 | Phase 7 | Pending |
-| TRUST-01 | Phase 6 | Pending |
-| TRUST-02 | Phase 6 | Pending |
+| TRUST-01 | Phase 6 | Complete |
+| TRUST-02 | Phase 6 | Complete |
 | TRUST-03 | Phase 2 | Complete |
 | TRUST-04 | Phase 7 | Pending |
 | TRUST-05 | Phase 2 | Complete |
@@ -380,7 +380,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | PERF-01 | Phase 5 | Complete |
 | PERF-02 | Phase 7 | Pending |
 | PERF-03 | Phase 5 | Complete |
-| PERF-04 | Phase 6 | Pending |
+| PERF-04 | Phase 6 | Complete |
 | PERF-05 | Phase 5 | Complete |
 
 **Coverage:**

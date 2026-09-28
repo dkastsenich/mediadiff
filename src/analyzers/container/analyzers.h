@@ -34,6 +34,36 @@ const AnalyzerSpec& container_topology_analyzer();
 // Scoped to ContainerFamily::other -- both checks apply to every container.
 const AnalyzerSpec& container_meta_analyzer();
 
+// 06-10-PLAN.md (AUDIO-08, AUDIO-10, D-09): meta.decode_errors, emitted
+// from src/analyzers/container/meta.cpp's own SECOND AnalyzerSpec in that
+// same translation unit (the "meta.* family analyzer" file, per this
+// plan's own action text) -- NOT folded into container_meta_analyzer()
+// above, since that one is `Pass::demux_header`-only (a header-level tag
+// walk) while this check needs the full decode sweep. One measurement per
+// audio stream: the compared value is `decode_error_count`
+// (`meta.decode_errors`'s own registered `tol`/`count`/`"0"` check,
+// src/core/checks.def) -- a real, comparable value on every attempted
+// stream, including a clean 0. `required_passes = {Pass::demux_header,
+// Pass::packet_scan, Pass::audio_decode}`, `scope = ContainerFamily::other`.
+//
+// Skip-reason priority (mirrors audio_loudness_analyzer()'s own, with one
+// addition): `partial_scan` first (Phase 3 D-02, a truncated packet
+// scan), then `requires_decode` when the slot is `std::nullopt` or this
+// stream's own decode was never attempted (content decode not requested,
+// or this build's linked FFmpeg could not open a decoder for this codec
+// at all), then a NEW tier -- `partial_scan` again -- when
+// `StreamAudioDecode::undecodable` is true (D-09's narrow "genuinely
+// could not run" case: zero decoded frames across the whole sweep). This
+// is also where `Fingerprint::partial` is set to true for an undecodable
+// stream, wiring it to exit 66 through `src/cli/exit_code.cpp`'s existing
+// contract (`claude_docs/01-core-concepts.md` section 11) -- the single
+// place this happens, so every other decode-dependent audio analyzer
+// (content_audio_sample_hash_analyzer(), audio_loudness_analyzer(),
+// audio_silence_analyzer()) only needs to relabel its OWN `undecodable`
+// branch to `partial_scan` without separately touching `Fingerprint::
+// partial` itself.
+const AnalyzerSpec& container_meta_decode_errors_analyzer();
+
 // 03-05-PLAN.md Tasks 1-2 (PROBE-04, CONT-05): the six container.mp4.*
 // checks, emitted from ProbeResults::bmff (src/probe/bmff_scan.h). Scoped
 // to ContainerFamily::mp4 -- required_passes includes Pass::bmff_scan, so
