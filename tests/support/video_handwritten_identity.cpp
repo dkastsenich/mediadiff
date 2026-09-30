@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <fstream>
 #include <ios>
+#include <string>
 #include <vector>
 
 #include <fmt/format.h>
@@ -95,8 +96,9 @@ std::string expected_pcm_frame_digest(int frame, int coded_w, int coded_h, const
   }
   // D-05: then the folded pixel-format name, then the display size as two
   // 4-byte little-endian integers.
-  static constexpr char kFormat[] = "yuv420p";
-  basis.insert(basis.end(), kFormat, kFormat + sizeof(kFormat) - 1);
+  for (const char c : std::string("yuv420p")) {
+    basis.push_back(static_cast<std::uint8_t>(c));
+  }
   append_u32_le(&basis, static_cast<std::uint32_t>(display_w));
   append_u32_le(&basis, static_cast<std::uint32_t>(display_h));
   return xxh3_128_hex(basis.data(), basis.size());
