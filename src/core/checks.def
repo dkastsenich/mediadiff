@@ -1538,6 +1538,33 @@ severity = "fail"
 hw_encoder = "info"
 transform = "ignore"
 
+# 07-01-PLAN.md (Phase 7's tracer, CONTENT-01; 07-CHECK-ROSTER.md,
+# approve-as-proposed 2026-09-30): content.video.frame_hash -- the per-frame
+# XXH3-128 hash chain over every video stream's decoded pictures, the video
+# counterpart of content.audio.sample_hash directly above. `hash` semantic,
+# `hash_chain` value_kind. D-05: each frame's digest covers its CROPPED display
+# rows (never `linesize`), the pixel-format name after the yuvj fold and the
+# display dimensions, but NOT its timestamp -- the PTS rides beside the digest
+# in HashChain::element_ticks for the divergence locator only, so a remux
+# hashes equal and a retime is timeline.*'s finding. D-06: every decoded frame
+# is hashed, edit-list discard ignored. D-09: every software decoder is
+# determinism class 2 until a cross-architecture CI proof promotes it.
+# Profile demotions copy doc 06 section 2.1 and the audio check: `hw_encoder`
+# demotes to `info` (an HW encoder's own re-encode changes the picture in ways
+# this project does not model as tolerable), `transform` to `ignore` (a
+# declared transcode profile already expects the picture to change).
+[[check]]
+id = "content.video.frame_hash"
+group = "content"
+semantic = "hash"
+unit = "none"
+value_kind = "hash_chain"
+severity = "fail"
+
+[check.profile_severity]
+hw_encoder = "info"
+transform = "ignore"
+
 # 06-03-PLAN.md (AUDIO-01, AUDIO-02), src/analyzers/audio/stream_params.cpp
 # -- the six per-audio-stream identity checks: codec, sample rate, sample
 # format, bit depth, channel count and canonical layout. Approved at

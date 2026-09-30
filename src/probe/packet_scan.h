@@ -44,6 +44,7 @@
 #include "core/rational.h"
 #include "probe/audio_decode.h"
 #include "probe/parser_scan.h"
+#include "probe/video_decode.h"
 #include "util/expected.h"
 
 // Opaque forward declaration, at global scope matching libav's own C
@@ -328,6 +329,15 @@ struct PacketScanRequest {
   // out, any other text forces that decoder NAME. Ignored entirely when
   // `decode_audio` is false.
   std::string hash_decoder = "auto";
+  // 07-01-PLAN.md (CONTENT-01, PROBE-08): `decode_video` fuses the video
+  // decode sweep (probe/video_decode.h) INSIDE this same av_read_frame loop,
+  // directly after the audio block -- never a second sweep. Set from
+  // `union_passes.test(Pass::video_decode)` by src/probe/orchestrator.cpp.
+  // `video_decode_threads` is 0 for the production default of exactly one
+  // decoder thread; any other value exists ONLY for TRUST-07's thread-
+  // invariance tests. Both are ignored entirely when `decode_video` is false.
+  bool decode_video = false;
+  int video_decode_threads = 0;
 };
 
 struct PacketScanOutputs {
@@ -336,6 +346,9 @@ struct PacketScanOutputs {
   // Populated only when `PacketScanRequest::decode_audio` was set --
   // std::nullopt otherwise, mirroring `access_units`'s own contract.
   std::optional<AudioDecodeResult> audio_decode;
+  // Populated only when `PacketScanRequest::decode_video` was set --
+  // std::nullopt otherwise, mirroring `audio_decode`'s own contract.
+  std::optional<VideoDecodeResult> video_decode;
 };
 
 // One `av_read_frame` sweep of `session`'s already-open AVFormatContext,

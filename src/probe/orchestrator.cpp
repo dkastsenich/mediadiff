@@ -191,6 +191,13 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // (TRUST-05) keeps this phase's own family appended, never
       // interleaved among Phase 5's.
       content_audio_sample_hash_analyzer(),
+      // 07-01-PLAN.md (this phase's tracer, CONTENT-01): content.video.
+      // frame_hash -- the video counterpart of the entry directly above,
+      // ContainerFamily::other, declaring Pass::video_decode (implied into
+      // the union alongside Pass::packet_scan below). Listed directly after
+      // the audio hash so the content family stays grouped and appended in
+      // commit order (TRUST-05), ahead of Phase 6's own later audio entries.
+      content_video_frame_hash_analyzer(),
       // 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/
       // sample_fmt/bit_depth/channels/layout -- the six per-audio-stream
       // identity checks, mirroring video_stream_params_analyzer()'s own
@@ -277,6 +284,11 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   // rather than a fabricated value.
   if (!options.content_enabled) {
     union_passes.clear(Pass::audio_decode);
+    // 07-01-PLAN.md (Phase 6 D-12): the video decode pass is removed from
+    // the union by the SAME switch -- ProbeResults::video_decode stays
+    // std::nullopt and content.video.frame_hash reports
+    // skipped:requires_decode, never a fabricated value.
+    union_passes.clear(Pass::video_decode);
   }
 
   // PROBE-03 (04-01-PLAN.md Task 2): an analyzer that declared ONLY
@@ -294,6 +306,13 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   // fused loop), so packet_scan must always be in the union whenever
   // audio_decode is.
   if (union_passes.test(Pass::audio_decode)) {
+    union_passes.set(Pass::packet_scan);
+  }
+
+  // 07-01-PLAN.md (CONTENT-01, PROBE-08): the same implication for the video
+  // decode pass -- its data is produced INSIDE Pass::packet_scan's own arm
+  // too (probe/packet_scan.cpp's fused loop).
+  if (union_passes.test(Pass::video_decode)) {
     union_passes.set(Pass::packet_scan);
   }
 
@@ -389,11 +408,17 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
       // selection -- never a profile (this invocation's own resolved
       // Policy is not even in scope here).
       request.hash_decoder = options.hash_decoder;
+      // 07-01-PLAN.md (CONTENT-01, PROBE-08): mirrors `decode_audio` above --
+      // the video decode is fused INSIDE this same call, never a second
+      // dispatch arm.
+      request.decode_video = union_passes.test(Pass::video_decode);
+      request.video_decode_threads = options.video_decode_threads;
       auto scan_result = run_packet_scan(session, request);
       if (scan_result) {
         results.packet_scan = std::move(scan_result->packets);
         results.parser_scan = std::move(scan_result->access_units);
         results.audio_decode = std::move(scan_result->audio_decode);
+        results.video_decode = std::move(scan_result->video_decode);
       } else {
         packet_scan_error = mediadiff::unexpected(scan_result.error());
       }

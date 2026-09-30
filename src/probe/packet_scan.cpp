@@ -137,6 +137,15 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     audio_decode_states.resize(stream_count);
   }
 
+  // 07-01-PLAN.md (CONTENT-01, PROBE-08): mirrors the audio_decode_states
+  // allocation immediately above.
+  std::vector<detail::VideoDecodeState> video_decode_states;
+  if (request.decode_video) {
+    outputs.video_decode = VideoDecodeResult{};
+    outputs.video_decode->per_stream.resize(stream_count);
+    video_decode_states.resize(stream_count);
+  }
+
   ScratchPacket pkt;
   if (!pkt.valid()) {
     return mediadiff::unexpected(Error{ErrorKind::internal, "could not allocate AVPacket for a packet scan"});
@@ -322,12 +331,38 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
       }
     }
 
+    // 07-01-PLAN.md (CONTENT-01, PROBE-08): the video decode fusion point --
+    // directly AFTER the audio block, BEFORE pkt.unref(), inside this SAME
+    // loop iteration (never a second av_read_frame sweep). It goes last on
+    // purpose: VideoDecodeState::feed_packet clears AV_PKT_FLAG_DISCARD on
+    // this scratch packet (D-06), and make_packet_record above has already
+    // captured the original flags. Each stored frame charges the SAME
+    // accounted_bytes / limits.max_bytes budget the PacketRecord append above
+    // enforces (T-07-02).
+    if (request.decode_video) {
+      detail::VideoDecodeState& vstate = video_decode_states[stream_index];
+      vstate.ensure_initialized(*ctx->streams[stream_index], request.video_decode_threads);
+      if (vstate.attempted()) {
+        vstate.feed_packet(*pkt.get(), detail::DecodeBudget{&accounted_bytes, limits.max_bytes});
+      }
+    }
+
     pkt.unref();
   }
 
   if (request.decode_audio) {
     for (std::size_t i = 0; i < audio_decode_states.size(); ++i) {
       outputs.audio_decode->per_stream[i] = audio_decode_states[i].finalize();
+    }
+  }
+
+  if (request.decode_video) {
+    // Drain every stream's decoder -- also when the sweep ended early
+    // (Pitfall 1). finalize() can still charge frame records, so it runs
+    // BEFORE the final accounted_bytes is published below.
+    for (std::size_t i = 0; i < video_decode_states.size(); ++i) {
+      outputs.video_decode->per_stream[i] =
+          video_decode_states[i].finalize(detail::DecodeBudget{&accounted_bytes, limits.max_bytes});
     }
   }
 

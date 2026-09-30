@@ -360,6 +360,11 @@ add_executable(mediadiff_unit_tests
   # math, the single-sweep read_frame_call_count proof, and TRUST-05
   # determinism (06-01-PLAN.md Task 2).
   test_audio_decode.cpp
+  # 07-01-PLAN.md (CONTENT-01, PROBE-08, D-05/D-06/D-09): the video decode
+  # pass -- the per-frame hash's linesize independence and exact byte
+  # counts, the pinned flags string, the class-2 table, the analyzer's skip
+  # ladder and the T-07-02/T-07-05 bounds.
+  test_video_decode.cpp
   # 06-08-PLAN.md Task 1 (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink
   # fused into the same decode sweep -- channel-role mapping, feed dispatch,
   # the gating-floor sentinel, quantiser determinism, and the zero-sample

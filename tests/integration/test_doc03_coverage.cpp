@@ -55,8 +55,9 @@
 // audio.silence.dropouts, bringing the total to ninety. 06-10-PLAN.md
 // registers meta.decode_errors (D-09's recoverable-decode-error counter),
 // bringing the total to ninety-one -- the full 14-id Phase 6 roster,
-// closing out this phase's own DOC-03 obligation. This file is where a
-// gap becomes visible.
+// closing out this phase's own DOC-03 obligation. 07-01-PLAN.md registers
+// Phase 7's tracer, content.video.frame_hash, bringing the running total to
+// ninety-two. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's

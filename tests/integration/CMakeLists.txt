@@ -181,6 +181,11 @@ add_executable(mediadiff_integration_tests
   # equality, D-03's divergence-locator report (media and snapshot baselines
   # alike), D-04's snapshot round trip, and --no-content's requires_decode skip.
   test_audio_sample_hash.cpp
+  # CONTENT-01 (07-01-PLAN.md Task 2): content.video.frame_hash end to end --
+  # D-05's MP4/MKV/TS remux equality, the quantizer trigger pair, class-2
+  # evidence, the per-frame arrays and their snapshot contract, --no-content's
+  # requires_decode skip, the single-sweep proof and TRUST-05 determinism.
+  test_video_hash.cpp
   # AUDIO-01/AUDIO-02 (06-03-PLAN.md Task 2): audio.codec/sample_rate/
   # sample_fmt/bit_depth/channels/layout proven through the real CLI --
   # 5.1 vs 5.1(side) on an equal channel count, unspecified-layout-as-a-

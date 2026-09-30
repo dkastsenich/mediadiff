@@ -32,6 +32,13 @@ namespace mediadiff {
 struct ProbeOptions {
   bool content_enabled = true;
   std::string hash_decoder = "auto";
+  // 07-01-PLAN.md (CONTENT-01, TRUST-07): the video decoder's thread count.
+  // 0 is the production default -- EXACTLY ONE thread, recorded as
+  // `threads=1` in the flags string (07-CHECK-ROSTER.md finding 1: corrupt
+  // streams decode non-deterministically at more than one thread even at a
+  // fixed count). Any other value is a TEST-ONLY control for TRUST-07's
+  // 1/4/16 thread-invariance suite; no CLI flag ever sets it.
+  int video_decode_threads = 0;
 };
 
 // Tries read_snapshot(utf8_path, registry) first and returns its result

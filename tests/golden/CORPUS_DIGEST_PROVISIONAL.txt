@@ -174,3 +174,19 @@
 # confirmed and cleared as of the STATUS block near the top of this file
 # (run 35735099865). This ledger is EMPTY on purpose, exactly as it was
 # after Phase 4 and Phase 5's own transcriptions.
+#
+# STATUS (as of 07-01-PLAN.md Task 2): NOT EMPTY AGAIN. Phase 7's tracer adds
+# the five content.video.frame_hash fixtures below, each workstation-computed
+# (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`, the method that
+# reproduces the designated leg's bytes) and awaiting the ordinary
+# designated-leg transcription Phase 7's final CI plan performs. The four
+# earlier TRANSCRIBED-FROM-DESIGNATED-LEG markers above remain true of the
+# names they cleared; they say nothing about these five. All five recipes add
+# `-threads 1` to the mpeg4 encode, so their bytes do not depend on the runner's
+# CPU count. `video_hash_base.mp4` and `video_hash_base_copy.mp4` share one hash
+# by design (two independent encodes with identical arguments).
+video_hash_alt.mp4
+video_hash_base.mkv
+video_hash_base.mp4
+video_hash_base.ts
+video_hash_base_copy.mp4

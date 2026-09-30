@@ -544,6 +544,16 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
       {"content.audio.sample_hash",
        {fixture("audio_hash_base.mp4"), fixture("audio_hash_alt.mp4"), fixture("audio_hash_base.mp4"),
         fixture("audio_hash_base_copy.mp4")}},
+      // 07-01-PLAN.md (CONTENT-01, D-05): content.video.frame_hash's trigger
+      // is video_hash_base.mp4 vs video_hash_alt.mp4 (the identical recipe at
+      // a coarser quantizer -- a genuinely different picture essence); its
+      // clean pair is video_hash_base.mp4 vs video_hash_base.ts, the
+      // STRONGEST remux available: one MPEG-4 payload stream-copied into
+      // MPEG-TS, whose muxer shifts every PTS by about 1.4 s. A pass there is
+      // the proof that the timestamp is not part of the hash.
+      {"content.video.frame_hash",
+       {fixture("video_hash_base.mp4"), fixture("video_hash_alt.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts")}},
 
       // --- 06-03-PLAN.md (AUDIO-01, AUDIO-02): the six per-audio-stream
       // header-pass identity checks -- codec/sample_rate/sample_fmt/

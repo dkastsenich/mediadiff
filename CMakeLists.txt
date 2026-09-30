@@ -181,6 +181,9 @@ add_library(libmediadiff STATIC
   # av_read_frame loop.
   src/probe/audio_config.cpp
   src/probe/audio_decode.cpp
+  # 07-01-PLAN.md (CONTENT-01, PROBE-08): the video decode pass, fused inside
+  # packet_scan.cpp's own av_read_frame loop beside the audio one.
+  src/probe/video_decode.cpp
   src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
@@ -228,6 +231,9 @@ add_library(libmediadiff STATIC
   # audio decode-sink consumer, first real populator of hash.cpp's
   # kPreconditionKeys.
   src/analyzers/content/sample_hash.cpp
+  # 07-01-PLAN.md (CONTENT-01): content.video.frame_hash -- the video decode
+  # sweep's first consumer.
+  src/analyzers/content/video_frame_hash.cpp
   # 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/sample_fmt/
   # bit_depth/channels/layout -- the six per-audio-stream identity checks,
   # codecpar-only extraction mirroring video/stream_params.cpp's own shape.
@@ -298,6 +304,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/parser_scan.h
   src/probe/audio_config.h
   src/probe/audio_decode.h
+  src/probe/video_decode.h
   src/probe/cadence.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
