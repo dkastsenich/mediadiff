@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 21
+open_count: 22
 waived_count: 2
 fixed_count: 22
-total_count: 45
-last_updated: 2026-09-30T21:22:49.513Z
+total_count: 46
+last_updated: 2026-09-30T21:25:45.499Z
 ---
 
 # Broken Windows Ledger
@@ -58,8 +58,9 @@ last_updated: 2026-09-30T21:22:49.513Z
 | 41 | 06 | todo | src/probe/audio_decode.cpp |  | T-06-55 (Denial of Service, low, accept): dropout_window_ (a std::deque<std::int64_t>) holds up to dropout_window_samples_ = max(1, sample_rate * kDropoutRmsWindowMs(100) / 1000) entries -- i.e. up to sample_rate/10 int64 (8-byte) values, so a crafted declared sample rate directly sizes this one deque. Growth is bounded by the samples ACTUALLY DECODED, not by the declared rate alone: for PCM (the format most exposed, since its rate is taken directly from the container header with no codec-side ceiling), the deque can reach at most about 4x the raw PCM input size (one int64 per interleaved sample, versus 2 bytes/sample for s16 or up to 8 for s64 -- worst case roughly 4x for common 16-bit PCM), because the number of decoded samples is itself bounded by how many sample-frames worth of bytes the packet stream actually contains. Compressed codecs additionally cap the rate in their own bitstream headers (FLAC's STREAMINFO sample-rate field is a 20-bit value, topping out near 1,048,575 Hz -- nowhere near the pathological INT_MAX rates size.* checks already guard against for other fields). A crafted rate therefore amplifies memory in PROPORTION TO the input size actually supplied, never unboundedly independent of it -- distinct from an unbounded-allocation vulnerability, where memory grows independent of input size. | waived | accepted risk T-06-55: dropout_window_'s size scales with a crafted sample rate, but only in proportion to the input actually supplied (at most ~4x raw PCM input size; compressed codecs cap the rate in their own headers, e.g. FLAC's 20-bit STREAMINFO field). Not an unbounded-allocation vulnerability. Recorded and waived per 06-16-PLAN.md Task 3. | 2026-09-23T20:44:26.714Z | 2026-09-23T20:44:44.179Z |
 | 42 | 06 | deviation | tests/unit/test_audio_config.cpp |  | 06-18 Task 2 carries tdd="true" but was executed as a single feat commit (5fde258) rather than a separate RED test(...) commit followed by a GREEN feat(...) commit -- the new decode_observed_rate_hz assertions and the four-fixture cross-pass invariant were written alongside the implementation change, not proven to fail first. All tests pass and the plan's own acceptance criteria are met; only the RED/GREEN commit-separation discipline was skipped. | open |  | 2026-09-23T21:39:15.041Z |  |
 | 43 | 06 | todo | src/probe/demux_session.cpp | 250 | T-06-34 (Denial of Service, high; accepted 2026-09-28 at the phase 6 security audit, with a Phase 7 follow-up). Nothing bounds a crafted stream that makes a libav decoder hang, i.e. a single avcodec_send_packet/avcodec_receive_frame call that never returns. The wall-clock budget is disarmed right after open (demux_session.cpp:250), and libav consults AVIOInterruptCB only for I/O, never inside a decode call. The packet caps (packet_scan.cpp:183-215) and the 64-consecutive-error stop (audio_decode.h:112-120) bound every case that makes progress or returns errors. Accepted for Phase 6: the hang sits inside the libav trust boundary, and 06-18 (CR-05) removed post-open wall-clock bounds so that results stay deterministic. FOLLOW-UP for Phase 7: build a single process-level decode watchdog there, because the video DecodeSession has the same exposure. A watchdog trip must surface as a could-not-run Error and exit, never as a changed value (CR-05's determinism rule). | open |  | 2026-09-28T13:04:20.285Z |  |
-| 44 | 07 | deviation | tests/golden/inspect_container.txt |  | 07-02 hand-added six meta.decode_errors video[N] rows (value 0, verified only against this workstation's rendering) to a designated-leg golden; the x64-linux CI leg must confirm them | open |  | 2026-09-30T21:22:49.366Z |  |
+| 44 | 07 | deviation | tests/golden/inspect_container.txt |  | 07-02 hand-added four meta.decode_errors video[N] rows (value 0, verified only against this workstation's rendering) to a designated-leg golden; the x64-linux CI leg must confirm them | open |  | 2026-09-30T21:22:49.366Z |  |
 | 45 | 07 | deviation | docs/checks/content.video.frame_hash.md |  | 07-02 frame_record_budget_exhausted with a complete packet scan is reachable only when the last frame records overflow (EOF drain); a mid-stream exhaustion is followed by the packet scan's own partial and reports skipped:partial_scan. Shared-budget design question for the user | open |  | 2026-09-30T21:22:49.513Z |  |
+| 46 | 07 | todo | src/probe/demux_session.cpp | 219 | Pre-existing memory-DoS exposure found by the 07-02 executor: DemuxSession::open calls avformat_find_stream_info (src/probe/demux_session.cpp:219) with no max_pixels bound on the decoders libavformat opens to probe streams. Measured by that executor: a stream header declaring 8208x8192 cost 195 MB RSS through inspect, and 12288x12288 cost 420 MB; libavcodec's own av_image_check_size caps the exposure at roughly 1 GB. Outside T-07-06's scope, which bounds only mediadiff's own video decode open (kMaxVideoPixels). Needs a disposition at the Phase 7 security audit: bound it (for example pass max_pixels through avformat_find_stream_info's per-stream codec options) or accept it with a reason. | open |  | 2026-09-30T21:25:45.499Z |  |
 
 ````json
 [
@@ -585,7 +586,7 @@ last_updated: 2026-09-30T21:22:49.513Z
     "phase": "07",
     "file": "tests/golden/inspect_container.txt",
     "line": null,
-    "description": "07-02 hand-added six meta.decode_errors video[N] rows (value 0, verified only against this workstation's rendering) to a designated-leg golden; the x64-linux CI leg must confirm them",
+    "description": "07-02 hand-added four meta.decode_errors video[N] rows (value 0, verified only against this workstation's rendering) to a designated-leg golden; the x64-linux CI leg must confirm them",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-30T21:22:49.366Z",
@@ -601,6 +602,18 @@ last_updated: 2026-09-30T21:22:49.513Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-30T21:22:49.513Z",
+    "resolved_at": null
+  },
+  {
+    "id": 46,
+    "kind": "todo",
+    "phase": "07",
+    "file": "src/probe/demux_session.cpp",
+    "line": 219,
+    "description": "Pre-existing memory-DoS exposure found by the 07-02 executor: DemuxSession::open calls avformat_find_stream_info (src/probe/demux_session.cpp:219) with no max_pixels bound on the decoders libavformat opens to probe streams. Measured by that executor: a stream header declaring 8208x8192 cost 195 MB RSS through inspect, and 12288x12288 cost 420 MB; libavcodec's own av_image_check_size caps the exposure at roughly 1 GB. Outside T-07-06's scope, which bounds only mediadiff's own video decode open (kMaxVideoPixels). Needs a disposition at the Phase 7 security audit: bound it (for example pass max_pixels through avformat_find_stream_info's per-stream codec options) or accept it with a reason.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T21:25:45.499Z",
     "resolved_at": null
   }
 ]
