@@ -20,7 +20,7 @@ an MP4, its Matroska remux and its MPEG-TS remux of one payload hash equal even 
 shifts every PTS by about 1.4 s, and it is why a retimed stream produces one finding (`timeline.*`),
 not two.
 
-**Every decoded frame is hashed.** A frame an MP4 edit list marks decode-but-do-not-show is still
+**Every decoded frame is hashed** (unless `--sample N` thins the hashing, see below). A frame an MP4 edit list marks decode-but-do-not-show is still
 hashed: libavcodec would otherwise destroy it before it reaches the hash, and MPEG-TS cannot express
 the trim at all, so an untouched remux would diverge at frame 0. The trim itself is owned by
 `timeline.start`, `timeline.duration` and `container.mp4.edit_list`. The decoder is also flushed at
@@ -82,9 +82,32 @@ first frame, so a pixel-format or size change between the two sides is reported 
 `--no-content` (or `dir`'s own opt-in default) disables the decode pass entirely; this check then
 reports `skipped:requires_decode` on every video scope, never silence and never a fabricated value. A
 stream that decodes to zero frames reports `skipped:insufficient_data`, never an empty-string digest.
-`--sample N` will hash and store every Nth frame only -- every frame is still decoded, because
-inter-coded video cannot skip frames, so that option buys a smaller snapshot and not a faster decode;
-the paragraph describing it is filled in by the plan that adds the option.
+
+**`--sample N` hashes and stores every Nth frame.** Available on `compare`, `snapshot`, `dir` and
+`inspect`. Every frame is still decoded, because inter-coded video cannot skip frames, and everything
+else that looks at the decoded frames (error and corrupt-frame counts, geometry changes, and the
+frozen, black, caption and HDR detection of later checks) still sees every one of them. Only the
+hashing and the stored per-frame arrays are thinned: a frame is hashed and stored when its decode
+index is a multiple of N, so stored frame `k` is decode frame `k x N`, and the chain digest covers only
+the stored frames. The option therefore makes a snapshot roughly N times smaller and quality scoring
+cheaper, but it is not a faster decode. `--sample 1` is the same as no `--sample`: the fingerprint is
+byte-identical.
+
+The fingerprint says it was sampled. This check's `sampling_state` evidence is `sampled:N` (instead of
+`full`), and the snapshot's envelope records `"sampling": {"video_frame_stride": N}`; both are absent
+for a full fingerprint, so no existing snapshot changes. `frame_interval` evidence is the stream's frame
+interval times N, which is what keeps the divergence report's frame pairing correct, and a divergence
+report on a sampled pair adds `sample_stride` so a frame number reads as a stored-frame index, not as
+the Nth decoded frame.
+
+**Only fingerprints taken with the same N compare.** Any other pairing with a sampled side -- sampled
+against full, or two different strides -- reports `skipped:sampling_mismatch` and tells you to re-run
+both sides with the same `--sample`; it is never `hash_incomparable` and never a pass. A truncated side
+still reports `skipped:hash_incomparable`, because truncation outranks sampling. Audio is not sampled:
+`content.audio.sample_hash` is identical with and without `--sample`.
+
+`--sample` with a zero, negative or non-integer value, or together with `--no-content`, is a usage
+error (exit 64) naming the flag.
 
 **Truncated decodes.** When the decode stops before a stream's own end -- more than 64 consecutive
 decode failures (`consecutive_decode_error_limit`), or the per-file record budget running out
@@ -146,6 +169,11 @@ There is no tolerance to tune -- `hash` semantics are exact-or-not by constructi
 `transform` profile (an intentional transcode) this check is silenced to `ignore`; under `hw-encoder`
 (an intentional hardware re-encode) it is demoted to `info`, so the change is still visible under `-v`
 without gating the run.
+
+`--sample N` trades locator resolution for snapshot size: a change confined to frames the stride skips
+is not seen, so use a small N (or none) when a one-frame corruption must be caught. Compare only equal
+N -- a snapshot taken with `--sample 4` is compared against media probed with `--sample 4`, never
+against a full one.
 
 ### Silence
 
