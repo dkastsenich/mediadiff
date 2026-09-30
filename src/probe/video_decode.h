@@ -125,10 +125,13 @@ struct StreamVideoDecode {
   std::string pix_fmt_folded;
   std::int64_t width = 0;
   std::int64_t height = 0;
-  // A later frame whose size or folded format differs from the first frame's
-  // is still hashed from its OWN fields (each digest covers its own dims and
-  // format, D-05) and counted here. No stop token: unlike audio's fixed-layout
-  // block accumulator, nothing carries across video frames.
+  // The number of TRANSITIONS: each time a frame's size or folded format
+  // differs from the frame decoded just before it (07-02-PLAN.md: one
+  // mid-stream resolution change is 1, however many frames follow it). Every
+  // frame is still hashed from its OWN fields (each digest covers its own dims
+  // and format, D-05), and `width`/`height`/`pix_fmt_folded` above stay the
+  // FIRST frame's. No stop token: unlike audio's fixed-layout block
+  // accumulator, nothing carries across video frames.
   std::int64_t geometry_change_count = 0;
   std::int64_t frame_count = 0;
   // One 32-lowercase-hex XXH3-128 digest per decoded frame, in decode (output)
@@ -251,6 +254,10 @@ class VideoDecodeState {
   std::int64_t width_ = 0;
   std::int64_t height_ = 0;
   bool have_first_frame_ = false;
+  // The previous frame's own geometry, for counting transitions.
+  std::int64_t last_width_ = 0;
+  std::int64_t last_height_ = 0;
+  std::string last_pix_fmt_folded_;
   std::int64_t geometry_change_count_ = 0;
   std::int64_t frame_count_ = 0;
   std::vector<std::string> frame_digests_;

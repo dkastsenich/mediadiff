@@ -185,8 +185,23 @@
 # `-threads 1` to the mpeg4 encode, so their bytes do not depend on the runner's
 # CPU count. `video_hash_base.mp4` and `video_hash_base_copy.mp4` share one hash
 # by design (two independent encodes with identical arguments).
+#
+# STATUS (as of 07-02-PLAN.md Task 1): five MORE names, appended to the same
+# ledger for the same reason as the five above -- the content.video.frame_hash
+# edge-case fixtures video_trim.mp4 and video_trim.mkv (the D-06 edit-list
+# trim and its Matroska remux), video_cover.mp4 (cover art), video_geom_change.m2v
+# (a mid-stream resolution change) and video_hash_small.mp4 (the resolution-change
+# pair's candidate). Workstation-computed the same way
+# (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`), awaiting the designated
+# leg's transcription. The mpeg4 encode carries `-threads 1`; the mpeg2video
+# halves of video_geom_change.m2v carry it too.
+video_cover.mp4
+video_geom_change.m2v
 video_hash_alt.mp4
 video_hash_base.mkv
 video_hash_base.mp4
 video_hash_base.ts
 video_hash_base_copy.mp4
+video_hash_small.mp4
+video_trim.mkv
+video_trim.mp4

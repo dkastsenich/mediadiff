@@ -186,6 +186,12 @@ add_executable(mediadiff_integration_tests
   # evidence, the per-frame arrays and their snapshot contract, --no-content's
   # requires_decode skip, the single-sweep proof and TRUST-05 determinism.
   test_video_hash.cpp
+  # CONTENT-01 (07-02-PLAN.md): the video decode path's edge cases, one
+  # fixture each -- D-06's edit-list frames, the EOF drain, cover art, a
+  # mid-stream resolution change, decode errors forcing class 2 and reaching
+  # meta.decode_errors, the declared-dimension bound and the per-frame record
+  # budget. Every frame count is a literal measured with the pinned ffmpeg.
+  test_video_decode_edges.cpp
   # AUDIO-01/AUDIO-02 (06-03-PLAN.md Task 2): audio.codec/sample_rate/
   # sample_fmt/bit_depth/channels/layout proven through the real CLI --
   # 5.1 vs 5.1(side) on an equal channel count, unspecified-layout-as-a-

@@ -168,6 +168,9 @@ VideoDecodeState::VideoDecodeState(VideoDecodeState&& other) noexcept
       width_(other.width_),
       height_(other.height_),
       have_first_frame_(other.have_first_frame_),
+      last_width_(other.last_width_),
+      last_height_(other.last_height_),
+      last_pix_fmt_folded_(std::move(other.last_pix_fmt_folded_)),
       geometry_change_count_(other.geometry_change_count_),
       frame_count_(other.frame_count_),
       frame_digests_(std::move(other.frame_digests_)),
@@ -206,6 +209,9 @@ VideoDecodeState& VideoDecodeState::operator=(VideoDecodeState&& other) noexcept
   width_ = other.width_;
   height_ = other.height_;
   have_first_frame_ = other.have_first_frame_;
+  last_width_ = other.last_width_;
+  last_height_ = other.last_height_;
+  last_pix_fmt_folded_ = std::move(other.last_pix_fmt_folded_);
   geometry_change_count_ = other.geometry_change_count_;
   frame_count_ = other.frame_count_;
   frame_digests_ = std::move(other.frame_digests_);
@@ -341,9 +347,15 @@ void VideoDecodeState::consume_frame(const AVFrame& frame) {
     width_ = frame.width;
     height_ = frame.height;
     pix_fmt_folded_ = folded;
-  } else if (frame.width != width_ || frame.height != height_ || folded != pix_fmt_folded_) {
+  } else if (frame.width != last_width_ || frame.height != last_height_ || folded != last_pix_fmt_folded_) {
+    // A transition from the PREVIOUS frame's geometry, not a comparison with
+    // the first frame's: one resolution change is one change, however many
+    // frames follow it.
     ++geometry_change_count_;
   }
+  last_width_ = frame.width;
+  last_height_ = frame.height;
+  last_pix_fmt_folded_ = folded;
 
   frame_digests_.push_back(std::move(digest));
   if (frame.pts == AV_NOPTS_VALUE) {
