@@ -68,6 +68,24 @@ enum class SkipReason {
   // omits it), but content.audio.sample_hash reports no digest for it --
   // never an unproven digest nobody can trust.
   hash_disabled,
+  // 07-04-PLAN.md (the approved Phase 7 roster, 07-CHECK-ROSTER.md): the four
+  // additive reasons the Phase 7 checks need. Appended after hash_disabled so
+  // no existing enumerator moves; the spellings are permanent public contract.
+  //
+  // 07-10/07-11: an opt-in quality.* check (psnr, ssim, vmaf) whose flag was
+  // not given -- the check exists, it was simply not asked for.
+  not_requested,
+  // 07-11 (CONTENT-09): quality.vmaf under `--sample N`. VMAF scores
+  // temporal features across neighbouring frames, so a strided frame set
+  // yields a number that means something else; the check refuses instead.
+  sampling_conflict,
+  // 07-09: a `tol` two-file check whose D-04 scaler or decode-path record
+  // differs between the two sides. Distinct from hash_incomparable, which
+  // names a hash and would mislead for a scored measurement.
+  path_incomparable,
+  // 07-08/07-10: the two sides' display geometry, thumbnail geometry or
+  // plane layout cannot be paired, so no per-frame score can be formed.
+  geometry_mismatch,
 };
 
 // Which stream/program a Measurement or Finding applies to. `global` covers
@@ -179,6 +197,14 @@ inline std::string_view skip_reason_to_string(SkipReason reason) {
       return "no_timing_data";
     case SkipReason::hash_disabled:
       return "hash_disabled";
+    case SkipReason::not_requested:
+      return "not_requested";
+    case SkipReason::sampling_conflict:
+      return "sampling_conflict";
+    case SkipReason::path_incomparable:
+      return "path_incomparable";
+    case SkipReason::geometry_mismatch:
+      return "geometry_mismatch";
   }
   // Unreachable for any valid SkipReason -- see src/cli/exit_code.h's own
   // no-default:-arm-plus-trailing-return pattern for why this shape.
@@ -201,6 +227,10 @@ inline std::optional<SkipReason> skip_reason_from_string(std::string_view text) 
   if (text == "insufficient_data") return SkipReason::insufficient_data;
   if (text == "no_timing_data") return SkipReason::no_timing_data;
   if (text == "hash_disabled") return SkipReason::hash_disabled;
+  if (text == "not_requested") return SkipReason::not_requested;
+  if (text == "sampling_conflict") return SkipReason::sampling_conflict;
+  if (text == "path_incomparable") return SkipReason::path_incomparable;
+  if (text == "geometry_mismatch") return SkipReason::geometry_mismatch;
   return std::nullopt;
 }
 
