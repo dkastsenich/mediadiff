@@ -93,6 +93,11 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
   expect_declared_set(
       report,
       {
+          // 07-01-PLAN.md (content.video.frame_hash): the candidate splices two separately
+          // encoded 2s segments whose testsrc2 picture restarts at the splice, so its decoded
+          // frames 50-99 genuinely differ from the baseline's continuous 4s encode (first
+          // divergent frame 50; `ffmpeg -f framemd5` agrees).
+          "content.video.frame_hash",
           // The container format itself genuinely changed (mov -> mpegts),
           // same as every other MP4-to-TS pair in this phase.
           "container.format",
@@ -520,6 +525,11 @@ TEST_CASE(
   expect_declared_set(
       report,
       {
+          // 07-01-PLAN.md (content.video.frame_hash): the same two-independently-encoded-
+          // segments splice -- segment B's picture restarts, so decoded frames 50-99 differ
+          // from timeline_ts_nowrap.ts's continuous encode (first divergent frame 50;
+          // `ffmpeg -f framemd5` agrees).
+          "content.video.frame_hash",
           // Each segment's own TS mux restarts its continuity_counter
           // sequence at 0 independently -- a genuine, UNEXPLAINED CC break
           // at the splice on every PID this two-segment technique

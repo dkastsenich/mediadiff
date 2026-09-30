@@ -203,6 +203,46 @@ const std::map<std::pair<std::string, std::string>, std::vector<std::string>>& k
       {{mediadiff::test::fixture("audio_stereo_s16.wav"), mediadiff::test::fixture("audio_stereo_s24.wav")},
        {"container.track_order", "audio.codec", "audio.sample_fmt", "audio.layout", "size.file",
         "size.stream_bitrate", "size.peak_bitrate"}},
+      // 07-01-PLAN.md (content.video.frame_hash): three declared clean pairs
+      // are clean for THEIR OWN check id only and were never pixel-identical
+      // -- each is a pair of SEPARATE encodes that differs in one encoder
+      // parameter, so content.video.frame_hash correctly reports the pictures
+      // differ. Each was confirmed independently with `ffmpeg -f framemd5`
+      // (the decoded frame md5 sequences differ), and each names ONLY that one
+      // added finding.
+      //
+      // container.mp4.fragment_duration's clean pair: `-g 20` vs `-g 22` -- a
+      // different GOP length moves every keyframe after frame 20, so decoded
+      // frames 20-49 differ (first divergent frame 20, 30 of 50 divergent).
+      {{mediadiff::test::fixture("mp4_fragmented.mp4"), mediadiff::test::fixture("mp4_fragmented_close.mp4")},
+       {"content.video.frame_hash"}},
+      // size.file's clean pair: `-b:v 700k` vs `-b:v 715k` -- near-equal FILE
+      // SIZE is this pair's whole purpose, but two different target bitrates
+      // are two different encodes (first divergent frame 17, 19 of 50
+      // divergent).
+      {{mediadiff::test::fixture("size_near_a.mp4"), mediadiff::test::fixture("size_near_b.mp4")},
+       {"content.video.frame_hash"}},
+      // video.pix_fmt's clean pair: two spellings of one colour-range INTENT at
+      // the metadata level only -- video_yuv420p_pc_tagged.mp4 is a `-c copy`
+      // retag (range `pc`) of LIMITED-range samples, video_yuvj420p.mp4 was
+      // encoded full-range, so the decoded sample values differ (all 50
+      // frames divergent). See test_video_yuvj.cpp's own note on this pair.
+      {{mediadiff::test::fixture("video_yuvj420p.mp4"), mediadiff::test::fixture("video_yuv420p_pc_tagged.mp4")},
+       {"content.video.frame_hash"}},
+      // 07-01-PLAN.md (content.video.frame_hash): its own declared CLEAN pair,
+      // chosen as the strongest remux available -- one MPEG-4 payload
+      // stream-copied into MPEG-TS -- so content.video.frame_hash itself is
+      // `pass` (the proof that neither the ~1.4 s PTS shift nor the muxer
+      // changes a hashed pixel; `ffmpeg -f framemd5` agrees the frames are
+      // identical). The MP4-to-TS container-family effects are the same ones
+      // every other MP4-to-TS pair in this corpus declares (see
+      // test_timeline_start_duration.cpp's tracer pair): container.format (mov
+      // -> mpegts), timeline.start (the TS mux delay), size.file/size.overhead
+      // (PES + TS packetization overhead), and meta.tags at both the global and
+      // the video scope (the MP4's handler/encoder tags have no TS equivalent).
+      // Verified against the real binary: exactly these six non-pass findings.
+      {{mediadiff::test::fixture("video_hash_base.mp4"), mediadiff::test::fixture("video_hash_base.ts")},
+       {"container.format", "timeline.start", "size.file", "size.overhead", "meta.tags", "meta.tags"}},
   };
   return exceptions;
 }

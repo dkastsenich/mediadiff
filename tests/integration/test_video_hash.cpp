@@ -421,3 +421,65 @@ TEST_CASE("video_hash - two compare --json runs over the same pair are byte-iden
   CHECK(first.out.find("\"element_ticks\"") != std::string::npos);
   CHECK(first.out.find("\"block_digests\"") != std::string::npos);
 }
+
+// --- Task 3 Test 1 (SNAP-06): snapshot equivalence --------------------------
+
+TEST_CASE("video_hash - snapshot then compare of a video fixture against its own snapshot reports "
+          "content.video.frame_hash = pass and exits 0",
+          "[integration]") {
+  const std::string snap_path = (scratch_dir() / "video_hash_base.snap.json").string();
+  const CliResult snap_result = run_cli({"snapshot", fixture("video_hash_base.mp4"), "--out", snap_path});
+  INFO("snapshot stderr: " << snap_result.err);
+  REQUIRE(snap_result.exit_code == 0);
+
+  int exit_code = -1;
+  const nlohmann::ordered_json report =
+      compare_json({"compare", fixture("video_hash_base.mp4"), snap_path, "--json"}, &exit_code);
+  REQUIRE_FALSE(report.is_discarded());
+  const auto* finding = find_finding(report, "content.video.frame_hash");
+  REQUIRE(finding != nullptr);
+  CHECK(finding->at("status") == "pass");
+  CHECK(exit_code == 0);
+  CHECK(finding->at("baseline").at("element_count") == 100);
+
+  // The other direction: the snapshot as BASELINE, the media as candidate.
+  int reverse_exit = -1;
+  const nlohmann::ordered_json reverse =
+      compare_json({"compare", snap_path, fixture("video_hash_base.mp4"), "--json"}, &reverse_exit);
+  REQUIRE_FALSE(reverse.is_discarded());
+  const auto* reverse_finding = find_finding(reverse, "content.video.frame_hash");
+  REQUIRE(reverse_finding != nullptr);
+  CHECK(reverse_finding->at("status") == "pass");
+  CHECK(reverse_exit == 0);
+}
+
+// --- Task 3 Test 2: a snapshot baseline produces the SAME finding as live media
+
+TEST_CASE("video_hash - a snapshot baseline reports the same status and the same evidence as the media-vs-media "
+          "compare",
+          "[integration]") {
+  const std::string snap_path = (scratch_dir() / "video_hash_base_trigger.snap.json").string();
+  REQUIRE(run_cli({"snapshot", fixture("video_hash_base.mp4"), "--out", snap_path}).exit_code == 0);
+
+  const nlohmann::ordered_json live =
+      compare_json({"compare", fixture("video_hash_base.mp4"), fixture("video_hash_alt.mp4"), "--json"});
+  const nlohmann::ordered_json from_snapshot =
+      compare_json({"compare", snap_path, fixture("video_hash_alt.mp4"), "--json"});
+  REQUIRE_FALSE(live.is_discarded());
+  REQUIRE_FALSE(from_snapshot.is_discarded());
+
+  const auto* live_finding = find_finding(live, "content.video.frame_hash");
+  const auto* snap_finding = find_finding(from_snapshot, "content.video.frame_hash");
+  REQUIRE(live_finding != nullptr);
+  REQUIRE(snap_finding != nullptr);
+
+  CHECK(snap_finding->at("status") == "fail");
+  CHECK(snap_finding->at("status") == live_finding->at("status"));
+  CHECK(snap_finding->at("baseline").at("element_count") == live_finding->at("baseline").at("element_count"));
+  CHECK(snap_finding->at("candidate").at("element_count") == live_finding->at("candidate").at("element_count"));
+  // D-07 / Phase 6 D-03: both sides' per-frame digests and ticks are stored, so a
+  // snapshot baseline yields byte-identical evidence to a live one.
+  CHECK(snap_finding->at("baseline") == live_finding->at("baseline"));
+  CHECK(snap_finding->at("message") == live_finding->at("message"));
+  CHECK(snap_finding->at("evidence") == live_finding->at("evidence"));
+}

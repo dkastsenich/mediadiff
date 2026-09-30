@@ -151,7 +151,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 ### Content, Quality & Size Checks
 
 - [x] **SIZE-01**: `size.file`, `size.stream_bitrate`, `size.peak_bitrate`, and `size.overhead` work, with peak windowing defined on DTS in ticks and rational bounds for cross-platform identity
-- [ ] **CONTENT-01**: `content.video.frame_hash` hashes exactly `bytes_per_row(width) × height` per plane — never `linesize` — chained with PTS, pix_fmt and dimensions
+- [ ] **CONTENT-01**: `content.video.frame_hash` hashes exactly `bytes_per_row(width) × height` per plane — never `linesize` — chained with PTS, pix_fmt and dimensions (amended, 07-01-PLAN.md, 2026-09-30: the presentation timestamp is stored per frame beside the digest rather than chained into it — D-05 — so an untouched remux hashes equal and a retime is `timeline.*`'s finding, not a second one here; the hashed basis is the cropped display rows, the `yuvj`-folded pixel-format name and the display dimensions, and the chain is XXH3-128 over the concatenated per-frame digests)
 - [ ] **CONTENT-02**: A hash mismatch reports the first divergent frame (index + PTS), contiguous divergent ranges merged at 1-frame gaps, and the total differing count
 - [ ] **CONTENT-03**: `--sample N` marks the fingerprint `sampled:N` and only equal-N fingerprints compare; mismatched sampling reports `skipped:sampling_mismatch`
 - [ ] **CONTENT-04**: `content.video.perceptual` computes SSIM on downscaled luma (SWS_AREA to width 128, 8×8 window) with pinned swscale flags recorded as a precondition, reporting min, mean, first frame below threshold, and a worst-10 list
