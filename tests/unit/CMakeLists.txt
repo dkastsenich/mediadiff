@@ -365,6 +365,10 @@ add_executable(mediadiff_unit_tests
   # counts, the pinned flags string, the class-2 table, the analyzer's skip
   # ladder and the T-07-02/T-07-05 bounds.
   test_video_decode.cpp
+  # 07-05-PLAN.md (CONTENT-06, T-07-15/T-07-16): the int64-only SSIM header's
+  # known answers and bounds, and the deterministic 128-wide thumbnail's
+  # height, depth normalization, range-preservation and SIMD-equals-C proof.
+  test_ssim_int.cpp
   # 07-03-PLAN.md (CONTENT-02, D-02/D-07): the one exact frame-pairing rule --
   # the strict half-interval boundary, timebase rounding, 60 vs 30, a drop, a
   # duplicate, negative first PTS, the index fallbacks and online == batch.

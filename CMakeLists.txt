@@ -188,6 +188,9 @@ add_library(libmediadiff STATIC
   # 07-01-PLAN.md (CONTENT-01, PROBE-08): the video decode pass, fused inside
   # packet_scan.cpp's own av_read_frame loop beside the audio one.
   src/probe/video_decode.cpp
+  # 07-05-PLAN.md (CONTENT-06): the deterministic 128-wide luma thumbnail
+  # (swscale, pinned flags) every video content sink shares.
+  src/probe/video_thumbnail.cpp
   src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
@@ -310,6 +313,8 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/audio_config.h
   src/probe/audio_decode.h
   src/probe/video_decode.h
+  src/probe/video_thumbnail.h
+  src/util/ssim_int.h
   src/probe/cadence.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
