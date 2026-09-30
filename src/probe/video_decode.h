@@ -56,6 +56,7 @@
 #include <vector>
 
 #include "probe/audio_decode.h"
+#include "probe/hdr_static.h"
 #include "probe/video_detectors.h"
 #include "probe/video_thumbnail.h"
 
@@ -230,6 +231,14 @@ struct StreamVideoDecode {
   // per-frame sink that does not own the stride.
   std::int64_t cc_frame_count = 0;
   std::int64_t cc_first_frame = 0;
+
+  // --- 07-07-PLAN.md (VIDEO-09): the first-frame HDR arm. ---
+  // The mastering-display and content-light metadata the decoder attached to
+  // this stream's FIRST decoded frame, whatever `--sample N` is (D-08).
+  // Engaged once a first frame exists, even when both entries are absent --
+  // an engaged optional holding neither entry is an observed absence; a
+  // disengaged one means no frame was ever read.
+  std::optional<HdrStaticMetadata> first_frame_hdr;
 };
 
 // One decode sweep's whole result, index-aligned with AVStream (mirrors
@@ -333,6 +342,8 @@ class VideoDecodeState {
   void tap_detectors(const AVFrame& frame);
   // 07-06-PLAN.md: records whether `frame` carries A53 caption side data.
   void tap_captions(const AVFrame& frame, std::int64_t decode_index);
+  // 07-07-PLAN.md: reads the first decoded frame's HDR static side data.
+  void tap_first_frame_hdr(const AVFrame& frame);
 
   AVCodecContext* codec_ctx_ = nullptr;
   bool attempted_init_ = false;
@@ -395,6 +406,9 @@ class VideoDecodeState {
   // 07-06-PLAN.md: the closed-caption sink's state (see StreamVideoDecode).
   std::int64_t cc_frame_count_ = 0;
   std::int64_t cc_first_frame_ = 0;
+
+  // 07-07-PLAN.md: the first-frame HDR arm's state (see StreamVideoDecode).
+  std::optional<HdrStaticMetadata> first_frame_hdr_;
 };
 
 }  // namespace detail

@@ -26,6 +26,7 @@ extern "C" {
 
 #include "analyzers/video/analyzers.h"
 #include "core/rational.h"
+#include "probe/hdr_static.h"
 #include "util/version.h"
 
 namespace mediadiff {
@@ -221,7 +222,8 @@ VideoDecodeState::VideoDecodeState(VideoDecodeState&& other) noexcept
       tap_interval_num_(other.tap_interval_num_),
       tap_interval_den_(other.tap_interval_den_),
       cc_frame_count_(other.cc_frame_count_),
-      cc_first_frame_(other.cc_first_frame_) {
+      cc_first_frame_(other.cc_first_frame_),
+      first_frame_hdr_(std::move(other.first_frame_hdr_)) {
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -284,6 +286,7 @@ VideoDecodeState& VideoDecodeState::operator=(VideoDecodeState&& other) noexcept
   tap_interval_den_ = other.tap_interval_den_;
   cc_frame_count_ = other.cc_frame_count_;
   cc_first_frame_ = other.cc_first_frame_;
+  first_frame_hdr_ = std::move(other.first_frame_hdr_);
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -435,6 +438,27 @@ void VideoDecodeState::tap_captions(const AVFrame& frame, std::int64_t decode_in
   ++cc_frame_count_;
 }
 
+void VideoDecodeState::tap_first_frame_hdr(const AVFrame& frame) {
+  // VIDEO-09's first-frame arm (07-07-PLAN.md): the mastering-display and
+  // content-light metadata the decoder attached to the stream's FIRST decoded
+  // frame, converted through the same guarded helpers the stream arm uses. The
+  // optional is engaged once a first frame exists, even when both entries are
+  // absent: that is what tells the analyzer a real absence was observed. Only
+  // the first frame is read (libavcodec maps a container's stream-level
+  // entries onto every frame, and a bitstream SEI in the first access unit is
+  // attached to frame 0 -- 07-RESEARCH.md Q7), whatever `--sample N` is.
+  HdrStaticMetadata hdr;
+  const AVFrameSideData* mdcv = av_frame_get_side_data(&frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+  if (mdcv != nullptr) {
+    read_mdcv_side_data(mdcv->data, mdcv->size, hdr);
+  }
+  const AVFrameSideData* cll = av_frame_get_side_data(&frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+  if (cll != nullptr) {
+    read_cll_side_data(cll->data, cll->size, hdr);
+  }
+  first_frame_hdr_ = hdr;
+}
+
 void VideoDecodeState::consume_frame(const AVFrame& frame) {
   // Nothing after a stop is hashed or counted -- a stream that latched a
   // truncation reason never resumes (mirrors AudioDecodeState::consume_frame).
@@ -448,6 +472,14 @@ void VideoDecodeState::consume_frame(const AVFrame& frame) {
   // frame k * stride (stride 1 stores everything, exactly as before).
   const std::int64_t decode_index = frames_seen_++;
   const bool store = decode_index % sample_stride_ == 0;
+
+  // 07-07-PLAN.md (VIDEO-09, D-08): the first decoded frame's HDR side data is
+  // read here, ahead of every early return below, and independent of the
+  // stride: a frame the budget then refuses to store, or one that cannot be
+  // hashed, was still READ, and that is all this arm needs of it.
+  if (decode_index == 0) {
+    tap_first_frame_hdr(frame);
+  }
 
   // T-07-02: a STORED frame record charges the SAME accounted-byte budget a
   // PacketRecord does, checked BEFORE the append so the total never exceeds
@@ -649,6 +681,7 @@ StreamVideoDecode VideoDecodeState::finalize(const DecodeBudget& budget) {
   result.tap_interval_den = tap_interval_den_;
   result.cc_frame_count = cc_frame_count_;
   result.cc_first_frame = cc_first_frame_;
+  result.first_frame_hdr = first_frame_hdr_;
   result.decode_truncated = !decode_truncation_reason_.empty();
   result.decode_truncation_reason = decode_truncation_reason_;
   result.undecodable = frame_count_ == 0 && decode_error_count_ > 0;

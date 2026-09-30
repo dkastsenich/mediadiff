@@ -188,6 +188,9 @@ add_library(libmediadiff STATIC
   # 07-01-PLAN.md (CONTENT-01, PROBE-08): the video decode pass, fused inside
   # packet_scan.cpp's own av_read_frame loop beside the audio one.
   src/probe/video_decode.cpp
+  # 07-07-PLAN.md (VIDEO-09): the one HDR static-metadata conversion path both
+  # the stream arm (demux) and the first-decoded-frame arm share.
+  src/probe/hdr_static.cpp
   # 07-05-PLAN.md (CONTENT-06): the deterministic 128-wide luma thumbnail
   # (swscale, pinned flags) every video content sink shares.
   src/probe/video_thumbnail.cpp
@@ -320,6 +323,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/audio_config.h
   src/probe/audio_decode.h
   src/probe/video_decode.h
+  src/probe/hdr_static.h
   src/probe/video_thumbnail.h
   src/probe/video_detectors.h
   src/util/ssim_int.h
