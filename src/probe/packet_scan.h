@@ -338,6 +338,11 @@ struct PacketScanRequest {
   // invariance tests. Both are ignored entirely when `decode_video` is false.
   bool decode_video = false;
   int video_decode_threads = 0;
+  // 07-04-PLAN.md (D-08, CONTENT-03): `--sample N`'s stride, forwarded from
+  // ProbeOptions::sample_stride. Every frame is still decoded; only frames
+  // whose decode index is a multiple of it are hashed and stored. 1 is full.
+  // Ignored when `decode_video` is false.
+  int video_sample_stride = 1;
 };
 
 struct PacketScanOutputs {

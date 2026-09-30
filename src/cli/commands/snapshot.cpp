@@ -278,20 +278,25 @@ void register_snapshot_command(CLI::App& app) {
   // ContentCommandDefault::must_decode rejects --no-content as a usage
   // error). --content is still accepted (and is simply redundant with the
   // default) so the flag spelling is consistent across every command.
-  CLI::Option* content_flag = cmd->add_flag("--content", "Decode audio content for hashing (snapshot's own default -- always on)");
+  CLI::Option* content_flag = cmd->add_flag("--content", "Decode audio and video content for hashing (snapshot's own default -- always on)");
   CLI::Option* no_content_flag =
       cmd->add_flag("--no-content", "Not valid for snapshot -- a snapshot always decodes (usage error)");
   // 06-05-PLAN.md (AUDIO-09): a snapshot always decodes, so its own
   // --hash-decoder choice is what every later `compare` against it
   // inherits (D-08: decoder selection is a property of the fingerprint).
   HashDecoderArgs hash_decoder_args = add_hash_decoder_flag(*cmd);
+  // 07-04-PLAN.md (CONTENT-03, D-08): the stride is a property of the
+  // fingerprint -- a snapshot taken under --sample N records `sampled:N`, and
+  // only a compare at the same N reads it as comparable.
+  SampleArgs sample_args = add_sample_flag(*cmd);
 
   // ENG-16 explicitly reserves exit()/stdout/stderr as "the CLI's
   // prerogative" — see src/cli/commands/compare.cpp's identical rationale.
   // Capturing a raw Option* by value is exactly as safe as the shared_ptr
   // it replaces (D-05): the App owns the Option for the whole program
   // lifetime, and this callback only runs during app.parse().
-  cmd->callback([input_path, out_path, force_flag, probe_args, content_flag, no_content_flag, hash_decoder_args]() {
+  cmd->callback([input_path, out_path, force_flag, probe_args, content_flag, no_content_flag, hash_decoder_args,
+                 sample_args]() {
     const CheckRegistry& registry = builtin_registry();
 
     // 06-01-PLAN.md Task 3: resolved before any probe budget/timeout
@@ -310,8 +315,15 @@ void register_snapshot_command(CLI::App& app) {
       report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
-    const ProbeOptions probe_options{/*content_enabled=*/*content_enabled_result,
-                                      /*hash_decoder=*/*hash_decoder_result};
+    auto sample_result = resolve_sample_stride(sample_args, *content_enabled_result);
+    if (!sample_result) {
+      const Error& err = sample_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    ProbeOptions probe_options{/*content_enabled=*/*content_enabled_result,
+                                /*hash_decoder=*/*hash_decoder_result};
+    probe_options.sample_stride = *sample_result;
 
     // snapshot reads no mediadiff.toml today (it predates policy
     // resolution entirely), so --probe-timeout has no `[probe]

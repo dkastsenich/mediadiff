@@ -518,6 +518,32 @@ bool is_truncated_sampling(const nlohmann::ordered_json& evidence) {
   return it != evidence.end() && it->is_string() && it->get_ref<const std::string&>() == kSamplingStateTruncated;
 }
 
+// The evidence's `sampling_state` text when it is a string, else nullopt (the
+// key absent, or not a string). Reads the VALUE only, never `check.id`.
+std::optional<std::string_view> sampling_state_text(const nlohmann::ordered_json& evidence) {
+  if (!evidence.is_object()) {
+    return std::nullopt;
+  }
+  const auto it = evidence.find("sampling_state");
+  if (it == evidence.end() || !it->is_string()) {
+    return std::nullopt;
+  }
+  return std::string_view(it->get_ref<const std::string&>());
+}
+
+// How one side's `sampling_state` reads in the sampling_mismatch message:
+// `full` is stride 1, a canonical `sampled:N` is stride N, and anything else
+// (a hand-edited or hostile stored string) is quoted verbatim -- never guessed.
+std::string describe_sampling(std::string_view state) {
+  if (state == kSamplingStateFull) {
+    return "'full' (stride 1)";
+  }
+  if (const std::optional<int> stride = parse_sampled_stride(state); stride.has_value()) {
+    return fmt::format("'{}' (stride {})", state, *stride);
+  }
+  return fmt::format("'{}'", state);
+}
+
 // Returns the name of the first precondition key that disagrees between
 // the two evidence objects, or an empty string if every key present on
 // either side agrees. A key present on only one side counts as a mismatch
@@ -575,6 +601,30 @@ mediadiff::expected<Finding, Error> compare_hash(const CheckDef& check, const Me
     return finding;
   }
 
+  // 07-04-PLAN.md (CONTENT-03, D-08, research Pitfall 6): a `--sample N` chain
+  // holds every Nth frame, so it is comparable only with a chain taken at the
+  // same N. When the two `sampling_state` strings differ and at least one is a
+  // canonical `sampled:N`, that is skipped:sampling_mismatch -- the precise
+  // reason -- and NOT the generic hash_incomparable the precondition rule
+  // below would report. Runs after the truncated rule (truncation wins, the
+  // 06-14 ordering) and before first_precondition_mismatch. A state that does
+  // not parse is never treated as sampled, so a malformed stored string falls
+  // through to the generic precondition mismatch and can never become a pass
+  // (T-07-14). A side with no `sampling_state` at all also falls through.
+  const std::optional<std::string_view> baseline_state = sampling_state_text(baseline.evidence);
+  const std::optional<std::string_view> candidate_state = sampling_state_text(candidate.evidence);
+  if (baseline_state.has_value() && candidate_state.has_value() && *baseline_state != *candidate_state &&
+      (parse_sampled_stride(*baseline_state).has_value() || parse_sampled_stride(*candidate_state).has_value())) {
+    finding.status = Status::skipped;
+    finding.skip_reason = SkipReason::sampling_mismatch;
+    finding.message = fmt::format(
+        "hash comparison skipped: 'sampling_state' differs -- baseline is {}, candidate is {}; a chain holding every "
+        "Nth frame cannot be compared with one holding a different selection, so re-run both sides with the same "
+        "--sample N (or without --sample)",
+        describe_sampling(*baseline_state), describe_sampling(*candidate_state));
+    return finding;
+  }
+
   const std::string mismatched_key = first_precondition_mismatch(baseline.evidence, candidate.evidence);
   if (!mismatched_key.empty()) {
     finding.status = Status::skipped;
@@ -620,6 +670,19 @@ mediadiff::expected<Finding, Error> compare_hash(const CheckDef& check, const Me
     if (frame_divergence.available) {
       write_frame_divergence(frame_divergence, finding);
       finding.message = frame_divergence_message(frame_divergence);
+      // 07-04-PLAN.md (D-08): both sides are at the same stride by now (an
+      // unequal pair was skipped above), and every frame number in the report
+      // is a STORED-frame index -- stored frame k is decode frame k * stride.
+      // Said in the evidence and the message so "frame 20" is never misread as
+      // the 20th decoded frame. Absent for a full chain, so no existing
+      // report changes.
+      const std::optional<int> stride =
+          baseline_state.has_value() ? parse_sampled_stride(*baseline_state) : std::nullopt;
+      if (stride.has_value()) {
+        finding.evidence["sample_stride"] = *stride;
+        finding.message += fmt::format("; frame numbers index the stored frames under --sample {} (decode frame = {} x number)",
+                                        *stride, *stride);
+      }
       return finding;
     }
   }

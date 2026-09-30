@@ -95,17 +95,23 @@ int determinism_class_for_video_decoder(std::string_view decoder_name) {
 
 namespace detail {
 
-std::string hash_video_frame(const AVFrame& frame) {
+bool video_frame_hashable(const AVFrame& frame) {
   const AVPixelFormat fmt = static_cast<AVPixelFormat>(frame.format);
   const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(fmt);
   if (desc == nullptr || frame.width <= 0 || frame.height <= 0 || frame.data[0] == nullptr ||
       (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) != 0) {
+    return false;
+  }
+  return av_pix_fmt_count_planes(fmt) > 0;
+}
+
+std::string hash_video_frame(const AVFrame& frame) {
+  if (!video_frame_hashable(frame)) {
     return std::string();
   }
+  const AVPixelFormat fmt = static_cast<AVPixelFormat>(frame.format);
+  const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(fmt);
   const int planes = av_pix_fmt_count_planes(fmt);
-  if (planes <= 0) {
-    return std::string();
-  }
 
   XxhState state(XXH3_createState());
   if (!state || XXH3_128bits_reset(state.get()) != XXH_OK) {
@@ -173,6 +179,8 @@ VideoDecodeState::VideoDecodeState(VideoDecodeState&& other) noexcept
       last_pix_fmt_folded_(std::move(other.last_pix_fmt_folded_)),
       geometry_change_count_(other.geometry_change_count_),
       frame_count_(other.frame_count_),
+      frames_seen_(other.frames_seen_),
+      sample_stride_(other.sample_stride_),
       frame_digests_(std::move(other.frame_digests_)),
       frame_ticks_(std::move(other.frame_ticks_)),
       tb_num_(other.tb_num_),
@@ -214,6 +222,8 @@ VideoDecodeState& VideoDecodeState::operator=(VideoDecodeState&& other) noexcept
   last_pix_fmt_folded_ = std::move(other.last_pix_fmt_folded_);
   geometry_change_count_ = other.geometry_change_count_;
   frame_count_ = other.frame_count_;
+  frames_seen_ = other.frames_seen_;
+  sample_stride_ = other.sample_stride_;
   frame_digests_ = std::move(other.frame_digests_);
   frame_ticks_ = std::move(other.frame_ticks_);
   tb_num_ = other.tb_num_;
@@ -230,11 +240,12 @@ VideoDecodeState& VideoDecodeState::operator=(VideoDecodeState&& other) noexcept
   return *this;
 }
 
-bool VideoDecodeState::ensure_initialized(const AVStream& stream, int threads_override) {
+bool VideoDecodeState::ensure_initialized(const AVStream& stream, int threads_override, int sample_stride) {
   if (attempted_init_) {
     return attempted_;
   }
   attempted_init_ = true;
+  sample_stride_ = sample_stride > 1 ? sample_stride : 1;
 
   const AVCodecParameters* par = stream.codecpar;
   if (par == nullptr || par->codec_type != AVMEDIA_TYPE_VIDEO) {
@@ -294,7 +305,11 @@ bool VideoDecodeState::ensure_initialized(const AVStream& stream, int threads_ov
   tb_num_ = stream.time_base.num;
   tb_den_ = stream.time_base.den;
   if (stream.avg_frame_rate.num > 0 && stream.avg_frame_rate.den > 0) {
-    frame_interval_num_ = stream.avg_frame_rate.den;
+    // 07-04-PLAN.md (D-08): stored frames sit `sample_stride_` decoded frames
+    // apart, so the matching window the locator derives from this interval
+    // must be that many times wider. Both factors fit int comfortably, and the
+    // product is formed in int64.
+    frame_interval_num_ = static_cast<std::int64_t>(stream.avg_frame_rate.den) * sample_stride_;
     frame_interval_den_ = stream.avg_frame_rate.num;
   }
   attempted_ = true;
@@ -314,29 +329,45 @@ void VideoDecodeState::consume_frame(const AVFrame& frame) {
     return;
   }
 
-  // T-07-02: the stored frame record charges the SAME accounted-byte budget a
-  // PacketRecord does, checked BEFORE the append so the total never exceeds
-  // the cap even transiently.
-  std::int64_t next_total = 0;
-  if (budget_.accounted_bytes != nullptr) {
-    if (!checked_add(*budget_.accounted_bytes, kVideoFrameRecordBytes, &next_total) || next_total > budget_.max_bytes) {
-      latch_truncation(kDecodeStopFrameRecordBudget);
-      return;
-    }
-  }
+  // D-08 (07-04-PLAN.md): every frame is decoded and seen here; only a frame
+  // whose decode index is a multiple of the stride is hashed and stored. The
+  // index counts frames handed to this function, so stored index k is decode
+  // frame k * stride (stride 1 stores everything, exactly as before).
+  const std::int64_t decode_index = frames_seen_++;
+  const bool store = decode_index % sample_stride_ == 0;
 
-  std::string digest = hash_video_frame(frame);
-  if (digest.empty()) {
+  // T-07-02: a STORED frame record charges the SAME accounted-byte budget a
+  // PacketRecord does, checked BEFORE the append so the total never exceeds
+  // the cap even transiently. A skipped frame stores nothing and charges
+  // nothing.
+  std::int64_t next_total = 0;
+  std::string digest;
+  if (store) {
+    if (budget_.accounted_bytes != nullptr) {
+      if (!checked_add(*budget_.accounted_bytes, kVideoFrameRecordBytes, &next_total) ||
+          next_total > budget_.max_bytes) {
+        latch_truncation(kDecodeStopFrameRecordBudget);
+        return;
+      }
+    }
+    digest = hash_video_frame(frame);
+  }
+  // A frame that cannot be hashed is a decode error whether or not the stride
+  // would have stored it, so meta.decode_errors never depends on --sample.
+  if (store ? digest.empty() : !video_frame_hashable(frame)) {
     ++decode_error_count_;
     if (first_error_reason_.empty()) {
       first_error_reason_ = "unhashable_frame";
     }
     return;
   }
-  if (budget_.accounted_bytes != nullptr) {
+  if (store && budget_.accounted_bytes != nullptr) {
     *budget_.accounted_bytes = next_total;
   }
 
+  // Everything below up to the store is about the DECODE, not the hash chain,
+  // so it sees every frame (D-08: sampling never changes a value it does not
+  // own -- corrupt and geometry counts are the same with and without a stride).
   if ((frame.flags & AV_FRAME_FLAG_CORRUPT) != 0 || frame.decode_error_flags != 0) {
     ++corrupt_frame_count_;
   }
@@ -357,12 +388,18 @@ void VideoDecodeState::consume_frame(const AVFrame& frame) {
   last_height_ = frame.height;
   last_pix_fmt_folded_ = folded;
 
-  frame_digests_.push_back(std::move(digest));
+  // A frame without a timestamp makes the whole stream's timestamps unusable,
+  // stored or not, so a sampled chain reports the same `timestamps` evidence a
+  // full one would.
   if (frame.pts == AV_NOPTS_VALUE) {
     timestamps_usable_ = false;
     frame_ticks_.clear();
-  } else if (timestamps_usable_) {
-    frame_ticks_.push_back(frame.pts);
+  }
+  if (store) {
+    frame_digests_.push_back(std::move(digest));
+    if (timestamps_usable_) {
+      frame_ticks_.push_back(frame.pts);
+    }
   }
   ++frame_count_;
 }
@@ -462,6 +499,7 @@ StreamVideoDecode VideoDecodeState::finalize(const DecodeBudget& budget) {
   result.height = height_;
   result.geometry_change_count = geometry_change_count_;
   result.frame_count = frame_count_;
+  result.sample_stride = sample_stride_;
   result.frame_digests = frame_digests_;
   result.frame_ticks = frame_ticks_;
   result.tb_num = tb_num_;

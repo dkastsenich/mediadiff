@@ -39,6 +39,14 @@ struct ProbeOptions {
   // fixed count). Any other value is a TEST-ONLY control for TRUST-07's
   // 1/4/16 thread-invariance suite; no CLI flag ever sets it.
   int video_decode_threads = 0;
+  // 07-04-PLAN.md (D-08, CONTENT-03): `--sample N`. Every video frame is still
+  // decoded (detectors and error counts see them all), but only frames whose
+  // decode index is a multiple of this are hashed and stored in
+  // content.video.frame_hash's chain, which then records `sampled:N`. 1 (the
+  // default) is full and leaves every fingerprint byte-identical to one taken
+  // before the option existed. Audio hashing is not sampled. The CLI's
+  // resolve_sample_stride guarantees a positive value.
+  int sample_stride = 1;
 };
 
 // Tries read_snapshot(utf8_path, registry) first and returns its result

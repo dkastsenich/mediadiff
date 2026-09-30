@@ -272,6 +272,29 @@ HashDecoderArgs add_hash_decoder_flag(CLI::App& cmd);
 // than silently degrading a whole stream to class 3 inside the probe).
 mediadiff::expected<std::string, Error> resolve_hash_decoder(const HashDecoderArgs& args);
 
+// 07-04-PLAN.md (CONTENT-03, D-08): shared option storage for `--sample N`,
+// mirroring HashDecoderArgs's borrowed-`CLI::Option*` shape. Every command that
+// decodes registers the SAME flag with the SAME help text and resolution
+// contract, so it is one add_sample_flag helper, not four registration sites.
+struct SampleArgs {
+  CLI::Option* sample_flag = nullptr;
+};
+
+// Registers `--sample N` on `cmd`. The option is read as TEXT and validated by
+// resolve_sample_stride, so "0" and "-2" reach the resolver's own usage error
+// naming the flag instead of a CLI11 parse message.
+SampleArgs add_sample_flag(CLI::App& cmd);
+
+// Resolves `--sample`'s text to the stride handed to ProbeOptions::sample_stride
+// (T-07-13: rejected before any probe runs). Absent resolves to 1 (full).
+// `ErrorKind::usage` naming `--sample` for a non-integer, zero, negative or
+// beyond-`int` value. `content_enabled` is the command's already-resolved
+// content-decode switch: a stride of 2 or more with content decode off is a
+// usage error naming `--sample` and `--no-content`, since the stride applies to
+// the decode pass that flag disables. `--sample 1` (full) is always valid and
+// leaves the fingerprint byte-identical to one taken without the flag.
+mediadiff::expected<int, Error> resolve_sample_stride(const SampleArgs& args, bool content_enabled);
+
 // All-null PolicyArgs/ReportArgs/ColorArgs, with no CLI11 flags registered
 // on any App -- used by main.cpp's implicit two-positional dispatch
 // (CLI-01), which intentionally carries none of `compare`'s own optional

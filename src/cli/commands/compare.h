@@ -36,9 +36,13 @@ void register_compare_command(CLI::App& app);
 // src/cli/options.h's resolve_hash_decoder) -- main.cpp's implicit
 // two-positional route passes "auto" unconditionally, matching the
 // `compare` subcommand's own unflagged default.
+// 07-04-PLAN.md (CONTENT-03, D-08): `sample_stride` is the already-resolved
+// `--sample N` (src/cli/options.h's resolve_sample_stride) -- main.cpp's
+// implicit two-positional route passes 1 (full) unconditionally, matching the
+// `compare` subcommand's own unflagged default.
 [[noreturn]] void run_compare(const std::string& baseline_path, const std::string& candidate_path, bool strict,
                                bool verbose, bool quiet, bool content_enabled, const std::string& hash_decoder,
-                               const ReportArgs& report_args, const PolicyArgs& policy_args,
+                               int sample_stride, const ReportArgs& report_args, const PolicyArgs& policy_args,
                                const ColorArgs& color_args, const ProbeArgs& probe_args);
 
 }  // namespace mediadiff

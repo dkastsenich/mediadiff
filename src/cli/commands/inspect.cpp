@@ -33,14 +33,19 @@ void register_inspect_command(CLI::App& app) {
   // snapshot-first fallthrough means a stored snapshot's decode-derived
   // rows always come from whatever ProbeOptions were in force when IT was
   // written, never re-decoded here.
-  CLI::Option* content_flag = cmd->add_flag("--content", "Enable the decode-pass content checks (opt-in for inspect)");
+  CLI::Option* content_flag =
+      cmd->add_flag("--content", "Enable the decode-pass content checks, audio and video (opt-in for inspect)");
   CLI::Option* no_content_flag = cmd->add_flag(
-      "--no-content", "Explicitly disable the decode-pass content checks (inspect's own default)");
+      "--no-content", "Explicitly disable the decode-pass content checks, audio and video (inspect's own default)");
   // 06-05-PLAN.md (AUDIO-09): only matters when `file` is a live media path
   // (see --content's own comment above) -- a stored snapshot's decode-path
   // rows always come from whatever ProbeOptions were in force when IT was
   // written.
   HashDecoderArgs hash_decoder_args = add_hash_decoder_flag(*cmd);
+  // 07-04-PLAN.md (CONTENT-03, D-08): like --hash-decoder, only matters when
+  // `file` is a live media path -- a stored snapshot keeps the stride it was
+  // written with.
+  SampleArgs sample_args = add_sample_flag(*cmd);
 
   CliOptions options = add_common_options(*cmd);
 
@@ -50,7 +55,7 @@ void register_inspect_command(CLI::App& app) {
   // safe as the shared_ptr it replaces (D-05): the App owns the Option
   // for the whole program lifetime, and this callback only runs during
   // app.parse().
-  cmd->callback([file_path, content_flag, no_content_flag, hash_decoder_args, options]() {
+  cmd->callback([file_path, content_flag, no_content_flag, hash_decoder_args, sample_args, options]() {
     const CheckRegistry& registry = builtin_registry();
 
     auto content_enabled_result =
@@ -66,8 +71,15 @@ void register_inspect_command(CLI::App& app) {
       report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
-    const ProbeOptions probe_options{/*content_enabled=*/*content_enabled_result,
-                                      /*hash_decoder=*/*hash_decoder_result};
+    auto sample_result = resolve_sample_stride(sample_args, *content_enabled_result);
+    if (!sample_result) {
+      const Error& err = sample_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    ProbeOptions probe_options{/*content_enabled=*/*content_enabled_result,
+                                /*hash_decoder=*/*hash_decoder_result};
+    probe_options.sample_stride = *sample_result;
 
     // Policy resolution, through the SAME resolve_policy sequence
     // compare/list-checks already run (T-2-23) -- never a parallel

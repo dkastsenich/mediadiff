@@ -7,6 +7,7 @@
 // registry.h and value.h never include model.h back.
 
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -115,6 +116,45 @@ struct Scope {
 // cannot vouch for either side's unread remainder).
 inline constexpr std::string_view kSamplingStateFull = "full";
 inline constexpr std::string_view kSamplingStateTruncated = "truncated";
+
+// 07-04-PLAN.md (D-08, CONTENT-03): the THIRD `sampling_state` form. A video
+// chain taken under `--sample N` (N >= 2) says `sampled:N`: every frame was
+// still decoded, but only frames whose decode index is a multiple of N were
+// hashed and stored. Two chains compare only at equal N; compare_hash reports
+// any other pairing involving a sampled side as skipped:sampling_mismatch.
+// `full` is stride 1 and is never spelled `sampled:1`.
+inline constexpr std::string_view kSamplingStateSampledPrefix = "sampled:";
+
+inline std::string sampling_state_sampled(int stride) {
+  return std::string(kSamplingStateSampledPrefix) + std::to_string(stride);
+}
+
+// Parses ONLY the canonical spelling sampling_state_sampled() writes: the
+// `sampled:` prefix and then a positive decimal integer that fits an int --
+// digits only, no sign, no leading zero, nothing after. Anything else
+// (`sampled:0`, `sampled:-1`, `sampled:`, `sampled:007`, `full`, garbage from a
+// hand-edited or hostile snapshot) is nullopt, which compare_hash treats as
+// "not a sampled state" and so never as a match (T-07-14).
+inline std::optional<int> parse_sampled_stride(std::string_view state) {
+  if (state.substr(0, kSamplingStateSampledPrefix.size()) != kSamplingStateSampledPrefix) {
+    return std::nullopt;
+  }
+  const std::string_view digits = state.substr(kSamplingStateSampledPrefix.size());
+  if (digits.empty() || digits.front() == '0') {
+    return std::nullopt;
+  }
+  std::int64_t value = 0;
+  for (const char c : digits) {
+    if (c < '0' || c > '9') {
+      return std::nullopt;
+    }
+    value = value * 10 + (c - '0');
+    if (value > std::numeric_limits<int>::max()) {
+      return std::nullopt;
+    }
+  }
+  return static_cast<int>(value);
+}
 
 // What an analyzer emits (doc 01 section 1): one scoped, typed value per
 // check. `check_index` indexes into a CheckRegistry (core/registry.h), not

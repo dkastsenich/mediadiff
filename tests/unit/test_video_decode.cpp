@@ -151,7 +151,7 @@ std::optional<int> first_video_stream_index(DemuxSession& session) {
 
 mediadiff::expected<mediadiff::PacketScanOutputs, mediadiff::Error> decode_video(const std::string& path,
                                                                                    std::int64_t max_bytes = -1,
-                                                                                   int threads = 0) {
+                                                                                   int threads = 0, int sample_stride = 1) {
   auto session = DemuxSession::open(path, DemuxOptions{});
   REQUIRE(session.has_value());
   PacketScanRequest request;
@@ -160,6 +160,7 @@ mediadiff::expected<mediadiff::PacketScanOutputs, mediadiff::Error> decode_video
   }
   request.decode_video = true;
   request.video_decode_threads = threads;
+  request.video_sample_stride = sample_stride;
   return mediadiff::run_packet_scan(*session, request);
 }
 
@@ -522,6 +523,75 @@ TEST_CASE("video_decode - frame records charge the packet-scan budget, and exhau
   REQUIRE(again != nullptr);
   CHECK(again->frame_count == stream->frame_count);
   CHECK(again->frame_digests == stream->frame_digests);
+}
+
+// --- 07-04-PLAN.md (D-08): the sampling stride at the sink ------------------
+
+namespace {
+const StreamVideoDecode* attempted_stream(const mediadiff::PacketScanOutputs& outputs) {
+  const StreamVideoDecode* stream = nullptr;
+  if (outputs.video_decode.has_value()) {
+    for (const StreamVideoDecode& s : outputs.video_decode->per_stream) {
+      if (s.attempted) {
+        stream = &s;
+      }
+    }
+  }
+  return stream;
+}
+}  // namespace
+
+TEST_CASE("video_decode - a stride decodes every frame, stores every Nth, and widens the frame interval", "[unit]") {
+  auto full = decode_video(video_hash_base_mp4());
+  auto sampled = decode_video(video_hash_base_mp4(), -1, 0, 3);
+  REQUIRE(full.has_value());
+  REQUIRE(sampled.has_value());
+  const StreamVideoDecode* full_stream = attempted_stream(*full);
+  const StreamVideoDecode* sampled_stream = attempted_stream(*sampled);
+  REQUIRE(full_stream != nullptr);
+  REQUIRE(sampled_stream != nullptr);
+
+  // frame_count counts EVERY decoded frame; the stored arrays hold decode
+  // frames 0, 3, ..., 99 -- 34 of the 100.
+  CHECK(sampled_stream->frame_count == 100);
+  CHECK(sampled_stream->sample_stride == 3);
+  REQUIRE(sampled_stream->frame_digests.size() == 34);
+  REQUIRE(sampled_stream->frame_ticks.size() == 34);
+  for (std::size_t k = 0; k < 34; ++k) {
+    CHECK(sampled_stream->frame_digests[k] == full_stream->frame_digests[3 * k]);
+    CHECK(sampled_stream->frame_ticks[k] == full_stream->frame_ticks[3 * k]);
+  }
+  // Consecutive stored frames are three decoded frames apart: 3/25 s.
+  CHECK(full_stream->frame_interval_num == 1);
+  CHECK(sampled_stream->frame_interval_num == 3);
+  CHECK(sampled_stream->frame_interval_den == 25);
+  // The chain digest covers only the stored digests.
+  CHECK(sampled_stream->chain_digest != full_stream->chain_digest);
+  CHECK(full_stream->sample_stride == 1);
+  // A value the stride does not own.
+  CHECK(sampled_stream->decode_error_count == full_stream->decode_error_count);
+  CHECK(sampled_stream->corrupt_frame_count == full_stream->corrupt_frame_count);
+  CHECK(sampled_stream->geometry_change_count == full_stream->geometry_change_count);
+  CHECK(sampled_stream->timestamps_usable == full_stream->timestamps_usable);
+}
+
+TEST_CASE("video_decode - the frame-record budget charges only stored frames", "[unit]") {
+  // Budget for every PacketRecord and exactly 40 frame records: a full sweep
+  // truncates (100 frames), a stride-3 sweep stores 34 and does not.
+  const std::int64_t budget = 100 * static_cast<std::int64_t>(sizeof(mediadiff::PacketRecord)) +
+                              40 * mediadiff::kVideoFrameRecordBytes;
+  auto full = decode_video(video_hash_base_mp4(), budget);
+  auto sampled = decode_video(video_hash_base_mp4(), budget, 0, 3);
+  REQUIRE(full.has_value());
+  REQUIRE(sampled.has_value());
+  const StreamVideoDecode* full_stream = attempted_stream(*full);
+  const StreamVideoDecode* sampled_stream = attempted_stream(*sampled);
+  REQUIRE(full_stream != nullptr);
+  REQUIRE(sampled_stream != nullptr);
+  CHECK(full_stream->decode_truncated);
+  CHECK_FALSE(sampled_stream->decode_truncated);
+  CHECK(sampled_stream->frame_digests.size() == 34);
+  CHECK(sampled->packets.accounted_bytes <= budget);
 }
 
 // --- T-07-05: the consecutive-error bound ----------------------------------

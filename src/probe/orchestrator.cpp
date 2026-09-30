@@ -413,6 +413,7 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
       // dispatch arm.
       request.decode_video = union_passes.test(Pass::video_decode);
       request.video_decode_threads = options.video_decode_threads;
+      request.video_sample_stride = options.sample_stride;
       auto scan_result = run_packet_scan(session, request);
       if (scan_result) {
         results.packet_scan = std::move(scan_result->packets);

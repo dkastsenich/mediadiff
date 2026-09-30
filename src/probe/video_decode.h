@@ -133,9 +133,17 @@ struct StreamVideoDecode {
   // FIRST frame's. No stop token: unlike audio's fixed-layout block
   // accumulator, nothing carries across video frames.
   std::int64_t geometry_change_count = 0;
+  // EVERY frame the decoder produced, hashable or not, whatever the sampling
+  // stride: D-08 (07-04-PLAN.md) says `--sample N` decodes every frame and
+  // hashes only some, so this is the decoded count, and the stored count is
+  // `frame_digests.size()`.
   std::int64_t frame_count = 0;
-  // One 32-lowercase-hex XXH3-128 digest per decoded frame, in decode (output)
-  // order, and each frame's own AVFrame::pts in the stream's time base.
+  // 07-04-PLAN.md (D-08, CONTENT-03): the stride the sweep hashed and stored
+  // at -- 1 means every frame. Only frames whose decode index is a multiple
+  // of this are in `frame_digests`/`frame_ticks`.
+  int sample_stride = 1;
+  // One 32-lowercase-hex XXH3-128 digest per STORED frame, in decode (output)
+  // order, and each stored frame's own AVFrame::pts in the stream's time base.
   std::vector<std::string> frame_digests;
   std::vector<std::int64_t> frame_ticks;
   std::int64_t tb_num = 0;
@@ -144,8 +152,11 @@ struct StreamVideoDecode {
   // stream delivers no timestamps) -- `frame_ticks` is then cleared, so the
   // locator falls back to index alignment and the evidence says so.
   bool timestamps_usable = true;
-  // The inverse of the stream's avg_frame_rate, in seconds; both zero when the
-  // rate is unusable. The locator's "within half an interval" matching window.
+  // The inverse of the stream's avg_frame_rate, in seconds, TIMES the sampling
+  // stride (07-04-PLAN.md: consecutive STORED frames are `stride` decoded
+  // frames apart, and the locator's half-window must match that spacing); both
+  // zero when the rate is unusable. The locator's "within half an interval"
+  // matching window.
   std::int64_t frame_interval_num = 0;
   std::int64_t frame_interval_den = 0;
   // XXH3-128 of the ordered concatenation of every frame digest's hex bytes --
@@ -207,6 +218,14 @@ struct DecodeBudget {
   std::int64_t max_bytes = 0;
 };
 
+// True when `hash_video_frame` could produce a digest for `frame` at all: a
+// known pixel format, a positive size, CPU plane data, a software format.
+// 07-04-PLAN.md (D-08): a frame the sampling stride skips is not hashed, but
+// it must still count as a decode error exactly when it would have, or
+// `meta.decode_errors` would change with `--sample` -- a value the stride does
+// not own. Mirrors hash_video_frame's own precondition block.
+bool video_frame_hashable(const AVFrame& frame);
+
 // D-05's per-frame digest, exposed so tests/unit/test_video_decode.cpp can
 // prove the linesize-independence and the odd-width byte counts directly
 // against hand-built AVFrames. Returns the empty string for a frame it cannot
@@ -230,7 +249,10 @@ class VideoDecodeState {
   // the production default of exactly one thread; any other value is for
   // TRUST-07's thread-invariance tests only (it also selects frame+slice
   // threading and records the real count in the flags string).
-  bool ensure_initialized(const AVStream& stream, int threads_override);
+  // `sample_stride` (07-04-PLAN.md, D-08) is the `--sample N` stride: every
+  // frame is still decoded, but only frames whose decode index is a multiple
+  // of it are hashed and stored. Values below 1 are treated as 1.
+  bool ensure_initialized(const AVStream& stream, int threads_override, int sample_stride = 1);
 
   bool attempted() const { return attempted_; }
 
@@ -278,6 +300,10 @@ class VideoDecodeState {
   std::string last_pix_fmt_folded_;
   std::int64_t geometry_change_count_ = 0;
   std::int64_t frame_count_ = 0;
+  // Frames handed to consume_frame so far (the decode index of the NEXT one),
+  // whether or not they are hashable or stored.
+  std::int64_t frames_seen_ = 0;
+  int sample_stride_ = 1;
   std::vector<std::string> frame_digests_;
   std::vector<std::int64_t> frame_ticks_;
   std::int64_t tb_num_ = 0;

@@ -198,6 +198,12 @@ add_executable(mediadiff_integration_tests
   # equivalence, the index fallback, the T-07-11 caps and the untouched audio
   # locator. Every expected frame index is a literal checked with framemd5.
   test_video_locator.cpp
+  # CONTENT-03 (07-04-PLAN.md, D-08): `--sample N` end to end -- a stride that
+  # stores every Nth frame, `sampled:N` in the measurement and the envelope, the
+  # skipped:sampling_mismatch contract over real snapshots, stride 1 byte-
+  # identical to full, every value the stride does not own unchanged, the
+  # locator under a stride, and the usage errors.
+  test_video_sampling.cpp
   # AUDIO-01/AUDIO-02 (06-03-PLAN.md Task 2): audio.codec/sample_rate/
   # sample_fmt/bit_depth/channels/layout proven through the real CLI --
   # 5.1 vs 5.1(side) on an equal channel count, unspecified-layout-as-a-

@@ -73,6 +73,20 @@ std::vector<std::optional<Scope>> compute_video_scopes(const DemuxSession& demux
   return scopes;
 }
 
+// The `sampling_state` this stream's chain carries: `truncated` always wins
+// (a decode that stopped early is incomparable whatever its stride -- the 06-14
+// WR-02 rule compare_hash applies first), else `sampled:N` under `--sample N`
+// (D-08, CONTENT-03), else `full`.
+std::string sampling_state_of(const StreamVideoDecode& decode) {
+  if (decode.decode_truncated) {
+    return std::string(kSamplingStateTruncated);
+  }
+  if (decode.sample_stride >= 2) {
+    return sampling_state_sampled(decode.sample_stride);
+  }
+  return std::string(kSamplingStateFull);
+}
+
 void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) {
   if (results.demux == nullptr || !results.packet_scan.has_value()) {
     // Unreachable in practice -- both are unconditionally in this analyzer's
@@ -152,9 +166,11 @@ void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) 
       push_skip(CheckId::content_video_frame_hash, scope, SkipReason::partial_scan, fp);
       continue;
     }
-    if (decode.frame_count == 0) {
-      // A stream that decodes to zero frames is a real, comparable "nothing
-      // decoded" outcome, never a fabricated zero-element HashChain.
+    if (decode.frame_digests.empty()) {
+      // A stream with zero STORED frames is a real, comparable "nothing
+      // decoded" outcome, never a fabricated zero-element HashChain. At stride
+      // 1 that is exactly "zero frames decoded"; under --sample N it also
+      // covers a stream whose only stride-multiple frames were unhashable.
       push_skip(CheckId::content_video_frame_hash, scope, SkipReason::insufficient_data, fp);
       continue;
     }
@@ -162,7 +178,10 @@ void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) 
     HashChain chain;
     chain.algorithm = "xxh3-128";
     chain.digest = decode.chain_digest;
-    chain.element_count = decode.frame_count;
+    // D-08 (07-04-PLAN.md): the chain holds the STORED frames only -- with a
+    // stride that is every Nth decoded frame, `decode.frame_count` counts all of
+    // them. At stride 1 the two are equal, so nothing changes for a full chain.
+    chain.element_count = static_cast<std::int64_t>(decode.frame_digests.size());
     chain.block_digests = decode.frame_digests;
     chain.element_stride = 1;
     if (decode.timestamps_usable && !decode.frame_ticks.empty()) {
@@ -189,7 +208,7 @@ void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) 
     // own that finding (VIDEO-03: one intent, one finding).
     measurement.evidence = nlohmann::ordered_json{
         {"decode_path_class", decode_path_class},
-        {"sampling_state", std::string(decode.decode_truncated ? kSamplingStateTruncated : kSamplingStateFull)},
+        {"sampling_state", sampling_state_of(decode)},
         {"normalization", fmt::format("cropped;fmt={};dims={}x{}", decode.pix_fmt_folded, decode.width, decode.height)},
         {"decoder_name", decode.decoder_name},
         {"decoder_flags", decode.flags_recorded},
@@ -203,6 +222,14 @@ void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) 
     // keeps its exact key order.
     if (decode.decode_truncated) {
       measurement.evidence["decode_truncation_reason"] = decode.decode_truncation_reason;
+    }
+
+    // D-08: the envelope says the file was sampled, beside the per-check
+    // `sampling_state`. Present only for a real stride so a full fingerprint's
+    // `sampling` object stays empty and byte-identical to one taken before
+    // `--sample` existed. Every stream of one run shares the one stride.
+    if (decode.sample_stride >= 2) {
+      fp.envelope.sampling["video_frame_stride"] = decode.sample_stride;
     }
 
     fp.measurements.push_back(std::move(measurement));

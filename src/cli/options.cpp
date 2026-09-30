@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -457,6 +458,62 @@ mediadiff::expected<std::string, Error> resolve_hash_decoder(const HashDecoderAr
                                      "' does not name a decoder registered in this build's linked FFmpeg"});
   }
   return text;
+}
+
+// 07-04-PLAN.md: see options.h's own doc comment for the full contract.
+SampleArgs add_sample_flag(CLI::App& cmd) {
+  SampleArgs args;
+  args.sample_flag =
+      cmd.add_option("--sample",
+                      "Hash and store every Nth video frame. Every frame is still decoded, and "
+                      "frozen/black/caption/HDR detection still see every frame, so this makes snapshots "
+                      "smaller and quality scoring cheaper, not decoding faster. Audio hashing is not "
+                      "sampled. Only fingerprints taken with the same N compare.")
+          ->type_name("N");
+  return args;
+}
+
+mediadiff::expected<int, Error> resolve_sample_stride(const SampleArgs& args, bool content_enabled) {
+  if (args.sample_flag == nullptr || args.sample_flag->count() == 0) {
+    return 1;
+  }
+  const std::string text = opt_string(args.sample_flag);
+  // Strict decimal: an optional leading '-', then digits only. std::stoi would
+  // accept "2x" and leading whitespace, and throw on overflow.
+  std::size_t digits_from = (!text.empty() && text.front() == '-') ? 1 : 0;
+  bool well_formed = text.size() > digits_from;
+  for (std::size_t i = digits_from; i < text.size(); ++i) {
+    if (text[i] < '0' || text[i] > '9') {
+      well_formed = false;
+      break;
+    }
+  }
+  if (!well_formed) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, "'--sample " + text + "' is not an integer -- give a whole number of frames, 1 or more"});
+  }
+  if (digits_from == 1) {
+    return mediadiff::unexpected(Error{
+        ErrorKind::usage, "'--sample " + text + "' must be 1 or more (1 is full; 2 keeps every second frame)"});
+  }
+  std::int64_t value = 0;
+  for (const char c : text) {
+    value = value * 10 + (c - '0');
+    if (value > std::numeric_limits<int>::max()) {
+      return mediadiff::unexpected(Error{
+          ErrorKind::usage, "'--sample " + text + "' is too large -- it must fit a 32-bit signed integer"});
+    }
+  }
+  if (value < 1) {
+    return mediadiff::unexpected(Error{
+        ErrorKind::usage, "'--sample " + text + "' must be 1 or more (1 is full; 2 keeps every second frame)"});
+  }
+  if (value >= 2 && !content_enabled) {
+    return mediadiff::unexpected(Error{
+        ErrorKind::usage, "'--sample " + text + "' needs the content decode pass, which is off for this run "
+                            "(--no-content, or this command needs --content) -- drop --sample or enable content decoding"});
+  }
+  return static_cast<int>(value);
 }
 
 PolicyArgs default_policy_args() { return {}; }

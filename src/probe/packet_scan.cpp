@@ -341,7 +341,8 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     // enforces (T-07-02).
     if (request.decode_video) {
       detail::VideoDecodeState& vstate = video_decode_states[stream_index];
-      vstate.ensure_initialized(*ctx->streams[stream_index], request.video_decode_threads);
+      vstate.ensure_initialized(*ctx->streams[stream_index], request.video_decode_threads,
+                                request.video_sample_stride);
       if (vstate.attempted()) {
         vstate.feed_packet(*pkt.get(), detail::DecodeBudget{&accounted_bytes, limits.max_bytes});
       }

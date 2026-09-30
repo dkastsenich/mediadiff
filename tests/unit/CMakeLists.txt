@@ -369,6 +369,10 @@ add_executable(mediadiff_unit_tests
   # the strict half-interval boundary, timebase rounding, 60 vs 30, a drop, a
   # duplicate, negative first PTS, the index fallbacks and online == batch.
   test_frame_pairing.cpp
+  # 07-04-PLAN.md (CONTENT-03, D-08, T-07-14): compare_hash's sampling branch --
+  # sampled vs full, unequal strides, equal strides, truncated-wins ordering,
+  # the canonical-only stride parser and hostile stored states never passing.
+  test_sampling_mismatch.cpp
   # 06-08-PLAN.md Task 1 (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink
   # fused into the same decode sweep -- channel-role mapping, feed dispatch,
   # the gating-floor sentinel, quantiser determinism, and the zero-sample
