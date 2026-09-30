@@ -92,6 +92,38 @@ decode failures (`consecutive_decode_error_limit`), or the per-file record budge
 `sampling_state` evidence `"truncated"` and a `decode_truncation_reason` key naming why. A truncated
 side compared against anything reports `skipped:hash_incomparable`, never `pass` and never `fail`.
 
+### Reading the divergence report
+
+When the digests differ, the finding names where. Frames are **lined up by presentation time**, not by
+decode index: each file's times are measured from its own first frame, and two frames pair when their
+times differ by strictly less than half the frame interval of the finer file (exactly half does not
+pair). The arithmetic is exact rational arithmetic, so a timebase rounding such as MP4's 1/12800 against
+Matroska's 1 ms cannot misalign, and a 60 fps file against a 30 fps file pairs only the frames that
+coincide.
+
+- **A dropped frame reads as missing.** `frame 40 missing from candidate` (the `missing_from_candidate`
+  ranges and their total) and every later frame still lines up, so only genuinely changed frames count as
+  differing. Index alignment would instead report everything after the drop as different. A frame present
+  only in the candidate is listed the same way under `extra_in_candidate`.
+- **Differing frames are merged into ranges.** `divergent_ranges` holds each contiguous run as `first`,
+  `last` (baseline frame indices), `differing` (how many frames in it differ) and `start_time` /
+  `end_time` (exact seconds from the baseline's first frame, as a `{num, den}` pair). Two differing
+  frames with exactly one matching frame between them form one range; two or more matching frames end
+  it. `first_divergent_frame` gives the first differing frame's baseline and candidate index, its PTS in
+  the baseline's own time base and its exact time. `differing_frame_count` and `divergent_range_count`
+  are always exact totals.
+- **The lists are bounded.** Each list keeps its first 64 entries; `locator_truncated` is `true` when a
+  list was cut, and the totals still count everything.
+- **Milliseconds appear only in the message**, rendered from the exact time. The evidence carries no
+  inexact value, so the report is byte-identical run to run, and a snapshot baseline produces the same
+  evidence as the live file it was taken from.
+- **Raw streams pair by decode order.** When either file has no usable timestamps (a raw elementary
+  stream) or no known frame interval (MPEG-TS reports none), frames pair by position instead;
+  `pairing` is then `index` and `pairing_fallback` names the side and the reason, for example
+  `baseline_interval_unknown`. No time is stated in that case.
+
+The pass or fail verdict is unchanged by any of this; only the report says more.
+
 ## Why it matters
 
 A commit can pass every unit test while the pictures an encoder produces silently change. Hashing the
