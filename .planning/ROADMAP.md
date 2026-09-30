@@ -561,7 +561,7 @@ Plans:
   4. `quality.psnr` and `quality.ssim` report min and mean in-tree at native resolution, `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint and refuses `--sample` as `skipped:sampling_conflict`, and against a snapshot all three report `skipped:requires_media` while still showing stored scores for trend context.
   5. One decode sweep per side feeds hashing, perceptual scoring, frozen/black detection and A53/CEA-708 closed-caption presence, with `compare` running baseline and candidate in lockstep at one frame in flight per side; the full content pass runs at ≥ 4× realtime on software decode and produces identical hash chains at 1, 4 and 16 threads.
 
-**Plans**: 6/15 plans executed in 15 waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/packet_scan.cpp`, `src/probe/video_decode.*`, `CMakeLists.txt`, `tests/integration/test_doc03_coverage.cpp` and the corpus digest, so no two plans share a wave.
+**Plans**: 7/15 plans executed in 15 waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/packet_scan.cpp`, `src/probe/video_decode.*`, `CMakeLists.txt`, `tests/integration/test_doc03_coverage.cpp` and the corpus digest, so no two plans share a wave.
 
 Plans:
 **Wave 1**
@@ -590,7 +590,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 07-07-PLAN.md — VIDEO-09's first-frame HDR side-data arm through the shared static-metadata reader
+- [x] 07-07-PLAN.md — VIDEO-09's first-frame HDR side-data arm through the shared static-metadata reader
 
 **Wave 8** *(blocked on Wave 7)*
 
@@ -640,7 +640,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
 | 6. Audio Analysis | 20/20 | Complete    | 2026-09-28 |
-| 7. Content & Quality | 6/15 | In Progress|  |
+| 7. Content & Quality | 7/15 | In Progress|  |
 
 ## Coverage
 

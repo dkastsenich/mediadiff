@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
 status: executing
-stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-09-30T23:05:45.237Z"
+stopped_at: Completed 07-07-PLAN.md
+last_updated: "2026-09-30T23:29:00.924Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 7 execution started
-state_head: 8c96db860eb277c5754965fe7a896592d505948f
+state_head: d38d8868340b3a38f4c4e02edb340d3a3f7cf9c5
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 127
-  completed_plans: 118
+  completed_plans: 119
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 ## Current Position
 
 Phase: 7 (Content & Quality) — EXECUTING
-Plan: 7 of 15
+Plan: 8 of 15
 Status: Ready to execute
 Last activity: 2026-09-30 — Phase 7 execution started
 
@@ -170,6 +170,7 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 07 P04 | 18 min | 3 tasks | 28 files |
 | Phase 07 P05 | 35min | 3 tasks | 29 files |
 | Phase 07 P06 | 19min | 3 tasks | 23 files |
+| Phase 07 P07 | 25 min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -420,6 +421,8 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-05: the black and dark-grey fixtures are Matroska, not MP4 — the MP4 muxer drops -color_range for MPEG-4 Part 2; Matroska keeps it, so the range-flip proof is not vacuous
 - [Phase 07]: 07-05: detectors are tapped in consume_frame before the stride's store decision; frame boundaries carry their own ticks — D-08: both span lists are identical with and without --sample N, and no per-frame tick array is needed
 - [Phase 07]: 07-06: the caption sink sits beside the frozen and black detectors in consume_frame, before the stride's store decision, so video.closed_captions evidence is identical under --sample N; a truncated decode with no caption seen, or a zero-frame decode, is a named skip, never a fabricated Absent — A caption at decode index 3 is invisible to a sink tied to the stride (stride 5 never stores it); a prefix with no caption proves nothing about frames never decoded
+- [Phase 07]: 07-07: video.hdr.dovi keeps its own hevc/av1 codec table; the widened HDR10 table (now incl. h264) would make every H.264 dovi absence a permanent requires_decode skip — Dolby Vision has no first-frame arm
+- [Phase 07]: 07-07: video.hdr.coherence stays stream-level only (deferred-items.md); frame-aware coherence would make its value depend on which passes ran (D-12) — needs a vocabulary or skip-state decision, not a bug fix
 
 ### Pending Todos
 
@@ -467,6 +470,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-30T23:05:39.773Z
-Stopped at: Completed 07-06-PLAN.md
+Last session: 2026-09-30T23:29:00.662Z
+Stopped at: Completed 07-07-PLAN.md
 Resume file: None
