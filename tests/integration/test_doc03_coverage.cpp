@@ -58,8 +58,9 @@
 // closing out this phase's own DOC-03 obligation. 07-01-PLAN.md registers
 // Phase 7's tracer, content.video.frame_hash, bringing the running total to
 // ninety-two. 07-05-PLAN.md registers content.video.frozen_runs and
-// content.video.black_runs, bringing the running total to ninety-four. This
-// file is where a gap becomes visible.
+// content.video.black_runs, bringing the running total to ninety-four.
+// 07-06-PLAN.md registers video.closed_captions (VIDEO-11), bringing the
+// running total to ninety-five. This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's

@@ -218,6 +218,18 @@ struct StreamVideoDecode {
   // the sampling stride (frame_interval_* above is). Both zero when unusable.
   std::int64_t tap_interval_num = 0;
   std::int64_t tap_interval_den = 0;
+
+  // --- 07-06-PLAN.md (VIDEO-11): the closed-caption sink. ---
+  // The number of decoded frames that carried AV_FRAME_DATA_A53_CC side data
+  // (ATSC A/53 Part 4 captions, which the libavcodec MPEG-2, H.264, HEVC and
+  // AV1 decoders export), and the decode index of the first such frame. Only
+  // presence, a count and an index are kept -- never the caption bytes
+  // (T-07-18). The check is presence of ANY frame, so captions that start
+  // mid-stream count; `cc_first_frame` is meaningful only when
+  // `cc_frame_count > 0`. Independent of `--sample N` (D-08), like every
+  // per-frame sink that does not own the stride.
+  std::int64_t cc_frame_count = 0;
+  std::int64_t cc_first_frame = 0;
 };
 
 // One decode sweep's whole result, index-aligned with AVStream (mirrors
@@ -319,6 +331,8 @@ class VideoDecodeState {
   void latch_truncation(std::string_view reason);
   // 07-05-PLAN.md: thumbnails `frame` once and feeds both detectors.
   void tap_detectors(const AVFrame& frame);
+  // 07-06-PLAN.md: records whether `frame` carries A53 caption side data.
+  void tap_captions(const AVFrame& frame, std::int64_t decode_index);
 
   AVCodecContext* codec_ctx_ = nullptr;
   bool attempted_init_ = false;
@@ -377,6 +391,10 @@ class VideoDecodeState {
   std::int64_t min_tick_delta_ = 0;
   std::int64_t tap_interval_num_ = 0;
   std::int64_t tap_interval_den_ = 0;
+
+  // 07-06-PLAN.md: the closed-caption sink's state (see StreamVideoDecode).
+  std::int64_t cc_frame_count_ = 0;
+  std::int64_t cc_first_frame_ = 0;
 };
 
 }  // namespace detail

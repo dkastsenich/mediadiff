@@ -211,6 +211,7 @@ add_library(libmediadiff STATIC
   src/analyzers/video/color.cpp
   src/analyzers/video/interlace.cpp
   src/analyzers/video/hdr.cpp
+  src/analyzers/video/closed_captions.cpp
   src/analyzers/timeline/start_duration.cpp
   # TIME-02 (05-02-PLAN.md Task 2): unwrap_ts_timestamps, doc 04 section
   # 1.2's 33-bit MPEG-TS PTS/DTS unwrap as a pure function -- consumed by

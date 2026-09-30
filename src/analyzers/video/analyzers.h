@@ -98,6 +98,17 @@ const AnalyzerSpec& video_interlace_analyzer();
 // of any kind, matching video_color_analyzer()'s own shape exactly.
 const AnalyzerSpec& video_hdr_analyzer();
 
+// video.closed_captions (07-06-PLAN.md, VIDEO-11): A53/CEA-708 caption
+// presence, detected during the video decode sweep from
+// StreamVideoDecode::cc_frame_count (frame side data, filled in
+// src/probe/video_decode.cpp -- libav stays in the probe layer). Scoped
+// ContainerFamily::other. required_passes = {Pass::demux_header,
+// Pass::packet_scan, Pass::video_decode}: under `--no-content` the decode pass
+// is cleared and every video stream reports `skipped:requires_decode`; a
+// decoded stream with no captioned frame reports a real `Absent{}`. Phase 4
+// deferred this id (04-CHECK-ROSTER.md) because nothing decoded a frame yet.
+const AnalyzerSpec& video_closed_captions_analyzer();
+
 namespace detail {
 
 // video.pix_fmt/video.color.range's own single fold seam (VIDEO-03,

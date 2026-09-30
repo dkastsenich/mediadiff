@@ -198,6 +198,12 @@ add_executable(mediadiff_integration_tests
   # colour-range flip, dark grey not black, --sample independence, the
   # truncated and --no-content skips and introduced/removed gating.
   test_video_detectors.cpp
+  # VIDEO-11 (07-06-PLAN.md): video.closed_captions on the two no-GPL routes --
+  # an MPEG-2 GA94 insert (every frame captioned, identical pixels to the
+  # uncaptioned stream) and a hand-written H.264 I_PCM stream whose caption SEI
+  # starts at the fourth frame; a real Absent, --no-content, --sample
+  # independence, a truncated decode and the snapshot round trip.
+  test_closed_captions.cpp
   # CONTENT-02 (07-03-PLAN.md): the time-aligned frame locator on real
   # one-frame corruptions -- first divergent frame (index, PTS), ranges merged
   # at one-frame gaps, exact totals, a dropped frame reading "missing", snapshot

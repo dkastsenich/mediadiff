@@ -576,6 +576,19 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
       {"content.video.black_runs",
        {fixture("video_black_base.mkv"), fixture("video_black_tv.mkv"), fixture("video_black_tv.mkv"),
         fixture("video_black_pc.mkv")}},
+      // 07-06-PLAN.md (VIDEO-11): video.closed_captions' trigger is
+      // video_cc_base.m2v vs video_cc_a53.m2v -- ONE native-encoder MPEG-2
+      // elementary stream with and without an ATSC GA94 user-data unit inserted
+      // before the first slice of every picture. The two decode to identical
+      // pixels, so the captions are the only difference: the check fails
+      // (present -> absent or the reverse) while content.video.frame_hash passes.
+      // Its clean pair is video_cc_a53.m2v vs video_cc_a53_copy.m2v, the
+      // captioned stream against its byte-identical copy. No GPL encoder is
+      // involved: the base is the native mpeg2video encoder and the insert is
+      // pure byte surgery (tools/gen_video_fixtures.py).
+      {"video.closed_captions",
+       {fixture("video_cc_base.m2v"), fixture("video_cc_a53.m2v"), fixture("video_cc_a53.m2v"),
+        fixture("video_cc_a53_copy.m2v")}},
 
       // --- 06-03-PLAN.md (AUDIO-01, AUDIO-02): the six per-audio-stream
       // header-pass identity checks -- codec/sample_rate/sample_fmt/

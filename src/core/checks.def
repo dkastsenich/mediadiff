@@ -1041,6 +1041,28 @@ value_kind = "string"
 severity = "info"
 flagged_values = ["hdr_meta_sdr_transfer", "pq_without_mdcv"]
 
+# 07-06-PLAN.md (VIDEO-11; 07-CHECK-ROSTER.md, approve-as-proposed 2026-09-30),
+# src/analyzers/video/closed_captions.cpp: A53/CEA-708 caption presence. The
+# value is the string `a53_cc` when ANY decoded frame of the stream carried
+# AV_FRAME_DATA_A53_CC side data (captions commonly start mid-stream, so not
+# only the first frame), a real Absent{} when the stream decoded and none did,
+# and `skipped:requires_decode` under `--no-content`. Phase 4 deferred the id
+# (04-CHECK-ROSTER.md left it out of its roster) because the caption bytes live
+# inside the compressed pictures and only the video decode pass, which did not
+# exist until Phase 7, reports them. `presence` semantic
+# (src/compare/presence.cpp): pass iff both sides are Absent or both are not,
+# so losing the captions is a failure and adding them is one too; `fail`
+# severity per doc 03's row, with no profile overrides. The caption payload
+# never enters the fingerprint or the report -- only presence, a frame count and
+# the first frame's index (T-07-18).
+[[check]]
+id = "video.closed_captions"
+group = "video"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
 # 05-01-PLAN.md (TIME-01/TIME-03), src/analyzers/timeline/start_duration.cpp
 # -- this phase's tracer, approved at 05-CHECK-ROSTER.md. D-03: ONE
 # Scope{Kind::global} measurement holds the file's earliest presentation

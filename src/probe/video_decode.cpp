@@ -219,7 +219,9 @@ VideoDecodeState::VideoDecodeState(VideoDecodeState&& other) noexcept
       prev_tap_tick_(other.prev_tap_tick_),
       min_tick_delta_(other.min_tick_delta_),
       tap_interval_num_(other.tap_interval_num_),
-      tap_interval_den_(other.tap_interval_den_) {
+      tap_interval_den_(other.tap_interval_den_),
+      cc_frame_count_(other.cc_frame_count_),
+      cc_first_frame_(other.cc_first_frame_) {
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -280,6 +282,8 @@ VideoDecodeState& VideoDecodeState::operator=(VideoDecodeState&& other) noexcept
   min_tick_delta_ = other.min_tick_delta_;
   tap_interval_num_ = other.tap_interval_num_;
   tap_interval_den_ = other.tap_interval_den_;
+  cc_frame_count_ = other.cc_frame_count_;
+  cc_first_frame_ = other.cc_first_frame_;
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -417,6 +421,20 @@ void VideoDecodeState::tap_detectors(const AVFrame& frame) {
   ++tap_count_;
 }
 
+void VideoDecodeState::tap_captions(const AVFrame& frame, std::int64_t decode_index) {
+  // VIDEO-11: presence of A53 caption side data on ANY decoded frame. Only the
+  // fact, a count and the first frame's decode index are kept -- the payload
+  // bytes never leave this function (T-07-18). libav stays in this file: the
+  // analyzer reads cc_frame_count / cc_first_frame and never a side-data type.
+  if (av_frame_get_side_data(&frame, AV_FRAME_DATA_A53_CC) == nullptr) {
+    return;
+  }
+  if (cc_frame_count_ == 0) {
+    cc_first_frame_ = decode_index;
+  }
+  ++cc_frame_count_;
+}
+
 void VideoDecodeState::consume_frame(const AVFrame& frame) {
   // Nothing after a stop is hashed or counted -- a stream that latched a
   // truncation reason never resumes (mirrors AudioDecodeState::consume_frame).
@@ -487,6 +505,10 @@ void VideoDecodeState::consume_frame(const AVFrame& frame) {
   // frame, whatever the stride -- tapped here, where every frame passes, and
   // not where the stride selects the one to store.
   tap_detectors(frame);
+
+  // 07-06-PLAN.md (VIDEO-11, D-08): the caption sink sees every hashable
+  // decoded frame too, whatever the stride.
+  tap_captions(frame, decode_index);
 
   // A frame without a timestamp makes the whole stream's timestamps unusable,
   // stored or not, so a sampled chain reports the same `timestamps` evidence a
@@ -625,6 +647,8 @@ StreamVideoDecode VideoDecodeState::finalize(const DecodeBudget& budget) {
   result.min_tick_delta = min_tick_delta_;
   result.tap_interval_num = tap_interval_num_;
   result.tap_interval_den = tap_interval_den_;
+  result.cc_frame_count = cc_frame_count_;
+  result.cc_first_frame = cc_first_frame_;
   result.decode_truncated = !decode_truncation_reason_.empty();
   result.decode_truncation_reason = decode_truncation_reason_;
   result.undecodable = frame_count_ == 0 && decode_error_count_ > 0;

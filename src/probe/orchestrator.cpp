@@ -139,6 +139,10 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // order (TRUST-05), rather than interleaved among the ParserScan-
       // consuming ones just above it.
       video_hdr_analyzer(),
+      // 07-06-PLAN.md (VIDEO-11): video.closed_captions -- a video-family check
+      // that needs the decode sweep, listed directly after the HDR analyzer so
+      // the video family stays grouped (TRUST-05) and appended in commit order.
+      video_closed_captions_analyzer(),
       // 05-01-PLAN.md Task 2 (TIME-01/TIME-03, D-03): timeline.start, this
       // phase's tracer -- ContainerFamily::other (a timeline check applies
       // to every container), Pass::packet_scan only (no parser_scan, no
