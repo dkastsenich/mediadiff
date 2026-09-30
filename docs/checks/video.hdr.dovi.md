@@ -20,13 +20,15 @@ record exists at all, before it ever looks at a single RPU byte. Losing
 the record entirely -- even if the underlying picture content is
 byte-identical -- silently downgrades playback to the base layer only.
 
-This check reuses the SAME could/could-not-carry-frame-level-metadata
-decision `video.hdr.mdcv`/`video.hdr.cll` already use: an absence on a
-codec that could never carry Dolby Vision data any other way (`mpeg4`,
-`mpeg2video`) is a genuine, permanent `Absent`; an absence on a codec that
-COULD (`hevc`, `av1`) is reported as `skipped:requires_decode` -- a real
-possibility this phase cannot check without a decode pass, never presented
-as though it had been checked and found absent.
+This check is stream-level only: a Dolby Vision configuration record is not
+per-frame static metadata, so it has no first-frame arm (unlike
+`video.hdr.mdcv`/`video.hdr.cll`, which gained one in Phase 7). Its absence
+keeps the could/could-not-carry classification it always had, with its own
+codec table: an absence on a codec that could never carry Dolby Vision data
+any other way (`mpeg4`, `mpeg2video`, and `h264`, which was added only to the
+HDR10 table) is a genuine, permanent `Absent`; an absence on `hevc` or `av1`
+is reported as `skipped:requires_decode`, which no decode pass resolves, since
+there is no frame arm for this record.
 
 **v1 scope:** this check (and its sibling `video.hdr.dovi.config`) compares
 the configuration record only. Per-frame Dolby Vision RPU diffing is

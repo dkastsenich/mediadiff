@@ -204,6 +204,13 @@ add_executable(mediadiff_integration_tests
   # starts at the fourth frame; a real Absent, --no-content, --sample
   # independence, a truncated decode and the snapshot round trip.
   test_closed_captions.cpp
+  # VIDEO-09 (07-07-PLAN.md): the first-frame arm of video.hdr.mdcv/cll on
+  # 07-06's hand-written H.264 stream (SEI 137 + 144 in the first access unit
+  # only, no stream-level entry): exact values and `source: "frame"`, a snapshot
+  # round trip, a real absence once decode exists, --no-content's skip, stream
+  # precedence over every existing HDR fixture, and the partial_scan /
+  # insufficient_data branches over a hand-built decode result.
+  test_hdr_first_frame.cpp
   # CONTENT-02 (07-03-PLAN.md): the time-aligned frame locator on real
   # one-frame corruptions -- first divergent frame (index, PTS), ranges merged
   # at one-frame gaps, exact totals, a dropped frame reading "missing", snapshot

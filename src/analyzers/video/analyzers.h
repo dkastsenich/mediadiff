@@ -85,17 +85,20 @@ const AnalyzerSpec& video_interlace_analyzer();
 
 // video.hdr.mdcv/video.hdr.mdcv.luminance/video.hdr.mdcv.primaries/
 // video.hdr.cll/video.hdr.cll.max/video.hdr.cll.avg (04-11-PLAN.md,
-// VIDEO-09): HDR10 mastering-display and content-light metadata read from
-// codecpar->coded_side_data (via DemuxSession::stream_info's own
-// mdcv_*/cll_* fields) -- no decode pass exists in this phase (D-08/D-09),
-// so this is the ONLY precedence arm this phase can wire; the second arm
-// (first-frame side data, Phase 7) is declared in hdr.cpp's own
-// resolve_hdr_source, named and reachable, but returns
-// `skipped:requires_decode` rather than a real value until Phase 7 fills
-// it. Scoped ContainerFamily::other (codec-scoped, not container-scoped:
-// the mp4/mkv demuxers both attach coded_side_data the identical way).
-// required_passes = {Pass::demux_header} only -- codecpar alone, no scan
-// of any kind, matching video_color_analyzer()'s own shape exactly.
+// VIDEO-09): HDR10 mastering-display and content-light metadata, from two
+// arms in precedence order (D-08): codecpar->coded_side_data first (via
+// DemuxSession::stream_info's own mdcv_*/cll_* fields), then -- 07-07-PLAN.md --
+// the FIRST decoded frame's side data (StreamVideoDecode::first_frame_hdr),
+// recorded as evidence `source: "stream"` or `"frame"`. Both arms convert
+// through probe/hdr_static.h. With no decode result (`--no-content`) a
+// frame-capable codec (HEVC, AV1, H.264) without stream-level metadata reports
+// `skipped:requires_decode`; with one, a real `Absent{}` (or a named
+// partial_scan / insufficient_data skip when no first frame was read).
+// Scoped ContainerFamily::other (codec-scoped, not container-scoped: the
+// mp4/mkv demuxers both attach coded_side_data the identical way).
+// required_passes = {Pass::demux_header, Pass::packet_scan,
+// Pass::video_decode}: the stream arm needs codecpar alone, the frame arm the
+// decode sweep.
 const AnalyzerSpec& video_hdr_analyzer();
 
 // video.closed_captions (07-06-PLAN.md, VIDEO-11): A53/CEA-708 caption
@@ -365,7 +368,8 @@ InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> acc
 // video.hdr.mdcv/.cll's own could/could-not-carry-frame-level-HDR-metadata
 // decision (D-08, VIDEO-09-E1): HEVC and AV1 both define SEI messages (HEVC)
 // or metadata OBUs (AV1) carrying mastering-display/content-light data at
-// the FRAME level -- decoding either could, in principle, surface data this
+// the FRAME level (07-07-PLAN.md adds H.264, whose SEI reaches frame side data
+// through the same libavcodec h2645_sei.c export as HEVC's -- 07-RESEARCH.md Q7) -- decoding either could, in principle, surface data this
 // phase's stream-level-only extraction missed, which is exactly what makes
 // their own absence `skipped:requires_decode` rather than an ordinary
 // absence. mpeg4 (MPEG-4 Part 2) and mpeg2video have no such SEI/OBU
@@ -377,10 +381,17 @@ InterlaceClassification classify_interlace(std::span<const AccessUnitRecord> acc
 // ordinal (src/analyzers/ never sees one, mirrors every other
 // codec-name-keyed table in this project). Exposed here so
 // tests/unit/test_video_hdr.cpp's own Task 3 Test 2 can drive it directly
-// for all four named codecs, never through a fixture (no HEVC/AV1 fixture
-// exists in this phase's corpus -- every HDR fixture plan 04-04 built is a
-// plain mpeg4 encode with container-level mdcv/clli boxes, D-09).
+// for every named codec, never through a fixture (every HDR fixture plan
+// 04-04 built is a plain mpeg4 encode with container-level mdcv/clli boxes,
+// D-09; the first-frame arm's fixture is 07-06's hand-written H.264 I_PCM
+// stream).
 bool could_carry_frame_level_hdr(const std::string& codec_name);
+
+// video.hdr.dovi's own codec table (07-07-PLAN.md): the pre-07-07 hevc/av1 set.
+// Dolby Vision has no first-frame arm, so it does not follow could_carry_
+// frame_level_hdr when that table is widened (h264 was added for the HDR10
+// mastering-display and content-light families only).
+bool could_carry_frame_level_dovi(const std::string& codec_name);
 
 // video.hdr.mdcv.primaries' own chromaticity/white-point quantisation
 // (04-CHECK-ROSTER.md's approved resolution of flagged assumption A1): doc

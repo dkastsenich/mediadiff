@@ -148,14 +148,26 @@ TEST_CASE("video_hdr - quantize_chromaticity refuses an overflowing computation 
 
 // --- Test 2 (hand-built): the could/could-not-carry decision ---------------
 
-TEST_CASE("video_hdr - could_carry_frame_level_hdr is true for hevc and av1, false for mpeg4 and mpeg2video",
+TEST_CASE("video_hdr - could_carry_frame_level_hdr is true for hevc, av1 and h264, false for mpeg4 and mpeg2video",
           "[unit]") {
   REQUIRE(could_carry_frame_level_hdr("hevc"));
   REQUIRE(could_carry_frame_level_hdr("av1"));
+  // 07-07-PLAN.md (07-RESEARCH.md Q7): H.264 joins the set -- libavcodec's H.264
+  // and HEVC decoders share h2645_sei.c's mastering-display and content-light
+  // export. This line asserted `false` before 07-07 widened the table.
+  REQUIRE(could_carry_frame_level_hdr("h264"));
   REQUIRE_FALSE(could_carry_frame_level_hdr("mpeg4"));
   REQUIRE_FALSE(could_carry_frame_level_hdr("mpeg2video"));
   // Not in the closed table at all -- also false, never a guess.
-  REQUIRE_FALSE(could_carry_frame_level_hdr("h264"));
+  REQUIRE_FALSE(could_carry_frame_level_hdr("mjpeg"));
+}
+
+TEST_CASE("video_hdr - could_carry_frame_level_dovi keeps the pre-07-07 hevc/av1 table", "[unit]") {
+  // Dolby Vision has no first-frame arm, so H.264 never joins its table.
+  REQUIRE(mediadiff::detail::could_carry_frame_level_dovi("hevc"));
+  REQUIRE(mediadiff::detail::could_carry_frame_level_dovi("av1"));
+  REQUIRE_FALSE(mediadiff::detail::could_carry_frame_level_dovi("h264"));
+  REQUIRE_FALSE(mediadiff::detail::could_carry_frame_level_dovi("mpeg4"));
 }
 
 // --- Test 3 (real fixture): video_hdr_a.mp4 carries all six checks --------
