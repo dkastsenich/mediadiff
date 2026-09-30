@@ -195,6 +195,17 @@
 # (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`), awaiting the designated
 # leg's transcription. The mpeg4 encode carries `-threads 1`; the mpeg2video
 # halves of video_geom_change.m2v carry it too.
+#
+# STATUS (as of 07-02-PLAN.md Task 2): three MORE names, the same ledger and the
+# same reason -- video_corrupt_mpeg4_base.mkv and video_corrupt_mpeg4.mkv (a
+# stream copy with ONE packet damaged by the `noise` bitstream filter, so the
+# decoder reports a decode error) and video_huge_dims.h264 (a hand-written SPS
+# declaring 8208x8192, past the decode bound; tools/gen_video_fixtures.py, no
+# encoder involved). Workstation-computed the same way
+# (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`), awaiting the designated
+# leg's transcription. The mpeg4 encode carries `-threads 1`.
+video_corrupt_mpeg4.mkv
+video_corrupt_mpeg4_base.mkv
 video_cover.mp4
 video_geom_change.m2v
 video_hash_alt.mp4
@@ -203,5 +214,6 @@ video_hash_base.mp4
 video_hash_base.ts
 video_hash_base_copy.mp4
 video_hash_small.mp4
+video_huge_dims.h264
 video_trim.mkv
 video_trim.mp4

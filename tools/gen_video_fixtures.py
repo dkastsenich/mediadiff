@@ -267,7 +267,7 @@ H264_LOG2_MAX_FRAME_NUM_MINUS4 = 0
 H264_LOG2_MAX_FRAME_NUM = H264_LOG2_MAX_FRAME_NUM_MINUS4 + 4
 
 
-def build_h264_sps(*, sps_id=0, max_num_ref_frames):
+def build_h264_sps(*, sps_id=0, max_num_ref_frames, width_mbs=H264_WIDTH_MBS, height_mbs=H264_HEIGHT_MBS):
     w = BitWriter()
     w.u(8, 66)  # profile_idc = Baseline -- no high-profile chroma_format_idc block
     w.u(1, 0)  # constraint_set0_flag
@@ -283,8 +283,8 @@ def build_h264_sps(*, sps_id=0, max_num_ref_frames):
     w.ue(2)  # pic_order_cnt_type = 2: no POC syntax anywhere, in SPS or slice header
     w.ue(max_num_ref_frames)
     w.u(1, 0)  # gaps_in_frame_num_value_allowed_flag
-    w.ue(H264_WIDTH_MBS - 1)
-    w.ue(H264_HEIGHT_MBS - 1)
+    w.ue(width_mbs - 1)
+    w.ue(height_mbs - 1)
     w.u(1, 1)  # frame_mbs_only_flag
     w.u(1, 1)  # direct_8x8_inference_flag
     w.u(1, 0)  # frame_cropping_flag
@@ -327,7 +327,7 @@ def build_h264_slice(*, first_mb_in_slice=0, slice_type, pps_id=0, frame_num, is
 
 
 def build_h264_stream(*, total_access_units, idr_interval, max_num_ref_frames, num_ref_idx_l0_default_active_minus1,
-                       leading_idr_only):
+                       leading_idr_only, width_mbs=H264_WIDTH_MBS, height_mbs=H264_HEIGHT_MBS):
     """Emits SPS, PPS, then `total_access_units` access units. A keyframe
     position occurs every `idr_interval` access units, starting at 0.
     `leading_idr_only=True` makes ONLY position 0 a real IDR NAL (type 5);
@@ -336,7 +336,10 @@ def build_h264_stream(*, total_access_units, idr_interval, max_num_ref_frames, n
     position a real IDR -- the closed-GOP shape. Every non-keyframe position
     is a P slice (type 1)."""
     out = bytearray()
-    out += h264_nal(3, H264_NAL_SPS, build_h264_sps(max_num_ref_frames=max_num_ref_frames))
+    out += h264_nal(
+        3, H264_NAL_SPS,
+        build_h264_sps(max_num_ref_frames=max_num_ref_frames, width_mbs=width_mbs, height_mbs=height_mbs),
+    )
     out += h264_nal(
         3, H264_NAL_PPS,
         build_h264_pps(num_ref_idx_l0_default_active_minus1=num_ref_idx_l0_default_active_minus1),
@@ -824,6 +827,33 @@ def make_h264_refs4():
     )
 
 
+# 07-02-PLAN.md (T-07-06): an SPS that DECLARES 8208 x 8192 (513 x 512
+# macroblocks) over the same parse-only slices, one macroblock column past the
+# decode pass's kMaxVideoPixels bound (8192 x 8192), so the pre-open check on a
+# stream's declared dimensions is exercised by a real fixture at its exact
+# edge. Nothing decodes it; the point is that nothing TRIES to. The plan
+# proposed 16384 x 16384, but libavcodec's own av_image_check_size rejects
+# that size before the SPS is even accepted (measured: the stream then reports
+# 0x0, so the bound could never be reached); this is the smallest size that
+# is both accepted as a stream and over the bound, which also keeps the
+# probe's own find_stream_info allocation modest.
+H264_HUGE_DIMS_WIDTH_MBS = 513
+H264_HUGE_DIMS_HEIGHT_MBS = 512
+H264_HUGE_DIMS_ACCESS_UNITS = 4
+
+
+def make_h264_huge_dims():
+    return build_h264_stream(
+        total_access_units=H264_HUGE_DIMS_ACCESS_UNITS,
+        idr_interval=H264_HUGE_DIMS_ACCESS_UNITS,
+        max_num_ref_frames=DEFAULT_MAX_REF_FRAMES,
+        num_ref_idx_l0_default_active_minus1=DEFAULT_NUM_REF_IDX_L0_DEFAULT_ACTIVE_MINUS1,
+        leading_idr_only=False,
+        width_mbs=H264_HUGE_DIMS_WIDTH_MBS,
+        height_mbs=H264_HUGE_DIMS_HEIGHT_MBS,
+    )
+
+
 def make_hevc_idr():
     return build_hevc_stream(total_access_units=HEVC_TOTAL_ACCESS_UNITS, idr_interval=HEVC_IDR_INTERVAL, cra_mode=False)
 
@@ -1076,6 +1106,7 @@ def main():
     parser.add_argument("--h264-open", help="output path for the open-GOP H.264 Annex-B stream")
     parser.add_argument("--h264-refs1", help="output path for the max_num_ref_frames=1 H.264 Annex-B stream")
     parser.add_argument("--h264-refs4", help="output path for the max_num_ref_frames=4 H.264 Annex-B stream")
+    parser.add_argument("--h264-huge-dims", help="output path for the 8208x8192-declaring H.264 Annex-B stream")
     parser.add_argument("--hevc-idr", help="output path for the closed-GOP (IDR) HEVC Annex-B stream")
     parser.add_argument("--hevc-cra", help="output path for the open-GOP (CRA) HEVC Annex-B stream")
     parser.add_argument("--dovi-carrier", help="input MP4 to splice a dvcC box into (e.g. video_base.mp4)")
@@ -1108,6 +1139,7 @@ def main():
     add_task("h264-open", args.h264_open, make_h264_open)
     add_task("h264-refs1", args.h264_refs1, make_h264_refs1)
     add_task("h264-refs4", args.h264_refs4, make_h264_refs4)
+    add_task("h264-huge-dims", args.h264_huge_dims, make_h264_huge_dims)
     add_task("hevc-idr", args.hevc_idr, make_hevc_idr)
     add_task("hevc-cra", args.hevc_cra, make_hevc_cra)
 

@@ -21,10 +21,17 @@
 #include <nlohmann/json.hpp>
 
 #include "cli_harness.h"
+#include "compare/engine.h"
 #include "core/model.h"
+#include "core/policy.h"
 #include "core/registry.h"
 #include "core/value.h"
+#include "probe/demux_session.h"
 #include "probe/orchestrator.h"
+#include "probe/packet_scan.h"
+#include "probe/video_decode.h"
+#include "report/json.h"
+#include "report/model.h"
 #include "support/fixture_paths.h"
 
 using mediadiff::test::CliResult;
@@ -43,6 +50,12 @@ std::string fixture(const std::string& name) { return mediadiff::test::fixture_d
 constexpr std::int64_t kBaseFramesFramemd5 = 100;
 constexpr std::int64_t kTrimMp4FramesDefaultDiscard = 87;
 constexpr std::int64_t kTrimMkvFramesFramemd5 = 88;
+// Measured with the pinned ffmpeg (`-f framemd5`): video_corrupt_mpeg4_base.mkv
+// decodes all 100 frames; video_corrupt_mpeg4.mkv (packet 40 damaged by the
+// `noise` bitstream filter) decodes 99 -- libavcodec rejects the damaged
+// packet with AVERROR_INVALIDDATA ("header damaged").
+constexpr std::int64_t kCorruptBaseFramesFramemd5 = 100;
+constexpr std::int64_t kCorruptFramesFramemd5 = 99;
 // `ffprobe -show_frames` on video_geom_change.m2v: 24 frames at 352x288 and 25
 // at 320x240 (49 of the 50 packets: libavcodec itself drops the last frame of
 // the first sequence at the size change; the bytes of the file are not at
@@ -210,4 +223,209 @@ TEST_CASE("video_decode_edges - resolution change is incomparable", "[integratio
   REQUIRE(resolution != nullptr);
   CHECK(resolution->at("status") != "pass");
   CHECK(exit_code == 1);
+}
+
+
+// --- D-09 extended (research Open Question 3): decode errors reach the report
+
+TEST_CASE("video_decode_edges - corrupt stream", "[integration]") {
+  auto fp = probe("video_corrupt_mpeg4.mkv");
+  const mediadiff::Measurement* hash =
+      find_measurement(*fp, "content.video.frame_hash", mediadiff::Scope::Kind::video, 0);
+  REQUIRE(hash != nullptr);
+  REQUIRE(hash->evidence.is_object());
+  const std::int64_t errors = hash->evidence.at("decode_error_count").get<std::int64_t>();
+  const std::int64_t corrupt = hash->evidence.at("corrupt_frame_count").get<std::int64_t>();
+  CHECK(errors + corrupt > 0);
+  CHECK(hash->evidence.at("decode_path_class").get<std::string>().rfind("class2 ", 0) == 0);
+  // The frame the decoder refused is absent from the hashed set: the literal
+  // framemd5 count, not a value read back from mediadiff.
+  CHECK(video_chain(*fp).element_count == kCorruptFramesFramemd5);
+
+  // The decode_path record says class 2 as well.
+  REQUIRE(fp->envelope.decode_path.size() == 1);
+  CHECK(fp->envelope.decode_path.at(0).at("class") == 2);
+
+  // meta.decode_errors at the video scope is exactly errors + corrupt frames,
+  // with both components in evidence (A6).
+  const mediadiff::Measurement* meta =
+      find_measurement(*fp, "meta.decode_errors", mediadiff::Scope::Kind::video, 0);
+  REQUIRE(meta != nullptr);
+  const auto* value = std::get_if<std::int64_t>(&meta->value);
+  REQUIRE(value != nullptr);
+  CHECK(*value == errors + corrupt);
+  REQUIRE(meta->evidence.is_object());
+  CHECK(meta->evidence.at("decode_errors") == errors);
+  CHECK(meta->evidence.at("corrupt_frames") == corrupt);
+  CHECK(meta->evidence.contains("first_error_reason"));
+}
+
+TEST_CASE("video_decode_edges - clean zero", "[integration]") {
+  for (const char* name : {"video_hash_base.mp4", "video_corrupt_mpeg4_base.mkv"}) {
+    INFO(name);
+    auto fp = probe(name);
+    const mediadiff::Measurement* meta =
+        find_measurement(*fp, "meta.decode_errors", mediadiff::Scope::Kind::video, 0);
+    REQUIRE(meta != nullptr);
+    // A real 0 -- never Absent, never a skip.
+    const auto* value = std::get_if<std::int64_t>(&meta->value);
+    REQUIRE(value != nullptr);
+    CHECK(*value == 0);
+    CHECK(meta->evidence.at("decode_errors") == 0);
+    CHECK(meta->evidence.at("corrupt_frames") == 0);
+  }
+}
+
+TEST_CASE("video_decode_edges - corrupt vs base", "[integration]") {
+  int exit_code = -1;
+  const nlohmann::ordered_json report = compare_json(
+      {"compare", fixture("video_corrupt_mpeg4_base.mkv"), fixture("video_corrupt_mpeg4.mkv"), "--json"}, &exit_code);
+  REQUIRE_FALSE(report.is_discarded());
+  CHECK(exit_code == 1);
+
+  const nlohmann::ordered_json* video_meta = nullptr;
+  for (const auto& finding : report.at("findings")) {
+    if (finding.at("id") == "meta.decode_errors" && finding.at("scope").at("kind") == "video") {
+      video_meta = &finding;
+    }
+  }
+  REQUIRE(video_meta != nullptr);
+  CHECK(video_meta->at("status") == "fail");
+  CHECK(video_meta->at("baseline") == 0);
+  CHECK(video_meta->at("candidate") == 1);
+
+  const auto* hash = find_finding(report, "content.video.frame_hash");
+  REQUIRE(hash != nullptr);
+  CHECK(hash->at("status") == "fail");
+  CHECK(hash->at("baseline").at("element_count") == kCorruptBaseFramesFramemd5);
+  CHECK(hash->at("candidate").at("element_count") == kCorruptFramesFramemd5);
+}
+
+// --- T-07-01 / T-07-06: a declared size over the bound is never opened -----
+
+TEST_CASE("video_decode_edges - max pixels", "[integration]") {
+  // The SPS declares 8208 x 8192, one macroblock column over kMaxVideoPixels
+  // (8192 x 8192); nothing in this file is decodable, and nothing tries.
+  auto session = mediadiff::DemuxSession::open(fixture("video_huge_dims.h264"), mediadiff::DemuxOptions{});
+  REQUIRE(session.has_value());
+  mediadiff::PacketScanRequest request;
+  request.decode_video = true;
+  auto scan = mediadiff::run_packet_scan(*session, request);
+  REQUIRE(scan.has_value());
+  REQUIRE(scan->video_decode.has_value());
+  REQUIRE(scan->video_decode->per_stream.size() == 1);
+  const mediadiff::StreamVideoDecode& stream = scan->video_decode->per_stream[0];
+  CHECK_FALSE(stream.attempted);
+  CHECK(stream.fallback_reason == std::string(mediadiff::kVideoFallbackMaxPixels));
+  CHECK(stream.frame_count == 0);
+  CHECK(stream.frame_digests.empty());
+
+  auto fp = probe("video_huge_dims.h264");
+  const mediadiff::Measurement* hash =
+      find_measurement(*fp, "content.video.frame_hash", mediadiff::Scope::Kind::video, 0);
+  REQUIRE(hash != nullptr);
+  CHECK(std::holds_alternative<mediadiff::Absent>(hash->value));
+  CHECK(hash->skip_reason == mediadiff::SkipReason::requires_decode);
+  REQUIRE(hash->evidence.is_object());
+  CHECK(hash->evidence.at("fallback_reason") == "max_pixels_exceeded");
+  // No decode happened, so no decode_path record was written for the stream.
+  CHECK(fp->envelope.decode_path.empty());
+  // And meta.decode_errors reports the same requires_decode, never a count,
+  // and the fingerprint is not marked partial (nothing failed to decode).
+  const mediadiff::Measurement* meta =
+      find_measurement(*fp, "meta.decode_errors", mediadiff::Scope::Kind::video, 0);
+  REQUIRE(meta != nullptr);
+  CHECK(meta->skip_reason == mediadiff::SkipReason::requires_decode);
+  CHECK_FALSE(fp->partial);
+}
+
+// --- T-07-02: per-frame record accounting is deterministic -----------------
+
+namespace {
+
+// Puts the process-wide per-file packet-scan cap back when a test that
+// changed it ends. The CLI cannot express a byte-exact budget (its flag is
+// integer megabytes and compare.cpp re-sets the cap from it on every run), so
+// this test drives the same pipeline compare.cpp runs -- fingerprint both
+// inputs, compare_fingerprints, build_report_model, render_json -- directly.
+struct PacketScanCapGuard {
+  std::int64_t saved = mediadiff::default_packet_scan_max_bytes();
+  ~PacketScanCapGuard() { mediadiff::set_default_packet_scan_max_bytes(saved); }
+};
+
+std::string render_compare_json(const mediadiff::Fingerprint& baseline, const mediadiff::Fingerprint& candidate,
+                                const mediadiff::CheckRegistry& registry) {
+  auto policy = mediadiff::resolve_policy(registry, mediadiff::ProfileId::sw_encoder);
+  REQUIRE(policy.has_value());
+  auto findings = mediadiff::compare_fingerprints(baseline, candidate, *policy, registry);
+  REQUIRE(findings.has_value());
+  const mediadiff::RenderOptions options{};
+  const mediadiff::ReportModel model = mediadiff::build_report_model(candidate.envelope, *findings, registry, options);
+  return mediadiff::render_json(model, registry, *policy, /*verbose=*/false);
+}
+
+}  // namespace
+
+TEST_CASE("video_decode_edges - record budget", "[integration]") {
+  const mediadiff::CheckRegistry& registry = mediadiff::builtin_registry();
+  const PacketScanCapGuard guard;
+
+  // The byte total an unconstrained sweep of this file accounts: every packet
+  // record, every access-unit record and one kVideoFrameRecordBytes charge per
+  // hashed frame, measured through the same request the orchestrator builds.
+  mediadiff::set_default_packet_scan_max_bytes(1LL << 30);
+  std::int64_t unconstrained_total = 0;
+  {
+    auto session = mediadiff::DemuxSession::open(fixture("video_hash_base.mp4"), mediadiff::DemuxOptions{});
+    REQUIRE(session.has_value());
+    mediadiff::PacketScanRequest request;
+    request.parse_access_units = true;
+    request.decode_video = true;
+    auto scan = mediadiff::run_packet_scan(*session, request);
+    REQUIRE(scan.has_value());
+    REQUIRE_FALSE(scan->packets.partial);
+    unconstrained_total = scan->packets.accounted_bytes;
+  }
+
+  // One frame record short of that total. Every packet and access-unit record
+  // still fits, so the packet scan itself is complete; the frame records
+  // exhaust the budget on the LAST frame the B-frame fixture's end-of-stream
+  // drain hands back. (A budget that ran out mid-stream would end the packet
+  // scan right after it -- the next packet record needs more bytes than the
+  // frame record that just failed left behind -- and the check would report
+  // skipped:partial_scan instead, which is a different, equally deterministic
+  // outcome.)
+  const std::int64_t budget = unconstrained_total - mediadiff::kVideoFrameRecordBytes;
+  mediadiff::set_default_packet_scan_max_bytes(budget);
+
+  auto run = [&]() {
+    auto baseline = mediadiff::fingerprint_input(fixture("video_hash_base.mp4"), registry);
+    auto candidate = mediadiff::fingerprint_input(fixture("video_hash_base.mp4"), registry);
+    REQUIRE(baseline.has_value());
+    REQUIRE(candidate.has_value());
+    return std::make_pair(std::move(*baseline), std::move(*candidate));
+  };
+
+  auto first = run();
+  const mediadiff::Measurement* m =
+      find_measurement(first.first, "content.video.frame_hash", mediadiff::Scope::Kind::video, 0);
+  REQUIRE(m != nullptr);
+  REQUIRE(m->evidence.is_object());
+  CHECK(m->evidence.at("sampling_state") == "truncated");
+  CHECK(m->evidence.at("decode_truncation_reason") == std::string(mediadiff::kDecodeStopFrameRecordBudget));
+  CHECK(video_chain(first.first).element_count == kBaseFramesFramemd5 - 1);
+
+  // Two truncated sides are never comparable (a digest match over two
+  // independently truncated prefixes cannot vouch for either remainder).
+  const std::string json = render_compare_json(first.first, first.second, registry);
+  const nlohmann::ordered_json report = nlohmann::ordered_json::parse(json, nullptr, false);
+  REQUIRE_FALSE(report.is_discarded());
+  const auto* finding = find_finding(report, "content.video.frame_hash");
+  REQUIRE(finding != nullptr);
+  CHECK(finding->at("status") == "skipped");
+  CHECK(finding->at("skip_reason") == "hash_incomparable");
+
+  // TRUST-05: a second run at the same budget is byte-identical.
+  auto second = run();
+  CHECK(render_compare_json(second.first, second.second, registry) == json);
 }

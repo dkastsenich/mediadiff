@@ -287,6 +287,24 @@ TEST_CASE("video_decode - every software video decoder is class 2 and none is cl
   }
 }
 
+// --- 07-02-PLAN.md (D-09 extended): errors demote a proven decoder to class 2 -
+
+TEST_CASE("video_decode - effective class", "[unit]") {
+  using mediadiff::detail::effective_video_class;
+  // A clean class-1 stream keeps class 1; ANY decode error or corrupt-flagged
+  // frame demotes it to class 2, in either count alone.
+  CHECK(effective_video_class(1, 0, 0) == 1);
+  CHECK(effective_video_class(1, 1, 0) == 2);
+  CHECK(effective_video_class(1, 0, 1) == 2);
+  CHECK(effective_video_class(1, 7, 3) == 2);
+  // Class 2 and class 3 pass through unchanged -- clean or damaged input never
+  // PROMOTES a decoder, and never turns a class-3 decoder into class 2.
+  CHECK(effective_video_class(2, 0, 0) == 2);
+  CHECK(effective_video_class(2, 4, 4) == 2);
+  CHECK(effective_video_class(3, 0, 0) == 3);
+  CHECK(effective_video_class(3, 2, 1) == 3);
+}
+
 // --- Decode is fused into ONE sweep (Test 9 is the integration twin) --------
 
 TEST_CASE("video_decode - every frame is hashed: 100 packets of a B-frame fixture give 100 digests and 100 ticks",

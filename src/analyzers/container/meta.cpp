@@ -15,6 +15,7 @@
 #include "probe/demux_session.h"
 #include "probe/packet_scan.h"
 #include "probe/pass.h"
+#include "probe/video_decode.h"
 
 namespace mediadiff {
 
@@ -367,6 +368,27 @@ std::vector<std::optional<Scope>> compute_decode_errors_audio_scopes(const Demux
   return scopes;
 }
 
+// 07-02-PLAN.md (CONTENT-01): the video sibling of the helper above, with the
+// rank convention EVERY video analyzer uses (src/analyzers/content/
+// video_frame_hash.cpp's compute_video_scopes, the video.* checks): the rank
+// counts every video stream, an attached picture included, so one stream
+// carries one Scope across the whole report. The caller skips an attached
+// picture AFTER the rank is consumed, exactly as the decode state does.
+std::vector<std::optional<Scope>> compute_decode_errors_video_scopes(const DemuxSession& demux,
+                                                                       std::size_t stream_count) {
+  std::vector<std::optional<Scope>> scopes;
+  scopes.reserve(stream_count);
+  int video_rank = 0;
+  for (std::size_t i = 0; i < stream_count; ++i) {
+    if (demux.stream_info(static_cast<int>(i)).media_type != StreamMediaType::video) {
+      scopes.push_back(std::nullopt);
+      continue;
+    }
+    scopes.push_back(Scope{Scope::Kind::video, video_rank++});
+  }
+  return scopes;
+}
+
 // run_meta_decode_errors's own skip-reason priority: partial_scan first
 // (Phase 3 D-02, a truncated packet scan), then requires_decode when the
 // slot is std::nullopt or this stream's own decode was never attempted,
@@ -434,6 +456,62 @@ void run_meta_decode_errors(const ProbeResults& results, Fingerprint& fp) {
     const SkipReason reason = packet_scan.partial ? SkipReason::partial_scan : SkipReason::insufficient_data;
     push_decode_errors_skip(scope, reason, fp);
   }
+
+  // 07-02-PLAN.md (CONTENT-01, A6): every decoded VIDEO stream is measured at
+  // Scope{video, rank} exactly as audio is above -- the same priority, the
+  // same single place `fp.partial` is set -- except for the counting unit.
+  // MPEG-family video decoders usually CONCEAL a damaged slice and return
+  // success, so negative send/receive returns alone would report 0 on a
+  // visibly corrupted stream; a video stream's value is therefore
+  // `decode_error_count + corrupt_frame_count` (negative returns plus frames
+  // flagged AV_FRAME_FLAG_CORRUPT or carrying non-zero decode_error_flags),
+  // both components named in evidence. A video-less file emits nothing here
+  // (no placeholder row: the `!any_audio` row above is audio's own
+  // long-standing behaviour and stays as it was).
+  const std::vector<std::optional<Scope>> video_scopes =
+      compute_decode_errors_video_scopes(demux, packet_scan.per_stream.size());
+  for (std::size_t i = 0; i < video_scopes.size(); ++i) {
+    if (!video_scopes[i].has_value()) {
+      continue;
+    }
+    const Scope scope = *video_scopes[i];
+
+    // Cover art is a one-packet video stream, never decoded and never
+    // reported (its rank is still consumed above).
+    if (results.video_decode.has_value() && i < results.video_decode->per_stream.size() &&
+        results.video_decode->per_stream[i].attached_picture) {
+      continue;
+    }
+    if (packet_scan.per_stream[i].partial) {
+      push_decode_errors_skip(scope, SkipReason::partial_scan, fp);
+      continue;
+    }
+    if (!results.video_decode.has_value() || i >= results.video_decode->per_stream.size()) {
+      push_decode_errors_skip(scope, SkipReason::requires_decode, fp);
+      continue;
+    }
+    const StreamVideoDecode& decode = results.video_decode->per_stream[i];
+    if (!decode.attempted) {
+      push_decode_errors_skip(scope, SkipReason::requires_decode, fp);
+      continue;
+    }
+    if (decode.undecodable) {
+      fp.partial = true;
+      push_decode_errors_skip(scope, SkipReason::partial_scan, fp);
+      continue;
+    }
+
+    Measurement measurement;
+    measurement.check_index = static_cast<std::uint32_t>(CheckId::meta_decode_errors);
+    measurement.scope = scope;
+    measurement.value = decode.decode_error_count + decode.corrupt_frame_count;
+    measurement.evidence = nlohmann::ordered_json{{"decode_errors", decode.decode_error_count},
+                                                   {"corrupt_frames", decode.corrupt_frame_count}};
+    if (!decode.first_error_reason.empty()) {
+      measurement.evidence["first_error_reason"] = decode.first_error_reason;
+    }
+    fp.measurements.push_back(std::move(measurement));
+  }
 }
 
 #if defined(__GNUC__) && !defined(__clang__)
@@ -464,7 +542,7 @@ const AnalyzerSpec& container_meta_analyzer() {
 
 const AnalyzerSpec& container_meta_decode_errors_analyzer() {
   static const AnalyzerSpec spec{"container_meta_decode_errors",
-                                   PassSet{Pass::demux_header, Pass::packet_scan, Pass::audio_decode},
+                                   PassSet{Pass::demux_header, Pass::packet_scan, Pass::audio_decode, Pass::video_decode},
                                    ContainerFamily::other, &run_meta_decode_errors};
   return spec;
 }

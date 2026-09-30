@@ -36,12 +36,18 @@ namespace {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
-void push_skip(CheckId id, Scope scope, SkipReason reason, Fingerprint& fp) {
+void push_skip(CheckId id, Scope scope, SkipReason reason, Fingerprint& fp, const std::string& fallback_reason = {}) {
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(id);
   measurement.scope = scope;
   measurement.value = Absent{};
   measurement.skip_reason = reason;
+  if (!fallback_reason.empty()) {
+    // T-07-01 / 07-02-PLAN.md: why the decoder was never opened (for example
+    // `max_pixels_exceeded`) rides on the skip so the refusal is observable,
+    // exactly where content.audio.sample_hash puts the same key.
+    measurement.evidence["fallback_reason"] = fallback_reason;
+  }
   fp.measurements.push_back(std::move(measurement));
 }
 #if defined(__GNUC__) && !defined(__clang__)
@@ -106,7 +112,7 @@ void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) 
     }
     const StreamVideoDecode& decode = results.video_decode->per_stream[i];
     if (!decode.attempted) {
-      push_skip(CheckId::content_video_frame_hash, scope, SkipReason::requires_decode, fp);
+      push_skip(CheckId::content_video_frame_hash, scope, SkipReason::requires_decode, fp, decode.fallback_reason);
       continue;
     }
 
@@ -118,7 +124,13 @@ void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) 
     // per attempted stream, ascending index, never merged or deduplicated.
     // D-09: every software decoder is class 2 until a committed
     // cross-architecture proof promotes it. No digest ever rides here.
-    const int decode_class = determinism_class_for_video_decoder(decode.decoder_name);
+    // 07-02-PLAN.md (D-09 extended, roster finding 3): any decode error or
+    // corrupt-flagged frame makes the stream class 2 even for a proven class-1
+    // decoder -- ONE effective class governs BOTH the record below and the
+    // decode_path_class evidence further down.
+    const int decode_class =
+        detail::effective_video_class(determinism_class_for_video_decoder(decode.decoder_name),
+                                      decode.decode_error_count, decode.corrupt_frame_count);
     nlohmann::ordered_json decode_path_record{
         {"stream_index", static_cast<std::int64_t>(i)},
         {"decoder", decode.decoder_name},
@@ -126,7 +138,10 @@ void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) 
         {"flags", decode.flags_recorded},
     };
     if (decode_class == 2) {
-      decode_path_record["path_signature"] = decode.path_signature;
+      // A class-1 decoder carries no signature of its own (class 1 means
+      // path-independent), so a demoted stream takes the running machine's.
+      decode_path_record["path_signature"] =
+          decode.path_signature.empty() ? compose_decode_path_signature() : decode.path_signature;
     }
     fp.envelope.decode_path.push_back(std::move(decode_path_record));
 
@@ -163,6 +178,8 @@ void run_content_video_frame_hash(const ProbeResults& results, Fingerprint& fp) 
     // TRUST-01/TRUST-02/D-05: the three evidence keys src/compare/hash.cpp's
     // kPreconditionKeys already reads. decode_path_class carries D-05's
     // signature as the VALUE of the existing key -- no fourth precondition key.
+    // `decode_class` is detail::effective_video_class's result (above), so a
+    // damaged stream's evidence says class2 exactly as its record does.
     const std::string decode_path_class =
         decode_class == 1 ? std::string("class1") : fmt::format("class2 {}", compose_decode_path_signature());
     // `normalization` is the cropped, yuvj-folded format and the first

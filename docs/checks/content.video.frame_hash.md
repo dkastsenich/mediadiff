@@ -47,6 +47,31 @@ in which case the comparison reports `skipped:hash_incomparable` rather than a f
 No decoder is class 1 today. Class 3 (never hashes) is reserved for a decoder that is
 non-deterministic on one machine, single-threaded.
 
+**Damaged input is class 2, even for a proven decoder.** A stream with any decode error (a negative
+`avcodec_send_packet` or `avcodec_receive_frame` return) or any frame the decoder flags as corrupt
+(`AV_FRAME_FLAG_CORRUPT`, or a non-zero `decode_error_flags`) records `class2 <signature>` in its
+`decode_path_class` evidence and `class: 2` in its `decode_path` record, even if its decoder is
+otherwise class 1. Measured cross-architecture output on damaged input differs -- the pixels a decoder
+conceals a broken slice with depend on the CPU's kernels -- so a hash of a damaged stream is comparable
+only on one machine class (07-RESEARCH.md Q2). `decode_error_count` and `corrupt_frame_count` ride in
+the evidence, and `meta.decode_errors` reports their sum per video stream. A frame the decoder refused
+is simply absent from the hashed set, so a candidate that loses a frame to damage also fails here.
+
+**Bounds on hostile input.** A video stream whose *declared* dimensions exceed 8192 x 8192 pixels is
+never opened: the check reports `skipped:requires_decode` with `fallback_reason:
+"max_pixels_exceeded"` in its evidence, no decode-path record is written for it (no decode happened),
+and no frame buffer is allocated. Frame records (one digest and one tick each) are charged against the
+same per-file probe memory budget that packet records are; when the budget ends the hashing, the value
+is the chain of what was hashed, `sampling_state` is `"truncated"` and `decode_truncation_reason` is
+`frame_record_budget_exhausted` (see above). When the budget runs out in the middle of a stream, the
+packet scan itself is cut right after it, and every decode-dependent check of that stream then reports
+`skipped:partial_scan` instead -- a different, equally deterministic outcome. The decoder is still
+drained at end of stream after the budget is exhausted, but nothing further is stored.
+
+**A change of picture size inside one stream does not stop the hash.** Each frame's digest covers its own
+dimensions and format, `geometry_change_count` counts the transitions (one resolution change is 1, however
+many frames follow it), and `normalization` names the first frame's size.
+
 Every hashed stream writes one record into the `decode_path` array: `stream_index`, `decoder`,
 `class`, `flags`, and (class 2 only) `path_signature`. A precondition mismatch between baseline and
 candidate (`decode_path_class`, `sampling_state` or `normalization` evidence disagreeing) reports

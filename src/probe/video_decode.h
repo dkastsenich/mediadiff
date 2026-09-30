@@ -181,6 +181,24 @@ int determinism_class_for_video_decoder(std::string_view decoder_name);
 
 namespace detail {
 
+// D-09, extended by 07-02-PLAN.md (research Open Question 3, recorded at
+// 07-CHECK-ROSTER.md finding 3): a stream that had ANY decode error or
+// corrupt-flagged frame is class 2 even when its decoder is proven class 1,
+// because the pixels a decoder conceals a damaged slice with differ between
+// architectures (measured: the same corrupt MPEG-4 stream hashes differently
+// on x86_64 and aarch64). Class 2 and class 3 pass through unchanged: a
+// decoder already comparable only within one machine class, or not at all,
+// is never PROMOTED by clean input. Pure, so it is directly unit-testable --
+// the class-1 table stays empty until 07-15, so no real decoder reaches the
+// demotion branch yet.
+inline int effective_video_class(int decoder_class, std::int64_t decode_error_count,
+                                 std::int64_t corrupt_frame_count) {
+  if (decoder_class == 1 && (decode_error_count != 0 || corrupt_frame_count != 0)) {
+    return 2;
+  }
+  return decoder_class;
+}
+
 // A handle onto run_packet_scan's own running accounted-byte total and cap, so
 // a stored frame record charges the SAME budget a PacketRecord does (T-07-02).
 // A null `accounted_bytes` means "unbudgeted" (the unit-test seam).
