@@ -156,7 +156,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **CONTENT-03**: `--sample N` marks the fingerprint `sampled:N` and only equal-N fingerprints compare; mismatched sampling reports `skipped:sampling_mismatch`
 - [ ] **CONTENT-04**: `content.video.perceptual` computes SSIM on downscaled luma (SWS_AREA to width 128, 8×8 window) with pinned swscale flags recorded as a precondition, reporting min, mean, first frame below threshold, and a worst-10 list
 - [ ] **CONTENT-05**: When frame counts differ, perceptual comparison pairs the overlapping prefix and notes truncation in evidence rather than silently misaligning (amended, 07-03-PLAN.md, 2026-09-30: D-02 replaces "pairs the overlapping prefix" with "pairs the overlapping time range by presentation time" — each side's frames are timed from its own first frame and paired within strictly less than half the finer frame interval, in exact rational arithmetic, with decode-index fallback when either side lacks usable timestamps or a frame interval, and unpaired frames counted in evidence rather than shifting every later pair; src/core/frame_pairing.h is the one rule)
-- [ ] **CONTENT-06**: `content.video.frozen_runs` and `content.video.black_runs` detect spans, with black detection normalized by color range and bit depth so a range flip does not false-alarm the detector
+- [x] **CONTENT-06**: `content.video.frozen_runs` and `content.video.black_runs` detect spans, with black detection normalized by color range and bit depth so a range flip does not false-alarm the detector
 - [ ] **CONTENT-07**: Hashing, perceptual scoring, and the frozen/black detectors all run inside one decode sweep
 - [ ] **CONTENT-08**: `quality.psnr` and `quality.ssim` compute in-tree at native resolution, reporting min and mean
 - [ ] **CONTENT-09**: `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint, reporting harmonic mean and min, and refusing `--sample` as `skipped:sampling_conflict`
@@ -358,7 +358,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONTENT-03 | Phase 7 | Complete |
 | CONTENT-04 | Phase 7 | Pending |
 | CONTENT-05 | Phase 7 | Pending |
-| CONTENT-06 | Phase 7 | Pending |
+| CONTENT-06 | Phase 7 | Complete |
 | CONTENT-07 | Phase 7 | Pending |
 | CONTENT-08 | Phase 7 | Pending |
 | CONTENT-09 | Phase 7 | Pending |
