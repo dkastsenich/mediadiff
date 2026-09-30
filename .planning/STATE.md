@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
 status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-09-30T20:56:31.082Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-09-30T21:23:58.595Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 7 execution started
-state_head: 0ef4d94f97520421e1cd09df67d4187ce31dac03
+state_head: 599d14eadb139035ee4a96c55c3b1d9acc9a45cf
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 127
-  completed_plans: 113
+  completed_plans: 114
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 ## Current Position
 
 Phase: 7 (Content & Quality) — EXECUTING
-Plan: 2 of 15
+Plan: 3 of 15
 Status: Ready to execute
 Last activity: 2026-09-30 — Phase 7 execution started
 
@@ -165,6 +165,7 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 06 P19 | 14min | 2 tasks | 6 files |
 | Phase 06 P20 | n/a (multi-session; this continuation covers Task 3) | 3 tasks | 2 files |
 | Phase 07 P01 | 27min | 3 tasks | 34 files |
+| Phase 07 P02 | 26 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -404,6 +405,8 @@ Recent decisions affecting current work:
 - [Phase 06]: Re-verified 2026-09-28 after gap closure: passed 5/5 (was 3/5). SC2 is judged against its 2026-09-22 amendment, and CR-01..CR-05 are confirmed closed both in source and by named regression tests.
 - [Phase 06]: 06-13 and the gap closure certified on CI run 35987510562: all four of 06-13's named gates reported Passed on the designated x64-linux leg, both instruction-count ratchets held within tolerance (change=0%), and no baseline/digest file needed a rewrite. — Certified strictly from Task 2's verbatim captures per-line Passed/Failed tokens, not ctest's summary-line 'N Skipped' header (a grep artifact for integration.audio_sample_hash, not a real Skipped status).
 - [Phase 7]: [Phase 07-01]: Roster approved as proposed; attached-picture video streams emit no measurement; element ticks omitted when any frame lacks a PTS; mpeg4 fixture recipes pin -threads 1
+- [Phase 07]: 07-02: geometry_change_count counts transitions (one resolution change = 1); a video meta.decode_errors value is decode_errors + corrupt_frames — 07-01 counted every frame differing from the first frame; MPEG-family decoders conceal damage and return success, so negative returns alone would read 0 on a corrupted stream
+- [Phase 07]: 07-02: the frame-record budget test runs at library level with a byte budget; frame_record_budget_exhausted with a complete packet scan is reachable only at the EOF drain — The CLI budget is integer MB and a mid-stream exhaustion always ends in the packet scan's own partial (skipped:partial_scan); shared-budget design question left open, logged in WINDOWS.md
 
 ### Pending Todos
 
@@ -451,6 +454,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-30T20:56:30.814Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-09-30T21:23:58.347Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
