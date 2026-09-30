@@ -118,7 +118,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [x] **VIDEO-08**: A change **to** `unspecified` is reported as a regression (metadata loss), not treated as a wildcard match
 - [ ] **VIDEO-09**: HDR checks work: `hdr.mdcv`, `hdr.cll`, `hdr.dovi`, with extraction from the stream-level `coded_side_data` source recorded in Phase 4; the first-frame side-data source is deferred to Phase 7 with the decode pass (Human Decision 1, 2026-09-13), mirroring VIDEO-11's placement
 - [x] **VIDEO-10**: MDCV/CLL internal incoherence (HDR metadata with an SDR transfer, or PQ without MDCV) raises a non-gating `info` note even when both files share it
-- [ ] **VIDEO-11**: `video.closed_captions` detects A53/CEA-708 presence during the decode pass and reports `skipped:requires_decode` under `--no-content`
+- [x] **VIDEO-11**: `video.closed_captions` detects A53/CEA-708 presence during the decode pass and reports `skipped:requires_decode` under `--no-content`
 - [x] **VIDEO-12**: A codec with no available parser degrades to `skipped:no_parser` for GOP checks and falls back to keyframe-flag granularity for frame types
 
 ### Timeline Checks
@@ -329,7 +329,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | VIDEO-08 | Phase 4 | Complete |
 | VIDEO-09 | Phase 4 | Deferred |
 | VIDEO-10 | Phase 4 | Complete |
-| VIDEO-11 | Phase 7 | Pending |
+| VIDEO-11 | Phase 7 | Complete |
 | VIDEO-12 | Phase 4 | Complete |
 | TIME-01 | Phase 5 | Complete |
 | TIME-02 | Phase 5 | Complete |

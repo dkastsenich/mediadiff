@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
 status: executing
-stopped_at: Completed 07-05-PLAN.md
-last_updated: "2026-09-30T22:41:50.985Z"
+stopped_at: Completed 07-06-PLAN.md
+last_updated: "2026-09-30T23:05:45.237Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 7 execution started
-state_head: 59b8c8dcbe78565a9ee64bb0b2819e0e9be456a2
+state_head: 8c96db860eb277c5754965fe7a896592d505948f
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 127
-  completed_plans: 117
+  completed_plans: 118
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 ## Current Position
 
 Phase: 7 (Content & Quality) — EXECUTING
-Plan: 6 of 15
+Plan: 7 of 15
 Status: Ready to execute
 Last activity: 2026-09-30 — Phase 7 execution started
 
@@ -169,6 +169,7 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 07 P03 | 17 min | 3 tasks | 13 files |
 | Phase 07 P04 | 18 min | 3 tasks | 28 files |
 | Phase 07 P05 | 35min | 3 tasks | 29 files |
+| Phase 07 P06 | 19min | 3 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -418,6 +419,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-05: a span's frame interval is the declared rate, else the smallest observed pts step, else decode index times the rate; no timing at all with a run present is no_timing_data — MPEG-TS declares no frame rate at open; without the pts-step fallback a TS remux of a frozen stream would skip while its MP4 source reports a span
 - [Phase 07]: 07-05: the black and dark-grey fixtures are Matroska, not MP4 — the MP4 muxer drops -color_range for MPEG-4 Part 2; Matroska keeps it, so the range-flip proof is not vacuous
 - [Phase 07]: 07-05: detectors are tapped in consume_frame before the stride's store decision; frame boundaries carry their own ticks — D-08: both span lists are identical with and without --sample N, and no per-frame tick array is needed
+- [Phase 07]: 07-06: the caption sink sits beside the frozen and black detectors in consume_frame, before the stride's store decision, so video.closed_captions evidence is identical under --sample N; a truncated decode with no caption seen, or a zero-frame decode, is a named skip, never a fabricated Absent — A caption at decode index 3 is invisible to a sink tied to the stride (stride 5 never stores it); a prefix with no caption proves nothing about frames never decoded
 
 ### Pending Todos
 
@@ -465,6 +467,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-30T22:41:50.748Z
-Stopped at: Completed 07-05-PLAN.md
+Last session: 2026-09-30T23:05:39.773Z
+Stopped at: Completed 07-06-PLAN.md
 Resume file: None
