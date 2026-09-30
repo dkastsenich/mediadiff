@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
 status: executing
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-09-30T21:23:58.595Z"
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-09-30T21:42:57.198Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 7 execution started
-state_head: 599d14eadb139035ee4a96c55c3b1d9acc9a45cf
+state_head: e4f3fef2e1417f2d0e6c342038ecc0ec0096762e
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 127
-  completed_plans: 114
+  completed_plans: 115
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 ## Current Position
 
 Phase: 7 (Content & Quality) — EXECUTING
-Plan: 3 of 15
+Plan: 4 of 15
 Status: Ready to execute
 Last activity: 2026-09-30 — Phase 7 execution started
 
@@ -166,6 +166,7 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 06 P20 | n/a (multi-session; this continuation covers Task 3) | 3 tasks | 2 files |
 | Phase 07 P01 | 27min | 3 tasks | 34 files |
 | Phase 07 P02 | 26 min | 3 tasks | 17 files |
+| Phase 07 P03 | 17 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -407,6 +408,8 @@ Recent decisions affecting current work:
 - [Phase 7]: [Phase 07-01]: Roster approved as proposed; attached-picture video streams emit no measurement; element ticks omitted when any frame lacks a PTS; mpeg4 fixture recipes pin -threads 1
 - [Phase 07]: 07-02: geometry_change_count counts transitions (one resolution change = 1); a video meta.decode_errors value is decode_errors + corrupt_frames — 07-01 counted every frame differing from the first frame; MPEG-family decoders conceal damage and return success, so negative returns alone would read 0 on a corrupted stream
 - [Phase 07]: 07-02: the frame-record budget test runs at library level with a byte budget; frame_record_budget_exhausted with a complete packet scan is reachable only at the EOF drain — The CLI budget is integer MB and a mid-stream exhaustion always ends in the packet scan's own partial (skipped:partial_scan); shared-budget design question left open, logged in WINDOWS.md
+- [Phase 07]: Frame pairing is one exact rule (pair_step over ExactTime, strict half of the finer interval, index fallback recorded) shared by the locator and the later lockstep scorer — Int64 inputs cannot overflow 256 bits, so the overflow branch is exercised through the ExactTime seam; hostile timebases and intervals fall back to index pairing with a named reason
+- [Phase 07]: Locator evidence caps every list at 64 with exact totals; first_divergent_frame is the first differing paired frame and is absent when only frames are missing — Bounded deterministic reports (T-07-11); the drop case reports missing_from_candidate instead
 
 ### Pending Todos
 
@@ -454,6 +457,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-30T21:23:58.347Z
-Stopped at: Completed 07-02-PLAN.md
+Last session: 2026-09-30T21:42:49.312Z
+Stopped at: Completed 07-03-PLAN.md
 Resume file: None
