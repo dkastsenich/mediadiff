@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 22
+open_count: 23
 waived_count: 2
 fixed_count: 22
-total_count: 46
-last_updated: 2026-09-30T21:25:45.499Z
+total_count: 47
+last_updated: 2026-09-30T22:37:47.397Z
 ---
 
 # Broken Windows Ledger
@@ -61,6 +61,7 @@ last_updated: 2026-09-30T21:25:45.499Z
 | 44 | 07 | deviation | tests/golden/inspect_container.txt |  | 07-02 hand-added four meta.decode_errors video[N] rows (value 0, verified only against this workstation's rendering) to a designated-leg golden; the x64-linux CI leg must confirm them | open |  | 2026-09-30T21:22:49.366Z |  |
 | 45 | 07 | deviation | docs/checks/content.video.frame_hash.md |  | 07-02 frame_record_budget_exhausted with a complete packet scan is reachable only when the last frame records overflow (EOF drain); a mid-stream exhaustion is followed by the packet scan's own partial and reports skipped:partial_scan. Shared-budget design question for the user | open |  | 2026-09-30T21:22:49.513Z |  |
 | 46 | 07 | todo | src/probe/demux_session.cpp | 219 | Pre-existing memory-DoS exposure found by the 07-02 executor: DemuxSession::open calls avformat_find_stream_info (src/probe/demux_session.cpp:219) with no max_pixels bound on the decoders libavformat opens to probe streams. Measured by that executor: a stream header declaring 8208x8192 cost 195 MB RSS through inspect, and 12288x12288 cost 420 MB; libavcodec's own av_image_check_size caps the exposure at roughly 1 GB. Outside T-07-06's scope, which bounds only mediadiff's own video decode open (kMaxVideoPixels). Needs a disposition at the Phase 7 security audit: bound it (for example pass max_pixels through avformat_find_stream_info's per-stream codec options) or accept it with a reason. | open |  | 2026-09-30T21:25:45.499Z |  |
+| 47 | 07 | todo | src/probe/video_detectors.h |  | 07-05 (CONTENT-06, A10/A11): the frozen and black detector constants (kFrozenEnterMicro 999500, kFrozenContinueMicro 995000, kFrozenMinFrames 3, kBlackMeanMargin 2, kBlackVarianceLimit 4, kBlackMinFrames 3) are validated on synthetic content only (testsrc2 freeze across MPEG-4/MPEG-2/MJPEG/TS encodes; a synthetic black segment in tv and pc range). A real-content review against a sample of natural video is still owed. Known limit: a near-static smooth source is indistinguishable from frozen at 128 pixels wide (both sides of a compare flag it identically and only introduced runs gate, so it is not a false-positive source by itself), and a starved encode can start a frozen run one frame late (measured on a 1 Mbit/s CIF MPEG-2 encode). | open |  | 2026-09-30T22:37:47.397Z |  |
 
 ````json
 [
@@ -614,6 +615,18 @@ last_updated: 2026-09-30T21:25:45.499Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-30T21:25:45.499Z",
+    "resolved_at": null
+  },
+  {
+    "id": 47,
+    "kind": "todo",
+    "phase": "07",
+    "file": "src/probe/video_detectors.h",
+    "line": null,
+    "description": "07-05 (CONTENT-06, A10/A11): the frozen and black detector constants (kFrozenEnterMicro 999500, kFrozenContinueMicro 995000, kFrozenMinFrames 3, kBlackMeanMargin 2, kBlackVarianceLimit 4, kBlackMinFrames 3) are validated on synthetic content only (testsrc2 freeze across MPEG-4/MPEG-2/MJPEG/TS encodes; a synthetic black segment in tv and pc range). A real-content review against a sample of natural video is still owed. Known limit: a near-static smooth source is indistinguishable from frozen at 128 pixels wide (both sides of a compare flag it identically and only introduced runs gate, so it is not a false-positive source by itself), and a starved encode can start a frozen run one frame late (measured on a 1 Mbit/s CIF MPEG-2 encode).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T22:37:47.397Z",
     "resolved_at": null
   }
 ]
