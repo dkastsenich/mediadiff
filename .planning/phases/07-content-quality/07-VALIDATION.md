@@ -40,27 +40,27 @@ created: "2026-09-30"
 
 ## Per-Task Verification Map
 
-Requirement-level map; the planner binds each row to concrete task IDs (`07-NN-MM`).
+Requirement-level map; the planner binds each row to concrete task IDs (`07-NN-MM`). Bound 2026-09-30 by the 07 planner; the commands are the ones the bound tasks' `<verify>` blocks run. In the Automated Command column, `\|` is markdown table escaping for a regex alternation `|`, so drop the backslash when running a command. Wave number equals plan number because all 15 waves are sequential.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | CONTENT-01 | — | N/A | integration | `ctest --test-dir build/x64-linux -R video_hash --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-02 | — | N/A | integration | `ctest --test-dir build/x64-linux -R video_locator --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-03 | — | N/A | unit | `ctest --test-dir build/x64-linux -R sampling_mismatch --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-04 | — | N/A | unit + integration | `ctest --test-dir build/x64-linux -R perceptual --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-05 | — | N/A | integration | `ctest --test-dir build/x64-linux -R lockstep_pairing --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-06 | — | N/A | integration | `ctest --test-dir build/x64-linux -R video_detectors --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-07 | — | N/A | integration | `ctest --test-dir build/x64-linux -R single_sweep --output-on-failure` | ✅ extend | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-08 | — | N/A | unit | `ctest --test-dir build/x64-linux -R ssim_int --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-09 | — | N/A | integration | `ctest --test-dir build/x64-linux -R vmaf --output-on-failure` | ✅ extend `integration.vmaf_absent` | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-10 | — | N/A | integration | `ctest --test-dir build/x64-linux -R quality_snapshot --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | CONTENT-11 | — | bounded memory: one decoded frame in flight per side | integration / stress | `ctest --test-dir build/x64-linux -R lockstep --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | VIDEO-11 | — | N/A | integration | `ctest --test-dir build/x64-linux -R closed_captions --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | VIDEO-09 (first-frame arm) | — | N/A | integration | `ctest --test-dir build/x64-linux -R hdr_first_frame --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | TRUST-04 | — | precondition mismatch is an explicit skip, never a fabricated fail | unit | `ctest --test-dir build/x64-linux -R tol_path_signature --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | TRUST-07 | — | N/A | integration | `ctest --test-dir build/x64-linux -R video_thread_invariance --output-on-failure` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | PERF-02 | — | N/A | script + CI | `bash scripts/measure_video_perf.sh --check-baseline` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | D-12 / D-13 (watchdog, T-06-34) | T-06-34 | a stalled libav call trips the watchdog: report flushed, exit 66, never a changed value | integration (test hook) | `ctest --test-dir build/x64-linux -R watchdog --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-01-02 (tracer), 07-02-02, 07-14-02, 07-15-02 | 07-01, 07-02, 07-14, 07-15 | 1, 2, 14, 15 | CONTENT-01 | T-07-01, T-07-03, T-07-07, T-07-47, T-07-50 | decode bombs rejected before allocation; damaged input never claims class 1; no class-1 claim without a five-leg proof row | unit + integration | `ctest --test-dir build/x64-linux -R "(unit\.video_decode\|integration\.video_hash\|integration\.video_decode_edges\|integration\.doc03_coverage)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-03-02 | 07-03 | 3 | CONTENT-02 | T-07-10, T-07-11 | exact pairing arithmetic falls back to index pairing on overflow; locator lists capped | integration | `ctest --test-dir build/x64-linux -R "(integration\.video_locator\|unit\.frame_pairing)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-04-02 | 07-04 | 4 | CONTENT-03 | T-07-13, T-07-14 | a sampled chain never compares as a full one | unit + integration | `ctest --test-dir build/x64-linux -R "(unit\.sampling_mismatch\|integration\.video_sampling)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-08-02 | 07-08 | 8 | CONTENT-04 | T-07-25, T-07-26 | borrowed frames never used after release; JSON independent of thread timing | unit + integration | `ctest --test-dir build/x64-linux -R "(unit\.pair_scorer\|integration\.perceptual)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-09-02 | 07-09 | 9 | CONTENT-05 | T-07-28 | N/A | integration | `ctest --test-dir build/x64-linux -R "(integration\.lockstep_pairing\|unit\.pair_scorer)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-05-02 | 07-05 | 5 | CONTENT-06 | T-07-15, T-07-16 | bounded thumbnail size; overflow-free integer statistics | unit + integration | `ctest --test-dir build/x64-linux -R "(unit\.video_detectors_unit\|integration\.video_detectors)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-08-01 | 07-08 | 8 | CONTENT-07 | T-07-23 | N/A | integration | `ctest --test-dir build/x64-linux -R "(integration\.lockstep\|integration\.single_sweep)" --no-tests=error --output-on-failure` | ✅ extend | ⬜ pending |
+| 07-10-01, 07-10-02 | 07-10 | 10 | CONTENT-08 | T-07-30, T-07-31 | plane loops refuse mismatched geometry; overflow-free SSE, log and wide SSIM | unit + integration | `ctest --test-dir build/x64-linux -R "(unit\.quality_math\|unit\.ssim_int\|integration\.quality -)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-11-02 | 07-11 | 11 | CONTENT-09 | T-07-34, T-07-35, T-07-36 | libvmaf only in opt-in builds; buffers copied within bounds; every handle freed on every path | integration (VMAF build) | `ctest --test-dir build/x64-linux-vmaf -R "(integration\.vmaf\|integration\.version_output\|integration\.quality -)" --no-tests=error --output-on-failure` | ✅ extend `integration.vmaf_absent` | ⬜ pending |
+| 07-10-03 | 07-10 | 10 | CONTENT-10 | T-07-33 | a stored score is never presented as a current one | integration | `ctest --test-dir build/x64-linux --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-08-01 | 07-08 | 8 | CONTENT-11 | T-07-23, T-07-24 | bounded memory: one decoded frame in flight per side; no rendezvous deadlock when one side ends | integration / stress | `ctest --test-dir build/x64-linux -R "integration\.lockstep" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-06-02 | 07-06 | 6 | VIDEO-11 | T-07-18, T-07-20 | caption payload bytes never rendered; no GPL encoder in the corpus | integration | `ctest --test-dir build/x64-linux -R "integration\.closed_captions" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-07-02 | 07-07 | 7 | VIDEO-09 (first-frame arm) | T-07-21, T-07-22 | short side-data payloads and zero denominators rejected | unit + integration | `ctest --test-dir build/x64-linux -R "(integration\.hdr_first_frame\|unit\.video_hdr)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-09-01 | 07-09 | 9 | TRUST-04 | T-07-28 | precondition mismatch is an explicit skip, never a fabricated fail | unit | `ctest --test-dir build/x64-linux -R "(unit\.tol_path_signature\|unit\.semantics)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-12-01, 07-15-03 | 07-12, 07-15 | 12, 15 | TRUST-07 | T-07-39, T-07-51 | thread-count overrides never reach production; the suite is observed Passed on all five legs | integration | `ctest --test-dir build/x64-linux -R "integration\.video_thread_invariance" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
+| 07-12-02, 07-15-02 | 07-12, 07-15 | 12, 15 | PERF-02 | T-07-37, T-07-38, T-07-49 | the ledger is never rewritten by automation; the ratchet fails loudly when it stops measuring | script + CI (designated leg) | `bash scripts/measure_video_perf.sh --instructions --check-baseline` | ❌ W0 | ⬜ pending |
+| 07-13-02 | 07-13 | 13 | D-12 / D-13 (watchdog, T-06-34) | T-06-34, T-07-40, T-07-41, T-07-42 | a stalled libav call trips the watchdog: report flushed, exit 66, never a changed value; test hooks can only shorten the limit | integration (test hook) | `ctest --test-dir build/x64-linux -R "(integration\.watchdog\|unit\.heartbeat\|unit\.pool)" --no-tests=error --output-on-failure` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

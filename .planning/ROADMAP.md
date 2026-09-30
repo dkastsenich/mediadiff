@@ -561,7 +561,69 @@ Plans:
   4. `quality.psnr` and `quality.ssim` report min and mean in-tree at native resolution, `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint and refuses `--sample` as `skipped:sampling_conflict`, and against a snapshot all three report `skipped:requires_media` while still showing stored scores for trend context.
   5. One decode sweep per side feeds hashing, perceptual scoring, frozen/black detection and A53/CEA-708 closed-caption presence, with `compare` running baseline and candidate in lockstep at one frame in flight per side; the full content pass runs at ≥ 4× realtime on software decode and produces identical hash chains at 1, 4 and 16 threads.
 
-**Plans**: TBD
+**Plans**: 15 plans in 15 waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/packet_scan.cpp`, `src/probe/video_decode.*`, `CMakeLists.txt`, `tests/integration/test_doc03_coverage.cpp` and the corpus digest, so no two plans share a wave.
+
+Plans:
+**Wave 1**
+
+- [ ] 07-01-PLAN.md — Roster checkpoint (8 ids, 4 additive skip reasons, the `score` unit, the quality-group rule, the recorded threading narrowing) plus the TRACER: `Pass::video_decode` fused into the packet scan, the D-05 cropped-rows hash basis, and `content.video.frame_hash` end to end (CONTENT-01)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 07-02-PLAN.md — Decode-path hardening: edit-list frames kept (D-06), EOF drain, cover art skipped, geometry changes, decode errors forcing class 2, the pixel and record budgets (CONTENT-01)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 07-03-PLAN.md — PTS-based frame pairing (D-07) and the divergence locator: first divergent frame, merged ranges, total count (CONTENT-02)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 07-04-PLAN.md — The additive skip-reason vocabulary and honest `--sample N` with `skipped:sampling_mismatch` (CONTENT-03, D-08)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 07-05-PLAN.md — The deterministic 128-wide thumbnail, then frozen-run and black-run detection normalized by range and bit depth (CONTENT-06)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 07-06-PLAN.md — `video.closed_captions` A53/CEA-708 presence on GPL-free hand-written H.264 and MPEG-2 fixtures (VIDEO-11)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 07-07-PLAN.md — VIDEO-09's first-frame HDR side-data arm through the shared static-metadata reader
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 07-08-PLAN.md — Lockstep two-file decode (one frame in flight per side) and `content.video.perceptual` with the `score` unit (CONTENT-04, CONTENT-07, CONTENT-11)
+
+**Wave 9** *(blocked on Wave 8)*
+
+- [ ] 07-09-PLAN.md — Decode and scaler path preconditions on `±tol` two-file checks, PTS pairing across frame rates, and `dir --content` (CONTENT-05, TRUST-04)
+
+**Wave 10** *(blocked on Wave 9)*
+
+- [ ] 07-10-PLAN.md — In-tree integer `quality.psnr` and `quality.ssim`, gated on the mean, with stored scores shown against snapshots (CONTENT-08, CONTENT-10)
+
+**Wave 11** *(blocked on Wave 10)*
+
+- [ ] 07-11-PLAN.md — `quality.vmaf` behind `MEDIADIFF_WITH_VMAF`: pinned `vmaf_v0.6.1`, computed self-score, `sampling_conflict`, a designated-leg CI step, Windows excluded in the open (CONTENT-09)
+
+**Wave 12** *(blocked on Wave 11)*
+
+- [ ] 07-12-PLAN.md — Thread-count invariance at 1/4/16 threads and the PERF-02 harness with an instruction-count ratchet (TRUST-07, PERF-02)
+
+**Wave 13** *(blocked on Wave 12)*
+
+- [ ] 07-13-PLAN.md — The decode watchdog (D-12/D-13): a stalled libav call becomes a written report and exit 66, closing T-06-34 / WINDOWS.md #43
+
+**Wave 14** *(blocked on Wave 13)*
+
+- [ ] 07-14-PLAN.md — The D-09/D-10 cross-architecture video proof: a single CI producer, identity-first decoding on every leg, and a report-only ledger (CONTENT-01)
+
+**Wave 15** *(blocked on Wave 14)*
+
+- [ ] 07-15-PLAN.md — Designated-leg round trip: transcribe the digest, perf and proof rows, promote only five-leg-proven decoders to class 1, and confirm every gate on a second real run (CONTENT-01, TRUST-07, PERF-02)
+
 **Source doc**: `claude_docs/06-content-and-size-analysis.md` (design-doc phase 6), minus `size.*` (moved to Phase 3)
 **Cross-cutting note**: Phase 7 also completes VIDEO-09's first-frame HDR side-data extraction arm, deferred from Phase 4 with the decode pass (Human Decision 1, 2026-09-13) — see Cross-cutting requirement placements below.
 
@@ -578,7 +640,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
 | 6. Audio Analysis | 20/20 | Complete    | 2026-09-28 |
-| 7. Content & Quality | 0/TBD | Not started | - |
+| 7. Content & Quality | 0/15 | Not started | - |
 
 ## Coverage
 
