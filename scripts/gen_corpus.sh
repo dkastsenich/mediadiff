@@ -2959,4 +2959,121 @@ rm -rf "$GEOM_TMP_DIR"
   -bsf:v "noise=amount='if(eq(n\,40)\,200\,0)'" -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_loc_mpeg4_c40.mkv"
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac, audio_stereo_s16.wav, audio_stereo_s24.wav, audio_mono_s16.wav, audio_flt_base.ogg, audio_mp2_base.mpg, audio_51.flac, audio_51_side.flac, audio_prime_base.mp4, audio_prime_roundtrip.mkv, audio_prime_roundtrip2.mp4, audio_prime_copy.ts, audio_prime_multiedit.mp4, audio_prime_fragmented.mp4, audio_corrupt_clean.mp4, audio_corrupt_frames.mp4, audio_undecodable.mp4, video_hash_base.mp4, video_hash_base_copy.mp4, video_hash_base.mkv, video_hash_base.ts, video_hash_alt.mp4, video_trim.mp4, video_trim.mkv, video_cover.mp4, video_geom_change.m2v, video_hash_small.mp4, video_corrupt_mpeg4_base.mkv, video_corrupt_mpeg4.mkv, video_huge_dims.h264, video_loc_huffyuv.mkv, video_loc_huffyuv_c40.mkv, video_loc_huffyuv_c40_42.mkv, video_loc_huffyuv_c40_43.mkv, video_loc_huffyuv_drop40.mkv, video_loc_mpeg4_c40.mkv."
+# --- 07-05-PLAN.md Task 2 (CONTENT-06: content.video.frozen_runs / black_runs) ---
+# Every recipe here uses only encoders in scripts/install_pinned_ffmpeg.sh's
+# REQUIRED_ENCODERS (`mpeg4`, `mjpeg`) and filters with no GPL dependency
+# (`testsrc2`, `color`, `split`, `freezeframes`, `concat`, `format`, `scale`,
+# `lutyuv`, `setrange`; checked against the n8.1 configure: `blackframe` is
+# `blackframe_filter_deps="gpl"` and is deliberately NOT used), so the Windows
+# leg's LGPL ffmpeg runs them unchanged. The mpeg4 encodes keep `-threads 1`
+# (one slice per encoder thread would make the bytes vary with the runner's CPU
+# count).
+#
+# FROZEN. One 150-frame (6 s, 25 fps) `testsrc2` source with frames 51..100
+# replaced by frame 51 (`freezeframes`), so the truth is exactly one frozen run
+# over decode frames 51..100, i.e. [2040 ms, 4040 ms). Encoded three ways that
+# research Q5 measured to fragment under exact hash equality: MPEG-4 with
+# B-frames (`-bf 2`), MPEG-4 without (`-bf 0`), and intra-only MJPEG. The
+# detector must report the SAME span for all three (SSIM hysteresis, not hash
+# equality). `video_frozen_base.mp4` is the same source with no freeze.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen_base.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -filter_complex "[0:v]split[a][b];[a][b]freezeframes=first=51:last=100:replace=51[v]" -map "[v]" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -filter_complex "[0:v]split[a][b];[a][b]freezeframes=first=51:last=100:replace=51[v]" -map "[v]" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 0 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen_bf0.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -filter_complex "[0:v]split[a][b];[a][b]freezeframes=first=51:last=100:replace=51[v]" -map "[v]" \
+  -c:v mjpeg -q:v 3 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen_mjpeg.mkv"
+
+# Two more containers of the same freeze, for the two timing paths an MP4 never
+# exercises. `video_frozen.ts` is a stream copy (no re-encode, so every decoded
+# pixel equals `video_frozen.mp4`'s) into MPEG-TS: the muxer shifts every PTS by
+# about 1.4 s and declares no frame rate at open, so the span must come out
+# relative to the first frame and the interval from the stream's own timestamp
+# step (`-bsf:v dump_extra` repeats the MPEG-4 VOL header in-band, exactly as
+# `video_hash_base.ts` above needs). `video_frozen.m2v` is a raw MPEG-2
+# elementary stream, which carries no timestamps at all, so its span is placed
+# by decode index times the declared frame rate. It is encoded at `-q:v 5`, the
+# same quality as the MPEG-4 recipes: measured, a 1 Mbit/s rate-controlled
+# encode of this CIF clip starts the run ONE frame late (2080 ms), because the
+# pair (51, 52) is coded just below the 0.9995 enter threshold -- the honest
+# resolution of a two-threshold rule on a starved encode, documented in
+# docs/checks/content.video.frozen_runs.md.
+"$FFMPEG_BIN" -i "$OUT_DIR/video_frozen.mp4" -c copy -bsf:v dump_extra=freq=keyframe \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen.ts"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -filter_complex "[0:v]split[a][b];[a][b]freezeframes=first=51:last=100:replace=51[v]" -map "[v]" \
+  -c:v mpeg2video -g 12 -bf 0 -q:v 5 -threads 1 -flags +bitexact -fflags +bitexact -f mpeg2video -y \
+  "$OUT_DIR/video_frozen.m2v"
+
+# BLACK. Three 1 s segments of 25 frames (testsrc2 / black / testsrc2), so the
+# truth is one black run over decode frames 25..49, i.e. [1000 ms, 2000 ms).
+# `video_black_base` has no black segment (three `testsrc2` segments).
+# `video_black_tv` and `video_black_pc` are the SAME black segment encoded
+# limited-range and full-range: the range conversion happens in `scale=
+# out_range=`, so the black is luma 16 in one and luma 0 in the other, and the
+# range-normalized detector must report the same span for both (research Q5:
+# thumbnail mean 16.0 and 0.0, variance 0 in both). Each branch is brought to
+# yuv420p before `concat`, which needs one format.
+#
+# These are Matroska, not MP4: measured with the pinned ffmpeg, the MP4 muxer
+# DROPS `-color_range` for an MPEG-4 Part 2 stream (the read-back shows plain
+# `yuv420p`), while Matroska's Colour element keeps it (`yuv420p(pc, ...)`), and
+# a full-range label that does not survive the container would make the whole
+# range-normalization proof vacuous.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -filter_complex "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[2:v]format=yuv420p[c];[a][b][c]concat=n=3:v=1:a=0,scale=out_range=tv,format=yuv420p[v]" \
+  -map "[v]" -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range tv \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_black_base.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -f lavfi -i "color=c=black:size=352x288:rate=25:duration=1" \
+  -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -filter_complex "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[2:v]format=yuv420p[c];[a][b][c]concat=n=3:v=1:a=0,scale=out_range=tv,format=yuv420p[v]" \
+  -map "[v]" -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range tv \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_black_tv.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -f lavfi -i "color=c=black:size=352x288:rate=25:duration=1" \
+  -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -filter_complex "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[2:v]format=yuv420p[c];[a][b][c]concat=n=3:v=1:a=0,scale=out_range=pc,format=yuv420p[v]" \
+  -map "[v]" -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range pc \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_black_pc.mkv"
+
+# DARK GREY. The dark-grey counter-example to a range-unaware black rule: two
+# seconds of luma 17 (`lutyuv=y=17` on a black yuv420p source, so the pixels are
+# exactly 17, never a colour conversion's 31) that differ ONLY in the label.
+# `setrange` relabels the frames without touching a sample. Labelled full range
+# the picture is dark grey (black point 0, mean 17 > 2) and must NOT be black;
+# labelled limited range the very same pixels are black (black point 16, mean
+# 17 <= 18) and the whole clip must be one black run.
+"$FFMPEG_BIN" -f lavfi -i "color=c=black:size=352x288:rate=25:duration=2" \
+  -vf "format=yuv420p,lutyuv=y=17,setrange=full" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range pc \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_dark_pc.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "color=c=black:size=352x288:rate=25:duration=2" \
+  -vf "format=yuv420p,lutyuv=y=17,setrange=limited" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range tv \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_dark_tv.mkv"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac, audio_stereo_s16.wav, audio_stereo_s24.wav, audio_mono_s16.wav, audio_flt_base.ogg, audio_mp2_base.mpg, audio_51.flac, audio_51_side.flac, audio_prime_base.mp4, audio_prime_roundtrip.mkv, audio_prime_roundtrip2.mp4, audio_prime_copy.ts, audio_prime_multiedit.mp4, audio_prime_fragmented.mp4, audio_corrupt_clean.mp4, audio_corrupt_frames.mp4, audio_undecodable.mp4, video_hash_base.mp4, video_hash_base_copy.mp4, video_hash_base.mkv, video_hash_base.ts, video_hash_alt.mp4, video_trim.mp4, video_trim.mkv, video_cover.mp4, video_geom_change.m2v, video_hash_small.mp4, video_corrupt_mpeg4_base.mkv, video_corrupt_mpeg4.mkv, video_huge_dims.h264, video_loc_huffyuv.mkv, video_loc_huffyuv_c40.mkv, video_loc_huffyuv_c40_42.mkv, video_loc_huffyuv_c40_43.mkv, video_loc_huffyuv_drop40.mkv, video_loc_mpeg4_c40.mkv, video_frozen_base.mp4, video_frozen.mp4, video_frozen_bf0.mp4, video_frozen_mjpeg.mkv, video_frozen.ts, video_frozen.m2v, video_black_base.mkv, video_black_tv.mkv, video_black_pc.mkv, video_dark_pc.mkv, video_dark_tv.mkv."

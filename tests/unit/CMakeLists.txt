@@ -369,6 +369,10 @@ add_executable(mediadiff_unit_tests
   # known answers and bounds, and the deterministic 128-wide thumbnail's
   # height, depth normalization, range-preservation and SIMD-equals-C proof.
   test_ssim_int.cpp
+  # 07-05-PLAN.md (CONTENT-06, T-07-16): the frozen hysteresis boundaries, the
+  # range- and depth-normalized black rule, run ordering and the geometry
+  # handling of both detectors, on synthetic thumbnails.
+  test_video_detectors.cpp
   # 07-03-PLAN.md (CONTENT-02, D-02/D-07): the one exact frame-pairing rule --
   # the strict half-interval boundary, timebase rounding, 60 vs 30, a drop, a
   # duplicate, negative first PTS, the index fallbacks and online == batch.

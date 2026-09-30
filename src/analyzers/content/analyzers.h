@@ -42,4 +42,19 @@ const AnalyzerSpec& content_audio_sample_hash_analyzer();
 // and frame_interval for the divergence locator (07-03).
 const AnalyzerSpec& content_video_frame_hash_analyzer();
 
+// 07-05-PLAN.md (CONTENT-06; 07-CHECK-ROSTER.md): content.video.frozen_runs
+// and content.video.black_runs -- required_passes = {Pass::demux_header,
+// Pass::packet_scan, Pass::video_decode}, scope = ContainerFamily::other.
+// Both are `span`/`ms` checks emitted together, one pair per non-attached-
+// picture video stream at Scope::Kind::video. Skip-reason priority:
+// partial_scan (a truncated packet scan), requires_decode, partial_scan again
+// for an undecodable or truncated decode (evidence carries the truncation
+// reason), insufficient_data for a stream that decoded zero frames or whose
+// thumbnail could not be scored, no_timing_data when a run exists but no frame
+// timing does. Otherwise a REAL SpanList (empty when nothing qualifies, never
+// Absent{} for a decoded stream). Spans are measured from the stream's own
+// first frame, end-exclusive at the last run frame's time plus one frame
+// interval, as integer-millisecond RationalValues.
+const AnalyzerSpec& content_video_runs_analyzer();
+
 }  // namespace mediadiff

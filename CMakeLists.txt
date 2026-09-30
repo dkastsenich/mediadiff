@@ -191,6 +191,9 @@ add_library(libmediadiff STATIC
   # 07-05-PLAN.md (CONTENT-06): the deterministic 128-wide luma thumbnail
   # (swscale, pinned flags) every video content sink shares.
   src/probe/video_thumbnail.cpp
+  # 07-05-PLAN.md (CONTENT-06): the frozen (SSIM hysteresis) and black
+  # (range- and depth-normalized) detector sinks over those thumbnails.
+  src/probe/video_detectors.cpp
   src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
@@ -241,6 +244,9 @@ add_library(libmediadiff STATIC
   # 07-01-PLAN.md (CONTENT-01): content.video.frame_hash -- the video decode
   # sweep's first consumer.
   src/analyzers/content/video_frame_hash.cpp
+  # 07-05-PLAN.md (CONTENT-06): content.video.frozen_runs/black_runs -- the
+  # detector sinks' span-list consumer.
+  src/analyzers/content/video_runs.cpp
   # 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/sample_fmt/
   # bit_depth/channels/layout -- the six per-audio-stream identity checks,
   # codecpar-only extraction mirroring video/stream_params.cpp's own shape.
@@ -314,6 +320,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/audio_decode.h
   src/probe/video_decode.h
   src/probe/video_thumbnail.h
+  src/probe/video_detectors.h
   src/util/ssim_int.h
   src/probe/cadence.h
   src/probe/bmff_scan.h

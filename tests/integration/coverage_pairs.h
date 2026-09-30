@@ -554,6 +554,28 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
       {"content.video.frame_hash",
        {fixture("video_hash_base.mp4"), fixture("video_hash_alt.mp4"), fixture("video_hash_base.mp4"),
         fixture("video_hash_base.ts")}},
+      // 07-05-PLAN.md (CONTENT-06): content.video.frozen_runs' trigger is
+      // video_frozen_base.mp4 (no freeze) vs video_frozen.mp4 (decode frames
+      // 51..100 replaced by frame 51): an INTRODUCED span at [2040, 4040) ms.
+      // Its clean pair is video_frozen.mp4 vs video_frozen_bf0.mp4 -- the SAME
+      // freeze encoded with and without B-frames, which research Q5 measured to
+      // fragment under exact hash equality: the two must report the same span
+      // (SSIM hysteresis is GOP-independent).
+      {"content.video.frozen_runs",
+       {fixture("video_frozen_base.mp4"), fixture("video_frozen.mp4"), fixture("video_frozen.mp4"),
+        fixture("video_frozen_bf0.mp4")}},
+      // 07-05-PLAN.md (CONTENT-06): content.video.black_runs' trigger is
+      // video_black_base.mkv (three picture segments) vs video_black_tv.mkv
+      // (the middle one black, limited range): an introduced span at
+      // [1000, 2000) ms. Its clean pair is the RANGE-FLIP proof:
+      // video_black_tv.mkv vs video_black_pc.mkv, the same black segment
+      // encoded limited-range (luma 16) and full-range (luma 0), which a
+      // range-unaware rule would call different and this one calls the same.
+      // (Matroska, because the MP4 muxer drops the colour range of an MPEG-4
+      // Part 2 stream -- see scripts/gen_corpus.sh.)
+      {"content.video.black_runs",
+       {fixture("video_black_base.mkv"), fixture("video_black_tv.mkv"), fixture("video_black_tv.mkv"),
+        fixture("video_black_pc.mkv")}},
 
       // --- 06-03-PLAN.md (AUDIO-01, AUDIO-02): the six per-audio-stream
       // header-pass identity checks -- codec/sample_rate/sample_fmt/

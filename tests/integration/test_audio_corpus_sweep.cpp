@@ -243,6 +243,32 @@ const std::map<std::pair<std::string, std::string>, std::vector<std::string>>& k
       // Verified against the real binary: exactly these six non-pass findings.
       {{mediadiff::test::fixture("video_hash_base.mp4"), mediadiff::test::fixture("video_hash_base.ts")},
        {"container.format", "timeline.start", "size.file", "size.overhead", "meta.tags", "meta.tags"}},
+      // 07-05-PLAN.md (content.video.frozen_runs): its declared CLEAN pair is
+      // the SAME freeze encoded with (`-bf 2`) and without (`-bf 0`) B-frames,
+      // which is exactly what proves the frozen span does not depend on GOP
+      // structure -- content.video.frozen_runs is `pass`. Two separate encodes
+      // of one source differ everywhere else by construction, and each id
+      // below was confirmed against the real binary (`compare --profile
+      // sw-encoder --json`): container.mp4.edit_list (B-frame reorder delay
+      // writes an edit list in one file and none in the other), video.profile
+      // (Advanced Simple vs Simple), video.frame_types (B-frames present or
+      // not), content.video.frame_hash (different encodes, different pictures)
+      // and the four size.* consequences of a 577756- vs 553090-byte file.
+      {{mediadiff::test::fixture("video_frozen.mp4"), mediadiff::test::fixture("video_frozen_bf0.mp4")},
+       {"container.mp4.edit_list", "video.profile", "video.frame_types", "content.video.frame_hash", "size.file",
+        "size.stream_bitrate", "size.peak_bitrate", "size.overhead"}},
+      // 07-05-PLAN.md (content.video.black_runs): its declared CLEAN pair is
+      // the RANGE-FLIP proof -- the same black segment encoded limited-range
+      // and full-range, so content.video.black_runs is `pass` (the span is the
+      // same because each side is judged against its own black point). The
+      // flip is the pair's whole point, so video.color.range (tv vs pc) is its
+      // own declared difference, content.video.frame_hash differs because a
+      // range conversion changes every decoded luma value, and the four size.*
+      // findings are the two encodes' different byte counts. Verified against
+      // the real binary.
+      {{mediadiff::test::fixture("video_black_tv.mkv"), mediadiff::test::fixture("video_black_pc.mkv")},
+       {"video.color.range", "content.video.frame_hash", "size.file", "size.stream_bitrate", "size.peak_bitrate",
+        "size.overhead"}},
   };
   return exceptions;
 }

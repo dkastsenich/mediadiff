@@ -198,6 +198,10 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // the audio hash so the content family stays grouped and appended in
       // commit order (TRUST-05), ahead of Phase 6's own later audio entries.
       content_video_frame_hash_analyzer(),
+      // 07-05-PLAN.md (CONTENT-06): content.video.frozen_runs/black_runs --
+      // the detector sinks' consumer, appended directly after the frame hash
+      // it shares a decode sweep with.
+      content_video_runs_analyzer(),
       // 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/
       // sample_fmt/bit_depth/channels/layout -- the six per-audio-stream
       // identity checks, mirroring video_stream_params_analyzer()'s own

@@ -204,9 +204,20 @@
 # encoder involved). Workstation-computed the same way
 # (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`), awaiting the designated
 # leg's transcription. The mpeg4 encode carries `-threads 1`.
+video_black_base.mkv
+video_black_pc.mkv
+video_black_tv.mkv
 video_corrupt_mpeg4.mkv
 video_corrupt_mpeg4_base.mkv
 video_cover.mp4
+video_dark_pc.mkv
+video_dark_tv.mkv
+video_frozen.m2v
+video_frozen.mp4
+video_frozen.ts
+video_frozen_base.mp4
+video_frozen_bf0.mp4
+video_frozen_mjpeg.mkv
 video_geom_change.m2v
 video_hash_alt.mp4
 video_hash_base.mkv

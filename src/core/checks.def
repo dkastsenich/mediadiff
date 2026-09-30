@@ -1565,6 +1565,41 @@ severity = "fail"
 hw_encoder = "info"
 transform = "ignore"
 
+# 07-05-PLAN.md (CONTENT-06; 07-CHECK-ROSTER.md, approve-as-proposed
+# 2026-09-30), src/analyzers/content/video_runs.cpp: content.video.frozen_runs
+# -- stretches of consecutive decoded frames that are (near) identical, found
+# by SSIM hysteresis on the deterministic 128-wide luma thumbnail for EVERY
+# decoder class (enter above 0.9995, continue above 0.995, at least 3 frames),
+# because research Q5 measured exact hash equality fragmenting and moving with
+# GOP structure. `span` semantic, `ms` unit, `span_list` value: an INTRODUCED
+# run gates, a removed run reports at `info` (doc 01 section 3). The constants
+# are fixed named detection constants (Phase 5 D-08), validated on synthetic
+# content only (A10); the real-content review is a WINDOWS.md `todo`. A decoded
+# stream with no frozen run reports an EMPTY span list, never Absent{}.
+[[check]]
+id = "content.video.frozen_runs"
+group = "content"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 07-05-PLAN.md (CONTENT-06; A11, A12), same file: content.video.black_runs --
+# stretches of black frames on the 8-bit luma thumbnail: mean at most
+# (black_point + 2) and variance below 4, where black_point is 16 for limited
+# or unspecified range and 0 for full range (read after the yuvj fold), with a
+# 3-frame minimum. Range- and depth-normalized, so the same black segment
+# encoded limited-range and full-range reports the SAME span and full-range
+# dark grey is not black. Same `span` gating rule and fixed-constant policy as
+# content.video.frozen_runs directly above.
+[[check]]
+id = "content.video.black_runs"
+group = "content"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
 # 06-03-PLAN.md (AUDIO-01, AUDIO-02), src/analyzers/audio/stream_params.cpp
 # -- the six per-audio-stream identity checks: codec, sample rate, sample
 # format, bit depth, channel count and canonical layout. Approved at

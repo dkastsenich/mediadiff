@@ -77,6 +77,8 @@ timeline.timecode  severity=info  tolerance=<none>
 timeline.timecode.value  severity=info  tolerance=<none>
 content.audio.sample_hash  severity=fail  tolerance=<none>
 content.video.frame_hash  severity=fail  tolerance=<none>
+content.video.frozen_runs  severity=fail  tolerance=<none>
+content.video.black_runs  severity=fail  tolerance=<none>
 audio.codec  severity=fail  tolerance=<none>
 audio.sample_rate  severity=fail  tolerance=<none>
 audio.sample_fmt  severity=fail  tolerance=<none>

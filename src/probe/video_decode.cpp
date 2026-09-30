@@ -63,6 +63,18 @@ std::string folded_pix_fmt_name(int format) {
   return detail::fold_pix_fmt_range(name != nullptr ? std::string(name) : std::string("unknown"), std::string()).pix_fmt;
 }
 
+// AVColorRange as the names fold_pix_fmt_range and video.color.range use.
+std::string color_range_name(int range) {
+  switch (range) {
+    case AVCOL_RANGE_MPEG:
+      return "tv";
+    case AVCOL_RANGE_JPEG:
+      return "pc";
+    default:
+      return "unknown";
+  }
+}
+
 // A negative libav return rendered once, at the first error only.
 void record_first_error(std::string* first_error_reason, const char* what, int rc) {
   if (!first_error_reason->empty()) {
@@ -190,7 +202,24 @@ VideoDecodeState::VideoDecodeState(VideoDecodeState&& other) noexcept
       frame_interval_den_(other.frame_interval_den_),
       decode_error_count_(other.decode_error_count_),
       corrupt_frame_count_(other.corrupt_frame_count_),
-      first_error_reason_(std::move(other.first_error_reason_)) {
+      first_error_reason_(std::move(other.first_error_reason_)),
+      thumb_scaler_(std::move(other.thumb_scaler_)),
+      thumb_(std::move(other.thumb_)),
+      frozen_(std::move(other.frozen_)),
+      black_(std::move(other.black_)),
+      detectors_unavailable_(other.detectors_unavailable_),
+      detectors_unavailable_reason_(std::move(other.detectors_unavailable_reason_)),
+      black_point_resolved_(other.black_point_resolved_),
+      black_point_(other.black_point_),
+      thumbnail_height_(other.thumbnail_height_),
+      scaler_record_(std::move(other.scaler_record_)),
+      declared_color_range_(std::move(other.declared_color_range_)),
+      tap_count_(other.tap_count_),
+      first_tap_tick_(other.first_tap_tick_),
+      prev_tap_tick_(other.prev_tap_tick_),
+      min_tick_delta_(other.min_tick_delta_),
+      tap_interval_num_(other.tap_interval_num_),
+      tap_interval_den_(other.tap_interval_den_) {
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -234,6 +263,23 @@ VideoDecodeState& VideoDecodeState::operator=(VideoDecodeState&& other) noexcept
   decode_error_count_ = other.decode_error_count_;
   corrupt_frame_count_ = other.corrupt_frame_count_;
   first_error_reason_ = std::move(other.first_error_reason_);
+  thumb_scaler_ = std::move(other.thumb_scaler_);
+  thumb_ = std::move(other.thumb_);
+  frozen_ = std::move(other.frozen_);
+  black_ = std::move(other.black_);
+  detectors_unavailable_ = other.detectors_unavailable_;
+  detectors_unavailable_reason_ = std::move(other.detectors_unavailable_reason_);
+  black_point_resolved_ = other.black_point_resolved_;
+  black_point_ = other.black_point_;
+  thumbnail_height_ = other.thumbnail_height_;
+  scaler_record_ = std::move(other.scaler_record_);
+  declared_color_range_ = std::move(other.declared_color_range_);
+  tap_count_ = other.tap_count_;
+  first_tap_tick_ = other.first_tap_tick_;
+  prev_tap_tick_ = other.prev_tap_tick_;
+  min_tick_delta_ = other.min_tick_delta_;
+  tap_interval_num_ = other.tap_interval_num_;
+  tap_interval_den_ = other.tap_interval_den_;
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -281,6 +327,7 @@ bool VideoDecodeState::ensure_initialized(const AVStream& stream, int threads_ov
     return false;
   }
   codec_ctx_->pkt_timebase = stream.time_base;
+  declared_color_range_ = color_range_name(par->color_range);
   codec_ctx_->flags |= AV_CODEC_FLAG_BITEXACT | AV_CODEC_FLAG_UNALIGNED;
   codec_ctx_->idct_algo = FF_IDCT_SIMPLE;
   codec_ctx_->max_pixels = kMaxVideoPixels;
@@ -311,6 +358,10 @@ bool VideoDecodeState::ensure_initialized(const AVStream& stream, int threads_ov
     // product is formed in int64.
     frame_interval_num_ = static_cast<std::int64_t>(stream.avg_frame_rate.den) * sample_stride_;
     frame_interval_den_ = stream.avg_frame_rate.num;
+    // 07-05-PLAN.md: the detectors see EVERY frame, so their interval is the
+    // stream's own, never widened by the stride.
+    tap_interval_num_ = stream.avg_frame_rate.den;
+    tap_interval_den_ = stream.avg_frame_rate.num;
   }
   attempted_ = true;
   return true;
@@ -320,6 +371,50 @@ void VideoDecodeState::latch_truncation(std::string_view reason) {
   if (decode_truncation_reason_.empty()) {
     decode_truncation_reason_ = std::string(reason);
   }
+}
+
+void VideoDecodeState::tap_detectors(const AVFrame& frame) {
+  if (detectors_unavailable_) {
+    return;
+  }
+  if (!thumb_scaler_.scale(frame, &thumb_)) {
+    detectors_unavailable_ = true;
+    detectors_unavailable_reason_ = "thumbnail_unavailable";
+    return;
+  }
+  if (!black_point_resolved_) {
+    black_point_resolved_ = true;
+    thumbnail_height_ = thumb_.height;
+    scaler_record_ = scaler_record(thumb_.height);
+    // The range comes from the frame, falling back to the stream's declared
+    // one, and is folded ONCE per stream through the same seam video.pix_fmt
+    // and video.color.range use (a yuvj format is full range), from the
+    // format's RAW name -- the folded name would already have lost the yuvj.
+    const std::string range = frame.color_range == AVCOL_RANGE_MPEG || frame.color_range == AVCOL_RANGE_JPEG
+                                  ? color_range_name(frame.color_range)
+                                  : declared_color_range_;
+    const char* raw_name = av_get_pix_fmt_name(static_cast<AVPixelFormat>(frame.format));
+    const std::string folded_range =
+        fold_pix_fmt_range(raw_name != nullptr ? std::string(raw_name) : std::string("unknown"), range).color_range;
+    // A12: a format the scaler had to convert whole (RGB, packed YUV, ...) lands
+    // in GRAY8 already range-expanded, so its black point is 0.
+    black_point_ = thumb_scaler_.converted_to_gray() ? 0 : black_point_for_range(folded_range);
+  }
+
+  const std::int64_t tick = frame.pts;
+  frozen_.feed(thumb_, tick);
+  black_.feed(thumb_, tick, black_point_);
+
+  if (tap_count_ == 0) {
+    first_tap_tick_ = tick;
+  } else if (tick != AV_NOPTS_VALUE && prev_tap_tick_ != AV_NOPTS_VALUE) {
+    std::int64_t delta = 0;
+    if (checked_sub(tick, prev_tap_tick_, &delta) && delta > 0 && (min_tick_delta_ == 0 || delta < min_tick_delta_)) {
+      min_tick_delta_ = delta;
+    }
+  }
+  prev_tap_tick_ = tick;
+  ++tap_count_;
 }
 
 void VideoDecodeState::consume_frame(const AVFrame& frame) {
@@ -387,6 +482,11 @@ void VideoDecodeState::consume_frame(const AVFrame& frame) {
   last_width_ = frame.width;
   last_height_ = frame.height;
   last_pix_fmt_folded_ = folded;
+
+  // 07-05-PLAN.md (CONTENT-06, D-08): the detectors see EVERY hashable decoded
+  // frame, whatever the stride -- tapped here, where every frame passes, and
+  // not where the stride selects the one to store.
+  tap_detectors(frame);
 
   // A frame without a timestamp makes the whole stream's timestamps unusable,
   // stored or not, so a sampled chain reports the same `timestamps` evidence a
@@ -510,6 +610,21 @@ StreamVideoDecode VideoDecodeState::finalize(const DecodeBudget& budget) {
   result.decode_error_count = decode_error_count_;
   result.corrupt_frame_count = corrupt_frame_count_;
   result.first_error_reason = first_error_reason_;
+  frozen_.finish();
+  black_.finish();
+  result.frozen_runs = frozen_.runs();
+  result.black_runs = black_.runs();
+  result.tap_frame_count = tap_count_;
+  result.detectors_available = !detectors_unavailable_ && frozen_.measurable();
+  result.detectors_unavailable_reason =
+      detectors_unavailable_ ? detectors_unavailable_reason_ : (frozen_.measurable() ? std::string() : "thumbnail_too_small");
+  result.thumbnail_height = thumbnail_height_;
+  result.scaler_record = scaler_record_;
+  result.black_point = black_point_;
+  result.first_tap_tick = first_tap_tick_;
+  result.min_tick_delta = min_tick_delta_;
+  result.tap_interval_num = tap_interval_num_;
+  result.tap_interval_den = tap_interval_den_;
   result.decode_truncated = !decode_truncation_reason_.empty();
   result.decode_truncation_reason = decode_truncation_reason_;
   result.undecodable = frame_count_ == 0 && decode_error_count_ > 0;

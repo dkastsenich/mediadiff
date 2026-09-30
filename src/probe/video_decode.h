@@ -40,6 +40,14 @@
 // thread_count = 1 (07-CHECK-ROSTER.md finding 1: corrupt streams decode
 // non-deterministically at >1 thread even at a fixed count).
 
+//
+// 07-05-PLAN.md (CONTENT-06, D-08): the SECOND and THIRD sinks on this same
+// sweep. After the hash sink, every hashable decoded frame is thumbnailed once
+// (probe/video_thumbnail.h) and fed to the frozen and black detectors
+// (probe/video_detectors.h) -- independent of the `--sample N` stride, which
+// owns only the hash sink, so both run lists are identical with and without
+// `--sample`. Only run lists leave this file, never pixels.
+
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -48,6 +56,8 @@
 #include <vector>
 
 #include "probe/audio_decode.h"
+#include "probe/video_detectors.h"
+#include "probe/video_thumbnail.h"
 
 // Opaque forward declarations at global scope, matching libav's own C
 // declaration site (mirrors probe/audio_decode.h). probe/video_decode.cpp
@@ -176,6 +186,38 @@ struct StreamVideoDecode {
   // kDecodeStopConsecutiveErrorLimit or kDecodeStopFrameRecordBudget.
   bool decode_truncated = false;
   std::string decode_truncation_reason;
+
+  // --- 07-05-PLAN.md (CONTENT-06): the frozen/black detector sinks. ---
+  // Runs of consecutive decoded frames by output-order index (every hashable
+  // decoded frame counts, stored or not: D-08), inclusive, each with its first
+  // and last frame's own tick in the stream's time base.
+  std::vector<FrameRun> frozen_runs;
+  std::vector<FrameRun> black_runs;
+  // The number of frames the detectors saw (hashable decoded frames).
+  std::int64_t tap_frame_count = 0;
+  // False when the detectors could not run to a meaningful end: the thumbnail
+  // could not be made (`thumbnail_unavailable`) or was too short to score
+  // (`thumbnail_too_small`). The run lists are then NOT measurements.
+  bool detectors_available = true;
+  std::string detectors_unavailable_reason;
+  // The thumbnail's height (its width is kThumbnailWidth) and the recorded
+  // scaler identity (D-04's record for 07-08), both from the first thumbnail.
+  int thumbnail_height = 0;
+  std::string scaler_record;
+  // The black point the stream's first frame resolved to: 16 for limited or
+  // unspecified range, 0 for full range (after the yuvj fold) or for a format
+  // the scaler had to convert whole.
+  int black_point = 16;
+  // The first detector frame's tick, and the smallest positive tick step
+  // between consecutive detector frames (0 when there is none) -- the two
+  // timing facts the analyzer needs to place a run in time without the
+  // per-frame tick array the stride would otherwise leave incomplete.
+  std::int64_t first_tap_tick = 0;
+  std::int64_t min_tick_delta = 0;
+  // The inverse of the stream's avg_frame_rate in seconds, NOT multiplied by
+  // the sampling stride (frame_interval_* above is). Both zero when unusable.
+  std::int64_t tap_interval_num = 0;
+  std::int64_t tap_interval_den = 0;
 };
 
 // One decode sweep's whole result, index-aligned with AVStream (mirrors
@@ -275,6 +317,8 @@ class VideoDecodeState {
  private:
   void consume_frame(const AVFrame& frame);
   void latch_truncation(std::string_view reason);
+  // 07-05-PLAN.md: thumbnails `frame` once and feeds both detectors.
+  void tap_detectors(const AVFrame& frame);
 
   AVCodecContext* codec_ctx_ = nullptr;
   bool attempted_init_ = false;
@@ -314,6 +358,25 @@ class VideoDecodeState {
   std::int64_t decode_error_count_ = 0;
   std::int64_t corrupt_frame_count_ = 0;
   std::string first_error_reason_;
+
+  // 07-05-PLAN.md: the detector sinks' state.
+  ThumbnailScaler thumb_scaler_;
+  Thumbnail thumb_;
+  FrozenDetector frozen_;
+  BlackDetector black_;
+  bool detectors_unavailable_ = false;
+  std::string detectors_unavailable_reason_;
+  bool black_point_resolved_ = false;
+  int black_point_ = 16;
+  int thumbnail_height_ = 0;
+  std::string scaler_record_;
+  std::string declared_color_range_ = "unknown";
+  std::int64_t tap_count_ = 0;
+  std::int64_t first_tap_tick_ = 0;
+  std::int64_t prev_tap_tick_ = 0;
+  std::int64_t min_tick_delta_ = 0;
+  std::int64_t tap_interval_num_ = 0;
+  std::int64_t tap_interval_den_ = 0;
 };
 
 }  // namespace detail

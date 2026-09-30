@@ -192,6 +192,12 @@ add_executable(mediadiff_integration_tests
   # meta.decode_errors, the declared-dimension bound and the per-frame record
   # budget. Every frame count is a literal measured with the pinned ffmpeg.
   test_video_decode_edges.cpp
+  # CONTENT-06 (07-05-PLAN.md): content.video.frozen_runs / black_runs on real
+  # fixtures -- the frozen span stable across MPEG-4 with and without
+  # B-frames, MJPEG, MPEG-TS and a raw elementary stream, black stable across a
+  # colour-range flip, dark grey not black, --sample independence, the
+  # truncated and --no-content skips and introduced/removed gating.
+  test_video_detectors.cpp
   # CONTENT-02 (07-03-PLAN.md): the time-aligned frame locator on real
   # one-frame corruptions -- first divergent frame (index, PTS), ranges merged
   # at one-frame gaps, exact totals, a dropped frame reading "missing", snapshot
