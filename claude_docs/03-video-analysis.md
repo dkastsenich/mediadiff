@@ -49,9 +49,9 @@ Extraction: `codecpar->color_range / color_primaries / color_trc / color_space /
 
 ## 4. Checks — HDR metadata (`video.hdr.*`)
 
-Extraction precedence (recorded in evidence as `source: stream | first_frame`):
+Extraction precedence (recorded in evidence as `source: stream | frame`; amended, 07-07-PLAN.md, 2026-09-30: first-frame arm implemented -- the spelling shipped is `frame`; H.264 added to the frame-capable codecs, since libavcodec's H.264 and HEVC decoders share one SEI export; Dolby Vision stays stream-level):
 1. **Stream-level:** `codecpar->coded_side_data` (FFmpeg ≥ 6.1) — `AV_PKT_DATA_MASTERING_DISPLAY_METADATA`, `AV_PKT_DATA_CONTENT_LIGHT_LEVEL`, `AV_PKT_DATA_DOVI_CONF`.
-2. **Fallback:** first decoded frame's side data (`AV_FRAME_DATA_MASTERING_DISPLAY_METADATA`, `AV_FRAME_DATA_CONTENT_LIGHT_LEVEL`) when the decode pass runs; else `skipped:requires_decode` if stream-level absent but the codec could carry frame-level (HEVC/AV1).
+2. **Fallback:** first decoded frame's side data (`AV_FRAME_DATA_MASTERING_DISPLAY_METADATA`, `AV_FRAME_DATA_CONTENT_LIGHT_LEVEL`) when the decode pass runs; else `skipped:requires_decode` if stream-level absent but the codec could carry frame-level (HEVC/AV1/H.264). With the decode pass and no entry on the first frame the absence is real (`Absent{}`, no skip); a decode that never reached a first frame is `skipped:partial_scan` (cut short or undecodable) or `skipped:insufficient_data` (a complete decode with zero frames). The first frame is read whatever `--sample N` is, and stream-level metadata keeps precedence.
 
 | Check ID | Extraction | Semantic / default | Details |
 |---|---|---|---|
