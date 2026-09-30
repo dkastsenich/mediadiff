@@ -158,6 +158,10 @@ add_library(libmediadiff STATIC
   src/core/profiles.cpp
   src/core/policy.cpp
   src/core/container_family.cpp
+  # 07-03-PLAN.md (CONTENT-02, D-02/D-07): the one frame-pairing rule -- exact
+  # rational time alignment with an index fallback, shared by the divergence
+  # locator (compare/hash.cpp) and, later, the lockstep scorer.
+  src/core/frame_pairing.cpp
   src/config/toml_load.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
@@ -284,6 +288,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/tolerance.h
   src/core/check_explain.h
   src/core/container_family.h
+  src/core/frame_pairing.h
   src/config/toml_load.h
   src/compare/semantics.h
   src/compare/engine.h

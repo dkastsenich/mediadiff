@@ -365,6 +365,10 @@ add_executable(mediadiff_unit_tests
   # counts, the pinned flags string, the class-2 table, the analyzer's skip
   # ladder and the T-07-02/T-07-05 bounds.
   test_video_decode.cpp
+  # 07-03-PLAN.md (CONTENT-02, D-02/D-07): the one exact frame-pairing rule --
+  # the strict half-interval boundary, timebase rounding, 60 vs 30, a drop, a
+  # duplicate, negative first PTS, the index fallbacks and online == batch.
+  test_frame_pairing.cpp
   # 06-08-PLAN.md Task 1 (AUDIO-05, AUDIO-06, AUDIO-10): the libebur128 sink
   # fused into the same decode sweep -- channel-role mapping, feed dispatch,
   # the gating-floor sentinel, quantiser determinism, and the zero-sample
