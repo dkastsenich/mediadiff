@@ -207,6 +207,9 @@
 video_black_base.mkv
 video_black_pc.mkv
 video_black_tv.mkv
+video_cc_a53.m2v
+video_cc_a53_copy.m2v
+video_cc_base.m2v
 video_corrupt_mpeg4.mkv
 video_corrupt_mpeg4_base.mkv
 video_cover.mp4
@@ -232,5 +235,9 @@ video_loc_huffyuv_c40_42.mkv
 video_loc_huffyuv_c40_43.mkv
 video_loc_huffyuv_drop40.mkv
 video_loc_mpeg4_c40.mkv
+video_pcm_cc.h264
+video_pcm_crop.h264
+video_pcm_hdr.h264
+video_pcm_plain.h264
 video_trim.mkv
 video_trim.mp4
