@@ -215,5 +215,11 @@ video_hash_base.ts
 video_hash_base_copy.mp4
 video_hash_small.mp4
 video_huge_dims.h264
+video_loc_huffyuv.mkv
+video_loc_huffyuv_c40.mkv
+video_loc_huffyuv_c40_42.mkv
+video_loc_huffyuv_c40_43.mkv
+video_loc_huffyuv_drop40.mkv
+video_loc_mpeg4_c40.mkv
 video_trim.mkv
 video_trim.mp4

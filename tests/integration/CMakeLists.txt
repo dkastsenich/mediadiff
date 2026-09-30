@@ -192,6 +192,12 @@ add_executable(mediadiff_integration_tests
   # meta.decode_errors, the declared-dimension bound and the per-frame record
   # budget. Every frame count is a literal measured with the pinned ffmpeg.
   test_video_decode_edges.cpp
+  # CONTENT-02 (07-03-PLAN.md): the time-aligned frame locator on real
+  # one-frame corruptions -- first divergent frame (index, PTS), ranges merged
+  # at one-frame gaps, exact totals, a dropped frame reading "missing", snapshot
+  # equivalence, the index fallback, the T-07-11 caps and the untouched audio
+  # locator. Every expected frame index is a literal checked with framemd5.
+  test_video_locator.cpp
   # AUDIO-01/AUDIO-02 (06-03-PLAN.md Task 2): audio.codec/sample_rate/
   # sample_fmt/bit_depth/channels/layout proven through the real CLI --
   # 5.1 vs 5.1(side) on an equal channel count, unspecified-layout-as-a-
