@@ -37,7 +37,7 @@ Aliasing: `deprecated_alias("container.faststart", "container.mp4.faststart")` �
 | `dist` | max abs difference of normalized bin proportions ≤ tol | worst bin shown | bins defined per check (doc 04 jitter, doc 03 frame types) |
 | `span` | no *introduced* spans (removed spans reported `info`) | `+n spans (t0–t1, …)` | interval algebra over baseline/candidate span lists; merge gap = 1 frame |
 
-Tolerance value grammar (parsed once, unit-checked against CheckDef): `"5ms" | "3%" | "±8" | "2frames" | "0.2ms/min" | "0.5LU" | "1.0dB" | "128samples" | "1tick"`. A tolerance in the wrong unit for a check is a config error (exit 64) with the expected unit named.
+Tolerance value grammar (parsed once, unit-checked against CheckDef): `"5ms" | "3%" | "±8" | "2frames" | "0.2ms/min" | "0.5LU" | "1.0dB" | "128samples" | "1tick" | "0.015"`. The last is the `score` unit (07-08, `content.video.perceptual`): a unitless score difference written as a bare number; any suffix on it is a usage error that names the bare form. A tolerance in the wrong unit for a check is a config error (exit 64) with the expected unit named.
 
 ## 4. Severity resolution
 
