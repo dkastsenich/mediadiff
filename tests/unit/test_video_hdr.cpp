@@ -22,10 +22,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
+
+extern "C" {
+#include <libavutil/mastering_display_metadata.h>
+}
 
 #include "analyzers/video/analyzers.h"
 #include "compare/engine.h"
@@ -34,6 +39,7 @@
 #include "core/policy.h"
 #include "core/registry.h"
 #include "probe/demux_session.h"
+#include "probe/hdr_static.h"
 #include "probe/pass.h"
 #include "support/fixture_paths.h"
 
@@ -142,14 +148,26 @@ TEST_CASE("video_hdr - quantize_chromaticity refuses an overflowing computation 
 
 // --- Test 2 (hand-built): the could/could-not-carry decision ---------------
 
-TEST_CASE("video_hdr - could_carry_frame_level_hdr is true for hevc and av1, false for mpeg4 and mpeg2video",
+TEST_CASE("video_hdr - could_carry_frame_level_hdr is true for hevc, av1 and h264, false for mpeg4 and mpeg2video",
           "[unit]") {
   REQUIRE(could_carry_frame_level_hdr("hevc"));
   REQUIRE(could_carry_frame_level_hdr("av1"));
+  // 07-07-PLAN.md (07-RESEARCH.md Q7): H.264 joins the set -- libavcodec's H.264
+  // and HEVC decoders share h2645_sei.c's mastering-display and content-light
+  // export. This line asserted `false` before 07-07 widened the table.
+  REQUIRE(could_carry_frame_level_hdr("h264"));
   REQUIRE_FALSE(could_carry_frame_level_hdr("mpeg4"));
   REQUIRE_FALSE(could_carry_frame_level_hdr("mpeg2video"));
   // Not in the closed table at all -- also false, never a guess.
-  REQUIRE_FALSE(could_carry_frame_level_hdr("h264"));
+  REQUIRE_FALSE(could_carry_frame_level_hdr("mjpeg"));
+}
+
+TEST_CASE("video_hdr - could_carry_frame_level_dovi keeps the pre-07-07 hevc/av1 table", "[unit]") {
+  // Dolby Vision has no first-frame arm, so H.264 never joins its table.
+  REQUIRE(mediadiff::detail::could_carry_frame_level_dovi("hevc"));
+  REQUIRE(mediadiff::detail::could_carry_frame_level_dovi("av1"));
+  REQUIRE_FALSE(mediadiff::detail::could_carry_frame_level_dovi("h264"));
+  REQUIRE_FALSE(mediadiff::detail::could_carry_frame_level_dovi("mpeg4"));
 }
 
 // --- Test 3 (real fixture): video_hdr_a.mp4 carries all six checks --------
@@ -569,4 +587,111 @@ TEST_CASE("video_hdr - video.hdr.coherence's transfer evidence agrees with video
     INFO("fixture: " << name);
     REQUIRE(coherence->evidence.at("transfer").get<std::string>() == std::get<std::string>(transfer->value));
   }
+}
+
+// ===========================================================================
+// 07-07-PLAN.md Task 1 (VIDEO-09): the ONE conversion path both extraction
+// arms share (probe/hdr_static.h). Expected values are literals chosen here
+// (distinct primaries and a 1000 cd/m^2 peak, as exact rationals), never
+// read back from the code under test.
+// ===========================================================================
+
+namespace {
+
+AVMasteringDisplayMetadata known_mdcv() {
+  AVMasteringDisplayMetadata md;
+  std::memset(&md, 0, sizeof(md));
+  // libav's struct is indexed R, G, B; each literal below is a distinct value
+  // so a swapped index in the reader cannot cancel out.
+  md.display_primaries[0][0] = AVRational{34000, 50000};
+  md.display_primaries[0][1] = AVRational{16000, 50000};
+  md.display_primaries[1][0] = AVRational{13250, 50000};
+  md.display_primaries[1][1] = AVRational{34500, 50000};
+  md.display_primaries[2][0] = AVRational{7500, 50000};
+  md.display_primaries[2][1] = AVRational{3000, 50000};
+  md.white_point[0] = AVRational{15635, 50000};
+  md.white_point[1] = AVRational{16450, 50000};
+  md.min_luminance = AVRational{1, 10000};
+  md.max_luminance = AVRational{10000000, 10000};
+  md.has_primaries = 1;
+  md.has_luminance = 1;
+  return md;
+}
+
+}  // namespace
+
+TEST_CASE("video_hdr - shared reader mdcv", "[unit]") {
+  const AVMasteringDisplayMetadata md = known_mdcv();
+  const auto* bytes = reinterpret_cast<const std::uint8_t*>(&md);
+
+  mediadiff::HdrStaticMetadata out;
+  REQUIRE(mediadiff::read_mdcv_side_data(bytes, sizeof(md), out));
+  REQUIRE(out.mdcv_present);
+  REQUIRE_FALSE(out.mdcv_short_payload);
+  REQUIRE(out.mdcv_has_primaries);
+  REQUIRE(out.mdcv_has_luminance);
+  REQUIRE(out.mdcv_r_x_num == 34000);
+  REQUIRE(out.mdcv_r_x_den == 50000);
+  REQUIRE(out.mdcv_r_y_num == 16000);
+  REQUIRE(out.mdcv_r_y_den == 50000);
+  REQUIRE(out.mdcv_g_x_num == 13250);
+  REQUIRE(out.mdcv_g_x_den == 50000);
+  REQUIRE(out.mdcv_g_y_num == 34500);
+  REQUIRE(out.mdcv_g_y_den == 50000);
+  REQUIRE(out.mdcv_b_x_num == 7500);
+  REQUIRE(out.mdcv_b_x_den == 50000);
+  REQUIRE(out.mdcv_b_y_num == 3000);
+  REQUIRE(out.mdcv_b_y_den == 50000);
+  REQUIRE(out.mdcv_wp_x_num == 15635);
+  REQUIRE(out.mdcv_wp_x_den == 50000);
+  REQUIRE(out.mdcv_wp_y_num == 16450);
+  REQUIRE(out.mdcv_wp_y_den == 50000);
+  REQUIRE(out.mdcv_min_luminance_num == 1);
+  REQUIRE(out.mdcv_min_luminance_den == 10000);
+  REQUIRE(out.mdcv_max_luminance_num == 10000000);
+  REQUIRE(out.mdcv_max_luminance_den == 10000);
+  // The content-light half is untouched by an mdcv read.
+  REQUIRE_FALSE(out.cll_present);
+
+  // T-4-48 / T-07-21: one byte short of the struct is recorded, never read.
+  mediadiff::HdrStaticMetadata short_out;
+  REQUIRE_FALSE(mediadiff::read_mdcv_side_data(bytes, sizeof(md) - 1, short_out));
+  REQUIRE(short_out.mdcv_short_payload);
+  REQUIRE_FALSE(short_out.mdcv_present);
+  REQUIRE(short_out.mdcv_r_x_num == 0);
+  REQUIRE(short_out.mdcv_max_luminance_den == 1);
+
+  // A null payload is neither present nor "short".
+  mediadiff::HdrStaticMetadata null_out;
+  REQUIRE_FALSE(mediadiff::read_mdcv_side_data(nullptr, 0, null_out));
+  REQUIRE_FALSE(null_out.mdcv_present);
+  REQUIRE_FALSE(null_out.mdcv_short_payload);
+}
+
+TEST_CASE("video_hdr - shared reader cll", "[unit]") {
+  AVContentLightMetadata cll;
+  std::memset(&cll, 0, sizeof(cll));
+  cll.MaxCLL = 1000;
+  cll.MaxFALL = 400;
+  const auto* bytes = reinterpret_cast<const std::uint8_t*>(&cll);
+
+  mediadiff::HdrStaticMetadata out;
+  REQUIRE(mediadiff::read_cll_side_data(bytes, sizeof(cll), out));
+  REQUIRE(out.cll_present);
+  REQUIRE_FALSE(out.cll_short_payload);
+  REQUIRE(out.cll_max_cll == 1000);
+  REQUIRE(out.cll_max_fall == 400);
+  REQUIRE_FALSE(out.mdcv_present);
+
+  mediadiff::HdrStaticMetadata short_out;
+  REQUIRE_FALSE(mediadiff::read_cll_side_data(bytes, sizeof(cll) - 1, short_out));
+  REQUIRE(short_out.cll_short_payload);
+  REQUIRE_FALSE(short_out.cll_present);
+  REQUIRE(short_out.cll_max_cll == 0);
+  REQUIRE(short_out.cll_max_fall == 0);
+
+  mediadiff::HdrStaticMetadata null_out;
+  REQUIRE_FALSE(mediadiff::read_cll_side_data(nullptr, 0, null_out));
+  REQUIRE_FALSE(null_out.cll_present);
+  REQUIRE_FALSE(null_out.cll_short_payload);
 }

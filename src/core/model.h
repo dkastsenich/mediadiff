@@ -7,6 +7,7 @@
 // registry.h and value.h never include model.h back.
 
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -68,6 +69,24 @@ enum class SkipReason {
   // omits it), but content.audio.sample_hash reports no digest for it --
   // never an unproven digest nobody can trust.
   hash_disabled,
+  // 07-04-PLAN.md (the approved Phase 7 roster, 07-CHECK-ROSTER.md): the four
+  // additive reasons the Phase 7 checks need. Appended after hash_disabled so
+  // no existing enumerator moves; the spellings are permanent public contract.
+  //
+  // 07-10/07-11: an opt-in quality.* check (psnr, ssim, vmaf) whose flag was
+  // not given -- the check exists, it was simply not asked for.
+  not_requested,
+  // 07-11 (CONTENT-09): quality.vmaf under `--sample N`. VMAF scores
+  // temporal features across neighbouring frames, so a strided frame set
+  // yields a number that means something else; the check refuses instead.
+  sampling_conflict,
+  // 07-09: a `tol` two-file check whose D-04 scaler or decode-path record
+  // differs between the two sides. Distinct from hash_incomparable, which
+  // names a hash and would mislead for a scored measurement.
+  path_incomparable,
+  // 07-08/07-10: the two sides' display geometry, thumbnail geometry or
+  // plane layout cannot be paired, so no per-frame score can be formed.
+  geometry_mismatch,
 };
 
 // Which stream/program a Measurement or Finding applies to. `global` covers
@@ -97,6 +116,45 @@ struct Scope {
 // cannot vouch for either side's unread remainder).
 inline constexpr std::string_view kSamplingStateFull = "full";
 inline constexpr std::string_view kSamplingStateTruncated = "truncated";
+
+// 07-04-PLAN.md (D-08, CONTENT-03): the THIRD `sampling_state` form. A video
+// chain taken under `--sample N` (N >= 2) says `sampled:N`: every frame was
+// still decoded, but only frames whose decode index is a multiple of N were
+// hashed and stored. Two chains compare only at equal N; compare_hash reports
+// any other pairing involving a sampled side as skipped:sampling_mismatch.
+// `full` is stride 1 and is never spelled `sampled:1`.
+inline constexpr std::string_view kSamplingStateSampledPrefix = "sampled:";
+
+inline std::string sampling_state_sampled(int stride) {
+  return std::string(kSamplingStateSampledPrefix) + std::to_string(stride);
+}
+
+// Parses ONLY the canonical spelling sampling_state_sampled() writes: the
+// `sampled:` prefix and then a positive decimal integer that fits an int --
+// digits only, no sign, no leading zero, nothing after. Anything else
+// (`sampled:0`, `sampled:-1`, `sampled:`, `sampled:007`, `full`, garbage from a
+// hand-edited or hostile snapshot) is nullopt, which compare_hash treats as
+// "not a sampled state" and so never as a match (T-07-14).
+inline std::optional<int> parse_sampled_stride(std::string_view state) {
+  if (state.substr(0, kSamplingStateSampledPrefix.size()) != kSamplingStateSampledPrefix) {
+    return std::nullopt;
+  }
+  const std::string_view digits = state.substr(kSamplingStateSampledPrefix.size());
+  if (digits.empty() || digits.front() == '0') {
+    return std::nullopt;
+  }
+  std::int64_t value = 0;
+  for (const char c : digits) {
+    if (c < '0' || c > '9') {
+      return std::nullopt;
+    }
+    value = value * 10 + (c - '0');
+    if (value > std::numeric_limits<int>::max()) {
+      return std::nullopt;
+    }
+  }
+  return static_cast<int>(value);
+}
 
 // What an analyzer emits (doc 01 section 1): one scoped, typed value per
 // check. `check_index` indexes into a CheckRegistry (core/registry.h), not
@@ -179,6 +237,14 @@ inline std::string_view skip_reason_to_string(SkipReason reason) {
       return "no_timing_data";
     case SkipReason::hash_disabled:
       return "hash_disabled";
+    case SkipReason::not_requested:
+      return "not_requested";
+    case SkipReason::sampling_conflict:
+      return "sampling_conflict";
+    case SkipReason::path_incomparable:
+      return "path_incomparable";
+    case SkipReason::geometry_mismatch:
+      return "geometry_mismatch";
   }
   // Unreachable for any valid SkipReason -- see src/cli/exit_code.h's own
   // no-default:-arm-plus-trailing-return pattern for why this shape.
@@ -201,6 +267,10 @@ inline std::optional<SkipReason> skip_reason_from_string(std::string_view text) 
   if (text == "insufficient_data") return SkipReason::insufficient_data;
   if (text == "no_timing_data") return SkipReason::no_timing_data;
   if (text == "hash_disabled") return SkipReason::hash_disabled;
+  if (text == "not_requested") return SkipReason::not_requested;
+  if (text == "sampling_conflict") return SkipReason::sampling_conflict;
+  if (text == "path_incomparable") return SkipReason::path_incomparable;
+  if (text == "geometry_mismatch") return SkipReason::geometry_mismatch;
   return std::nullopt;
 }
 

@@ -174,3 +174,74 @@
 # confirmed and cleared as of the STATUS block near the top of this file
 # (run 35735099865). This ledger is EMPTY on purpose, exactly as it was
 # after Phase 4 and Phase 5's own transcriptions.
+#
+# STATUS (as of 07-01-PLAN.md Task 2): NOT EMPTY AGAIN. Phase 7's tracer adds
+# the five content.video.frame_hash fixtures below, each workstation-computed
+# (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`, the method that
+# reproduces the designated leg's bytes) and awaiting the ordinary
+# designated-leg transcription Phase 7's final CI plan performs. The four
+# earlier TRANSCRIBED-FROM-DESIGNATED-LEG markers above remain true of the
+# names they cleared; they say nothing about these five. All five recipes add
+# `-threads 1` to the mpeg4 encode, so their bytes do not depend on the runner's
+# CPU count. `video_hash_base.mp4` and `video_hash_base_copy.mp4` share one hash
+# by design (two independent encodes with identical arguments).
+#
+# STATUS (as of 07-02-PLAN.md Task 1): five MORE names, appended to the same
+# ledger for the same reason as the five above -- the content.video.frame_hash
+# edge-case fixtures video_trim.mp4 and video_trim.mkv (the D-06 edit-list
+# trim and its Matroska remux), video_cover.mp4 (cover art), video_geom_change.m2v
+# (a mid-stream resolution change) and video_hash_small.mp4 (the resolution-change
+# pair's candidate). Workstation-computed the same way
+# (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`), awaiting the designated
+# leg's transcription. The mpeg4 encode carries `-threads 1`; the mpeg2video
+# halves of video_geom_change.m2v carry it too.
+#
+# STATUS (as of 07-02-PLAN.md Task 2): three MORE names, the same ledger and the
+# same reason -- video_corrupt_mpeg4_base.mkv and video_corrupt_mpeg4.mkv (a
+# stream copy with ONE packet damaged by the `noise` bitstream filter, so the
+# decoder reports a decode error) and video_huge_dims.h264 (a hand-written SPS
+# declaring 8208x8192, past the decode bound; tools/gen_video_fixtures.py, no
+# encoder involved). Workstation-computed the same way
+# (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`), awaiting the designated
+# leg's transcription. The mpeg4 encode carries `-threads 1`.
+video_black_base.mkv
+video_black_pc.mkv
+video_black_tv.mkv
+video_cc_a53.m2v
+video_cc_a53_copy.m2v
+video_cc_base.m2v
+video_corrupt_mpeg4.mkv
+video_corrupt_mpeg4_base.mkv
+video_cover.mp4
+video_dark_pc.mkv
+video_dark_tv.mkv
+video_frozen.m2v
+video_frozen.mp4
+video_frozen.ts
+video_frozen_base.mp4
+video_frozen_bf0.mp4
+video_frozen_mjpeg.mkv
+video_geom_change.m2v
+video_hash_alt.mp4
+video_hash_base.mkv
+video_hash_base.mp4
+video_hash_base.ts
+video_hash_base_copy.mp4
+video_hash_small.mp4
+video_huge_dims.h264
+video_loc_huffyuv.mkv
+video_loc_huffyuv_c40.mkv
+video_loc_huffyuv_c40_42.mkv
+video_loc_huffyuv_c40_43.mkv
+video_loc_huffyuv_drop40.mkv
+video_loc_mpeg4_c40.mkv
+video_pcm_cc.h264
+video_pcm_crop.h264
+video_pcm_hdr.h264
+video_pcm_plain.h264
+video_perc_30.mkv
+video_perc_60.mkv
+video_perc_degraded.mp4
+video_perc_upscaled.mp4
+video_trim.mkv
+video_trim.mp4

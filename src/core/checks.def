@@ -11,7 +11,7 @@
 #   group         the check's family, e.g. "meta"
 #   semantic      exact | tol | set | presence | hash | dist | span
 #   unit          none | ms | ms_per_min | frames | percent | db | lu |
-#                 samples | ticks | count
+#                 samples | ticks | count | score
 #   value_kind    int64 | rational | real | string | string_set |
 #                 histogram | span_list | hash_chain
 #   severity      ignore | info | warn | fail        (baseline, D-04)
@@ -1041,6 +1041,28 @@ value_kind = "string"
 severity = "info"
 flagged_values = ["hdr_meta_sdr_transfer", "pq_without_mdcv"]
 
+# 07-06-PLAN.md (VIDEO-11; 07-CHECK-ROSTER.md, approve-as-proposed 2026-09-30),
+# src/analyzers/video/closed_captions.cpp: A53/CEA-708 caption presence. The
+# value is the string `a53_cc` when ANY decoded frame of the stream carried
+# AV_FRAME_DATA_A53_CC side data (captions commonly start mid-stream, so not
+# only the first frame), a real Absent{} when the stream decoded and none did,
+# and `skipped:requires_decode` under `--no-content`. Phase 4 deferred the id
+# (04-CHECK-ROSTER.md left it out of its roster) because the caption bytes live
+# inside the compressed pictures and only the video decode pass, which did not
+# exist until Phase 7, reports them. `presence` semantic
+# (src/compare/presence.cpp): pass iff both sides are Absent or both are not,
+# so losing the captions is a failure and adding them is one too; `fail`
+# severity per doc 03's row, with no profile overrides. The caption payload
+# never enters the fingerprint or the report -- only presence, a frame count and
+# the first frame's index (T-07-18).
+[[check]]
+id = "video.closed_captions"
+group = "video"
+semantic = "presence"
+unit = "none"
+value_kind = "string"
+severity = "fail"
+
 # 05-01-PLAN.md (TIME-01/TIME-03), src/analyzers/timeline/start_duration.cpp
 # -- this phase's tracer, approved at 05-CHECK-ROSTER.md. D-03: ONE
 # Scope{Kind::global} measurement holds the file's earliest presentation
@@ -1537,6 +1559,171 @@ severity = "fail"
 [check.profile_severity]
 hw_encoder = "info"
 transform = "ignore"
+
+# 07-01-PLAN.md (Phase 7's tracer, CONTENT-01; 07-CHECK-ROSTER.md,
+# approve-as-proposed 2026-09-30): content.video.frame_hash -- the per-frame
+# XXH3-128 hash chain over every video stream's decoded pictures, the video
+# counterpart of content.audio.sample_hash directly above. `hash` semantic,
+# `hash_chain` value_kind. D-05: each frame's digest covers its CROPPED display
+# rows (never `linesize`), the pixel-format name after the yuvj fold and the
+# display dimensions, but NOT its timestamp -- the PTS rides beside the digest
+# in HashChain::element_ticks for the divergence locator only, so a remux
+# hashes equal and a retime is timeline.*'s finding. D-06: every decoded frame
+# is hashed, edit-list discard ignored. D-09: every software decoder is
+# determinism class 2 until a cross-architecture CI proof promotes it.
+# Profile demotions copy doc 06 section 2.1 and the audio check: `hw_encoder`
+# demotes to `info` (an HW encoder's own re-encode changes the picture in ways
+# this project does not model as tolerable), `transform` to `ignore` (a
+# declared transcode profile already expects the picture to change).
+[[check]]
+id = "content.video.frame_hash"
+group = "content"
+semantic = "hash"
+unit = "none"
+value_kind = "hash_chain"
+severity = "fail"
+
+[check.profile_severity]
+hw_encoder = "info"
+transform = "ignore"
+
+# 07-05-PLAN.md (CONTENT-06; 07-CHECK-ROSTER.md, approve-as-proposed
+# 2026-09-30), src/analyzers/content/video_runs.cpp: content.video.frozen_runs
+# -- stretches of consecutive decoded frames that are (near) identical, found
+# by SSIM hysteresis on the deterministic 128-wide luma thumbnail for EVERY
+# decoder class (enter above 0.9995, continue above 0.995, at least 3 frames),
+# because research Q5 measured exact hash equality fragmenting and moving with
+# GOP structure. `span` semantic, `ms` unit, `span_list` value: an INTRODUCED
+# run gates, a removed run reports at `info` (doc 01 section 3). The constants
+# are fixed named detection constants (Phase 5 D-08), validated on synthetic
+# content only (A10); the real-content review is a WINDOWS.md `todo`. A decoded
+# stream with no frozen run reports an EMPTY span list, never Absent{}.
+[[check]]
+id = "content.video.frozen_runs"
+group = "content"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 07-05-PLAN.md (CONTENT-06; A11, A12), same file: content.video.black_runs --
+# stretches of black frames on the 8-bit luma thumbnail: mean at most
+# (black_point + 2) and variance below 4, where black_point is 16 for limited
+# or unspecified range and 0 for full range (read after the yuvj fold), with a
+# 3-frame minimum. Range- and depth-normalized, so the same black segment
+# encoded limited-range and full-range reports the SAME span and full-range
+# dark grey is not black. Same `span` gating rule and fixed-constant policy as
+# content.video.frozen_runs directly above.
+[[check]]
+id = "content.video.black_runs"
+group = "content"
+semantic = "span"
+unit = "ms"
+value_kind = "span_list"
+severity = "fail"
+
+# 07-08-PLAN.md (CONTENT-04, CONTENT-07, CONTENT-11; 07-CHECK-ROSTER.md,
+# approve-as-proposed 2026-09-30; D-01, D-02, D-03), src/analyzers/content/
+# video_perceptual.cpp and src/probe/{lockstep,pair_scorer}.cpp:
+# content.video.perceptual -- the WORST per-pair SSIM between the baseline's and
+# the candidate's primary video stream (the first non-attached-picture one, at
+# Scope{video, 0}), computed on the deterministic 128-wide 8-bit luma
+# thumbnails by exact integer SSIM, in units of one millionth. `tol` semantic,
+# `score` unit (a bare tolerance, "0.015": the additive unit this check forces,
+# 07-CHECK-ROSTER.md), `rational` value (num/den in the declared unit: a score
+# of 0.987654 is 987654/1000000). D-01: it exists only in a LIVE media-vs-media
+# compare -- the baseline records its self-score (exactly 1000000/1000000) and
+# the candidate records its score against the baseline -- and every one-sided
+# probe (snapshot, inspect, the snapshot side of a compare) reports
+# `skipped:requires_media`, so nothing is ever stored as a comparable score.
+# D-03: the gate is the minimum pair, so one wrecked frame cannot hide in a
+# mean; the mean, the first pair below 0.985 and the ten worst pairs ride in
+# evidence. Baseline severity `info` (a re-encode is expected to move pixels
+# under sw_encoder, doc 06 section 2.2); a hardware encoder or a declared
+# transform must not drift below the threshold, hence `fail`; a bit-exact or
+# remux run carries no pixel expectation of its own (frame_hash owns that), so
+# `ignore`.
+[[check]]
+id = "content.video.perceptual"
+group = "content"
+semantic = "tol"
+unit = "score"
+value_kind = "rational"
+severity = "info"
+tolerance = "0.015"
+
+[check.profile_severity]
+hw_encoder = "fail"
+transform = "fail"
+strict_bitexact = "ignore"
+remux = "ignore"
+
+# 07-10-PLAN.md (CONTENT-08; 07-CHECK-ROSTER.md, approve-as-proposed 2026-09-30;
+# D-01, D-03), src/analyzers/content/quality.cpp and src/probe/{lockstep,
+# pair_scorer}.cpp: quality.psnr -- the candidate's peak signal-to-noise ratio
+# against the baseline's primary video stream at NATIVE resolution, opt-in with
+# `--psnr`. `tol` semantic, `db` unit, `rational` value (num/den in milli-dB: 55
+# dB is 55000/1000). Per frame the sample-count-weighted luma plus chroma MSE,
+# capped at (6 * bpc) + 12 dB so identical frames score the cap and the baseline
+# self-score IS the cap (delta of identical media exactly 0, no infinity in the
+# JSON). D-01: a live media-vs-media compare only; one-sided probes and every
+# snapshot compare report `skipped:requires_media`, and a live compare without
+# the flag reports `skipped:not_requested`. D-03: the MEAN over the scored pairs
+# gates; the minimum (with its frame indices and PTS) and per-plane means ride
+# in evidence. Both sides carry `scaler_path` and `decode_path_signature`, so
+# 07-09's tol precondition table (TRUST-04, D-04) guards it.
+[[check]]
+id = "quality.psnr"
+group = "quality"
+semantic = "tol"
+unit = "db"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.5dB"
+
+# 07-10-PLAN.md (CONTENT-08), same files: quality.ssim -- luma single-scale SSIM
+# at NATIVE resolution through the integer 8x8 window of src/util/ssim_int.h
+# (extended to bit depths above 8), in millionths: 0.987654 is 987654/1000000.
+# Opt-in with `--ssim`; same D-01 (live compare only), D-03 (the mean gates, the
+# minimum rides in evidence) and TRUST-04 (path keys on both sides) contract as
+# quality.psnr directly above. Identical native frames score exactly 1000000.
+[[check]]
+id = "quality.ssim"
+group = "quality"
+semantic = "tol"
+unit = "score"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.005"
+
+# 07-11-PLAN.md (CONTENT-09; 07-CHECK-ROSTER.md, approve-as-proposed 2026-09-30;
+# D-01, D-03), src/analyzers/content/quality.cpp and src/probe/{lockstep,
+# pair_scorer,vmaf_scorer}.cpp: quality.vmaf -- Netflix libvmaf's VMAF score of
+# the candidate against the baseline's primary video stream, model
+# `vmaf_v0.6.1` pinned and recorded, opt-in with `--vmaf`. REGISTERED ON EVERY
+# BUILD so a config or snapshot that names the id never breaks, but only a build
+# configured with MEDIADIFF_WITH_VMAF=ON (Linux and macOS: the vcpkg libvmaf port
+# declares `!windows`) can score it; every other build reports
+# `skipped:not_requested` in a live compare and treats `--vmaf` as a usage error
+# (exit 64) naming the option. `tol` semantic, `score` unit (bare tolerance, no
+# suffix), `rational` value (num/den in thousandths: 97.43 is 97430/1000), the
+# `vmaf_drop: 0.5` of doc 06 section 3. D-01: a live media-vs-media compare only;
+# one-sided probes and snapshot compares report `skipped:requires_media`. D-03:
+# the HARMONIC mean gates (it punishes bad frames); min and arithmetic mean ride
+# in evidence. The baseline's self-score is COMPUTED (a second libvmaf context fed
+# the baseline against itself; research Q8 measured 97.43 on identical input),
+# never assumed to be 100. `--sample N` (N >= 2) is `skipped:sampling_conflict`:
+# VMAF's temporal features need consecutive frames. Both sides carry
+# `scaler_path` and `decode_path_signature`, so 07-09's tol precondition table
+# (TRUST-04) guards it as it does the other two quality.* checks.
+[[check]]
+id = "quality.vmaf"
+group = "quality"
+semantic = "tol"
+unit = "score"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.5"
 
 # 06-03-PLAN.md (AUDIO-01, AUDIO-02), src/analyzers/audio/stream_params.cpp
 # -- the six per-audio-stream identity checks: codec, sample rate, sample

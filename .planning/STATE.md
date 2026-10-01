@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
-status: planning
-stopped_at: Phase 06 complete, ready to plan Phase 7
-last_updated: "2026-09-28T12:32:02.432Z"
-last_activity: 2026-09-28
-last_activity_desc: Phase 06 complete, transitioned to Phase 7
-state_head: ba4446016bb2c54b1b79a1be1c4803894842ce96
+status: executing
+stopped_at: Completed 07-14-PLAN.md
+last_updated: "2026-10-01T20:50:55.408Z"
+last_activity: 2026-10-01
+last_activity_desc: Phase 07 execution resumed (wave continue)
+state_head: b5d47aefb33d0e8b6e472db88a5f5178e4200849
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 112
-  completed_plans: 112
+  total_plans: 127
+  completed_plans: 126
 milestone_name: milestone
 ---
 
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 
 ## Current Position
 
-Phase: 7 — Content & Quality
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-28 — Completed quick task 260928-q80: Fix the x64-osx and arm64-linux CI legs
+Phase: 7 (Content & Quality) — EXECUTING
+Plan: 15 of 15
+Status: Ready to execute
+Last activity: 2026-10-01 — Phase 07 execution resumed (wave continue)
 
 Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not yet planned)
 
@@ -164,6 +164,20 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 06-audio-analysis P18 | 30 min | 3 tasks | 8 files |
 | Phase 06 P19 | 14min | 2 tasks | 6 files |
 | Phase 06 P20 | n/a (multi-session; this continuation covers Task 3) | 3 tasks | 2 files |
+| Phase 07 P01 | 27min | 3 tasks | 34 files |
+| Phase 07 P02 | 26 min | 3 tasks | 17 files |
+| Phase 07 P03 | 17 min | 3 tasks | 13 files |
+| Phase 07 P04 | 18 min | 3 tasks | 28 files |
+| Phase 07 P05 | 35min | 3 tasks | 29 files |
+| Phase 07 P06 | 19min | 3 tasks | 23 files |
+| Phase 07 P07 | 25 min | 3 tasks | 19 files |
+| Phase 07 P08 | n/a | 3 tasks | 39 files |
+| Phase 07 P09 | 12min | 3 tasks | 16 files |
+| Phase 07 P10 | 24min | 3 tasks | 38 files |
+| Phase 07 P11 | 39min | 3 tasks | 28 files |
+| Phase 07 P12 | 22min | 3 tasks | 17 files |
+| Phase 07 P13 | 20min | 3 tasks | 29 files |
+| Phase 07 P14 | 23min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -402,6 +416,32 @@ Recent decisions affecting current work:
 - [Phase 06]: Gap-closure code review is a delta review. Round 1 is archived as 06-REVIEW-round1.md with its resolution notes. Round 2 (06-REVIEW.md) covers only the 44 files changed since ebe25cc and continues round 1's numbering (CR-06+, WR-17+), so source comments that cite "06-REVIEW.md CR-05" or "WR-07" still resolve unambiguously.
 - [Phase 06]: Re-verified 2026-09-28 after gap closure: passed 5/5 (was 3/5). SC2 is judged against its 2026-09-22 amendment, and CR-01..CR-05 are confirmed closed both in source and by named regression tests.
 - [Phase 06]: 06-13 and the gap closure certified on CI run 35987510562: all four of 06-13's named gates reported Passed on the designated x64-linux leg, both instruction-count ratchets held within tolerance (change=0%), and no baseline/digest file needed a rewrite. — Certified strictly from Task 2's verbatim captures per-line Passed/Failed tokens, not ctest's summary-line 'N Skipped' header (a grep artifact for integration.audio_sample_hash, not a real Skipped status).
+- [Phase 7]: [Phase 07-01]: Roster approved as proposed; attached-picture video streams emit no measurement; element ticks omitted when any frame lacks a PTS; mpeg4 fixture recipes pin -threads 1
+- [Phase 07]: 07-02: geometry_change_count counts transitions (one resolution change = 1); a video meta.decode_errors value is decode_errors + corrupt_frames — 07-01 counted every frame differing from the first frame; MPEG-family decoders conceal damage and return success, so negative returns alone would read 0 on a corrupted stream
+- [Phase 07]: 07-02: the frame-record budget test runs at library level with a byte budget; frame_record_budget_exhausted with a complete packet scan is reachable only at the EOF drain — The CLI budget is integer MB and a mid-stream exhaustion always ends in the packet scan's own partial (skipped:partial_scan); shared-budget design question left open, logged in WINDOWS.md
+- [Phase 07]: Frame pairing is one exact rule (pair_step over ExactTime, strict half of the finer interval, index fallback recorded) shared by the locator and the later lockstep scorer — Int64 inputs cannot overflow 256 bits, so the overflow branch is exercised through the ExactTime seam; hostile timebases and intervals fall back to index pairing with a named reason
+- [Phase 07]: Locator evidence caps every list at 64 with exact totals; first_divergent_frame is the first differing paired frame and is absent when only frames are missing — Bounded deterministic reports (T-07-11); the drop case reports missing_from_candidate instead
+- [Phase 07]: 07-04: frame_count on StreamVideoDecode is the decoded count; the stored count is frame_digests.size(); frame_interval is the stream interval times the --sample stride — D-08: every frame is decoded, only every Nth is hashed, and the 07-03 locator's half-interval window must match stored-frame spacing
+- [Phase 07]: 07-04: a stored sampling_state parses canonical-only (sampled: plus a positive int); malformed strings fall to the generic hash_incomparable mismatch, never to a pass — T-07-14: a hostile snapshot must not be able to launder a sampled chain into a match
+- [Phase 07]: 07-05: thumbnail height is capped (kMaxThumbnailHeight 32768 rows) because max_pixels bounds width x height, not aspect ratio; a refused thumbnail makes both checks insufficient_data — T-07-15: an extreme aspect ratio would otherwise allocate gigabytes; the plan's stated bound did not hold
+- [Phase 07]: 07-05: a span's frame interval is the declared rate, else the smallest observed pts step, else decode index times the rate; no timing at all with a run present is no_timing_data — MPEG-TS declares no frame rate at open; without the pts-step fallback a TS remux of a frozen stream would skip while its MP4 source reports a span
+- [Phase 07]: 07-05: the black and dark-grey fixtures are Matroska, not MP4 — the MP4 muxer drops -color_range for MPEG-4 Part 2; Matroska keeps it, so the range-flip proof is not vacuous
+- [Phase 07]: 07-05: detectors are tapped in consume_frame before the stride's store decision; frame boundaries carry their own ticks — D-08: both span lists are identical with and without --sample N, and no per-frame tick array is needed
+- [Phase 07]: 07-06: the caption sink sits beside the frozen and black detectors in consume_frame, before the stride's store decision, so video.closed_captions evidence is identical under --sample N; a truncated decode with no caption seen, or a zero-frame decode, is a named skip, never a fabricated Absent — A caption at decode index 3 is invisible to a sink tied to the stride (stride 5 never stores it); a prefix with no caption proves nothing about frames never decoded
+- [Phase 07]: 07-07: video.hdr.dovi keeps its own hevc/av1 codec table; the widened HDR10 table (now incl. h264) would make every H.264 dovi absence a permanent requires_decode skip — Dolby Vision has no first-frame arm
+- [Phase 07]: 07-07: video.hdr.coherence stays stream-level only (deferred-items.md); frame-aware coherence would make its value depend on which passes ran (D-12) — needs a vocabulary or skip-state decision, not a bug fix
+- [Phase 7]: 07-08: perceptual is live-compare only (D-01); min pair score gates, time pairing with index fallback (D-02/D-03); tol/dist --tol override gap deferred
+- [Phase 07]: 07-09: TRUST-04 path preconditions are a generic evidence-key table in compare_tol (scaler_path, decode_path_signature); a mismatch or one-sided key skips as path_incomparable even inside tolerance; codecs are never a precondition — A score from different decode or scaler paths is not comparable; evidence-driven so quality.* checks inherit it
+- [Phase 07]: 07-09: dir --content probes each pair via fingerprint_pair and derives the per-side cap from 2 * resolved_threads — Two sweeps are in flight per job under lockstep; DIR-06's per-in-flight-file budget must hold
+- [Phase 07]: [07-10] PSNR gates on the floor mean of per-frame sample-weighted Y+U+V milli-dB capped at (6*bpc)+12 dB; baseline self-score is the cap; min/per-plane in evidence (D-01, D-03) — Identical frames score the cap so the delta is exactly 0 and no infinity reaches JSON; the integer fixed-point log keeps --json byte-identical across libm implementations
+- [Phase 07]: [07-10] --psnr/--ssim are usage errors without content decoding, and exist only on compare and dir (snapshot and inspect reject them) — A silent requires_decode skip would be unconnectable to the flag; snapshots must never store a two-file score (CONTENT-10 as amended by D-01)
+- [Phase 07]: [07-10] quality.* carries scaler_path ('native (no scaler)') and decode_path_signature on both sides so 07-09's tol precondition table guards it (TRUST-04 proven in test_quality.cpp) — TRUST-04's text names quality.*; the table is evidence-driven so the keys must exist on both sides
+- [Phase 07]: 07-11: quality.vmaf links libvmaf only under MEDIADIFF_WITH_VMAF (Linux/macOS; x64-linux-vmaf preset), model vmaf_v0.6.1 pinned, baseline self-score computed by a second libvmaf context (99974/1000 on the 100-frame clip), harmonic mean gates, --vmaf is an exit-64 usage error naming the option on every other build, id registered everywhere — CONTENT-09; D-01, D-03; Windows excluded in the open (vcpkg port is !windows)
+- [Phase 07]: 07-11: libvmaf 3.2.0 aborts on pictures 16 px or smaller in either dimension; kVmafMinDimension=17 (measured) so such frames report skipped:insufficient_data and never reach libvmaf — a tiny clip must not crash the gate
+- [Phase 07]: 07-12: bench-capped scan is not partial; stop_reason=bench_packet_cap carries the cap and the bench rejects a run that did not reach it — stores are complete up to the stop so analyzers do real work; a file shorter than the slice would silently measure a different workload
+- [Phase 07]: 07-12: PERF-02 measured 22.8x realtime single-threaded (production, D-11) vs 39.9x automatic threads on the D-16 reference; ratchet on first 1800 video packets, video_plain/full_instructions provisional (ubuntu:24.04 container, valgrind 3.22.0) until 07-15 transcribes the designated leg — no valgrind on the workstation; Docker measurement follows 06-12; TRUST-07 and PERF-02 left pending because 07-15 also declares them
+- [Phase 07]: 07-13: pair stall watchdog uses per-side heartbeat slots (Heartbeat::candidate_side) so a trip names the right file; dir publishes results only through AbandonControl::commit under the lock abandon takes (commit-under-lock, not a bare CAS) — A shared position is overwritten by the still-running side; a CAS alone does not make completion imply fully-written results (T-07-41)
+- [Phase 07]: 07-14: video proof streams are encoded once by a single ubuntu-24.04 producer job and handed to every build leg as an artifact; the ledger lands report-only and a class-1 decoder without a ledger row fails a table-driven test — Encoders differ per architecture (research Q2), so only identical bytes make the decoders comparable; with needs on the producer a producer failure blocks the required build contexts rather than bypassing them
 
 ### Pending Todos
 
@@ -449,6 +489,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-28T12:35:05Z
-Stopped at: Phase 6 complete (re-verified 5/5 after gap closure), ready to plan Phase 7
+Last session: 2026-10-01T20:50:55.099Z
+Stopped at: Completed 07-14-PLAN.md
 Resume file: None

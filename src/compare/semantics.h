@@ -35,6 +35,10 @@ Comparator comparator_for(Semantic semantic);
 // caller from naming one directly.
 mediadiff::expected<Finding, Error> compare_exact(const CheckDef& check, const Measurement& baseline,
                                                     const Measurement& candidate, const Policy& policy);
+// 07-09-PLAN.md (TRUST-04, D-04): a pair whose evidence carries a `scaler_path`
+// or `decode_path_signature` that differs between the sides (or is present on
+// only one) is `skipped:path_incomparable`, never a pass or fail -- see
+// kTolPreconditionKeys in compare/tol.cpp.
 mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Measurement& baseline,
                                                   const Measurement& candidate, const Policy& policy);
 mediadiff::expected<Finding, Error> compare_set(const CheckDef& check, const Measurement& baseline,

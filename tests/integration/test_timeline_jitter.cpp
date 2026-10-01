@@ -73,6 +73,11 @@ TEST_CASE("timeline_jitter - the jitter trigger pair declares its complete expec
   expect_declared_set(
       report,
       {
+          // 07-01-PLAN.md (content.video.frame_hash): a longer, independently-generated
+          // encode (8s vs 4s, testsrc2 frames 0-99 identical) carries 100 extra decoded
+          // frames the 4s baseline does not -- the chains differ from frame 100 onward
+          // (baseline 100 frames, candidate 200; `ffmpeg -f framemd5` agrees).
+          "content.video.frame_hash",
           // A longer encode (8s vs 4s) naturally shifts the MP4 edit-list
           // segment_duration on both streams -- the same class of effect
           // timeline_structure's own gap trigger pair declares.
@@ -149,6 +154,10 @@ TEST_CASE("timeline_jitter - the VFR trigger pair declares its complete expected
   expect_declared_set(
       report,
       {
+          // 07-01-PLAN.md (content.video.frame_hash): `select='not(eq(mod(n,7),3))'` really
+          // removes frames, so the decoded picture sequence genuinely differs from frame 3
+          // onward (100 vs 86 frames; `ffmpeg -f framemd5` agrees).
+          "content.video.frame_hash",
           // Dropping every 7th frame's 4th-from-start member over ~4s
           // genuinely reduces the frame count (100 -> 86).
           "video.frame_count",

@@ -27,8 +27,9 @@ Dolby Vision fixture is achievable in this project's toolchain, and no RPU
 parsing exists in this codebase.
 
 When there is nothing to measure -- the record is absent, on a codec that
-either could or could not carry it via a decode pass this phase does not
-have -- this check emits the shared `skipped:requires_decode` skip, never
+either could or could not carry it (there is no first-frame arm for this
+record, see `video.hdr.dovi`) -- this check emits the shared
+`skipped:requires_decode` skip, never
 `Absent`, matching every other value-bearing HDR check in this project
 (`video.hdr.mdcv.luminance`/`.primaries`, `video.hdr.cll.max`/`.avg`).
 

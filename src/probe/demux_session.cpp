@@ -46,6 +46,8 @@ extern "C" {
 
 #include "core/container_family.h"
 #include "probe/audio_config.h"
+#include "probe/hdr_static.h"
+#include "probe/heartbeat.h"
 #include "probe/pass.h"
 
 namespace mediadiff {
@@ -379,7 +381,12 @@ mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> probe_implicit_s
 
   std::optional<SbrProbeDecodeResult> result;
   for (int packets_scanned = 0; packets_scanned < kMaxSbrProbeContainerPacketsScanned; ++packets_scanned) {
-    if (av_read_frame(probe_ctx, pkt) < 0) {
+    int read_rc = 0;
+    {
+      LibavCall guard(LibavSite::open_probe_decode, -1, kHeartbeatNoPts);
+      read_rc = av_read_frame(probe_ctx, pkt);
+    }
+    if (read_rc < 0) {
       // A1: no target packet found within the packet-count bound --
       // deterministic, ok(nullopt) via the fall-through below.
       break;
@@ -389,7 +396,11 @@ mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> probe_implicit_s
       continue;
     }
 
-    const int send_rc = avcodec_send_packet(codec_ctx, pkt);
+    int send_rc = 0;
+    {
+      LibavCall guard(LibavSite::open_probe_decode, pkt->stream_index, pkt->pts != AV_NOPTS_VALUE ? pkt->pts : pkt->dts);
+      send_rc = avcodec_send_packet(codec_ctx, pkt);
+    }
     av_packet_unref(pkt);
     if (send_rc < 0 && send_rc != AVERROR(EAGAIN)) {
       // A1: a send failure is deterministic for this packet's own bytes --
@@ -404,7 +415,12 @@ mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> probe_implicit_s
       // the file's own bytes.
       return mediadiff::unexpected(Error{ErrorKind::internal, "SBR probe: av_frame_alloc failed"});
     }
-    if (avcodec_receive_frame(codec_ctx, frame) >= 0) {
+    int receive_rc = 0;
+    {
+      LibavCall guard(LibavSite::open_probe_decode);
+      receive_rc = avcodec_receive_frame(codec_ctx, frame);
+    }
+    if (receive_rc >= 0) {
       SbrProbeDecodeResult r;
       r.declared_sample_rate_hz = declared_rate;
       r.decoded_sample_rate_hz = frame->sample_rate > 0 ? frame->sample_rate : 0;
@@ -779,55 +795,50 @@ StreamInfo DemuxSession::stream_info(int index) const {
   // src/analyzers/video/hdr.cpp only ever sees the plain StreamInfo
   // fields above. Populated at DEMUX time (D-08/D-09), never by a decode
   // pass.
+  // 07-07-PLAN.md: both entries go through the shared conversion helpers
+  // (probe/hdr_static.h), which the first-decoded-frame arm in
+  // probe/video_decode.cpp uses too, so the two arms cannot drift. T-4-48's
+  // short-payload guard lives in the helpers: a payload smaller than its struct
+  // is recorded as short, never read past its end.
+  HdrStaticMetadata hdr;
   const AVPacketSideData* mdcv_side_data = av_packet_side_data_get(
       codecpar->coded_side_data, codecpar->nb_coded_side_data, AV_PKT_DATA_MASTERING_DISPLAY_METADATA);
   if (mdcv_side_data != nullptr) {
-    // T-4-48: a payload whose reported size is smaller than the struct it
-    // would be read as is never read past its end -- treated as though
-    // the entry were absent, with the short-payload observation recorded
-    // so it is visible rather than silent.
-    if (mdcv_side_data->size < sizeof(AVMasteringDisplayMetadata)) {
-      info.mdcv_short_payload = true;
-    } else {
-      const auto* mdcv = reinterpret_cast<const AVMasteringDisplayMetadata*>(mdcv_side_data->data);
-      info.mdcv_present = true;
-      info.mdcv_has_primaries = mdcv->has_primaries != 0;
-      info.mdcv_has_luminance = mdcv->has_luminance != 0;
-      info.mdcv_r_x_num = mdcv->display_primaries[0][0].num;
-      info.mdcv_r_x_den = mdcv->display_primaries[0][0].den;
-      info.mdcv_r_y_num = mdcv->display_primaries[0][1].num;
-      info.mdcv_r_y_den = mdcv->display_primaries[0][1].den;
-      info.mdcv_g_x_num = mdcv->display_primaries[1][0].num;
-      info.mdcv_g_x_den = mdcv->display_primaries[1][0].den;
-      info.mdcv_g_y_num = mdcv->display_primaries[1][1].num;
-      info.mdcv_g_y_den = mdcv->display_primaries[1][1].den;
-      info.mdcv_b_x_num = mdcv->display_primaries[2][0].num;
-      info.mdcv_b_x_den = mdcv->display_primaries[2][0].den;
-      info.mdcv_b_y_num = mdcv->display_primaries[2][1].num;
-      info.mdcv_b_y_den = mdcv->display_primaries[2][1].den;
-      info.mdcv_wp_x_num = mdcv->white_point[0].num;
-      info.mdcv_wp_x_den = mdcv->white_point[0].den;
-      info.mdcv_wp_y_num = mdcv->white_point[1].num;
-      info.mdcv_wp_y_den = mdcv->white_point[1].den;
-      info.mdcv_min_luminance_num = mdcv->min_luminance.num;
-      info.mdcv_min_luminance_den = mdcv->min_luminance.den;
-      info.mdcv_max_luminance_num = mdcv->max_luminance.num;
-      info.mdcv_max_luminance_den = mdcv->max_luminance.den;
-    }
+    read_mdcv_side_data(mdcv_side_data->data, mdcv_side_data->size, hdr);
   }
-
   const AVPacketSideData* cll_side_data = av_packet_side_data_get(
       codecpar->coded_side_data, codecpar->nb_coded_side_data, AV_PKT_DATA_CONTENT_LIGHT_LEVEL);
   if (cll_side_data != nullptr) {
-    if (cll_side_data->size < sizeof(AVContentLightMetadata)) {
-      info.cll_short_payload = true;
-    } else {
-      const auto* cll = reinterpret_cast<const AVContentLightMetadata*>(cll_side_data->data);
-      info.cll_present = true;
-      info.cll_max_cll = static_cast<std::int64_t>(cll->MaxCLL);
-      info.cll_max_fall = static_cast<std::int64_t>(cll->MaxFALL);
-    }
+    read_cll_side_data(cll_side_data->data, cll_side_data->size, hdr);
   }
+  info.mdcv_present = hdr.mdcv_present;
+  info.mdcv_short_payload = hdr.mdcv_short_payload;
+  info.mdcv_has_primaries = hdr.mdcv_has_primaries;
+  info.mdcv_has_luminance = hdr.mdcv_has_luminance;
+  info.mdcv_r_x_num = hdr.mdcv_r_x_num;
+  info.mdcv_r_x_den = hdr.mdcv_r_x_den;
+  info.mdcv_r_y_num = hdr.mdcv_r_y_num;
+  info.mdcv_r_y_den = hdr.mdcv_r_y_den;
+  info.mdcv_g_x_num = hdr.mdcv_g_x_num;
+  info.mdcv_g_x_den = hdr.mdcv_g_x_den;
+  info.mdcv_g_y_num = hdr.mdcv_g_y_num;
+  info.mdcv_g_y_den = hdr.mdcv_g_y_den;
+  info.mdcv_b_x_num = hdr.mdcv_b_x_num;
+  info.mdcv_b_x_den = hdr.mdcv_b_x_den;
+  info.mdcv_b_y_num = hdr.mdcv_b_y_num;
+  info.mdcv_b_y_den = hdr.mdcv_b_y_den;
+  info.mdcv_wp_x_num = hdr.mdcv_wp_x_num;
+  info.mdcv_wp_x_den = hdr.mdcv_wp_x_den;
+  info.mdcv_wp_y_num = hdr.mdcv_wp_y_num;
+  info.mdcv_wp_y_den = hdr.mdcv_wp_y_den;
+  info.mdcv_min_luminance_num = hdr.mdcv_min_luminance_num;
+  info.mdcv_min_luminance_den = hdr.mdcv_min_luminance_den;
+  info.mdcv_max_luminance_num = hdr.mdcv_max_luminance_num;
+  info.mdcv_max_luminance_den = hdr.mdcv_max_luminance_den;
+  info.cll_present = hdr.cll_present;
+  info.cll_short_payload = hdr.cll_short_payload;
+  info.cll_max_cll = hdr.cll_max_cll;
+  info.cll_max_fall = hdr.cll_max_fall;
 
   // 04-12-PLAN.md (VIDEO-09's third HDR family): the Dolby Vision
   // configuration record, same per-field boundary and short-payload

@@ -14,6 +14,12 @@
       }
     },
     { "name": "x64-linux", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-linux" } },
+    {
+      "name": "x64-linux-vmaf",
+      "inherits": "x64-linux",
+      "description": "07-11-PLAN.md (CONTENT-09): x64-linux plus the opt-in libvmaf build. Its own binary dir, so the default x64-linux tree never links libvmaf.",
+      "cacheVariables": { "VCPKG_MANIFEST_FEATURES": "vmaf", "MEDIADIFF_WITH_VMAF": "ON" }
+    },
     { "name": "arm64-osx", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "arm64-osx" } },
     { "name": "x64-windows-static-md", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "x64-windows-static-md" } },
     { "name": "arm64-linux", "inherits": "base", "cacheVariables": { "VCPKG_TARGET_TRIPLET": "arm64-linux" } },
@@ -21,6 +27,7 @@
   ],
   "buildPresets": [
     { "name": "x64-linux", "configurePreset": "x64-linux" },
+    { "name": "x64-linux-vmaf", "configurePreset": "x64-linux-vmaf" },
     { "name": "arm64-osx", "configurePreset": "arm64-osx" },
     { "name": "x64-windows-static-md", "configurePreset": "x64-windows-static-md" },
     { "name": "arm64-linux", "configurePreset": "arm64-linux" },
@@ -28,6 +35,7 @@
   ],
   "testPresets": [
     { "name": "x64-linux", "configurePreset": "x64-linux", "output": { "outputOnFailure": true } },
+    { "name": "x64-linux-vmaf", "configurePreset": "x64-linux-vmaf", "output": { "outputOnFailure": true } },
     { "name": "arm64-osx", "configurePreset": "arm64-osx", "output": { "outputOnFailure": true } },
     { "name": "x64-windows-static-md", "configurePreset": "x64-windows-static-md", "output": { "outputOnFailure": true } }
   ]

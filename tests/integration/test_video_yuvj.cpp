@@ -97,13 +97,30 @@ TEST_CASE("video_yuvj - yuvj420p vs yuv420p-limited-range produces EXACTLY ONE n
   const nlohmann::ordered_json report =
       compare_json(fixture("video_yuvj420p.mp4"), fixture("video_yuv420p_tv.mp4"), "sw-encoder");
 
+  // 07-01-PLAN.md (content.video.frame_hash): the count is now TWO -- the
+  // pair's own colour-range finding plus content.video.frame_hash, named here
+  // with its reason: video_yuvj420p.mp4 (a full-range `yuvj420p` encode) and
+  // video_yuv420p_tv.mp4 (a limited-range `yuv420p` encode) are SEPARATE
+  // encodes of `color=c=gray` whose decoded sample values genuinely differ,
+  // and `ffmpeg -f framemd5` confirms it (different md5 on frame 0, all 50
+  // frames divergent). The VIDEO-03 property this test exists for is
+  // unchanged: the COLOUR-RANGE finding is still exactly one, on
+  // video.color.range, and video.pix_fmt does not also fire.
   const std::size_t non_pass_count = count_non_pass(report);
   INFO("full findings array: " << report.at("findings").dump(2));
-  REQUIRE(non_pass_count == 1);
+  REQUIRE(non_pass_count == 2);
 
   const nlohmann::ordered_json* range_finding = find_finding(report, "video.color.range");
   REQUIRE(range_finding != nullptr);
   REQUIRE(range_finding->at("status").get<std::string>() != "pass");
+
+  const nlohmann::ordered_json* hash_finding = find_finding(report, "content.video.frame_hash");
+  REQUIRE(hash_finding != nullptr);
+  REQUIRE(hash_finding->at("status").get<std::string>() == "fail");
+
+  const nlohmann::ordered_json* pix_fmt_finding = find_finding(report, "video.pix_fmt");
+  REQUIRE(pix_fmt_finding != nullptr);
+  REQUIRE(pix_fmt_finding->at("status").get<std::string>() == "pass");
 }
 
 // --- Test 2 (the mirror): ZERO non-pass findings -- two spellings of one
@@ -121,9 +138,25 @@ TEST_CASE("video_yuvj - yuvj420p vs yuv420p_pc_tagged (the SAME intent, two spel
   const nlohmann::ordered_json report =
       compare_json(fixture("video_yuvj420p.mp4"), fixture("video_yuv420p_pc_tagged.mp4"), "sw-encoder");
 
+  // 07-01-PLAN.md (content.video.frame_hash): the ONE declared exception is
+  // content.video.frame_hash, and every OTHER check -- video.pix_fmt and
+  // video.color.range included -- is still pass. Its reason: this pair is
+  // "two spellings of one colour-range INTENT" at the metadata level only.
+  // video_yuv420p_pc_tagged.mp4 is a `-c copy` retag (range `pc`) of
+  // video_yuv420p_tv.mp4's LIMITED-range samples, while video_yuvj420p.mp4 was
+  // encoded full-range, so the decoded sample values genuinely differ
+  // (`ffmpeg -f framemd5`: different md5 on frame 0, all 50 frames divergent).
+  // The only partner that makes the spelling distinction reach the file at all
+  // is this retag (04-16-PLAN.md: the `-pix_fmt yuv420p -color_range pc` encode
+  // is normalised back to `yuvj420p` by the encoder and is byte-identical to
+  // video_yuvj420p.mp4), so the pair cannot be made pixel-identical.
   const std::size_t non_pass_count = count_non_pass(report);
   INFO("full findings array: " << report.at("findings").dump(2));
-  REQUIRE(non_pass_count == 0);
+  REQUIRE(non_pass_count == 1);
+
+  const nlohmann::ordered_json* hash_finding = find_finding(report, "content.video.frame_hash");
+  REQUIRE(hash_finding != nullptr);
+  REQUIRE(hash_finding->at("status").get<std::string>() == "fail");
 
   const nlohmann::ordered_json* pix_fmt_finding = find_finding(report, "video.pix_fmt");
   REQUIRE(pix_fmt_finding != nullptr);

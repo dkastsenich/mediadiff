@@ -556,12 +556,74 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. A one-frame bitstream corruption is located exactly — first divergent frame index and PTS, contiguous divergent ranges merged at 1-frame gaps, total differing count — from a hash chain computed over exactly `bytes_per_row(width) × height` per plane, never `linesize`.
-  2. `content.video.perceptual` reports SSIM min, mean, first frame below threshold and a worst-10 list, pairing the overlapping prefix with truncation noted in evidence when frame counts differ; frozen and black runs are detected as spans, with black detection normalized by color range and bit depth so a range flip does not false-alarm the detector.
-  3. Perceptual and `quality.*` checks refuse to compare across differing decode/scaler paths, carrying the same path-signature preconditions as `hash` checks; `--sample N` marks the fingerprint and only equal-N fingerprints compare, with mismatches reporting `skipped:sampling_mismatch`.
-  4. `quality.psnr` and `quality.ssim` report min and mean in-tree at native resolution, `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint and refuses `--sample` as `skipped:sampling_conflict`, and against a snapshot all three report `skipped:requires_media` while still showing stored scores for trend context.
+  2. `content.video.perceptual` reports SSIM min, mean, first frame below threshold and a worst-10 list, pairing the overlapping prefix with truncation noted in evidence when frame counts differ; frozen and black runs are detected as spans, with black detection normalized by color range and bit depth so a range flip does not false-alarm the detector. **Amended 2026-09-30 (07-09, D-02):** frames are paired by presentation time over the overlapping time range, each side measured from its own first frame, with a decode-index fallback when timestamps or a frame interval are missing; frames with no partner are counted as unpaired (`unpaired_baseline`, `unpaired_candidate`) rather than the overlapping index prefix being scored.
+  3. Perceptual and `quality.*` checks refuse to compare across differing decode/scaler paths, carrying the same path-signature preconditions as `hash` checks; `--sample N` marks the fingerprint and only equal-N fingerprints compare, with mismatches reporting `skipped:sampling_mismatch`. **Amended 2026-09-30 (07-09, D-04):** "differing decode/scaler paths" means build or device paths (the `scaler_path` and `decode_path_signature` evidence), not codecs: an H.264 baseline against an HEVC candidate from the same build still compares.
+  4. `quality.psnr` and `quality.ssim` report min and mean in-tree at native resolution, `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint and refuses `--sample` as `skipped:sampling_conflict`, and against a snapshot all three report `skipped:requires_media` while still showing stored scores for trend context. **Amended 2026-09-30 (07-10, D-01):** two-file scores exist only in a live media-vs-media compare, where the baseline records its self-score and the candidate its score against the baseline; against a snapshot on either side every `quality.*` check (and `content.video.perceptual`) reports `skipped:requires_media`, and snapshots store no scores in v1, so there is no stored trend score to show. `quality.psnr` and `quality.ssim` gate on the mean (D-03) with the minimum in evidence, and are opt-in (`--psnr`, `--ssim`; `skipped:not_requested` without the flag).
   5. One decode sweep per side feeds hashing, perceptual scoring, frozen/black detection and A53/CEA-708 closed-caption presence, with `compare` running baseline and candidate in lockstep at one frame in flight per side; the full content pass runs at ≥ 4× realtime on software decode and produces identical hash chains at 1, 4 and 16 threads.
 
-**Plans**: TBD
+**Plans**: 14/15 plans executed in 15 waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/packet_scan.cpp`, `src/probe/video_decode.*`, `CMakeLists.txt`, `tests/integration/test_doc03_coverage.cpp` and the corpus digest, so no two plans share a wave.
+
+Plans:
+**Wave 1**
+
+- [x] 07-01-PLAN.md — Roster checkpoint (8 ids, 4 additive skip reasons, the `score` unit, the quality-group rule, the recorded threading narrowing) plus the TRACER: `Pass::video_decode` fused into the packet scan, the D-05 cropped-rows hash basis, and `content.video.frame_hash` end to end (CONTENT-01)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 07-02-PLAN.md — Decode-path hardening: edit-list frames kept (D-06), EOF drain, cover art skipped, geometry changes, decode errors forcing class 2, the pixel and record budgets (CONTENT-01)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 07-03-PLAN.md — PTS-based frame pairing (D-07) and the divergence locator: first divergent frame, merged ranges, total count (CONTENT-02)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [x] 07-04-PLAN.md — The additive skip-reason vocabulary and honest `--sample N` with `skipped:sampling_mismatch` (CONTENT-03, D-08)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [x] 07-05-PLAN.md — The deterministic 128-wide thumbnail, then frozen-run and black-run detection normalized by range and bit depth (CONTENT-06)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [x] 07-06-PLAN.md — `video.closed_captions` A53/CEA-708 presence on GPL-free hand-written H.264 and MPEG-2 fixtures (VIDEO-11)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [x] 07-07-PLAN.md — VIDEO-09's first-frame HDR side-data arm through the shared static-metadata reader
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [x] 07-08-PLAN.md — Lockstep two-file decode (one frame in flight per side) and `content.video.perceptual` with the `score` unit (CONTENT-04, CONTENT-07, CONTENT-11)
+
+**Wave 9** *(blocked on Wave 8)*
+
+- [x] 07-09-PLAN.md — Decode and scaler path preconditions on `±tol` two-file checks, PTS pairing across frame rates, and `dir --content` (CONTENT-05, TRUST-04)
+
+**Wave 10** *(blocked on Wave 9)*
+
+- [x] 07-10-PLAN.md — In-tree integer `quality.psnr` and `quality.ssim`, gated on the mean, with stored scores shown against snapshots (CONTENT-08, CONTENT-10)
+
+**Wave 11** *(blocked on Wave 10)*
+
+- [x] 07-11-PLAN.md — `quality.vmaf` behind `MEDIADIFF_WITH_VMAF`: pinned `vmaf_v0.6.1`, computed self-score, `sampling_conflict`, a designated-leg CI step, Windows excluded in the open (CONTENT-09)
+
+**Wave 12** *(blocked on Wave 11)*
+
+- [x] 07-12-PLAN.md — Thread-count invariance at 1/4/16 threads and the PERF-02 harness with an instruction-count ratchet (TRUST-07, PERF-02)
+
+**Wave 13** *(blocked on Wave 12)*
+
+- [x] 07-13-PLAN.md — The decode watchdog (D-12/D-13): a stalled libav call becomes a written report and exit 66, closing T-06-34 / WINDOWS.md #43
+
+**Wave 14** *(blocked on Wave 13)*
+
+- [x] 07-14-PLAN.md — The D-09/D-10 cross-architecture video proof: a single CI producer, identity-first decoding on every leg, and a report-only ledger (CONTENT-01)
+
+**Wave 15** *(blocked on Wave 14)*
+
+- [ ] 07-15-PLAN.md — Designated-leg round trip: transcribe the digest, perf and proof rows, promote only five-leg-proven decoders to class 1, and confirm every gate on a second real run (CONTENT-01, TRUST-07, PERF-02)
+
 **Source doc**: `claude_docs/06-content-and-size-analysis.md` (design-doc phase 6), minus `size.*` (moved to Phase 3)
 **Cross-cutting note**: Phase 7 also completes VIDEO-09's first-frame HDR side-data extraction arm, deferred from Phase 4 with the decode pass (Human Decision 1, 2026-09-13) — see Cross-cutting requirement placements below.
 
@@ -578,7 +640,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
 | 6. Audio Analysis | 20/20 | Complete    | 2026-09-28 |
-| 7. Content & Quality | 0/TBD | Not started | - |
+| 7. Content & Quality | 14/15 | In Progress|  |
 
 ## Coverage
 
@@ -606,7 +668,7 @@ These requirements do not sit in the phase their ID prefix suggests. Each is pla
 | PROBE-03 | 4 (not 3) | `ParserScan` is built in doc 03 as an extension of the same sweep; it is the video phase's own infrastructure. Its under-10% overhead target is gated in Phase 5 alongside PERF-03/PERF-05, not asserted as a Phase 4 success criterion (Human Decision 2, 2026-09-13). |
 | VIDEO-09 | 4 (first-frame arm in 7) | HDR checks (`hdr.mdcv`/`hdr.cll`/`hdr.dovi`) ship in Phase 4 via the stream-level `coded_side_data` extraction source; the first-frame side-data source needs a decoded frame, which the decode pass does not deliver until phase 7 — mirroring VIDEO-11's split (Human Decision 1, 2026-09-13). |
 | DIR-06 | 3 (not 2) | Per-file peak memory can only be asserted for real once PacketScan's packet arrays exist; phase 2 still delivers the `--threads` pool bound (DIR-05). |
-| VIDEO-11 | 7 (not 4) | `video.closed_captions` detects during the decode pass, which does not exist until phase 7. Phase 4 registers the check and ships the `skipped:requires_decode` path; phase 7 makes detection real. **Flagged as a judgment call beyond the four mandated corrections.** |
+| VIDEO-11 | 7 (not 4) | `video.closed_captions` detects during the decode pass, which does not exist until phase 7. Phase 4 registers the check and ships the `skipped:requires_decode` path; phase 7 makes detection real. **Flagged as a judgment call beyond the four mandated corrections.** **Amended 2026-09-30 (07-06):** Phase 4 did not register `video.closed_captions` (04-CHECK-ROSTER.md held it out by decision); Phase 7 registers it and makes detection real, so the earlier wording above that Phase 4 registers it is stale. Its fixtures need no GPL encoder: an MPEG-2 GA94 user-data insert over a native-encoder stream and a hand-written H.264 I_PCM stream carrying an SEI caption payload. |
 | TRUST-03 | 2 | The path-signature composition (must include libav* toolchain versions) is verifiable as engine work before any decoder exists — and must be right before phases 6/7 write signatures. |
 | TRUST-04 | 7 | The checks that must carry the preconditions (`content.video.perceptual`, `quality.*`) only exist in phase 7; phase 2 delivers the generalized precondition plumbing under ENG-04. |
 | TRUST-05, TRUST-08 | 2 | Determinism harness and cross-release idempotence job are engine-level and testable against stub/canned fingerprints. |

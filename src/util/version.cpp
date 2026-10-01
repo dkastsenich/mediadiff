@@ -44,6 +44,14 @@ std::string enabled_features_csv() {
   return features;
 }
 
+bool vmaf_built_in() {
+#ifdef MEDIADIFF_WITH_VMAF
+  return true;
+#else
+  return false;
+#endif
+}
+
 std::string compose_version_string() {
   return fmt::format(
       "mediadiff {}\n"

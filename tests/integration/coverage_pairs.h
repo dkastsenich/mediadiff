@@ -22,6 +22,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "support/fixture_paths.h"
 
@@ -34,11 +35,28 @@ inline std::string snapshot(const std::string& name) { return snapshot_dir() + "
 // check report a real, observable non-clean result; `clean_*` must make
 // it report `pass` (every scope, when the check is scoped more than
 // once -- e.g. per-track/per-program checks).
+//
+// 07-10-PLAN.md (CONTENT-08): `extra_args` are CLI arguments appended to the
+// gate's compare invocation for BOTH of this check's pairs, so an OPT-IN check
+// (quality.psnr's `--psnr`, quality.ssim's `--ssim`) is exercised with its flag
+// on. Empty by default, so every existing row is unchanged. Consumers that sweep
+// the clean pairs without the check's flag (test_audio_corpus_sweep.cpp) see the
+// opt-in checks as `skipped:not_requested`, which no clean-sweep counter treats
+// as a finding.
 struct CoveragePair {
   std::string trigger_baseline;
   std::string trigger_candidate;
   std::string clean_baseline;
   std::string clean_candidate;
+  std::vector<std::string> extra_args{};
+  // 07-11-PLAN.md (CONTENT-09): the build option a check's real triggering and
+  // clean pairs need, or empty when every build can score it. quality.vmaf is
+  // registered on every build but scored only by one configured with
+  // MEDIADIFF_WITH_VMAF=ON; the DOC-03 gate runs the pairs as written when the
+  // build has it and asserts the check's stated default-build contract (live
+  // compares report skipped:not_requested, `--vmaf` is a usage error naming the
+  // option) when it does not. Consumers that only sweep clean pairs ignore it.
+  std::string requires_build{};
 };
 
 // meta.missing_candidate/meta.extra_candidate are dir-mode-only synthetic
@@ -544,6 +562,89 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
       {"content.audio.sample_hash",
        {fixture("audio_hash_base.mp4"), fixture("audio_hash_alt.mp4"), fixture("audio_hash_base.mp4"),
         fixture("audio_hash_base_copy.mp4")}},
+      // 07-01-PLAN.md (CONTENT-01, D-05): content.video.frame_hash's trigger
+      // is video_hash_base.mp4 vs video_hash_alt.mp4 (the identical recipe at
+      // a coarser quantizer -- a genuinely different picture essence); its
+      // clean pair is video_hash_base.mp4 vs video_hash_base.ts, the
+      // STRONGEST remux available: one MPEG-4 payload stream-copied into
+      // MPEG-TS, whose muxer shifts every PTS by about 1.4 s. A pass there is
+      // the proof that the timestamp is not part of the hash.
+      {"content.video.frame_hash",
+       {fixture("video_hash_base.mp4"), fixture("video_hash_alt.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts")}},
+      // 07-05-PLAN.md (CONTENT-06): content.video.frozen_runs' trigger is
+      // video_frozen_base.mp4 (no freeze) vs video_frozen.mp4 (decode frames
+      // 51..100 replaced by frame 51): an INTRODUCED span at [2040, 4040) ms.
+      // Its clean pair is video_frozen.mp4 vs video_frozen_bf0.mp4 -- the SAME
+      // freeze encoded with and without B-frames, which research Q5 measured to
+      // fragment under exact hash equality: the two must report the same span
+      // (SSIM hysteresis is GOP-independent).
+      {"content.video.frozen_runs",
+       {fixture("video_frozen_base.mp4"), fixture("video_frozen.mp4"), fixture("video_frozen.mp4"),
+        fixture("video_frozen_bf0.mp4")}},
+      // 07-05-PLAN.md (CONTENT-06): content.video.black_runs' trigger is
+      // video_black_base.mkv (three picture segments) vs video_black_tv.mkv
+      // (the middle one black, limited range): an introduced span at
+      // [1000, 2000) ms. Its clean pair is the RANGE-FLIP proof:
+      // video_black_tv.mkv vs video_black_pc.mkv, the same black segment
+      // encoded limited-range (luma 16) and full-range (luma 0), which a
+      // range-unaware rule would call different and this one calls the same.
+      // (Matroska, because the MP4 muxer drops the colour range of an MPEG-4
+      // Part 2 stream -- see scripts/gen_corpus.sh.)
+      {"content.video.black_runs",
+       {fixture("video_black_base.mkv"), fixture("video_black_tv.mkv"), fixture("video_black_tv.mkv"),
+        fixture("video_black_pc.mkv")}},
+      // 07-06-PLAN.md (VIDEO-11): video.closed_captions' trigger is
+      // video_cc_base.m2v vs video_cc_a53.m2v -- ONE native-encoder MPEG-2
+      // elementary stream with and without an ATSC GA94 user-data unit inserted
+      // before the first slice of every picture. The two decode to identical
+      // pixels, so the captions are the only difference: the check fails
+      // (present -> absent or the reverse) while content.video.frame_hash passes.
+      // Its clean pair is video_cc_a53.m2v vs video_cc_a53_copy.m2v, the
+      // captioned stream against its byte-identical copy. No GPL encoder is
+      // involved: the base is the native mpeg2video encoder and the insert is
+      // pure byte surgery (tools/gen_video_fixtures.py).
+      {"video.closed_captions",
+       {fixture("video_cc_base.m2v"), fixture("video_cc_a53.m2v"), fixture("video_cc_a53.m2v"),
+        fixture("video_cc_a53_copy.m2v")}},
+
+      // 07-08-PLAN.md (CONTENT-04): content.video.perceptual's trigger is
+      // video_hash_base.mp4 vs video_perc_degraded.mp4 -- the same picture
+      // scaled down to 88x72, back up to 352x288 and encoded at -q:v 31, so the
+      // detail is really gone: the worst-pair SSIM on the 128-wide thumbnail is
+      // 0.926, well past the 0.015 tolerance (status `info` under the
+      // sw-encoder profile this gate runs, `fail` under hw-encoder). Its clean
+      // pair is video_hash_base.mp4 vs video_hash_base.ts, a stream copy into
+      // MPEG-TS: every decoded pixel is identical, so the score is exactly 1 on
+      // both sides (index pairing -- MPEG-TS declares no frame rate at open).
+      {"content.video.perceptual",
+       {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts")}},
+
+      // 07-10-PLAN.md (CONTENT-08): quality.psnr and quality.ssim are OPT-IN, so
+      // each row carries its flag in `extra_args` (appended to the gate's compare
+      // arguments for both pairs). The trigger is the same degraded encode
+      // content.video.perceptual uses: native-resolution PSNR falls well below
+      // the 0.5 dB tolerance and the mean SSIM below the 0.005 one (both `fail`).
+      // The clean pair is the same stream-copy remux, whose decoded pixels are
+      // identical, so each score is exactly the baseline's self-score (60 dB cap,
+      // 1.0) and the delta is exactly 0.
+      {"quality.psnr",
+       {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts"), {"--psnr"}}},
+      {"quality.ssim",
+       {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts"), {"--ssim"}}},
+
+      // 07-11-PLAN.md (CONTENT-09): quality.vmaf, opt-in with `--vmaf` and
+      // scored only by a build configured with MEDIADIFF_WITH_VMAF=ON
+      // (`requires_build`). The pairs are quality.psnr's: the degraded encode
+      // drops the harmonic-mean VMAF far past the 0.5 point tolerance, and the
+      // stream-copy remux decodes to identical pixels, so the candidate score
+      // equals the baseline's COMPUTED self-score and the delta is exactly 0.
+      {"quality.vmaf",
+       {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts"), {"--vmaf"}, "MEDIADIFF_WITH_VMAF"}},
 
       // --- 06-03-PLAN.md (AUDIO-01, AUDIO-02): the six per-audio-stream
       // header-pass identity checks -- codec/sample_rate/sample_fmt/

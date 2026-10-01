@@ -40,11 +40,13 @@ const AnalyzerSpec& container_meta_analyzer();
 // plan's own action text) -- NOT folded into container_meta_analyzer()
 // above, since that one is `Pass::demux_header`-only (a header-level tag
 // walk) while this check needs the full decode sweep. One measurement per
-// audio stream: the compared value is `decode_error_count`
+// audio stream (and, since 07-02-PLAN.md, one per decoded VIDEO stream at
+// Scope{video, rank}, see below): the compared value is `decode_error_count`
 // (`meta.decode_errors`'s own registered `tol`/`count`/`"0"` check,
 // src/core/checks.def) -- a real, comparable value on every attempted
 // stream, including a clean 0. `required_passes = {Pass::demux_header,
-// Pass::packet_scan, Pass::audio_decode}`, `scope = ContainerFamily::other`.
+// Pass::packet_scan, Pass::audio_decode, Pass::video_decode}`,
+// `scope = ContainerFamily::other`.
 //
 // Skip-reason priority (mirrors audio_loudness_analyzer()'s own, with one
 // addition): `partial_scan` first (Phase 3 D-02, a truncated packet
@@ -62,6 +64,16 @@ const AnalyzerSpec& container_meta_analyzer();
 // audio_silence_analyzer()) only needs to relabel its OWN `undecodable`
 // branch to `partial_scan` without separately touching `Fingerprint::
 // partial` itself.
+//
+// Video (07-02-PLAN.md, CONTENT-01): a decoded video stream is measured at
+// `Scope{video, rank}` with the SAME priority and the same single place
+// `Fingerprint::partial` is set, but its compared value is
+// `StreamVideoDecode::decode_error_count + corrupt_frame_count` (negative
+// send/receive returns plus frames flagged AV_FRAME_FLAG_CORRUPT or carrying a
+// non-zero decode_error_flags), with both components in evidence -- MPEG-family
+// video decoders usually conceal a damaged slice and report success, so a
+// count of negative returns alone would read 0 on a visibly corrupted stream.
+// An attached picture (cover art) is never decoded and emits nothing.
 const AnalyzerSpec& container_meta_decode_errors_analyzer();
 
 // 03-05-PLAN.md Tasks 1-2 (PROBE-04, CONT-05): the six container.mp4.*

@@ -78,6 +78,14 @@ std::string_view skip_reason_text(SkipReason reason) {
       return "no_timing_data";
     case SkipReason::hash_disabled:
       return "hash_disabled";
+    case SkipReason::not_requested:
+      return "not_requested";
+    case SkipReason::sampling_conflict:
+      return "sampling_conflict";
+    case SkipReason::path_incomparable:
+      return "path_incomparable";
+    case SkipReason::geometry_mismatch:
+      return "geometry_mismatch";
   }
   return "none";
 }

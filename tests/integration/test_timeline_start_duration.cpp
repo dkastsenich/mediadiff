@@ -405,6 +405,10 @@ TEST_CASE("timeline_start_duration - the duration-short trigger pair (timeline_s
       compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_duration_short.mp4"), "remux");
 
   expect_declared_set(report, {
+                                   // 07-01-PLAN.md (content.video.frame_hash): half the duration is genuinely half
+                                   // the decoded frames -- frames 0-49 match, the candidate has no frames 50-99
+                                   // (first divergent frame 50; `ffmpeg -f framemd5` agrees).
+                                   "content.video.frame_hash",
                                    // The check this task registers -- the computed member (last
                                    // presentation end - first PTS) genuinely halves along with the
                                    // recipe's own duration=4 -> duration=2 change, at both scopes

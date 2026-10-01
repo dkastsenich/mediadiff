@@ -84,6 +84,19 @@ struct HashChain {
   // block_digests so a reader of a stored snapshot can interpret the
   // array's own granularity without re-deriving it from sample_rate.
   std::int64_t element_stride = 0;
+  // 07-01-PLAN.md (CONTENT-01, D-05/D-07, content.video.frame_hash): each
+  // element's OWN presentation timestamp, parallel to block_digests, in
+  // `element_tb` ticks. Stored beside the digest and used only to LOCATE
+  // divergence (07-03); it never enters the hash, so a remux that shifts every
+  // PTS still hashes equal. Empty when the producer has no usable timestamps
+  // (a raw elementary stream), and for every audio chain -- a default-
+  // constructed vector serializes as nothing at all, so no pre-Phase-7 golden
+  // or snapshot changes shape. When non-empty its length equals
+  // `element_count` (src/core/serializer.cpp rejects a snapshot where it does
+  // not). `element_tb` is meaningful only alongside a non-empty
+  // `element_ticks`, and is serialized only then.
+  std::vector<std::int64_t> element_ticks;
+  Rational element_tb{0, 0};
 
   bool operator==(const HashChain&) const = default;
 };

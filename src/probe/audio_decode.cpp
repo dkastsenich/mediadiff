@@ -29,6 +29,7 @@ extern "C" {
 
 #include "probe/audio_config.h"
 #include "probe/demux_session.h"
+#include "probe/heartbeat.h"
 #include "probe/packet_scan.h"
 #include "util/version.h"
 
@@ -1098,7 +1099,11 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
   pkt->data = const_cast<std::uint8_t*>(data);
   pkt->size = size;
 
-  const int send_rc = avcodec_send_packet(codec_ctx_, pkt);
+  int send_rc = 0;
+  {
+    LibavCall guard(LibavSite::audio_send);
+    send_rc = avcodec_send_packet(codec_ctx_, pkt);
+  }
   av_packet_free(&pkt);
   if (send_rc < 0 && send_rc != AVERROR(EAGAIN)) {
     ++decode_error_count_;
@@ -1128,7 +1133,11 @@ void AudioDecodeState::feed_packet(const std::uint8_t* data, int size) {
     return;
   }
   for (;;) {
-    const int recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+    int recv_rc = 0;
+    {
+      LibavCall guard(LibavSite::audio_receive);
+      recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+    }
     if (recv_rc == AVERROR(EAGAIN) || recv_rc == AVERROR_EOF) {
       break;
     }
@@ -1193,11 +1202,18 @@ StreamAudioDecode AudioDecodeState::finalize() {
     // bounded flush call on an already-broken codec context is safe
     // (the receive loop breaks on its first non-success return) and
     // costs nothing on the common, healthy path.
-    avcodec_send_packet(codec_ctx_, nullptr);
+    {
+      LibavCall guard(LibavSite::audio_drain);
+      avcodec_send_packet(codec_ctx_, nullptr);
+    }
     AVFrame* frame = av_frame_alloc();
     if (frame != nullptr) {
       for (;;) {
-        const int recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+        int recv_rc = 0;
+        {
+          LibavCall guard(LibavSite::audio_drain);
+          recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+        }
         if (recv_rc < 0) {
           break;
         }

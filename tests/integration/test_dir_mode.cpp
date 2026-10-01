@@ -19,6 +19,8 @@
 #include <nlohmann/json.hpp>
 
 #include "cli_harness.h"
+#include "probe/packet_scan.h"
+#include "support/fixture_paths.h"
 #include "support/golden.h"
 
 using mediadiff::test::CliResult;
@@ -309,4 +311,143 @@ TEST_CASE("dir_mode - JUnit emits one testsuite per file named by relative path"
 
   CHECK(xml.find("<testsuite name=\"only_baseline.snap.json\"") != std::string::npos);
   CHECK(xml.find("<testsuite name=\"only_candidate.snap.json\"") != std::string::npos);
+}
+
+// --- 07-09-PLAN.md Task 3 (CONTENT-04/CONTENT-05, DIR-06, T-07-29): `dir
+// --content` runs each pair in lockstep inside a halved per-side budget --------
+
+namespace {
+
+// Copies a real media fixture (tests/fixtures/<name>) into `dest`.
+void copy_media_fixture(const std::string& name, const fs::path& dest) {
+  std::error_code ec;
+  fs::copy_file(fs::path(mediadiff::test::fixture_dir()) / name, dest, fs::copy_options::overwrite_existing, ec);
+  REQUIRE_FALSE(ec);
+}
+
+// A two-tree corpus holding ONE pair under the same relative name.
+struct MediaCorpus {
+  fs::path baseline;
+  fs::path candidate;
+};
+
+MediaCorpus media_corpus(const std::string& tag, const std::string& baseline_fixture,
+                         const std::string& candidate_fixture, const std::string& relative) {
+  MediaCorpus corpus{unique_scratch_dir(tag + "_a"), unique_scratch_dir(tag + "_b")};
+  copy_media_fixture(baseline_fixture, corpus.baseline / relative);
+  copy_media_fixture(candidate_fixture, corpus.candidate / relative);
+  return corpus;
+}
+
+// The finding `id` of the (only) file in a `dir --json` report; null when absent.
+nlohmann::json dir_finding(const std::string& out, const std::string& id) {
+  const nlohmann::json report = nlohmann::json::parse(out, nullptr, false);
+  REQUIRE_FALSE(report.is_discarded());
+  REQUIRE(report.at("files").size() == 1);
+  for (const auto& finding : report.at("files")[0].at("findings")) {
+    if (finding.at("id") == id) {
+      return finding;
+    }
+  }
+  return nlohmann::json();
+}
+
+// Every `probe_memory_cap_bytes` value anywhere in a report: the evidence the
+// partial-scan skips carry, i.e. the per-side cap the run resolved.
+void collect_caps(const nlohmann::json& node, std::vector<std::int64_t>& caps) {
+  if (node.is_object()) {
+    for (auto it = node.begin(); it != node.end(); ++it) {
+      if (it.key() == "probe_memory_cap_bytes" && it.value().is_number_integer()) {
+        caps.push_back(it.value().get<std::int64_t>());
+      } else {
+        collect_caps(it.value(), caps);
+      }
+    }
+  } else if (node.is_array()) {
+    for (const auto& child : node) {
+      collect_caps(child, caps);
+    }
+  }
+}
+
+std::vector<std::int64_t> caps_of(const std::string& out) {
+  const nlohmann::json report = nlohmann::json::parse(out, nullptr, false);
+  REQUIRE_FALSE(report.is_discarded());
+  std::vector<std::int64_t> caps;
+  collect_caps(report, caps);
+  return caps;
+}
+
+}  // namespace
+
+TEST_CASE("dir_mode - content lockstep", "[integration]") {
+  // Same relative name, genuinely different pixels (video_perc_degraded.mp4 is
+  // the base picture scaled to 88x72 and back at -q:v 31): with content decode on
+  // the pair is probed in lockstep, so the perceptual finding is a live score.
+  const MediaCorpus corpus = media_corpus("lockstep", "video_hash_base.mp4", "video_perc_degraded.mp4", "clip.mp4");
+  const CliResult result = run_cli({"dir", corpus.baseline.string(), corpus.candidate.string(), "--content", "--json"});
+  INFO("stdout: " << result.out << "\nstderr: " << result.err);
+  const nlohmann::json finding = dir_finding(result.out, "content.video.perceptual");
+  REQUIRE_FALSE(finding.is_null());
+  CHECK(finding.at("skip_reason") == "none");
+  CHECK(finding.at("status") != "skipped");
+  REQUIRE(finding.at("candidate").is_object());
+  CHECK(finding.at("candidate").at("den") == 1000000);
+  CHECK(finding.at("candidate").at("num").get<std::int64_t>() < 985000);
+
+  // Without --content the same pair never decodes, so there is no score.
+  const CliResult plain = run_cli({"dir", corpus.baseline.string(), corpus.candidate.string(), "--json"});
+  const nlohmann::json skipped = dir_finding(plain.out, "content.video.perceptual");
+  CHECK((skipped.is_null() || skipped.at("status") == "skipped"));
+}
+
+TEST_CASE("dir_mode - content halves the cap", "[integration]") {
+  // video_perc_60.mkv (180 frames) against itself under a 1 MB budget at 32
+  // threads. With content decode on each job holds two sweeps, so the per-side
+  // cap is budget / (2 * 32) = 16384 bytes, which the 180 x 96-byte decoded-frame
+  // records (17280 bytes) overflow; the partial-scan skips carry the cap they hit.
+  // The old, unhalved cap (budget / 32 = 32768) would not have been overflowed.
+  constexpr std::int64_t kBudgetMb = 1;
+  constexpr int kThreads = 32;
+  const std::int64_t budget_bytes = kBudgetMb * 1024 * 1024;
+  const MediaCorpus corpus = media_corpus("cap", "video_perc_60.mkv", "video_perc_60.mkv", "clip.mkv");
+  const std::vector<std::string> common = {"dir", corpus.baseline.string(), corpus.candidate.string(),
+                                           "--threads", std::to_string(kThreads), "--probe-memory-budget-mb",
+                                           std::to_string(kBudgetMb), "--json"};
+
+  std::vector<std::string> with_content = common;
+  with_content.push_back("--content");
+  const CliResult content = run_cli(with_content);
+  INFO("stdout: " << content.out << "\nstderr: " << content.err);
+  const std::vector<std::int64_t> content_caps = caps_of(content.out);
+  REQUIRE_FALSE(content_caps.empty());
+  for (const std::int64_t cap : content_caps) {
+    CHECK(cap == mediadiff::derive_per_file_cap_bytes(budget_bytes, 2 * kThreads));
+  }
+  CHECK(mediadiff::derive_per_file_cap_bytes(budget_bytes, 2 * kThreads) == 16384);
+
+  // Without content decode no job holds a second sweep or a decoded-frame record,
+  // so the same pair stays inside the cap and reports none.
+  std::vector<std::string> without_content = common;
+  without_content.push_back("--no-content");
+  const CliResult plain = run_cli(without_content);
+  CHECK(caps_of(plain.out).empty());
+}
+
+TEST_CASE("dir_mode - content deterministic", "[integration]") {
+  const MediaCorpus corpus = media_corpus("determinism", "video_hash_base.mp4", "video_perc_degraded.mp4", "clip.mp4");
+  const std::vector<std::string> args = {"dir", corpus.baseline.string(), corpus.candidate.string(), "--content",
+                                         "--json"};
+  const CliResult first = run_cli(args);
+  const CliResult second = run_cli(args);
+  REQUIRE(first.exit_code == second.exit_code);
+  CHECK(first.out == second.out);
+  CHECK_FALSE(first.out.empty());
+
+  // The thread count is not an input: one worker and eight give the same bytes.
+  std::vector<std::string> one = args;
+  one.insert(one.end(), {"--threads", "1"});
+  std::vector<std::string> eight = args;
+  eight.insert(eight.end(), {"--threads", "8"});
+  CHECK(run_cli(one).out == run_cli(eight).out);
 }

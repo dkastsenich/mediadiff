@@ -6,16 +6,19 @@ Whether a video stream carries HDR content-light metadata (CTA-861.3) --
 MaxCLL (maximum content light level) and MaxFALL (maximum frame-average
 light level), the two values needed to transmit HDR over HDMI.
 
-Read from the identical stream-level extraction boundary as
-`video.hdr.mdcv`: `codecpar->coded_side_data`
-(`AV_PKT_DATA_CONTENT_LIGHT_LEVEL`), populated at demux time, with the
-SAME could/could-not-carry-frame-level-metadata distinction on absence
-(`skipped:requires_decode` for a codec that could, in principle, carry
-this at the frame level via a future decode pass; an ordinary permanent
-`Absent` for one that structurally cannot). See `video.hdr.mdcv`'s own
-doc for the full reasoning -- this check shares the exact same extraction
-seam and codec-capability decision, never a second, independently-written
-copy.
+Read from the identical two-arm extraction as `video.hdr.mdcv`, with the
+same precedence and the same evidence `source`: `"stream"` for
+`codecpar->coded_side_data` (`AV_PKT_DATA_CONTENT_LIGHT_LEVEL`, populated at
+demux time), `"frame"` for the content-light side data libavcodec attached to
+the first decoded frame once the decode pass runs (HEVC, AV1 and H.264; the
+first frame only, whatever `--sample N` is). Stream-level metadata wins, both
+arms share one size-guarded payload reader, and the could/could-not-carry,
+`--no-content`, truncated-decode and zero-frame outcomes are exactly
+`video.hdr.mdcv`'s (a real `Absent`, `skipped:requires_decode`,
+`skipped:partial_scan` and `skipped:insufficient_data` respectively). See
+`video.hdr.mdcv`'s own doc for the full reasoning -- this check shares the
+exact same extraction seam and codec-capability decision, never a second,
+independently-written copy.
 
 Evidence, when present, carries MaxCLL, MaxFALL and the `source` tag.
 

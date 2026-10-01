@@ -66,6 +66,16 @@ const mediadiff::GroupBlock& block_for(const ReportModel& model, Group group) {
 
 }  // namespace
 
+// 07-10-PLAN.md (07-CHECK-ROSTER.md, approve-as-proposed): quality.* maps to
+// `content` -- no new Group enumerator, no schema change. A first segment that
+// merely starts with "quality" is still unrecognized and falls to meta.
+TEST_CASE("report_model - quality group", "[report]") {
+  CHECK(mediadiff::group_for("quality.psnr") == Group::content);
+  CHECK(mediadiff::group_for("quality.ssim") == Group::content);
+  CHECK(mediadiff::group_for("quality.vmaf") == Group::content);
+  CHECK(mediadiff::group_for("qualityx.psnr") == Group::meta);
+}
+
 TEST_CASE("report_model - group_for maps every fixed group and defaults an unrecognized segment to meta",
           "[report]") {
   CHECK(mediadiff::group_for("container.x") == Group::container);

@@ -1,5 +1,6 @@
 #include "cli/commands/snapshot.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -11,8 +12,10 @@
 #include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
+#include "cli/watchdog.h"
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
+#include "probe/heartbeat.h"
 #include "probe/orchestrator.h"
 #include "probe/packet_scan.h"
 #include "util/fs.h"
@@ -278,20 +281,25 @@ void register_snapshot_command(CLI::App& app) {
   // ContentCommandDefault::must_decode rejects --no-content as a usage
   // error). --content is still accepted (and is simply redundant with the
   // default) so the flag spelling is consistent across every command.
-  CLI::Option* content_flag = cmd->add_flag("--content", "Decode audio content for hashing (snapshot's own default -- always on)");
+  CLI::Option* content_flag = cmd->add_flag("--content", "Decode audio and video content for hashing (snapshot's own default -- always on)");
   CLI::Option* no_content_flag =
       cmd->add_flag("--no-content", "Not valid for snapshot -- a snapshot always decodes (usage error)");
   // 06-05-PLAN.md (AUDIO-09): a snapshot always decodes, so its own
   // --hash-decoder choice is what every later `compare` against it
   // inherits (D-08: decoder selection is a property of the fingerprint).
   HashDecoderArgs hash_decoder_args = add_hash_decoder_flag(*cmd);
+  // 07-04-PLAN.md (CONTENT-03, D-08): the stride is a property of the
+  // fingerprint -- a snapshot taken under --sample N records `sampled:N`, and
+  // only a compare at the same N reads it as comparable.
+  SampleArgs sample_args = add_sample_flag(*cmd);
 
   // ENG-16 explicitly reserves exit()/stdout/stderr as "the CLI's
   // prerogative" — see src/cli/commands/compare.cpp's identical rationale.
   // Capturing a raw Option* by value is exactly as safe as the shared_ptr
   // it replaces (D-05): the App owns the Option for the whole program
   // lifetime, and this callback only runs during app.parse().
-  cmd->callback([input_path, out_path, force_flag, probe_args, content_flag, no_content_flag, hash_decoder_args]() {
+  cmd->callback([input_path, out_path, force_flag, probe_args, content_flag, no_content_flag, hash_decoder_args,
+                 sample_args]() {
     const CheckRegistry& registry = builtin_registry();
 
     // 06-01-PLAN.md Task 3: resolved before any probe budget/timeout
@@ -310,8 +318,15 @@ void register_snapshot_command(CLI::App& app) {
       report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
-    const ProbeOptions probe_options{/*content_enabled=*/*content_enabled_result,
-                                      /*hash_decoder=*/*hash_decoder_result};
+    auto sample_result = resolve_sample_stride(sample_args, *content_enabled_result);
+    if (!sample_result) {
+      const Error& err = sample_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    ProbeOptions probe_options{/*content_enabled=*/*content_enabled_result,
+                                /*hash_decoder=*/*hash_decoder_result};
+    probe_options.sample_stride = *sample_result;
 
     // snapshot reads no mediadiff.toml today (it predates policy
     // resolution entirely), so --probe-timeout has no `[probe]
@@ -352,7 +367,28 @@ void register_snapshot_command(CLI::App& app) {
     // the media bytes only when the input opened but was not a snapshot
     // (PROBE-01, this plan).
     const std::string input_path_text = opt_string(input_path);
-    auto fp = fingerprint_input(input_path_text, registry, probe_options);
+
+    // 07-13-PLAN.md (D-12, CLI-07): a libav call that never returns ends the run
+    // as could-not-run. Snapshots are written only after fingerprinting, so a trip
+    // leaves no output file: the handler prints the stall diagnostic to stderr,
+    // flushes and ends the process with exit 66 without joining the stuck thread.
+    auto watchdog_settings = resolve_watchdog_settings();
+    if (!watchdog_settings) {
+      const Error& err = watchdog_settings.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const std::chrono::milliseconds watchdog_limit = watchdog_settings->limit;
+    auto fp = [&]() {
+      WatchedRun watch(*watchdog_settings, input_path_text, nullptr, [watchdog_limit](const WatchdogTrip& trip) {
+        report_cli_error("watchdog: " + describe_trip(trip, watchdog_limit));
+        exit_after_trip(kExitDecode);
+      });
+      const ScopedHeartbeatBinding binding(watch.heartbeat());
+      auto result = fingerprint_input(input_path_text, registry, probe_options);
+      watch.stop();
+      return result;
+    }();
     if (!fp) {
       const Error& err = fp.error();
       report_cli_error(err.message);

@@ -59,7 +59,7 @@ namespace {
 
 Scope global0() { return Scope{Scope::Kind::global, 0}; }
 
-// All 15 SkipReason enumerators, paired with the exact snake_case spelling
+// All 19 SkipReason enumerators, paired with the exact snake_case spelling
 // both src/report/json.cpp's skip_reason_to_string and
 // src/report/junit.cpp's skip_reason_text must render for it. Hand-listed
 // by design (per this plan's Test 1 behavior spec: "a test that must be
@@ -88,6 +88,11 @@ const SkipReasonCase kAllSkipReasons[] = {
     // decoder doc 05 section 3's determinism-class table does not list --
     // content.audio.sample_hash reports no digest for it.
     {SkipReason::hash_disabled, "hash_disabled"},
+    // 07-04-PLAN.md: the four Phase 7 additions (07-CHECK-ROSTER.md).
+    {SkipReason::not_requested, "not_requested"},
+    {SkipReason::sampling_conflict, "sampling_conflict"},
+    {SkipReason::path_incomparable, "path_incomparable"},
+    {SkipReason::geometry_mismatch, "geometry_mismatch"},
 };
 
 Finding make_skip_finding(SkipReason reason, std::string message = "") {
@@ -145,7 +150,7 @@ std::string junit_skip_reason_text(SkipReason reason) {
 TEST_CASE("skip_reason: every SkipReason enumerator round-trips through the JSON renderer to its own snake_case "
           "spelling",
           "[measurement_provenance]") {
-  REQUIRE(std::size(kAllSkipReasons) == 15);
+  REQUIRE(std::size(kAllSkipReasons) == 19);
   for (const SkipReasonCase& c : kAllSkipReasons) {
     INFO("reason: " << c.text);
     CHECK(json_skip_reason_text(c.reason) == c.text);
@@ -174,15 +179,33 @@ TEST_CASE("skip_reason: the JSON renderer's output vocabulary is exactly the set
   }
 
   CHECK(rendered_values == schema_values);
-  CHECK(schema_values.size() == 15);
+  CHECK(schema_values.size() == 19);
 }
 
-TEST_CASE("skip_reason: skip_reason_text (junit) agrees with skip_reason_to_string (json) for all 15 enumerators",
+TEST_CASE("skip_reason: skip_reason_text (junit) agrees with skip_reason_to_string (json) for all 19 enumerators",
           "[measurement_provenance]") {
   for (const SkipReasonCase& c : kAllSkipReasons) {
     INFO("reason: " << c.text);
     CHECK(junit_skip_reason_text(c.reason) == json_skip_reason_text(c.reason));
   }
+}
+
+TEST_CASE("skip_reason: skip_reason_from_string inverts skip_reason_to_string for every enumerator",
+          "[measurement_provenance]") {
+  for (const SkipReasonCase& c : kAllSkipReasons) {
+    INFO("reason: " << c.text);
+    CHECK(mediadiff::skip_reason_to_string(c.reason) == c.text);
+    const auto parsed = mediadiff::skip_reason_from_string(c.text);
+    REQUIRE(parsed.has_value());
+    CHECK(*parsed == c.reason);
+  }
+}
+
+TEST_CASE("skip_reason: an unknown spelling is rejected", "[measurement_provenance]") {
+  CHECK_FALSE(mediadiff::skip_reason_from_string("").has_value());
+  CHECK_FALSE(mediadiff::skip_reason_from_string("not_requested ").has_value());
+  CHECK_FALSE(mediadiff::skip_reason_from_string("Not_Requested").has_value());
+  CHECK_FALSE(mediadiff::skip_reason_from_string("vmaf_conflict").has_value());
 }
 
 // ---------------------------------------------------------------------

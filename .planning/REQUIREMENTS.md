@@ -116,9 +116,9 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **VIDEO-06**: `video.interlace` cross-checks declared field order against per-frame parser flags and reports `mixed` with proportions when content is mixed
 - [x] **VIDEO-07**: Colorimetry checks work: `color.range` (fail in every profile, no exceptions), `color.primaries`, `color.transfer`, `color.matrix`, `color.chroma_loc`
 - [x] **VIDEO-08**: A change **to** `unspecified` is reported as a regression (metadata loss), not treated as a wildcard match
-- [ ] **VIDEO-09**: HDR checks work: `hdr.mdcv`, `hdr.cll`, `hdr.dovi`, with extraction from the stream-level `coded_side_data` source recorded in Phase 4; the first-frame side-data source is deferred to Phase 7 with the decode pass (Human Decision 1, 2026-09-13), mirroring VIDEO-11's placement
+- [x] **VIDEO-09**: HDR checks work: `hdr.mdcv`, `hdr.cll`, `hdr.dovi`, with extraction from the stream-level `coded_side_data` source recorded in Phase 4; the first-frame side-data source is deferred to Phase 7 with the decode pass (Human Decision 1, 2026-09-13), mirroring VIDEO-11's placement (amended, 07-07-PLAN.md, 2026-09-30: first-frame arm implemented; H.264 added to the frame-capable codecs; Dolby Vision stays stream-level)
 - [x] **VIDEO-10**: MDCV/CLL internal incoherence (HDR metadata with an SDR transfer, or PQ without MDCV) raises a non-gating `info` note even when both files share it
-- [ ] **VIDEO-11**: `video.closed_captions` detects A53/CEA-708 presence during the decode pass and reports `skipped:requires_decode` under `--no-content`
+- [x] **VIDEO-11**: `video.closed_captions` detects A53/CEA-708 presence during the decode pass and reports `skipped:requires_decode` under `--no-content`
 - [x] **VIDEO-12**: A codec with no available parser degrades to `skipped:no_parser` for GOP checks and falls back to keyframe-flag granularity for frame types
 
 ### Timeline Checks
@@ -151,27 +151,27 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 ### Content, Quality & Size Checks
 
 - [x] **SIZE-01**: `size.file`, `size.stream_bitrate`, `size.peak_bitrate`, and `size.overhead` work, with peak windowing defined on DTS in ticks and rational bounds for cross-platform identity
-- [ ] **CONTENT-01**: `content.video.frame_hash` hashes exactly `bytes_per_row(width) × height` per plane — never `linesize` — chained with PTS, pix_fmt and dimensions
-- [ ] **CONTENT-02**: A hash mismatch reports the first divergent frame (index + PTS), contiguous divergent ranges merged at 1-frame gaps, and the total differing count
-- [ ] **CONTENT-03**: `--sample N` marks the fingerprint `sampled:N` and only equal-N fingerprints compare; mismatched sampling reports `skipped:sampling_mismatch`
-- [ ] **CONTENT-04**: `content.video.perceptual` computes SSIM on downscaled luma (SWS_AREA to width 128, 8×8 window) with pinned swscale flags recorded as a precondition, reporting min, mean, first frame below threshold, and a worst-10 list
-- [ ] **CONTENT-05**: When frame counts differ, perceptual comparison pairs the overlapping prefix and notes truncation in evidence rather than silently misaligning
-- [ ] **CONTENT-06**: `content.video.frozen_runs` and `content.video.black_runs` detect spans, with black detection normalized by color range and bit depth so a range flip does not false-alarm the detector
-- [ ] **CONTENT-07**: Hashing, perceptual scoring, and the frozen/black detectors all run inside one decode sweep
-- [ ] **CONTENT-08**: `quality.psnr` and `quality.ssim` compute in-tree at native resolution, reporting min and mean
-- [ ] **CONTENT-09**: `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint, reporting harmonic mean and min, and refusing `--sample` as `skipped:sampling_conflict`
-- [ ] **CONTENT-10**: `quality.*` against a snapshot reports `skipped:requires_media` while still showing stored scores for trend context
-- [ ] **CONTENT-11**: `compare` decodes baseline and candidate in lockstep with one frame in flight per side — two full decoded sequences are never resident
+- [ ] **CONTENT-01**: `content.video.frame_hash` hashes exactly `bytes_per_row(width) × height` per plane — never `linesize` — chained with PTS, pix_fmt and dimensions (amended, 07-01-PLAN.md, 2026-09-30: the presentation timestamp is stored per frame beside the digest rather than chained into it — D-05 — so an untouched remux hashes equal and a retime is `timeline.*`'s finding, not a second one here; the hashed basis is the cropped display rows, the `yuvj`-folded pixel-format name and the display dimensions, and the chain is XXH3-128 over the concatenated per-frame digests)
+- [x] **CONTENT-02**: A hash mismatch reports the first divergent frame (index + PTS), contiguous divergent ranges merged at 1-frame gaps, and the total differing count (alignment is by presentation time, not decode index — D-07, 07-03-PLAN.md, 2026-09-30: a dropped frame reads "missing from candidate" and later frames still line up; a side without usable timestamps falls back to decode order and the evidence says so)
+- [x] **CONTENT-03**: `--sample N` marks the fingerprint `sampled:N` and only equal-N fingerprints compare; mismatched sampling reports `skipped:sampling_mismatch`
+- [x] **CONTENT-04**: `content.video.perceptual` computes SSIM on downscaled luma (SWS_AREA to width 128, 8×8 window) with pinned swscale flags recorded as a precondition, reporting min, mean, first frame below threshold, and a worst-10 list
+- [x] **CONTENT-05**: When frame counts differ, perceptual comparison pairs the overlapping prefix and notes truncation in evidence rather than silently misaligning (amended, 07-03-PLAN.md, 2026-09-30: D-02 replaces "pairs the overlapping prefix" with "pairs the overlapping time range by presentation time" — each side's frames are timed from its own first frame and paired within strictly less than half the finer frame interval, in exact rational arithmetic, with decode-index fallback when either side lacks usable timestamps or a frame interval, and unpaired frames counted in evidence rather than shifting every later pair; src/core/frame_pairing.h is the one rule)
+- [x] **CONTENT-06**: `content.video.frozen_runs` and `content.video.black_runs` detect spans, with black detection normalized by color range and bit depth so a range flip does not false-alarm the detector
+- [x] **CONTENT-07**: Hashing, perceptual scoring, and the frozen/black detectors all run inside one decode sweep
+- [x] **CONTENT-08**: `quality.psnr` and `quality.ssim` compute in-tree at native resolution, reporting min and mean
+- [x] **CONTENT-09**: `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint, reporting harmonic mean and min, and refusing `--sample` as `skipped:sampling_conflict` (amended, 07-11-PLAN.md, 2026-09-30: Linux and macOS builds only — the vcpkg `libvmaf` port declares `!windows`; `--vmaf` on a build without the option, including every Windows build, is a usage error naming MEDIADIFF_WITH_VMAF; proven in CI on the designated x64-linux leg)
+- [x] **CONTENT-10**: `quality.*` against a snapshot reports `skipped:requires_media` while still showing stored scores for trend context (amended, 07-10-PLAN.md, 2026-09-30, D-01: two-file scores exist only in a live media-vs-media compare; against a snapshot on either side every `quality.*` check and `content.video.perceptual` report `skipped:requires_media`; snapshots store no scores in v1, so there is no stored trend score to show)
+- [x] **CONTENT-11**: `compare` decodes baseline and candidate in lockstep with one frame in flight per side — two full decoded sequences are never resident
 
 ### Trust & Determinism Guarantees
 
 - [x] **TRUST-01**: Every fingerprint records, per hashed stream, the decoder name, determinism class, flags, and (class 2) a path signature
 - [x] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
 - [x] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
-- [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
+- [x] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
 - [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
 - [x] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
-- [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains
+- [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains (07-12-PLAN.md: the suite, `tests/integration/test_video_thread_invariance.cpp`, runs on clean fixtures only; damaged input is excluded from the invariance claim because it decodes non-deterministically at more than one thread, and is covered instead by the production single-thread pin, proven by ten identical runs of the corrupt fixture)
 - [x] **TRUST-08**: **[R]** A cross-release idempotence test compares the current build against a snapshot taken by the previous release, catching toolchain-drift false positives that same-build compare-twice cannot (research: PITFALLS)
 - [x] **TRUST-09**: `ts_scan` output is cross-checked against TSDuck's analysis of the same fixtures via a manual test jig, without linking TSDuck
 
@@ -185,7 +185,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 ### Performance
 
 - [x] **PERF-01**: Metadata plus timeline analysis of the 10-minute 1080p reference file completes in ≤ 3 s
-- [ ] **PERF-02**: A full content pass runs at ≥ 4× realtime with software decode
+- [ ] **PERF-02**: A full content pass runs at ≥ 4× realtime with software decode (amended, 07-12-PLAN.md, 2026-09-30: measured 22.8× realtime single-threaded (the production setting, D-11) and 39.9× with libavcodec's automatic thread count on the 10-minute 1080p30 D-16 reference (video content pass, audio not decoded; one run each on an 8-thread workstation), recorded not asserted; the enforced gate is the instruction-count ratchet on the first 1800 video packets of the same reference, `video_plain_instructions` / `video_full_instructions` in `tests/golden/PERF_BASELINE.txt` via `scripts/measure_video_perf.sh --check-baseline`, provisional until 07-15 transcribes the designated leg)
 - [x] **PERF-03**: The parser pass adds < 10% over plain PacketScan, and full timeline analysis adds < 15% (amended, 05-12-PLAN.md, 2026-09-17: Phase 4 measured 43-53% parser overhead against the <10% target, at an absolute cost near 1.5 ms — the ratio is high because the baseline PacketScan-alone pass is very cheap, not because the parser is slow. Phase 5's own measurement of the full timeline analyzer set found the identical shape: 33% overhead against the <15% target, at an absolute wall-clock cost of 32-50 ms on the 10-minute 1080p reference file — comfortably inside PERF-01's 3 s budget. Both absolute-percentage targets are superseded by D-13/D-14's ratchet: the gate is a regression check against a committed retired-instruction-count baseline (`tests/golden/PERF_BASELINE.txt`, `scripts/measure_timeline_perf.sh --check-baseline`), not the absolute ratio; the absolute ratios above are measured and printed on every run rather than asserted. Optimising either pass to meet its original absolute target is recorded here as deferred, unowned work, not a target that quietly disappeared.)
 - [x] **PERF-04**: An audio sweep of the 10-minute reference stereo AAC completes in < 4 s (amended, 06-12-PLAN.md, 2026-09-22; closed, 06-13-PLAN.md, 2026-09-22: Per D-13/D-14 (05-CONTEXT.md, applied unchanged), the enforced gate is a regression check against a committed retired-instruction-count baseline (`tests/golden/PERF_BASELINE.txt`'s `audio_plain_instructions`/`audio_full_instructions` lines, `scripts/measure_audio_perf.sh --check-baseline`), not the absolute wall-clock figure — matching PERF-01's/PERF-03's own already-established pattern. 06-13-PLAN.md Task 3 transcribed both baseline lines from the designated x64-linux CI leg's own real measurement (GitHub Actions run 35735099865, commit e5a16770c00343da91ad8e299773eac9774a1bd3: audio_plain_instructions=89344287, audio_full_instructions=47339403661, both within tolerance of 06-12's local-container-measured provisional seed), replacing that provisional seed exactly as 05-12-PLAN.md's own timeline baseline was transcribed. The ratchet now gates a real CI regression rather than self-consistency-checking against a workstation approximation, which is what this requirement's own gating mechanism requires to be considered closed. 06-12-PLAN.md's locally-measured full-leg wall clock (~3.14 s on a developer workstation, plain leg ~6 ms, comfortably inside the original <4s target) is informational context only — never gated, exactly as PERF-01's own budget is measured and printed rather than asserted — and was NOT re-measured on the designated leg this round (only the instruction-count ratchet, the actual gate, was); no designated-leg wall-clock figure is recorded here on that basis, to avoid presenting an unmeasured number as a real one. Unlike PERF-03, no optimisation work is deferred here — the measured absolute cost already sits well inside the original <4s target, it is simply no longer the mechanism that gates.)
 - [x] **PERF-05**: Performance targets are measured in CI on the reference file with regression tracking over time
@@ -327,9 +327,9 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | VIDEO-06 | Phase 4 | Complete |
 | VIDEO-07 | Phase 4 | Complete |
 | VIDEO-08 | Phase 4 | Complete |
-| VIDEO-09 | Phase 4 | Deferred |
+| VIDEO-09 | Phase 7 | Complete |
 | VIDEO-10 | Phase 4 | Complete |
-| VIDEO-11 | Phase 7 | Pending |
+| VIDEO-11 | Phase 7 | Complete |
 | VIDEO-12 | Phase 4 | Complete |
 | TIME-01 | Phase 5 | Complete |
 | TIME-02 | Phase 5 | Complete |
@@ -354,20 +354,20 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | AUDIO-10 | Phase 6 | Complete |
 | SIZE-01 | Phase 3 | Complete |
 | CONTENT-01 | Phase 7 | Pending |
-| CONTENT-02 | Phase 7 | Pending |
-| CONTENT-03 | Phase 7 | Pending |
-| CONTENT-04 | Phase 7 | Pending |
-| CONTENT-05 | Phase 7 | Pending |
-| CONTENT-06 | Phase 7 | Pending |
-| CONTENT-07 | Phase 7 | Pending |
-| CONTENT-08 | Phase 7 | Pending |
-| CONTENT-09 | Phase 7 | Pending |
-| CONTENT-10 | Phase 7 | Pending |
-| CONTENT-11 | Phase 7 | Pending |
+| CONTENT-02 | Phase 7 | Complete |
+| CONTENT-03 | Phase 7 | Complete |
+| CONTENT-04 | Phase 7 | Complete |
+| CONTENT-05 | Phase 7 | Complete |
+| CONTENT-06 | Phase 7 | Complete |
+| CONTENT-07 | Phase 7 | Complete |
+| CONTENT-08 | Phase 7 | Complete |
+| CONTENT-09 | Phase 7 | Complete |
+| CONTENT-10 | Phase 7 | Complete |
+| CONTENT-11 | Phase 7 | Complete |
 | TRUST-01 | Phase 6 | Complete |
 | TRUST-02 | Phase 6 | Complete |
 | TRUST-03 | Phase 2 | Complete |
-| TRUST-04 | Phase 7 | Pending |
+| TRUST-04 | Phase 7 | Complete |
 | TRUST-05 | Phase 2 | Complete |
 | TRUST-06 | Phase 3 | Complete |
 | TRUST-07 | Phase 7 | Pending |

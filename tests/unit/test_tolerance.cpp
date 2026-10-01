@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 
@@ -841,4 +842,76 @@ TEST_CASE("compare_tol ceiling escalation: the reverse transition (above -> unde
   CHECK(finding->status == Status::pass);
   CHECK(finding->message.find("asymmetric ceiling crossing") == std::string::npos);
   CHECK(finding->message.find("deadband") == std::string::npos);
+}
+
+// --- 07-08-PLAN.md (07-CHECK-ROSTER.md): the additive `score` unit -------------
+
+TEST_CASE("tolerance - score unit", "[tolerance]") {
+  // A score tolerance is written BARE: "0.015" is the exact rational 15/1000.
+  auto bare = parse_tolerance("0.015", Unit::score);
+  REQUIRE(bare.has_value());
+  CHECK(bare->unit == Unit::score);
+  CHECK(bare->num == 15);
+  CHECK(bare->den == 1000);
+  CHECK_FALSE(bare->is_relative);
+  CHECK_FALSE(bare->warn_num.has_value());
+
+  auto sign = parse_tolerance("+-0.005", Unit::score);
+  REQUIRE(sign.has_value());
+  CHECK(sign->num == 5);
+  CHECK(sign->den == 1000);
+
+  auto two = parse_tolerance("0.005,0.015", Unit::score);
+  REQUIRE(two.has_value());
+  CHECK(two->num == 15);
+  REQUIRE(two->warn_num.has_value());
+  CHECK(*two->warn_num == 5);
+
+  // Any suffix is a usage error that names the expected bare form.
+  for (const char* text : {"0.015dB", "0.015none", "0.015ms", "0.015%", "0.015score"}) {
+    INFO("text: " << text);
+    auto rejected = parse_tolerance(text, Unit::score);
+    REQUIRE_FALSE(rejected.has_value());
+    CHECK(rejected.error().kind == mediadiff::ErrorKind::usage);
+    CHECK(rejected.error().message.find("bare score tolerance") != std::string::npos);
+    CHECK(rejected.error().message.find("0.015") != std::string::npos);
+  }
+
+  // And a bare number is still refused for every other unit that has a suffix.
+  auto wrong_way = parse_tolerance("0.015", Unit::db);
+  REQUIRE_FALSE(wrong_way.has_value());
+
+  // The display label is "score" even though the suffix is empty.
+  CHECK(mediadiff::unit_suffix(Unit::score).empty());
+  CHECK(mediadiff::unit_label(Unit::score) == "score");
+  CHECK_FALSE(mediadiff::unit_is_time(Unit::score));
+}
+
+TEST_CASE("tolerance - content.video.perceptual is registered with the roster's attributes", "[tolerance]") {
+  const CheckRegistry& registry = builtin_registry();
+  const auto index = registry.find("content.video.perceptual");
+  REQUIRE(index.has_value());
+  const mediadiff::CheckDef& check = registry.at(*index);
+  CHECK(check.unit == Unit::score);
+  CHECK(check.semantic == mediadiff::Semantic::tol);
+  CHECK(check.value_kind == ValueKind::rational);
+  CHECK(check.default_severity == mediadiff::Severity::info);
+  CHECK(check.default_tolerance == "0.015");
+  auto parsed = parse_tolerance(check.default_tolerance, check.unit);
+  REQUIRE(parsed.has_value());
+  CHECK(parsed->num == 15);
+  CHECK(parsed->den == 1000);
+
+  // The roster's per-profile severities: hw_encoder and transform gate, the
+  // bit-exact and remux profiles ignore, sw_encoder inherits `info`.
+  std::map<ProfileId, Severity> overrides;
+  for (std::size_t i = 0; i < check.profile_severity_override_count; ++i) {
+    overrides[check.profile_severity_overrides[i].profile] = check.profile_severity_overrides[i].severity;
+  }
+  CHECK(overrides.size() == 4);
+  CHECK(overrides.at(ProfileId::hw_encoder) == Severity::fail);
+  CHECK(overrides.at(ProfileId::transform) == Severity::fail);
+  CHECK(overrides.at(ProfileId::strict_bitexact) == Severity::ignore);
+  CHECK(overrides.at(ProfileId::remux) == Severity::ignore);
+  CHECK(overrides.count(ProfileId::sw_encoder) == 0);
 }

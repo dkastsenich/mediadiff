@@ -181,6 +181,106 @@ add_executable(mediadiff_integration_tests
   # equality, D-03's divergence-locator report (media and snapshot baselines
   # alike), D-04's snapshot round trip, and --no-content's requires_decode skip.
   test_audio_sample_hash.cpp
+  # CONTENT-01 (07-01-PLAN.md Task 2): content.video.frame_hash end to end --
+  # D-05's MP4/MKV/TS remux equality, the quantizer trigger pair, class-2
+  # evidence, the per-frame arrays and their snapshot contract, --no-content's
+  # requires_decode skip, the single-sweep proof and TRUST-05 determinism.
+  test_video_hash.cpp
+  # CONTENT-01 (07-02-PLAN.md): the video decode path's edge cases, one
+  # fixture each -- D-06's edit-list frames, the EOF drain, cover art, a
+  # mid-stream resolution change, decode errors forcing class 2 and reaching
+  # meta.decode_errors, the declared-dimension bound and the per-frame record
+  # budget. Every frame count is a literal measured with the pinned ffmpeg.
+  test_video_decode_edges.cpp
+  # CONTENT-06 (07-05-PLAN.md): content.video.frozen_runs / black_runs on real
+  # fixtures -- the frozen span stable across MPEG-4 with and without
+  # B-frames, MJPEG, MPEG-TS and a raw elementary stream, black stable across a
+  # colour-range flip, dark grey not black, --sample independence, the
+  # truncated and --no-content skips and introduced/removed gating.
+  test_video_detectors.cpp
+  # TRUST-07 (07-12-PLAN.md): the video hash chains are identical at 1, 4 and
+  # 16 decoder threads on every clean corpus codec, the flags string records
+  # the real count, a thread count above the frame count changes nothing, and
+  # the production single-thread pin makes a corrupt stream decode to one chain
+  # over ten runs (D-11).
+  test_video_thread_invariance.cpp
+  # D-12 / D-13 / CLI-07 (07-13-PLAN.md): the decode stall watchdog proven by
+  # simulated stalls -- compare, snapshot, inspect and dir trip paths, the
+  # inert hooks, malformed hooks as usage errors, and byte-identical output
+  # when the armed watchdog never trips.
+  test_watchdog.cpp
+  # VIDEO-11 (07-06-PLAN.md): video.closed_captions on the two no-GPL routes --
+  # an MPEG-2 GA94 insert (every frame captioned, identical pixels to the
+  # uncaptioned stream) and a hand-written H.264 I_PCM stream whose caption SEI
+  # starts at the fourth frame; a real Absent, --no-content, --sample
+  # independence, a truncated decode and the snapshot round trip.
+  test_closed_captions.cpp
+  # VIDEO-09 (07-07-PLAN.md): the first-frame arm of video.hdr.mdcv/cll on
+  # 07-06's hand-written H.264 stream (SEI 137 + 144 in the first access unit
+  # only, no stream-level entry): exact values and `source: "frame"`, a snapshot
+  # round trip, a real absence once decode exists, --no-content's skip, stream
+  # precedence over every existing HDR fixture, and the partial_scan /
+  # insufficient_data branches over a hand-built decode result.
+  test_hdr_first_frame.cpp
+  # CONTENT-02 (07-03-PLAN.md): the time-aligned frame locator on real
+  # one-frame corruptions -- first divergent frame (index, PTS), ranges merged
+  # at one-frame gaps, exact totals, a dropped frame reading "missing", snapshot
+  # equivalence, the index fallback, the T-07-11 caps and the untouched audio
+  # locator. Every expected frame index is a literal checked with framemd5.
+  test_video_locator.cpp
+  # CONTENT-03 (07-04-PLAN.md, D-08): `--sample N` end to end -- a stride that
+  # stores every Nth frame, `sampled:N` in the measurement and the envelope, the
+  # skipped:sampling_mismatch contract over real snapshots, stride 1 byte-
+  # identical to full, every value the stride does not own unchanged, the
+  # locator under a stride, and the usage errors.
+  test_video_sampling.cpp
+  # CONTENT-11 (07-08-PLAN.md): the lockstep rendezvous and fingerprint_pair --
+  # one frame in flight per side against the slot's own occupancy counter,
+  # twenty byte-identical compare runs, an early end of either side drained and
+  # counted, a stopping consumer releasing both producers, a side with no video,
+  # the snapshot side keeping the sequential path, error order, a truncated
+  # decode never scored, and the rendezvous primitives themselves.
+  test_lockstep.cpp
+  # CONTENT-07 (07-08-PLAN.md): one sweep per side with every sink and the tap
+  # on -- the read count equals a packet-scan-only run, every one-sided
+  # measurement is identical with and without the tap (also with a stalling and
+  # a closing tap), and the tap fires after the thumbnail of the same frame.
+  test_video_single_sweep.cpp
+  # CONTENT-04 (07-08-PLAN.md; D-01, D-02, D-03): content.video.perceptual end to
+  # end -- identical pictures score exactly 1, a degraded encode's minimum, mean,
+  # first-below and worst-10 against an independent oracle, the one-sided
+  # requires_media/requires_decode skips (snapshot either way, a legacy snapshot
+  # with no entry), cross-resolution and geometry mismatch, --sample N, profile
+  # severities and the bare score tolerance.
+  test_perceptual.cpp
+  # CONTENT-08 (07-10-PLAN.md; D-01, D-03, D-08, TRUST-04): quality.psnr and
+  # quality.ssim end to end against an independent floating-point oracle -- the
+  # capped identical case, a degraded encode's mean / minimum / per-plane values,
+  # opt-in (not_requested), native geometry mismatch, 8- vs 10-bit promotion, a
+  # hand-computed SSE, the scorer's own latches, --sample N, byte-identical
+  # runs, and the path preconditions that make a differing decode path
+  # skipped:path_incomparable for both checks.
+  test_quality.cpp
+  # CONTENT-10 (07-10-PLAN.md; D-01 amendment, T-07-33): against a snapshot on
+  # either side both quality checks are skipped:requires_media, snapshots store
+  # no score, an unchanged snapshot compare stays clean, and the flags exist only
+  # on compare and dir.
+  test_quality_snapshot.cpp
+  # CONTENT-09 (07-11-PLAN.md; D-01, D-03, TRUST-04): quality.vmaf. Every build
+  # proves the id is registered and documented, a live compare without --vmaf
+  # reports skipped:not_requested, a snapshot holds it only as requires_media,
+  # and a build without libvmaf refuses --vmaf with a usage error naming
+  # MEDIADIFF_WITH_VMAF. A build configured with it proves the score: the pinned
+  # model and computed self-score, the harmonic mean against an independent
+  # libvmaf oracle, --sample N refused, geometry, determinism and TRUST-04.
+  test_vmaf.cpp
+  # CONTENT-05 (07-09-PLAN.md; D-02): the lockstep's pairing on real fixtures --
+  # a dropped frame leaves exactly one baseline frame unpaired, a 60 fps
+  # baseline against its 30 fps decimation scores only the coinciding frames, an
+  # MP4 against its Matroska and MPEG-TS remuxes pairs every frame despite the
+  # rounding and the start offset, and a raw MPEG-2 elementary stream falls back
+  # to index pairing with the reason recorded.
+  test_lockstep_pairing.cpp
   # AUDIO-01/AUDIO-02 (06-03-PLAN.md Task 2): audio.codec/sample_rate/
   # sample_fmt/bit_depth/channels/layout proven through the real CLI --
   # 5.1 vs 5.1(side) on an equal channel count, unspecified-layout-as-a-
@@ -218,6 +318,13 @@ add_executable(mediadiff_integration_tests
   # identity guard, class-2 across differing paths always skips even on
   # equal digests, class-3 never compares a digest at all).
   test_audio_hash_decoder.cpp
+  # CONTENT-01 (07-14-PLAN.md, D-09/D-10): the cross-architecture video-decoder
+  # proof -- identity first against the committed ledger, one pasteable row per
+  # proof stream, report-only until 07-15 flips the ledger to gate mode, the
+  # table-driven "a class-1 decoder needs a ledger row" gate, and the
+  # required-but-missing failure that stops the proof silently not running.
+  # Prefix `video_hash_decoder - `.
+  test_video_hash_decoder.cpp
   # AUDIO-08/AUDIO-10 (06-10-PLAN.md, D-09): meta.decode_errors through the
   # real CLI -- the recoverable-error/undecodable fixture triple, the
   # narrowed exit-code contract (exit 1 vs exit 66), the
@@ -242,6 +349,11 @@ add_executable(mediadiff_integration_tests
   # with tests/unit/test_gen_he_aac.cpp, called by this target's own
   # test_audio_hash_decoder.cpp two-build proof.
   "${CMAKE_SOURCE_DIR}/tests/support/aac_handwritten_identity.cpp"
+  # 07-06-PLAN.md (VIDEO-11, D-05): the I_PCM fixtures' recorded identities and
+  # known-sample oracle -- shared with tests/unit/test_gen_video_fixtures.cpp.
+  "${CMAKE_SOURCE_DIR}/tests/support/video_handwritten_identity.cpp"
+  # 07-14-PLAN.md (CONTENT-01): the proof ledger's strict parser and formatter.
+  "${CMAKE_SOURCE_DIR}/tests/support/video_proof_golden.cpp"
   # Generated by tools/gen_registry.py --symbol-prefix test_ from
   # tests/support/test_checks.def (generate_test_registry target, root
   # CMakeLists.txt) -- test_determinism.cpp calls compare_fingerprints()/
@@ -289,6 +401,14 @@ target_compile_definitions(mediadiff_integration_tests PRIVATE
 # Explicit dependency so the integration target is never built (or run)
 # before the executable it spawns exists.
 add_dependencies(mediadiff_integration_tests mediadiff)
+# 07-11-PLAN.md (CONTENT-09): test_vmaf.cpp's independent oracle drives libvmaf
+# directly, so it needs the header only in a build that has the library. The
+# library arrives transitively (libmediadiff links PkgConfig::LIBVMAF PUBLICly);
+# the tests ask vmaf_built_in() at run time, this definition only decides whether
+# the oracle's code is compiled.
+if(MEDIADIFF_WITH_VMAF)
+  target_compile_definitions(mediadiff_integration_tests PRIVATE MEDIADIFF_TEST_WITH_VMAF)
+endif()
 mediadiff_apply_warnings(mediadiff_integration_tests)
 mediadiff_apply_platform_definitions(mediadiff_integration_tests)
 

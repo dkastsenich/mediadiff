@@ -21,6 +21,7 @@
 #include "probe/packet_scan.h"
 #include "probe/parser_scan.h"
 #include "probe/ts_scan.h"
+#include "probe/video_decode.h"
 
 namespace mediadiff {
 
@@ -49,6 +50,15 @@ enum class Pass : std::uint8_t {
   // union alongside Pass::packet_scan by src/probe/orchestrator.cpp
   // exactly as Pass::parser_scan already is.
   audio_decode,
+  // 07-01-PLAN.md (CONTENT-01, PROBE-08): the video decode sweep -- fused
+  // INSIDE run_packet_scan's own av_read_frame loop (probe/packet_scan.cpp),
+  // directly after the audio block, never a second sweep (a stream's packet
+  // bytes are not retained after PacketScan's own append loop). Populates
+  // ProbeResults::video_decode below. Implied into the union alongside
+  // Pass::packet_scan by src/probe/orchestrator.cpp exactly as
+  // Pass::audio_decode is, and removed from it by ProbeOptions::
+  // content_enabled == false (Phase 6 D-12: never a fabricated value).
+  video_decode,
   kCount,
 };
 
@@ -174,6 +184,16 @@ struct ProbeResults {
   // read the SAME slot, never their own decode. No analyzer may take a
   // non-const reference or copy this member (PROBE-10).
   std::optional<AudioDecodeResult> audio_decode;
+  // 07-01-PLAN.md (CONTENT-01, PROBE-08): the video decode sweep's own SINK
+  // OUTPUTS only (decoder identity/class, one digest and one tick per decoded
+  // frame, error counts) -- never retained pixels. Populated ONLY when
+  // `Pass::video_decode` was requested (which the orchestrator always implies
+  // alongside `Pass::packet_scan`, mirroring `audio_decode`'s own
+  // implication), `std::nullopt` otherwise. `content.video.frame_hash`
+  // (07-01) is this slot's first consumer; later Phase-7 sinks (frozen/black
+  // runs, captions, perceptual) read the SAME slot, never their own decode.
+  // No analyzer may take a non-const reference or copy this member (PROBE-10).
+  std::optional<VideoDecodeResult> video_decode;
 };
 
 // One analyzer family's registration (PROBE-08): the passes it needs, the
