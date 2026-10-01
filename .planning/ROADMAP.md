@@ -561,7 +561,7 @@ Plans:
   4. `quality.psnr` and `quality.ssim` report min and mean in-tree at native resolution, `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint and refuses `--sample` as `skipped:sampling_conflict`, and against a snapshot all three report `skipped:requires_media` while still showing stored scores for trend context. **Amended 2026-09-30 (07-10, D-01):** two-file scores exist only in a live media-vs-media compare, where the baseline records its self-score and the candidate its score against the baseline; against a snapshot on either side every `quality.*` check (and `content.video.perceptual`) reports `skipped:requires_media`, and snapshots store no scores in v1, so there is no stored trend score to show. `quality.psnr` and `quality.ssim` gate on the mean (D-03) with the minimum in evidence, and are opt-in (`--psnr`, `--ssim`; `skipped:not_requested` without the flag).
   5. One decode sweep per side feeds hashing, perceptual scoring, frozen/black detection and A53/CEA-708 closed-caption presence, with `compare` running baseline and candidate in lockstep at one frame in flight per side; the full content pass runs at ≥ 4× realtime on software decode and produces identical hash chains at 1, 4 and 16 threads.
 
-**Plans**: 13/15 plans executed in 15 waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/packet_scan.cpp`, `src/probe/video_decode.*`, `CMakeLists.txt`, `tests/integration/test_doc03_coverage.cpp` and the corpus digest, so no two plans share a wave.
+**Plans**: 14/15 plans executed in 15 waves. All waves are sequential: nearly every plan touches `src/core/checks.def`, `src/probe/packet_scan.cpp`, `src/probe/video_decode.*`, `CMakeLists.txt`, `tests/integration/test_doc03_coverage.cpp` and the corpus digest, so no two plans share a wave.
 
 Plans:
 **Wave 1**
@@ -618,7 +618,7 @@ Plans:
 
 **Wave 14** *(blocked on Wave 13)*
 
-- [ ] 07-14-PLAN.md — The D-09/D-10 cross-architecture video proof: a single CI producer, identity-first decoding on every leg, and a report-only ledger (CONTENT-01)
+- [x] 07-14-PLAN.md — The D-09/D-10 cross-architecture video proof: a single CI producer, identity-first decoding on every leg, and a report-only ledger (CONTENT-01)
 
 **Wave 15** *(blocked on Wave 14)*
 
@@ -640,7 +640,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7. Phases 5
 | 4. Video Analysis | 21/21 | Complete    | 2026-09-14 |
 | 5. Timeline Analysis | 25/25 | Complete    | 2026-09-19 |
 | 6. Audio Analysis | 20/20 | Complete    | 2026-09-28 |
-| 7. Content & Quality | 13/15 | In Progress|  |
+| 7. Content & Quality | 14/15 | In Progress|  |
 
 ## Coverage
 

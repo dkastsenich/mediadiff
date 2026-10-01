@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 25
+open_count: 26
 waived_count: 2
 fixed_count: 23
-total_count: 50
-last_updated: 2026-10-01T20:26:07.223Z
+total_count: 51
+last_updated: 2026-10-01T20:49:40.443Z
 ---
 
 # Broken Windows Ledger
@@ -65,6 +65,7 @@ last_updated: 2026-10-01T20:26:07.223Z
 | 48 | 7 | unrun-verify | .github/workflows/ci.yml |  | 07-11: the designated-leg 'VMAF build and tests (CONTENT-09)' CI step has never run on a GitHub runner; its steps and its did-the-VMAF-tests-pass guard were exercised locally against the x64-linux-vmaf build only. macOS libvmaf build is supported by the vcpkg port but not exercised in CI (A22). | open |  | 2026-10-01T19:34:51.001Z |  |
 | 49 | 07 | unrun-verify |  |  | 07-12: the ci.yml steps 'Build the video sweep benchmark target (designated leg only)' and 'Video instruction-count ratchet (PERF-02, designated leg only)' have never run on a GitHub runner (YAML validated; the script was exercised end to end in an ubuntu:24.04 container). The two video ratchet baselines are provisional until 07-15 transcribes the designated leg. | open |  | 2026-10-01T19:56:10.468Z |  |
 | 50 | 07 | unrun-verify | src/cli/watchdog.cpp |  | 07-13 (A27): the stall watchdog's trip path ends the process with std::_Exit, and the heartbeat, abandonable pool and watchdog are threaded cross-platform code compiled and run only on this Linux workstation. std::_Exit in MSVC v143's UCRT, the MSVC /W4 /WX and AppleClang -Werror builds, and the integration trip tests (a child process ending in _Exit with its report flushed) have not run on the Windows and macOS legs; if std::_Exit is missing on MSVC the plan's fallback is std::quick_exit with no registered handlers. | open |  | 2026-10-01T20:26:07.223Z |  |
+| 51 | 07 | unrun-verify |  |  | 07-14: the video-proof-streams producer job, the upload/download-artifact handoff (flagged assumption A29), the per-leg manifest check (incl. Git Bash on Windows and the shasum fallback on macOS), the MEDIADIFF_REQUIRE_VIDEO_PROOF ran-guard on both Test-step branches and the proof-row print step cannot run locally; validated as YAML plus the guard function exercised against real passing/skipped ctest logs. 07-15's first real CI run is the proof. | open |  | 2026-10-01T20:49:40.443Z |  |
 
 ````json
 [
@@ -666,6 +667,18 @@ last_updated: 2026-10-01T20:26:07.223Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-01T20:26:07.223Z",
+    "resolved_at": null
+  },
+  {
+    "id": 51,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "",
+    "line": null,
+    "description": "07-14: the video-proof-streams producer job, the upload/download-artifact handoff (flagged assumption A29), the per-leg manifest check (incl. Git Bash on Windows and the shasum fallback on macOS), the MEDIADIFF_REQUIRE_VIDEO_PROOF ran-guard on both Test-step branches and the proof-row print step cannot run locally; validated as YAML plus the guard function exercised against real passing/skipped ctest logs. 07-15's first real CI run is the proof.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T20:49:40.443Z",
     "resolved_at": null
   }
 ]
