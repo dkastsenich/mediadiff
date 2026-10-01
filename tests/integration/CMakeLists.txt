@@ -223,6 +223,25 @@ add_executable(mediadiff_integration_tests
   # identical to full, every value the stride does not own unchanged, the
   # locator under a stride, and the usage errors.
   test_video_sampling.cpp
+  # CONTENT-11 (07-08-PLAN.md): the lockstep rendezvous and fingerprint_pair --
+  # one frame in flight per side against the slot's own occupancy counter,
+  # twenty byte-identical compare runs, an early end of either side drained and
+  # counted, a stopping consumer releasing both producers, a side with no video,
+  # the snapshot side keeping the sequential path, error order, a truncated
+  # decode never scored, and the rendezvous primitives themselves.
+  test_lockstep.cpp
+  # CONTENT-07 (07-08-PLAN.md): one sweep per side with every sink and the tap
+  # on -- the read count equals a packet-scan-only run, every one-sided
+  # measurement is identical with and without the tap (also with a stalling and
+  # a closing tap), and the tap fires after the thumbnail of the same frame.
+  test_video_single_sweep.cpp
+  # CONTENT-04 (07-08-PLAN.md; D-01, D-02, D-03): content.video.perceptual end to
+  # end -- identical pictures score exactly 1, a degraded encode's minimum, mean,
+  # first-below and worst-10 against an independent oracle, the one-sided
+  # requires_media/requires_decode skips (snapshot either way, a legacy snapshot
+  # with no entry), cross-resolution and geometry mismatch, --sample N, profile
+  # severities and the bare score tolerance.
+  test_perceptual.cpp
   # AUDIO-01/AUDIO-02 (06-03-PLAN.md Task 2): audio.codec/sample_rate/
   # sample_fmt/bit_depth/channels/layout proven through the real CLI --
   # 5.1 vs 5.1(side) on an equal channel count, unspecified-layout-as-a-

@@ -377,6 +377,12 @@ add_executable(mediadiff_unit_tests
   # range- and depth-normalized black rule, run ordering and the geometry
   # handling of both detectors, on synthetic thumbnails.
   test_video_detectors.cpp
+  # 07-08-PLAN.md (CONTENT-04; D-02, D-03): the perceptual accumulator (the
+  # 985000 boundary, the worst-10 order, the floor mean, the empty case) and the
+  # online pair scorer -- time pairing with a drop, each side's own first frame,
+  # the named index fallbacks, the no-timestamp frame, `--sample N`, geometry
+  # mismatch and the unscorable-thumbnail stops -- on synthetic thumbnails.
+  test_pair_scorer.cpp
   # 07-03-PLAN.md (CONTENT-02, D-02/D-07): the one exact frame-pairing rule --
   # the strict half-interval boundary, timebase rounding, 60 vs 30, a drop, a
   # duplicate, negative first PTS, the index fallbacks and online == batch.

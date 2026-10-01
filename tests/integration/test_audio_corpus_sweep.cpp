@@ -265,10 +265,13 @@ const std::map<std::pair<std::string, std::string>, std::vector<std::string>>& k
       // own declared difference, content.video.frame_hash differs because a
       // range conversion changes every decoded luma value, and the four size.*
       // findings are the two encodes' different byte counts. Verified against
-      // the real binary.
+      // the real binary. content.video.perceptual (07-08) is declared for the
+      // same reason as frame_hash: the range flip changes every luma sample and
+      // the score deliberately does not normalize colour range, so the worst
+      // frame scores far below the tolerance (read off the real binary).
       {{mediadiff::test::fixture("video_black_tv.mkv"), mediadiff::test::fixture("video_black_pc.mkv")},
-       {"video.color.range", "content.video.frame_hash", "size.file", "size.stream_bitrate", "size.peak_bitrate",
-        "size.overhead"}},
+       {"video.color.range", "content.video.frame_hash", "content.video.perceptual", "size.file",
+        "size.stream_bitrate", "size.peak_bitrate", "size.overhead"}},
   };
   return exceptions;
 }

@@ -590,6 +590,19 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
        {fixture("video_cc_base.m2v"), fixture("video_cc_a53.m2v"), fixture("video_cc_a53.m2v"),
         fixture("video_cc_a53_copy.m2v")}},
 
+      // 07-08-PLAN.md (CONTENT-04): content.video.perceptual's trigger is
+      // video_hash_base.mp4 vs video_perc_degraded.mp4 -- the same picture
+      // scaled down to 88x72, back up to 352x288 and encoded at -q:v 31, so the
+      // detail is really gone: the worst-pair SSIM on the 128-wide thumbnail is
+      // 0.926, well past the 0.015 tolerance (status `info` under the
+      // sw-encoder profile this gate runs, `fail` under hw-encoder). Its clean
+      // pair is video_hash_base.mp4 vs video_hash_base.ts, a stream copy into
+      // MPEG-TS: every decoded pixel is identical, so the score is exactly 1 on
+      // both sides (index pairing -- MPEG-TS declares no frame rate at open).
+      {"content.video.perceptual",
+       {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts")}},
+
       // --- 06-03-PLAN.md (AUDIO-01, AUDIO-02): the six per-audio-stream
       // header-pass identity checks -- codec/sample_rate/sample_fmt/
       // bit_depth/channels/layout. Every pair below was run through the
