@@ -1658,6 +1658,44 @@ transform = "fail"
 strict_bitexact = "ignore"
 remux = "ignore"
 
+# 07-10-PLAN.md (CONTENT-08; 07-CHECK-ROSTER.md, approve-as-proposed 2026-09-30;
+# D-01, D-03), src/analyzers/content/quality.cpp and src/probe/{lockstep,
+# pair_scorer}.cpp: quality.psnr -- the candidate's peak signal-to-noise ratio
+# against the baseline's primary video stream at NATIVE resolution, opt-in with
+# `--psnr`. `tol` semantic, `db` unit, `rational` value (num/den in milli-dB: 55
+# dB is 55000/1000). Per frame the sample-count-weighted luma plus chroma MSE,
+# capped at (6 * bpc) + 12 dB so identical frames score the cap and the baseline
+# self-score IS the cap (delta of identical media exactly 0, no infinity in the
+# JSON). D-01: a live media-vs-media compare only; one-sided probes and every
+# snapshot compare report `skipped:requires_media`, and a live compare without
+# the flag reports `skipped:not_requested`. D-03: the MEAN over the scored pairs
+# gates; the minimum (with its frame indices and PTS) and per-plane means ride
+# in evidence. Both sides carry `scaler_path` and `decode_path_signature`, so
+# 07-09's tol precondition table (TRUST-04, D-04) guards it.
+[[check]]
+id = "quality.psnr"
+group = "quality"
+semantic = "tol"
+unit = "db"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.5dB"
+
+# 07-10-PLAN.md (CONTENT-08), same files: quality.ssim -- luma single-scale SSIM
+# at NATIVE resolution through the integer 8x8 window of src/util/ssim_int.h
+# (extended to bit depths above 8), in millionths: 0.987654 is 987654/1000000.
+# Opt-in with `--ssim`; same D-01 (live compare only), D-03 (the mean gates, the
+# minimum rides in evidence) and TRUST-04 (path keys on both sides) contract as
+# quality.psnr directly above. Identical native frames score exactly 1000000.
+[[check]]
+id = "quality.ssim"
+group = "quality"
+semantic = "tol"
+unit = "score"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.005"
+
 # 06-03-PLAN.md (AUDIO-01, AUDIO-02), src/analyzers/audio/stream_params.cpp
 # -- the six per-audio-stream identity checks: codec, sample rate, sample
 # format, bit depth, channel count and canonical layout. Approved at

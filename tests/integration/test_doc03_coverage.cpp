@@ -109,13 +109,16 @@ std::string fixture(const std::string& name) { return mediadiff::test::fixture_d
 // and returns the status string of every finding whose id == check_id
 // (more than one when the check is scoped per-track/per-program).
 std::vector<std::string> statuses_for(const std::string& baseline, const std::string& candidate,
-                                       const std::string& check_id) {
+                                       const std::string& check_id, const std::vector<std::string>& extra_args) {
   INFO("baseline: " << baseline);
   INFO("candidate: " << candidate);
   REQUIRE(fs::exists(baseline));
   REQUIRE(fs::exists(candidate));
 
-  const CliResult result = run_cli({"compare", baseline, candidate, "--profile", "sw-encoder", "--json"});
+  // 07-10-PLAN.md: an opt-in check's flag (CoveragePair::extra_args) rides along.
+  std::vector<std::string> args = {"compare", baseline, candidate, "--profile", "sw-encoder", "--json"};
+  args.insert(args.end(), extra_args.begin(), extra_args.end());
+  const CliResult result = run_cli(args);
   const nlohmann::ordered_json report = nlohmann::ordered_json::parse(result.out, nullptr, false);
   INFO("compare stdout: " << result.out << "\ncompare stderr: " << result.err);
   REQUIRE_FALSE(report.is_discarded());
@@ -186,8 +189,10 @@ TEST_CASE("doc03_coverage - every registered check has a declared triggering fix
     }
 
     const CoveragePair& pair = found->second;
-    const std::vector<std::string> trigger_statuses = statuses_for(pair.trigger_baseline, pair.trigger_candidate, id);
-    const std::vector<std::string> clean_statuses = statuses_for(pair.clean_baseline, pair.clean_candidate, id);
+    const std::vector<std::string> trigger_statuses =
+        statuses_for(pair.trigger_baseline, pair.trigger_candidate, id, pair.extra_args);
+    const std::vector<std::string> clean_statuses =
+        statuses_for(pair.clean_baseline, pair.clean_candidate, id, pair.extra_args);
 
     bool ok = true;
     if (!any_non_clean(trigger_statuses)) {

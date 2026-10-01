@@ -44,6 +44,7 @@
 #include "core/registry.h"
 #include "probe/orchestrator.h"
 #include "probe/pass.h"
+#include "probe/quality_request.h"
 #include "probe/video_thumbnail.h"
 #include "util/expected.h"
 
@@ -184,11 +185,15 @@ struct PairResult {
 // snapshot on either side, or `--no-content` -- takes the sequential path
 // exactly as two fingerprint_input calls would, so a snapshot side keeps its
 // read_snapshot short-circuit and every JSON-shaped rejection unchanged. The
-// first error is reported in baseline-then-candidate order.
+// first error is reported in baseline-then-candidate order. `quality` (07-10) is
+// the opt-in native-resolution scorers: only a live media-vs-media compare
+// computes them; every other route leaves quality.psnr / quality.ssim as the
+// one-sided skipped:requires_media (or requires_decode) placeholder.
 mediadiff::expected<PairResult, Error> fingerprint_pair(const std::string& baseline_path,
                                                           const std::string& candidate_path,
                                                           const CheckRegistry& registry,
-                                                          const ProbeOptions& options);
+                                                          const ProbeOptions& options,
+                                                          const QualityRequest& quality = {});
 
 namespace detail {
 
@@ -228,7 +233,8 @@ struct PairProbeLog {
 mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baseline_path,
                                                         const std::string& candidate_path,
                                                         const std::vector<AnalyzerSpec>& analyzers,
-                                                        const ProbeOptions& options, PairProbeLog* log);
+                                                        const ProbeOptions& options, PairProbeLog* log,
+                                                        const QualityRequest& quality = {});
 
 }  // namespace detail
 

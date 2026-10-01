@@ -22,6 +22,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "support/fixture_paths.h"
 
@@ -34,11 +35,20 @@ inline std::string snapshot(const std::string& name) { return snapshot_dir() + "
 // check report a real, observable non-clean result; `clean_*` must make
 // it report `pass` (every scope, when the check is scoped more than
 // once -- e.g. per-track/per-program checks).
+//
+// 07-10-PLAN.md (CONTENT-08): `extra_args` are CLI arguments appended to the
+// gate's compare invocation for BOTH of this check's pairs, so an OPT-IN check
+// (quality.psnr's `--psnr`, quality.ssim's `--ssim`) is exercised with its flag
+// on. Empty by default, so every existing row is unchanged. Consumers that sweep
+// the clean pairs without the check's flag (test_audio_corpus_sweep.cpp) see the
+// opt-in checks as `skipped:not_requested`, which no clean-sweep counter treats
+// as a finding.
 struct CoveragePair {
   std::string trigger_baseline;
   std::string trigger_candidate;
   std::string clean_baseline;
   std::string clean_candidate;
+  std::vector<std::string> extra_args{};
 };
 
 // meta.missing_candidate/meta.extra_candidate are dir-mode-only synthetic
@@ -602,6 +612,21 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
       {"content.video.perceptual",
        {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
         fixture("video_hash_base.ts")}},
+
+      // 07-10-PLAN.md (CONTENT-08): quality.psnr and quality.ssim are OPT-IN, so
+      // each row carries its flag in `extra_args` (appended to the gate's compare
+      // arguments for both pairs). The trigger is the same degraded encode
+      // content.video.perceptual uses: native-resolution PSNR falls well below
+      // the 0.5 dB tolerance and the mean SSIM below the 0.005 one (both `fail`).
+      // The clean pair is the same stream-copy remux, whose decoded pixels are
+      // identical, so each score is exactly the baseline's self-score (60 dB cap,
+      // 1.0) and the delta is exactly 0.
+      {"quality.psnr",
+       {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts"), {"--psnr"}}},
+      {"quality.ssim",
+       {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts"), {"--ssim"}}},
 
       // --- 06-03-PLAN.md (AUDIO-01, AUDIO-02): the six per-audio-stream
       // header-pass identity checks -- codec/sample_rate/sample_fmt/

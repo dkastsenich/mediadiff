@@ -260,6 +260,10 @@ add_library(libmediadiff STATIC
   # requires_media emission (the live two-file score is written by
   # probe/lockstep.cpp).
   src/analyzers/content/video_perceptual.cpp
+  # 07-10-PLAN.md (CONTENT-08, CONTENT-10; D-01): quality.psnr/quality.ssim's
+  # one-sided requires_media emission (the live scores are written by
+  # probe/lockstep.cpp).
+  src/analyzers/content/quality.cpp
   # 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/sample_fmt/
   # bit_depth/channels/layout -- the six per-audio-stream identity checks,
   # codecpar-only extraction mirroring video/stream_params.cpp's own shape.
@@ -339,6 +343,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/video_detectors.h
   src/probe/lockstep.h
   src/probe/pair_scorer.h
+  src/probe/quality_request.h
   src/util/ssim_int.h
   src/util/quality_math.h
   src/probe/cadence.h

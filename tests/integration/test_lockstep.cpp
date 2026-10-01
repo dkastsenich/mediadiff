@@ -10,6 +10,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -56,15 +58,19 @@ std::string scratch(const std::string& name) {
   return (dir / name).string();
 }
 
-// The canonical snapshot bytes of `fp`, with content.video.perceptual removed
-// (the one id a pair probe adds): the byte-identity yardstick for "every other
-// measurement is what a one-sided probe gives".
+// The canonical snapshot bytes of `fp`, with the ids a pair probe REPLACES
+// removed -- content.video.perceptual and, from 07-10, quality.psnr and
+// quality.ssim (each a one-sided placeholder in a one-sided probe and a live or
+// not_requested two-file measurement in a pair probe): the byte-identity
+// yardstick for "every other measurement is what a one-sided probe gives".
 std::string bytes_without_perceptual(const mediadiff::Fingerprint& fp, const std::string& name) {
   mediadiff::Fingerprint copy = fp;
-  const std::uint32_t perceptual = *mediadiff::builtin_registry().find(kPerceptual);
+  const mediadiff::CheckRegistry& registry = mediadiff::builtin_registry();
+  const std::array<std::uint32_t, 3> pair_ids = {*registry.find(kPerceptual), *registry.find("quality.psnr"),
+                                                 *registry.find("quality.ssim")};
   std::vector<mediadiff::Measurement> kept;
   for (mediadiff::Measurement& m : copy.measurements) {
-    if (m.check_index != perceptual) {
+    if (std::find(pair_ids.begin(), pair_ids.end(), m.check_index) == pair_ids.end()) {
       kept.push_back(std::move(m));
     }
   }
@@ -219,6 +225,14 @@ TEST_CASE("lockstep - one side without video", "[integration]") {
   const mediadiff::PairResult result = run_pair("video_hash_base.mp4", "audio_hash_base.mp4", &log);
   CHECK(find_perceptual(result.baseline) == nullptr);
   CHECK(find_perceptual(result.candidate) == nullptr);
+  // 07-10: the quality placeholders are erased the same way (Pitfall 10).
+  for (const char* id : {"quality.psnr", "quality.ssim"}) {
+    const std::uint32_t index = *mediadiff::builtin_registry().find(id);
+    for (const mediadiff::Fingerprint* fp : {&result.baseline, &result.candidate}) {
+      CHECK(std::none_of(fp->measurements.begin(), fp->measurements.end(),
+                         [index](const mediadiff::Measurement& m) { return m.check_index == index; }));
+    }
+  }
   CHECK(log.stopped_early);
   CHECK(log.stop_reason == "no_partner");
 

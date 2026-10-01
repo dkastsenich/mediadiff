@@ -10,7 +10,18 @@
 // What is reported (D-03): the MINIMUM pair score gates; the floor mean, the
 // first pair strictly below kPerceptualThresholdMicro and the ten worst pairs
 // ride in evidence. A pair scoring exactly the threshold is NOT below it.
+//
+// 07-10-PLAN.md (CONTENT-08; D-01, D-03): the same paired frames also feed the
+// opt-in NATIVE-resolution scorers, quality.psnr and quality.ssim, when the
+// caller's QualityRequest asks for them. Those read the borrowed AVFrames'
+// planes (the pair's only libav contact, kept inside pair_scorer.cpp), at the
+// pair's own stride and pairing, and gate on the floor MEAN of the per-frame
+// scores (D-03); the minimum (with its frame indices and PTS) rides in
+// evidence. Their latched failures (a geometry the two sides cannot pair, a
+// format that cannot be read) stop the QUALITY checks only -- perceptual keeps
+// running.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -76,6 +87,79 @@ class PerceptualAccumulator {
   std::vector<PairScore> worst_;
 };
 
+// One scored pair of a native-resolution quality check: where it was (the same
+// indices and baseline PTS PairScore carries) and its value in the check's own
+// integer unit (milli-dB for PSNR, millionths for SSIM).
+struct QualityPoint {
+  std::int64_t baseline_index = 0;
+  std::int64_t candidate_index = 0;
+  bool has_pts = false;
+  std::int64_t pts = 0;
+  std::int64_t tb_num = 0;
+  std::int64_t tb_den = 1;
+  std::int64_t value = 0;
+};
+
+// One frame pair's PSNR: the combined (sample-count-weighted luma plus chroma)
+// value rides in `point.value`; `plane` holds the per-plane values (Y, U, V --
+// only the first `plane_count` are meaningful; a gray frame has one).
+struct PsnrFrame {
+  QualityPoint point;
+  int plane_count = 0;
+  std::array<std::int64_t, 3> plane{};
+  // Every plane's SSE was zero.
+  bool identical = false;
+};
+
+struct PsnrSummary {
+  std::int64_t pairs_scored = 0;
+  // floor(sum / pairs_scored) of the per-frame combined milli-dB: the gated value.
+  std::int64_t mean_milli_db = 0;
+  // The lowest combined value (the first one on a tie), with its frame indices.
+  QualityPoint min;
+  int plane_count = 0;
+  std::array<std::int64_t, 3> plane_mean_milli_db{};
+  std::int64_t identical_frames = 0;
+};
+
+class PsnrAccumulator {
+ public:
+  void add(const PsnrFrame& frame);
+  std::int64_t count() const { return count_; }
+  // Empty when no pair was added (the caller reports insufficient_data).
+  std::optional<PsnrSummary> summary() const;
+
+ private:
+  std::int64_t count_ = 0;
+  std::int64_t sum_ = 0;
+  std::array<std::int64_t, 3> plane_sum_{};
+  int plane_count_ = 0;
+  std::int64_t identical_ = 0;
+  QualityPoint min_;
+};
+
+struct NativeSsimSummary {
+  std::int64_t pairs_scored = 0;
+  // floor(sum / pairs_scored) of the per-frame micro-SSIM: the gated value.
+  std::int64_t mean_micro = 0;
+  QualityPoint min;
+  // Frames whose luma windows all scored exactly one (identical luma).
+  std::int64_t identical_frames = 0;
+};
+
+class NativeSsimAccumulator {
+ public:
+  void add(const QualityPoint& point, bool identical);
+  std::int64_t count() const { return count_; }
+  std::optional<NativeSsimSummary> summary() const;
+
+ private:
+  std::int64_t count_ = 0;
+  std::int64_t sum_ = 0;
+  std::int64_t identical_ = 0;
+  QualityPoint min_;
+};
+
 class PairScorer {
  public:
   // What the driver does with the two current frames after step().
@@ -91,11 +175,24 @@ class PairScorer {
     test_stop,
   };
 
+  // Why the native quality checks stopped scoring (their own latch, separate
+  // from StopReason: perceptual keeps running past it).
+  enum class QualityStop {
+    none,
+    // The two sides' display dimensions, plane layout or bit depth differ.
+    geometry_mismatch,
+    // A frame was not available to read (a synthetic or non-decoded pair).
+    frame_unavailable,
+    // A pixel format the scorers cannot read (RGB, paletted, float, hardware,
+    // or a layout other than gray / three-plane YUV).
+    unsupported_format,
+  };
+
   // `sample_stride` is `--sample N`: every Nth PAIRED frame is scored (D-08).
   // `stop_after_scored_pairs` is a test hook (0 = never): the scorer latches
   // test_stop after that many scored pairs, the way a consumer that gave up
-  // would.
-  PairScorer(int sample_stride, std::int64_t stop_after_scored_pairs);
+  // would. `quality` is 07-10's opt-in native scorers (default: none).
+  PairScorer(int sample_stride, std::int64_t stop_after_scored_pairs, QualityRequest quality = {});
 
   // Decides what to do with `baseline` and `candidate`, the two current frames
   // (both valid until the driver releases them), and scores them when they
@@ -130,10 +227,29 @@ class PairScorer {
   int mismatch_baseline_height() const { return mismatch_baseline_height_; }
   int mismatch_candidate_height() const { return mismatch_candidate_height_; }
 
+  // --- 07-10: the native-resolution quality scorers ---
+  const QualityRequest& quality_request() const { return quality_; }
+  QualityStop quality_stop() const { return quality_stop_; }
+  static const char* quality_stop_name(QualityStop reason);
+  // Empty unless the matching check was requested and a pair was scored.
+  std::optional<PsnrSummary> psnr_summary() const { return psnr_.summary(); }
+  std::optional<NativeSsimSummary> ssim_summary() const { return ssim_.summary(); }
+  // The pair bit depth (the larger of the two sides') every scored pair used; 0
+  // before the first scored pair.
+  int quality_bpc() const { return quality_bpc_; }
+  // True when a frame was too small for one SSIM window (PSNR is unaffected).
+  bool ssim_frame_too_small() const { return ssim_too_small_; }
+  // "WxH pix_fmt" of each side's frame at the pair that latched a quality stop
+  // (empty otherwise): the evidence a geometry_mismatch carries.
+  const std::string& quality_baseline_label() const { return quality_baseline_label_; }
+  const std::string& quality_candidate_label() const { return quality_candidate_label_; }
+
  private:
   void decide_mode(const TappedFrame& baseline, const TappedFrame& candidate);
   // Scores the pair just decided; may latch a stop.
   void score_pair(const TappedFrame& baseline, const TappedFrame& candidate);
+  // 07-10: scores the pair at native resolution; may latch a quality stop.
+  void score_quality(const TappedFrame& baseline, const TappedFrame& candidate);
 
   int sample_stride_;
   std::int64_t stop_after_scored_pairs_;
@@ -155,6 +271,21 @@ class PairScorer {
   int mismatch_baseline_height_ = 0;
   int mismatch_candidate_height_ = 0;
   PerceptualAccumulator accumulator_;
+
+  QualityRequest quality_;
+  QualityStop quality_stop_ = QualityStop::none;
+  int quality_bpc_ = 0;
+  int quality_planes_ = 0;
+  bool ssim_too_small_ = false;
+  std::string quality_baseline_label_;
+  std::string quality_candidate_label_;
+  PsnrAccumulator psnr_;
+  NativeSsimAccumulator ssim_;
+  // Reused plane buffers, one pair per side: a plane is read into them (when it
+  // is not directly usable), scored, and overwritten by the next plane.
+  std::array<std::vector<std::uint8_t>, 2> scratch8_;
+  std::array<std::vector<std::uint16_t>, 2> scratch16_;
+  std::vector<std::uint16_t> row_;
 };
 
 }  // namespace mediadiff

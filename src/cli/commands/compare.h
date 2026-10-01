@@ -40,9 +40,14 @@ void register_compare_command(CLI::App& app);
 // `--sample N` (src/cli/options.h's resolve_sample_stride) -- main.cpp's
 // implicit two-positional route passes 1 (full) unconditionally, matching the
 // `compare` subcommand's own unflagged default.
+// 07-10-PLAN.md (CONTENT-08): `quality` is the already-resolved `--psnr` /
+// `--ssim` (src/cli/options.h's resolve_quality_request) -- main.cpp's implicit
+// two-positional route passes the empty request, matching `compare`'s unflagged
+// default (both checks report skipped:not_requested).
 [[noreturn]] void run_compare(const std::string& baseline_path, const std::string& candidate_path, bool strict,
                                bool verbose, bool quiet, bool content_enabled, const std::string& hash_decoder,
-                               int sample_stride, const ReportArgs& report_args, const PolicyArgs& policy_args,
-                               const ColorArgs& color_args, const ProbeArgs& probe_args);
+                               int sample_stride, const QualityRequest& quality, const ReportArgs& report_args,
+                               const PolicyArgs& policy_args, const ColorArgs& color_args,
+                               const ProbeArgs& probe_args);
 
 }  // namespace mediadiff

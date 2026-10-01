@@ -242,6 +242,14 @@ add_executable(mediadiff_integration_tests
   # with no entry), cross-resolution and geometry mismatch, --sample N, profile
   # severities and the bare score tolerance.
   test_perceptual.cpp
+  # CONTENT-08 (07-10-PLAN.md; D-01, D-03, D-08, TRUST-04): quality.psnr and
+  # quality.ssim end to end against an independent floating-point oracle -- the
+  # capped identical case, a degraded encode's mean / minimum / per-plane values,
+  # opt-in (not_requested), native geometry mismatch, 8- vs 10-bit promotion, a
+  # hand-computed SSE, the scorer's own latches, --sample N, byte-identical
+  # runs, and the path preconditions that make a differing decode path
+  # skipped:path_incomparable for both checks.
+  test_quality.cpp
   # CONTENT-05 (07-09-PLAN.md; D-02): the lockstep's pairing on real fixtures --
   # a dropped frame leaves exactly one baseline frame unpaired, a 60 fps
   # baseline against its 30 fps decimation scores only the coinciding frames, an

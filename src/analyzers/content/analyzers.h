@@ -71,4 +71,20 @@ const AnalyzerSpec& content_video_runs_analyzer();
 // matching the video.* family.
 const AnalyzerSpec& content_video_perceptual_analyzer();
 
+// True when the probed file has a PRIMARY video stream -- the first video stream
+// that is not an attached picture (the two-file scope rule shared by
+// content.video.perceptual and every quality.* id, 07-CHECK-ROSTER.md). Defined
+// in video_perceptual.cpp; the one definition both analyzers call.
+bool content_has_primary_video(const ProbeResults& results);
+
+// 07-10-PLAN.md (CONTENT-08, CONTENT-10; D-01): quality.psnr and quality.ssim's
+// ONE-SIDED emission, the same shape as content_video_perceptual_analyzer()
+// above -- one explicit skip per id at Scope{video, 0} for a file with a primary
+// video stream (skipped:requires_decode under --no-content, else
+// skipped:requires_media), replaced on both fingerprints by probe/lockstep.cpp in
+// a live media-vs-media compare. So a snapshot records the two ids only as
+// requires_media skips (never a score), and a compare against a snapshot reports
+// requires_media on both sides. 07-11 adds quality.vmaf to this same analyzer.
+const AnalyzerSpec& content_quality_analyzer();
+
 }  // namespace mediadiff

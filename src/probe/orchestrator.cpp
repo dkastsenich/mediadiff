@@ -211,6 +211,10 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // --no-content); a live media-vs-media compare replaces it with the real
       // two-file measurement (probe/lockstep.cpp).
       content_video_perceptual_analyzer(),
+      // 07-10-PLAN.md (CONTENT-08, CONTENT-10; D-01): quality.psnr/quality.ssim's
+      // ONE-SIDED emission, the same shape as the perceptual placeholder above;
+      // a live compare replaces both on both fingerprints.
+      content_quality_analyzer(),
       // 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/
       // sample_fmt/bit_depth/channels/layout -- the six per-audio-stream
       // identity checks, mirroring video_stream_params_analyzer()'s own

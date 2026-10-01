@@ -20,6 +20,10 @@ Group group_for(std::string_view check_id) {
   if (first == "timeline") return Group::timeline;
   if (first == "audio") return Group::audio;
   if (first == "content") return Group::content;
+  // 07-10-PLAN.md (07-CHECK-ROSTER.md, approve-as-proposed): the full-reference
+  // quality family reports under `content` -- no new Group enumerator, no change
+  // to the report schema's closed group enum.
+  if (first == "quality") return Group::content;
   if (first == "size") return Group::size;
   // Includes a literal "meta" first segment, and every unrecognized one
   // (this plan's own must_have: an unrecognized first segment maps to

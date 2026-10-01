@@ -159,6 +159,10 @@ void register_dir_command(CLI::App& app) {
   // 07-04-PLAN.md (CONTENT-03, D-08): one --sample stride governs the whole
   // corpus pass, resolved once below beside hash_decoder.
   SampleArgs sample_args = add_sample_flag(*cmd);
+  // 07-10-PLAN.md (CONTENT-08): the opt-in native-resolution quality scores,
+  // resolved once below beside sample_stride; each pair's lockstep computes
+  // them, so they need --content here (dir mode's decode is opt-in).
+  QualityArgs quality_args = add_quality_flags(*cmd);
 
   CliOptions options = add_common_options(*cmd);
 
@@ -169,7 +173,7 @@ void register_dir_command(CLI::App& app) {
   // Option for the whole program lifetime, and this callback only runs
   // during app.parse().
   cmd->callback([baseline_dir, candidate_dir, threads, threads_opt, content_flag, no_content_flag, hash_decoder_args,
-                 sample_args, options]() {
+                 sample_args, quality_args, options]() {
     const CheckRegistry& registry = builtin_registry();
 
     // Materialized once, here, rather than called repeatedly at each of
@@ -209,6 +213,13 @@ void register_dir_command(CLI::App& app) {
       std::exit(exit_code_for(err.kind));
     }
     const int sample_stride = *sample_result;
+    auto quality_result = resolve_quality_request(quality_args, content_enabled);
+    if (!quality_result) {
+      const Error& err = quality_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const QualityRequest quality = *quality_result;
     const bool strict = opt_flag(options.strict);
     const bool quiet = opt_flag(options.quiet);
     const bool verbose = opt_flag(options.verbose);
@@ -430,7 +441,7 @@ void register_dir_command(CLI::App& app) {
         // content decode is off and reports the first error baseline-then-
         // candidate, so every per-file error and partial mapping below is
         // unchanged.
-        auto pair_fp = fingerprint_pair(baseline_path, candidate_path, registry, probe_options);
+        auto pair_fp = fingerprint_pair(baseline_path, candidate_path, registry, probe_options, quality);
         if (!pair_fp) {
           outcomes[i].hard_error = pair_fp.error();
           return;

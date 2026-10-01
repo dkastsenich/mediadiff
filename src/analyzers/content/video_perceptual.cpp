@@ -60,16 +60,24 @@ void push_skip(Scope scope, SkipReason reason, Fingerprint& fp) {
 #endif
 
 void run_content_video_perceptual(const ProbeResults& results, Fingerprint& fp) {
-  if (results.demux == nullptr || !results.packet_scan.has_value()) {
-    // Unreachable in practice -- both are unconditionally in this analyzer's
-    // own required_passes; guarded so it never dereferences an unset
-    // ProbeResults field if that invariant is ever relaxed.
+  if (!content_has_primary_video(results)) {
     return;
+  }
+  const SkipReason reason = results.video_decode.has_value() ? SkipReason::requires_media : SkipReason::requires_decode;
+  push_skip(Scope{Scope::Kind::video, 0}, reason, fp);
+}
+
+}  // namespace
+
+bool content_has_primary_video(const ProbeResults& results) {
+  if (results.demux == nullptr || !results.packet_scan.has_value()) {
+    // Unreachable in practice -- both are unconditionally in the two-file
+    // analyzers' own required_passes; guarded so it never dereferences an unset
+    // ProbeResults field if that invariant is ever relaxed.
+    return false;
   }
   const DemuxSession& demux = *results.demux;
   const std::size_t stream_count = results.packet_scan->per_stream.size();
-
-  bool has_primary = false;
   for (std::size_t i = 0; i < stream_count; ++i) {
     if (demux.stream_info(static_cast<int>(i)).media_type != StreamMediaType::video) {
       continue;
@@ -82,18 +90,10 @@ void run_content_video_perceptual(const ProbeResults& results, Fingerprint& fp) 
         results.video_decode->per_stream[i].attached_picture) {
       continue;
     }
-    has_primary = true;
-    break;
+    return true;
   }
-  if (!has_primary) {
-    return;
-  }
-
-  const SkipReason reason = results.video_decode.has_value() ? SkipReason::requires_media : SkipReason::requires_decode;
-  push_skip(Scope{Scope::Kind::video, 0}, reason, fp);
+  return false;
 }
-
-}  // namespace
 
 const AnalyzerSpec& content_video_perceptual_analyzer() {
   static const AnalyzerSpec spec{"content_video_perceptual",

@@ -133,6 +133,9 @@ void register_compare_command(CLI::App& app) {
   // 07-04-PLAN.md (CONTENT-03, D-08): registered identically on every command
   // that decodes -- see options.h's add_sample_flag.
   SampleArgs sample_args = add_sample_flag(*cmp);
+  // 07-10-PLAN.md (CONTENT-08): the opt-in native-resolution quality scores,
+  // registered on compare and dir only (snapshots never store a score).
+  QualityArgs quality_args = add_quality_flags(*cmp);
 
   ReportArgs report_args = add_report_flags(*cmp);
   PolicyArgs policy_args = add_policy_flags(*cmp);
@@ -143,7 +146,8 @@ void register_compare_command(CLI::App& app) {
   // they replace (D-05): the App owns every Option for the whole program
   // lifetime, and this callback only runs during app.parse().
   cmp->callback([baseline_path, candidate_path, strict_flag, verbose_flag, quiet_flag, content_flag,
-                 no_content_flag, hash_decoder_args, sample_args, report_args, policy_args, color_args, probe_args]() {
+                 no_content_flag, hash_decoder_args, sample_args, quality_args, report_args, policy_args, color_args,
+                 probe_args]() {
     if (opt_flag(content_flag) && opt_flag(no_content_flag)) {
       report_cli_error("--content and --no-content cannot both be given");
       std::exit(kExitUsage);
@@ -161,9 +165,15 @@ void register_compare_command(CLI::App& app) {
       report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
+    auto quality_result = resolve_quality_request(quality_args, content_enabled);
+    if (!quality_result) {
+      const Error& err = quality_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
     run_compare(opt_string(baseline_path), opt_string(candidate_path), opt_flag(strict_flag), opt_flag(verbose_flag),
-                opt_flag(quiet_flag), content_enabled, *hash_decoder_result, *sample_result, report_args, policy_args,
-                color_args, probe_args);
+                opt_flag(quiet_flag), content_enabled, *hash_decoder_result, *sample_result, *quality_result,
+                report_args, policy_args, color_args, probe_args);
   });
 }
 
@@ -176,7 +186,8 @@ void register_compare_command(CLI::App& app) {
 // comment in compare.h.
 void run_compare(const std::string& baseline_path, const std::string& candidate_path, bool strict, bool verbose,
                   bool quiet, bool content_enabled, const std::string& hash_decoder, int sample_stride,
-                  const ReportArgs& report_args, const PolicyArgs& policy_args, const ColorArgs& color_args, const ProbeArgs& probe_args) {
+                  const QualityRequest& quality, const ReportArgs& report_args, const PolicyArgs& policy_args,
+                  const ColorArgs& color_args, const ProbeArgs& probe_args) {
   const CheckRegistry& registry = builtin_registry();
 
   // Doc 01 section 6: mediadiff.toml is read exactly once here, before
@@ -227,7 +238,7 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   // snapshot on either side, or --no-content, takes the sequential path exactly
   // as before. The first error -- baseline, then candidate -- maps to the same
   // exit codes through the same report_cli_error path.
-  auto fingerprints = fingerprint_pair(baseline_path, candidate_path, registry, probe_options);
+  auto fingerprints = fingerprint_pair(baseline_path, candidate_path, registry, probe_options, quality);
   if (!fingerprints) {
     const Error& err = fingerprints.error();
     report_cli_error(err.message);

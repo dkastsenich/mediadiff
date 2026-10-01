@@ -516,6 +516,37 @@ mediadiff::expected<int, Error> resolve_sample_stride(const SampleArgs& args, bo
   return static_cast<int>(value);
 }
 
+// 07-10-PLAN.md: see options.h's own doc comment for the full contract.
+QualityArgs add_quality_flags(CLI::App& cmd) {
+  // One help string for both flags, as the plan words it.
+  static constexpr const char* kHelp =
+      "Also score PSNR / SSIM of the candidate against the baseline at native resolution (live media compares only; "
+      "snapshots report requires_media)";
+  QualityArgs args;
+  args.psnr_flag = cmd.add_flag("--psnr", kHelp);
+  args.ssim_flag = cmd.add_flag("--ssim", kHelp);
+  return args;
+}
+
+mediadiff::expected<QualityRequest, Error> resolve_quality_request(const QualityArgs& args, bool content_enabled) {
+  QualityRequest request;
+  request.psnr = opt_flag(args.psnr_flag);
+  request.ssim = opt_flag(args.ssim_flag);
+  if (request.psnr && !content_enabled) {
+    return mediadiff::unexpected(Error{ErrorKind::usage,
+                                       "'--psnr' needs the content decode pass, which is off for this run "
+                                       "(--no-content, or this command needs --content) -- drop --psnr or enable "
+                                       "content decoding"});
+  }
+  if (request.ssim && !content_enabled) {
+    return mediadiff::unexpected(Error{ErrorKind::usage,
+                                       "'--ssim' needs the content decode pass, which is off for this run "
+                                       "(--no-content, or this command needs --content) -- drop --ssim or enable "
+                                       "content decoding"});
+  }
+  return request;
+}
+
 PolicyArgs default_policy_args() { return {}; }
 
 ReportArgs default_report_args() { return {}; }

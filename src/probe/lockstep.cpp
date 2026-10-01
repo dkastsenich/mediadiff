@@ -1,6 +1,7 @@
 #include "probe/lockstep.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -18,6 +19,7 @@
 #include "core/snapshot.h"
 #include "core/value.h"
 #include "probe/pair_scorer.h"
+#include "util/quality_math.h"
 #include "util/version.h"
 
 namespace mediadiff {
@@ -289,9 +291,10 @@ nlohmann::ordered_json pair_json(const PairScore& pair) {
   return out;
 }
 
-// The placeholder the one-sided analyzer left on `fp`, or null.
-Measurement* find_perceptual(Fingerprint& fp) {
-  const std::uint32_t index = static_cast<std::uint32_t>(CheckId::content_video_perceptual);
+// The placeholder the one-sided analyzer left on `fp` for `id` at Scope{video,
+// 0}, or null.
+Measurement* find_video_measurement(Fingerprint& fp, CheckId id) {
+  const std::uint32_t index = static_cast<std::uint32_t>(id);
   for (Measurement& measurement : fp.measurements) {
     if (measurement.check_index == index && measurement.scope.kind == Scope::Kind::video &&
         measurement.scope.index == 0) {
@@ -301,8 +304,8 @@ Measurement* find_perceptual(Fingerprint& fp) {
   return nullptr;
 }
 
-void erase_perceptual(Fingerprint& fp) {
-  const std::uint32_t index = static_cast<std::uint32_t>(CheckId::content_video_perceptual);
+void erase_video_measurement(Fingerprint& fp, CheckId id) {
+  const std::uint32_t index = static_cast<std::uint32_t>(id);
   fp.measurements.erase(std::remove_if(fp.measurements.begin(), fp.measurements.end(),
                                        [index](const Measurement& measurement) {
                                          return measurement.check_index == index &&
@@ -324,24 +327,12 @@ std::string decode_path_signature(const TapEnd& end) {
   return compose_decode_path_signature() + " flags/" + end.flags_recorded;
 }
 
-// Writes the two-file content.video.perceptual measurement into both
-// fingerprints (D-01), replacing the one-sided placeholder each carries.
-mediadiff::expected<void, Error> assemble_perceptual(const std::string& baseline_path, const PairScorer& scorer,
-                                                       const TapEnd& baseline_end, const TapEnd& candidate_end,
-                                                       Fingerprint& baseline, Fingerprint& candidate) {
-  Measurement* baseline_m = find_perceptual(baseline);
-  Measurement* candidate_m = find_perceptual(candidate);
-  if (baseline_m == nullptr && candidate_m == nullptr) {
-    return {};
-  }
-  if (baseline_m == nullptr || candidate_m == nullptr || !baseline_end.has_primary || !candidate_end.has_primary) {
-    // A file with no primary video stream on one side: nothing to score against.
-    // The side that has one carries no measurement either (Pitfall 10).
-    erase_perceptual(baseline);
-    erase_perceptual(candidate);
-    return {};
-  }
-
+// The skips every two-file check shares, written onto both placeholders: a side
+// whose decoder could not be opened (requires_decode), and a side whose scan or
+// decode stopped early (partial_scan: a prefix's worst frame says nothing about
+// the rest). True when it wrote one.
+bool apply_common_skips(Measurement& baseline_m, Measurement& candidate_m, const TapEnd& baseline_end,
+                        const TapEnd& candidate_end) {
   if (!baseline_end.attempted || !candidate_end.attempted) {
     nlohmann::ordered_json b_evidence = nlohmann::ordered_json::object();
     nlohmann::ordered_json c_evidence = nlohmann::ordered_json::object();
@@ -351,19 +342,43 @@ mediadiff::expected<void, Error> assemble_perceptual(const std::string& baseline
     if (!candidate_end.fallback_reason.empty()) {
       c_evidence["fallback_reason"] = candidate_end.fallback_reason;
     }
-    set_skip(*baseline_m, SkipReason::requires_decode, std::move(b_evidence));
-    set_skip(*candidate_m, SkipReason::requires_decode, std::move(c_evidence));
+    set_skip(baseline_m, SkipReason::requires_decode, std::move(b_evidence));
+    set_skip(candidate_m, SkipReason::requires_decode, std::move(c_evidence));
+    return true;
+  }
+  if (!baseline_end.complete || !candidate_end.complete) {
+    // A prefix's worst frame says nothing about the rest: never a score.
+    set_skip(baseline_m, SkipReason::partial_scan,
+             nlohmann::ordered_json{{"reason", baseline_end.complete ? std::string("other_side_incomplete")
+                                                                        : baseline_end.incomplete_reason}});
+    set_skip(candidate_m, SkipReason::partial_scan,
+             nlohmann::ordered_json{{"reason", candidate_end.complete ? std::string("other_side_incomplete")
+                                                                         : candidate_end.incomplete_reason}});
+    return true;
+  }
+  return false;
+}
+
+// Writes the two-file content.video.perceptual measurement into both
+// fingerprints (D-01), replacing the one-sided placeholder each carries.
+mediadiff::expected<void, Error> assemble_perceptual(const std::string& baseline_path, const PairScorer& scorer,
+                                                       const TapEnd& baseline_end, const TapEnd& candidate_end,
+                                                       Fingerprint& baseline, Fingerprint& candidate) {
+  const CheckId id = CheckId::content_video_perceptual;
+  Measurement* baseline_m = find_video_measurement(baseline, id);
+  Measurement* candidate_m = find_video_measurement(candidate, id);
+  if (baseline_m == nullptr && candidate_m == nullptr) {
+    return {};
+  }
+  if (baseline_m == nullptr || candidate_m == nullptr || !baseline_end.has_primary || !candidate_end.has_primary) {
+    // A file with no primary video stream on one side: nothing to score against.
+    // The side that has one carries no measurement either (Pitfall 10).
+    erase_video_measurement(baseline, id);
+    erase_video_measurement(candidate, id);
     return {};
   }
 
-  if (!baseline_end.complete || !candidate_end.complete) {
-    // A prefix's worst frame says nothing about the rest: never a score.
-    set_skip(*baseline_m, SkipReason::partial_scan,
-             nlohmann::ordered_json{{"reason", baseline_end.complete ? std::string("other_side_incomplete")
-                                                                        : baseline_end.incomplete_reason}});
-    set_skip(*candidate_m, SkipReason::partial_scan,
-             nlohmann::ordered_json{{"reason", candidate_end.complete ? std::string("other_side_incomplete")
-                                                                         : candidate_end.incomplete_reason}});
+  if (apply_common_skips(*baseline_m, *candidate_m, baseline_end, candidate_end)) {
     return {};
   }
 
@@ -445,6 +460,194 @@ mediadiff::expected<void, Error> assemble_perceptual(const std::string& baseline
   return {};
 }
 
+nlohmann::ordered_json milli_db_json(std::int64_t milli_db) {
+  return nlohmann::ordered_json{{"num", milli_db}, {"den", 1000}};
+}
+
+nlohmann::ordered_json quality_point_json(const QualityPoint& point, bool psnr) {
+  nlohmann::ordered_json out{{"value", psnr ? milli_db_json(point.value) : micro_json(point.value)},
+                             {"baseline_index", point.baseline_index},
+                             {"candidate_index", point.candidate_index}};
+  if (point.has_pts) {
+    out["pts"] = nlohmann::ordered_json{{"value", point.pts},
+                                        {"tb", nlohmann::ordered_json{{"num", point.tb_num}, {"den", point.tb_den}}}};
+  }
+  return out;
+}
+
+// Both quality.* checks' evidence keys that are not specific to one metric: the
+// path preconditions TRUST-04 compares (07-09's table), the pair's bit depth and
+// the sampling record. quality scores are read from native planes, so there is
+// no thumbnail scaler to record: `scaler_path` says so, identically on both
+// sides.
+constexpr const char* kNativeScalerPath = "native (no scaler)";
+
+// Writes the two-file quality.psnr / quality.ssim measurements into both
+// fingerprints (D-01), replacing the one-sided placeholders each carries.
+// CONTENT-08; D-03: the compared value is the floor MEAN over the scored pairs,
+// the minimum rides in evidence.
+mediadiff::expected<void, Error> assemble_quality(const std::string& baseline_path, const PairScorer& scorer,
+                                                    const TapEnd& baseline_end, const TapEnd& candidate_end,
+                                                    Fingerprint& baseline, Fingerprint& candidate) {
+  struct Target {
+    CheckId id;
+    bool requested;
+    bool psnr;
+  };
+  const std::array<Target, 2> targets = {{{CheckId::quality_psnr, scorer.quality_request().psnr, true},
+                                          {CheckId::quality_ssim, scorer.quality_request().ssim, false}}};
+  std::optional<InputIdentity> identity;
+
+  for (const Target& target : targets) {
+    Measurement* baseline_m = find_video_measurement(baseline, target.id);
+    Measurement* candidate_m = find_video_measurement(candidate, target.id);
+    if (baseline_m == nullptr && candidate_m == nullptr) {
+      continue;
+    }
+    if (baseline_m == nullptr || candidate_m == nullptr || !baseline_end.has_primary || !candidate_end.has_primary) {
+      erase_video_measurement(baseline, target.id);
+      erase_video_measurement(candidate, target.id);
+      continue;
+    }
+    if (!target.requested) {
+      // A live compare without the flag: an explicit, named skip on both sides.
+      set_skip(*baseline_m, SkipReason::not_requested, nlohmann::ordered_json::object());
+      set_skip(*candidate_m, SkipReason::not_requested, nlohmann::ordered_json::object());
+      continue;
+    }
+    if (apply_common_skips(*baseline_m, *candidate_m, baseline_end, candidate_end)) {
+      continue;
+    }
+
+    // A geometry the two sides cannot pair (T-07-30): their own latch, naming
+    // each side's frame layout.
+    if (scorer.quality_stop() == PairScorer::QualityStop::geometry_mismatch) {
+      const nlohmann::ordered_json evidence{{"baseline_native", scorer.quality_baseline_label()},
+                                            {"candidate_native", scorer.quality_candidate_label()}};
+      set_skip(*baseline_m, SkipReason::geometry_mismatch, evidence);
+      set_skip(*candidate_m, SkipReason::geometry_mismatch, evidence);
+      continue;
+    }
+    if (scorer.quality_stop() != PairScorer::QualityStop::none) {
+      const nlohmann::ordered_json evidence{{"reason", std::string(PairScorer::quality_stop_name(scorer.quality_stop()))},
+                                            {"baseline_native", scorer.quality_baseline_label()},
+                                            {"candidate_native", scorer.quality_candidate_label()}};
+      set_skip(*baseline_m, SkipReason::insufficient_data, evidence);
+      set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
+      continue;
+    }
+    // The perceptual consumer stopped (no partner, a stop hook, a thumbnail it
+    // could not make): what the quality scorers saw is a prefix, never a score.
+    if (scorer.stopped()) {
+      const nlohmann::ordered_json evidence{{"reason", std::string("pairing_stopped")},
+                                            {"stop", std::string(PairScorer::stop_reason_name(scorer.stop_reason()))}};
+      set_skip(*baseline_m, SkipReason::insufficient_data, evidence);
+      set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
+      continue;
+    }
+    if (!target.psnr && scorer.ssim_frame_too_small()) {
+      const nlohmann::ordered_json evidence{{"reason", std::string("frame_too_small")}};
+      set_skip(*baseline_m, SkipReason::insufficient_data, evidence);
+      set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
+      continue;
+    }
+
+    std::int64_t pairs_scored = 0;
+    std::int64_t mean = 0;
+    std::int64_t baseline_value = 0;
+    std::int64_t denominator = 0;
+    std::int64_t identical_frames = 0;
+    nlohmann::ordered_json min_json;
+    nlohmann::ordered_json per_plane;
+    if (target.psnr) {
+      const std::optional<PsnrSummary> summary = scorer.psnr_summary();
+      if (summary.has_value()) {
+        pairs_scored = summary->pairs_scored;
+        mean = summary->mean_milli_db;
+        identical_frames = summary->identical_frames;
+        min_json = quality_point_json(summary->min, true);
+        per_plane = nlohmann::ordered_json::object();
+        const std::array<const char*, 3> names = {"y", "u", "v"};
+        for (int p = 0; p < summary->plane_count && p < 3; ++p) {
+          per_plane[names[static_cast<std::size_t>(p)]] =
+              milli_db_json(summary->plane_mean_milli_db[static_cast<std::size_t>(p)]);
+        }
+      }
+      baseline_value = psnr_cap_milli_db(scorer.quality_bpc());
+      denominator = 1000;
+    } else {
+      const std::optional<NativeSsimSummary> summary = scorer.ssim_summary();
+      if (summary.has_value()) {
+        pairs_scored = summary->pairs_scored;
+        mean = summary->mean_micro;
+        identical_frames = summary->identical_frames;
+        min_json = quality_point_json(summary->min, false);
+      }
+      baseline_value = kMicro;
+      denominator = kMicro;
+    }
+    if (pairs_scored == 0) {
+      const nlohmann::ordered_json evidence{{"reason", std::string("no_pairs_scored")}};
+      set_skip(*baseline_m, SkipReason::insufficient_data, evidence);
+      set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
+      continue;
+    }
+
+    if (!identity.has_value()) {
+      auto computed = compute_input_identity(baseline_path);
+      if (!computed) {
+        return mediadiff::unexpected(computed.error());
+      }
+      identity = *computed;
+    }
+    const std::string sampling_state =
+        scorer.sample_stride() > 1 ? sampling_state_sampled(scorer.sample_stride()) : std::string(kSamplingStateFull);
+
+    // The baseline's self-score is the metric's value for identical frames (the
+    // PSNR cap, exactly 1 for SSIM), recorded as the exact rational and never
+    // re-measured. Both sides carry the TRUST-04 path keys.
+    baseline_m->value = RationalValue{baseline_value, denominator, Rational{1, 1}};
+    baseline_m->skip_reason = SkipReason::none;
+    baseline_m->evidence = nlohmann::ordered_json{
+        {"self_score", true},
+        {"baseline_stream_index", baseline_end.stream_index},
+        {"bpc", scorer.quality_bpc()},
+        {"scaler_path", std::string(kNativeScalerPath)},
+        {"decode_path_signature", decode_path_signature(baseline_end)},
+        {"sampling_state", sampling_state},
+    };
+
+    nlohmann::ordered_json evidence{
+        {"reference_identity", identity->xxh3_128},
+        {"baseline_stream_index", baseline_end.stream_index},
+        {"candidate_stream_index", candidate_end.stream_index},
+        {"pairing", std::string(scorer.pairing() == PairingMode::time ? "time" : "index")},
+    };
+    if (scorer.pairing() == PairingMode::index) {
+      evidence["pairing_fallback"] = scorer.pairing_fallback();
+    }
+    evidence["pairs_scored"] = pairs_scored;
+    evidence["unpaired_baseline"] = scorer.unpaired_baseline();
+    evidence["unpaired_candidate"] = scorer.unpaired_candidate();
+    evidence["unpaired_no_pts"] = scorer.unpaired_no_pts();
+    evidence["mean"] = target.psnr ? milli_db_json(mean) : micro_json(mean);
+    evidence["min"] = std::move(min_json);
+    if (target.psnr) {
+      evidence["per_plane"] = std::move(per_plane);
+    }
+    evidence["identical_frames"] = identical_frames;
+    evidence["bpc"] = scorer.quality_bpc();
+    evidence["scaler_path"] = std::string(kNativeScalerPath);
+    evidence["decode_path_signature"] = decode_path_signature(candidate_end);
+    evidence["sampling_state"] = sampling_state;
+
+    candidate_m->value = RationalValue{mean, denominator, Rational{1, 1}};
+    candidate_m->skip_reason = SkipReason::none;
+    candidate_m->evidence = std::move(evidence);
+  }
+  return {};
+}
+
 // The sequential route: two independent one-sided probes, no tap, exactly what
 // two fingerprint_input calls produce for media inputs.
 mediadiff::expected<PairResult, Error> probe_sequentially(const std::string& baseline_path,
@@ -470,7 +673,8 @@ namespace detail {
 mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baseline_path,
                                                         const std::string& candidate_path,
                                                         const std::vector<AnalyzerSpec>& analyzers,
-                                                        const ProbeOptions& options, PairProbeLog* log) {
+                                                        const ProbeOptions& options, PairProbeLog* log,
+                                                        const QualityRequest& quality) {
   FrameSlot baseline_slot;
   FrameSlot candidate_slot;
 
@@ -488,7 +692,7 @@ mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baselin
   candidate_job.options.frame_tap = &candidate_slot;
   candidate_job.slot = &candidate_slot;
 
-  PairScorer scorer(options.sample_stride, log != nullptr ? log->stop_after_scored_pairs : 0);
+  PairScorer scorer(options.sample_stride, log != nullptr ? log->stop_after_scored_pairs : 0, quality);
 
   {
     ProducerThreads threads(baseline_slot, candidate_slot);
@@ -534,6 +738,11 @@ mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baselin
     if (!assembled) {
       return mediadiff::unexpected(assembled.error());
     }
+    auto assembled_quality = assemble_quality(baseline_path, scorer, baseline_slot.end(), candidate_slot.end(),
+                                              result.baseline, result.candidate);
+    if (!assembled_quality) {
+      return mediadiff::unexpected(assembled_quality.error());
+    }
   }
   return result;
 }
@@ -543,7 +752,8 @@ mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baselin
 mediadiff::expected<PairResult, Error> fingerprint_pair(const std::string& baseline_path,
                                                           const std::string& candidate_path,
                                                           const CheckRegistry& registry,
-                                                          const ProbeOptions& options) {
+                                                          const ProbeOptions& options,
+                                                          const QualityRequest& quality) {
   ProbeOptions plain = options;
   plain.frame_tap = nullptr;
 
@@ -568,7 +778,7 @@ mediadiff::expected<PairResult, Error> fingerprint_pair(const std::string& basel
   const bool candidate_is_media = !candidate_input->has_value();
 
   if (baseline_is_media && candidate_is_media && plain.content_enabled) {
-    return detail::run_pair_probe(baseline_path, candidate_path, all_analyzers(), plain, nullptr);
+    return detail::run_pair_probe(baseline_path, candidate_path, all_analyzers(), plain, nullptr, quality);
   }
 
   // Sequential: a snapshot side keeps its read_snapshot short-circuit, a media
