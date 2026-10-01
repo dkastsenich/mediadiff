@@ -47,6 +47,21 @@ in which case the comparison reports `skipped:hash_incomparable` rather than a f
 No decoder is class 1 today. Class 3 (never hashes) is reserved for a decoder that is
 non-deterministic on one machine, single-threaded.
 
+**How a decoder becomes class 1.** Only through committed evidence, never by editing a table.
+`scripts/gen_video_proof.sh` encodes eleven proof streams (H.264 and HEVC at 8 and 10 bit, VP9, AV1 from
+libaom, MPEG-4, MPEG-2, MJPEG, HuffYUV, FFV1) exactly once per CI run, in the `video-proof-streams` job on
+ubuntu-24.04 x86_64, and every build leg downloads those same bytes (even the native encoders emit different
+bytes per architecture, so the proof compares the decoders of identical input, never the encoders). Each leg
+asserts a stream's XXH3-128 against its row in `tests/golden/VIDEO_PROOF_CHAINS.txt` before decoding it,
+requires zero decode errors, and prints its own `stream=... xxh3=... frames=... chain=... decoder=...
+flags=...` row. A human transcribes the designated leg's rows into that ledger, and a decoder whose
+`frames` and `chain` agree on every leg is added to the class-1 name table in `src/probe/video_decode.cpp`;
+a table-driven test fails for any class-1 decoder without a ledger row, and the ledger's `gate` mode makes
+a class-1 decoder's rows binding on every leg. The ledger starts in `report-only` mode, so until it is
+promoted every leg only reports. The proof streams are CI test inputs: never committed, never linked into
+the binary, which stays a decode-only LGPL FFmpeg build. Because the legs `need` the producer job, a
+producer failure blocks the whole matrix rather than letting a leg go green without the proof.
+
 **Damaged input is class 2, even for a proven decoder.** A stream with any decode error (a negative
 `avcodec_send_packet` or `avcodec_receive_frame` return) or any frame the decoder flags as corrupt
 (`AV_FRAME_FLAG_CORRUPT`, or a non-zero `decode_error_flags`) records `class2 <signature>` in its

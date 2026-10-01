@@ -19,9 +19,65 @@ defaults:
     shell: bash
 
 jobs:
+  # 07-14-PLAN.md (CONTENT-01, D-09/D-10): the video-decoder proof streams are
+  # encoded exactly ONCE per run, here, and handed to every build leg as an
+  # artifact. Four facts force a single producer (07-RESEARCH.md Q2/Q3): the
+  # Windows pin is an LGPL ffmpeg without libx264/libx265; the macOS and arm64
+  # pins may encode different bytes; even the NATIVE encoders (mpeg4,
+  # mpeg2video, mjpeg, huffyuv) emit different bytes on x86_64 and aarch64; and
+  # what the proof must compare is the decoders of identical bytes, never the
+  # encoders. The producer runs the pinned linux-x86_64 ffmpeg (which carries
+  # libx264, libx265, libvpx-vp9 and libaom) as a TOOL: nothing it writes is
+  # committed or linked, so the shipped binary stays a decode-only LGPL FFmpeg
+  # build (AR-03). Never move this encoding onto a matrix leg.
+  #
+  # KNOWN PROPERTY: `build` declares `needs: video-proof-streams`, so a producer
+  # failure SKIPS the whole matrix and the required status contexts
+  # (`build (x64-linux)`, `build (arm64-osx)`, `build (x64-windows-static-md)`)
+  # never report -- the merge is BLOCKED, not bypassed. That is intended: a leg
+  # that went green without the proof streams would be a proof that silently
+  # stopped running. Do NOT add `if: always()` or any condition that lets a leg
+  # run without them.
+  video-proof-streams:
+    name: video-proof-streams
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No `if:`, no `continue-on-error:`: same stance as the build job's own
+      # install of this pin. Checksum-verified; a mismatch aborts non-zero.
+      - name: Install the pinned ffmpeg build (D-GAP-01)
+        run: bash scripts/install_pinned_ffmpeg.sh
+
+      - name: Generate the video proof streams (D-10)
+        run: bash scripts/gen_video_proof.sh video-proof
+
+      # The producer's own manifest must verify before it is published, so a
+      # bad upload is never blamed on the transport.
+      - name: Verify the proof stream manifest before upload
+        run: |
+          cd video-proof
+          sha256sum -c MANIFEST.sha256
+
+      - name: Upload the video proof streams
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-proof-streams
+          path: video-proof/
+          if-no-files-found: error
+          retention-days: 7
+
   build:
     name: build (${{ matrix.preset }})
     runs-on: ${{ matrix.runner }}
+    # 07-14-PLAN.md: every leg decodes the SAME proof-stream bytes, produced
+    # once by the job above. See that job's comment for why a producer failure
+    # blocks (and does not bypass) the required build contexts.
+    needs: video-proof-streams
     # The two D-06 non-blocking legs must be unable to influence the
     # aggregate required status in either direction (BUILD-05 "ordering"
     # assumption) — expressed here in the file, not only in a branch
@@ -455,6 +511,33 @@ jobs:
             echo "$BIN: $ARCHS"
           done
 
+      # 07-14-PLAN.md (CONTENT-01, D-10; flagged assumption A29): the proof
+      # streams the `video-proof-streams` job encoded. Unconditional on every
+      # leg (no `if:`): the proof must decode identical bytes everywhere.
+      # The download action (v4) is the first-party counterpart of the
+      # `actions/upload-artifact@v4` already used below; its behaviour here is
+      # not yet exercised in this repository, so the manifest check that follows
+      # fails loudly if the bytes arrive altered or incomplete.
+      - name: Download the video proof streams
+        uses: actions/download-artifact@v4
+        with:
+          name: video-proof-streams
+          path: build/video-proof
+
+      # Transport check, on every leg including Windows (Git Bash, the
+      # workflow's default shell). `sha256sum` is GNU coreutils and is absent
+      # from macOS runners, whose `shasum -a 256` reads the same
+      # `<hash>  <name>` manifest format. The test's own XXH3-128 identity
+      # assertion against the committed ledger is the separate PROVENANCE check.
+      - name: Verify the video proof stream manifest
+        run: |
+          cd build/video-proof
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum -c MANIFEST.sha256
+          else
+            shasum -a 256 -c MANIFEST.sha256
+          fi
+
       # ctest --preset only exists for the 3 blocking triplets in
       # CMakePresets.json (owned by Plan 01, not modified here) — every
       # preset's binaryDir is build/<presetName>, so --test-dir reaches the
@@ -465,6 +548,14 @@ jobs:
       # phase already hit three times against a -R filter, and is exactly
       # what a required check must never report as success.
       - name: Test
+        env:
+          # 07-14-PLAN.md: the video proof. MEDIADIFF_VIDEO_PROOF_DIR is where
+          # the artifact was downloaded (absolute); REQUIRE turns a missing or
+          # empty directory into a test FAILURE rather than a skip, and the
+          # post-run guard below additionally requires the proof test to appear
+          # as Passed -- the proof cannot silently stop running.
+          MEDIADIFF_VIDEO_PROOF_DIR: ${{ github.workspace }}/build/video-proof
+          MEDIADIFF_REQUIRE_VIDEO_PROOF: "1"
         run: |
           TEST_DIR="build/${{ matrix.preset }}"
           # Parse CTest's own "Total Tests: N" line rather than counting the
@@ -526,6 +617,22 @@ jobs:
           # widening, mirroring the reasoning the "Total Tests:" guard above
           # already applies to itself: an exclusion that quietly grows is the
           # same defect class as a gate that quietly stops gating.
+          # 07-14-PLAN.md: the video-proof ran-guard. The cross-leg proof test
+          # SKIPs when MEDIADIFF_VIDEO_PROOF_DIR is unusable and a skip exits 0,
+          # so on its own it could quietly stop gating; with REQUIRE set it
+          # fails instead, and this guard independently demands the test appear
+          # as Passed in the log ctest just wrote (a Skipped, Failed or absent
+          # line all fail it). It is NOT a designated-leg-only golden, so
+          # EXCLUDED_TEST_REGEX and EXPECTED_EXCLUDED_COUNT below stay unchanged.
+          assert_video_proof_ran() {
+            if ! grep -Eq 'integration\.video_hash_decoder - cross-leg proof [. ]*Passed' "$1"; then
+              echo "::error::the cross-leg video proof test (video_hash_decoder - cross-leg proof) did not appear as Passed in the ctest log on this leg (${{ matrix.preset }}) — MEDIADIFF_VIDEO_PROOF_DIR did not reach the test binary or the test was skipped, so the video-decoder proof silently stopped running."
+              grep -E 'video_hash_decoder' "$1" || echo "(no video_hash_decoder test appears in the log at all)"
+              return 1
+            fi
+            return 0
+          }
+
           DESIGNATED_LEG="x64-linux"
           EXCLUDED_TEST_REGEX='unit\.inspect_container - golden:|unit\.ts_scan_golden - ts_(204|multiprogram|single)\.ts matches|integration\.size_checks - the size\.\* findings are pinned'
           EXPECTED_EXCLUDED_COUNT=5
@@ -571,6 +678,7 @@ jobs:
               echo "::error::none of the byte-exact fixture-derived golden tests appear in the designated leg's ctest output at all — the guard above cannot have checked anything, which is itself a gate that stopped gating."
               exit 1
             fi
+            assert_video_proof_ran "$TEST_DIR/ctest-designated.log" || exit 1
             exit "$CTEST_STATUS"
           else
             FILTERED_TOTAL=$(ctest --test-dir "$TEST_DIR" -N -E "$EXCLUDED_TEST_REGEX" | sed -n 's/^Total Tests: \([0-9][0-9]*\)$/\1/p' || true)
@@ -589,8 +697,32 @@ jobs:
             echo "  - unit.ts_scan_golden - ts_multiprogram.ts matches the committed TSDuck-derived golden"
             echo "  - unit.ts_scan_golden - ts_single.ts matches the committed TSDuck-derived golden"
             echo "  - integration.size_checks - the size.* findings are pinned by a committed, read-only golden"
-            ctest --test-dir "$TEST_DIR" --output-on-failure -E "$EXCLUDED_TEST_REGEX"
+            # errexit is suspended across the pipeline for the same reason as on
+            # the designated leg: the real ctest status is captured and re-raised
+            # verbatim below, after the video-proof ran-guard has looked at the log.
+            set +e
+            ctest --test-dir "$TEST_DIR" --output-on-failure -E "$EXCLUDED_TEST_REGEX" 2>&1 | tee "$TEST_DIR/ctest-nondesignated.log"
+            CTEST_STATUS=${PIPESTATUS[0]}
+            set -e
+            assert_video_proof_ran "$TEST_DIR/ctest-nondesignated.log" || exit 1
+            exit "$CTEST_STATUS"
           fi
+
+      # 07-14-PLAN.md: print THIS leg's own proof rows. `ctest --output-on-failure`
+      # shows a passing test's output nowhere, and the rows are the raw material
+      # 07-15 transcribes into tests/golden/VIDEO_PROOF_CHAINS.txt from the
+      # designated leg (x64-linux) -- and the per-leg evidence that every other
+      # leg decoded the same bytes to the same chain. Re-runs one test (seconds)
+      # and filters its output down to the ledger rows; the Test step above
+      # already did the gating, this step only fails if the rows are absent.
+      - name: Print the video proof rows (pasteable ledger lines)
+        env:
+          MEDIADIFF_VIDEO_PROOF_DIR: ${{ github.workspace }}/build/video-proof
+          MEDIADIFF_REQUIRE_VIDEO_PROOF: "1"
+        run: |
+          TEST_DIR="build/${{ matrix.preset }}"
+          echo "--- video proof rows for ${{ matrix.preset }} (tests/golden/VIDEO_PROOF_CHAINS.txt format) ---"
+          ctest --test-dir "$TEST_DIR" -R 'integration\.video_hash_decoder - cross-leg proof' --no-tests=error -V 2>&1 | grep -E 'stream=proof_' | sed 's/^[0-9]*: //'
 
       # 07-11-PLAN.md (CONTENT-09; flagged assumption A22): quality.vmaf needs
       # libvmaf, which only a build configured with MEDIADIFF_WITH_VMAF=ON links
