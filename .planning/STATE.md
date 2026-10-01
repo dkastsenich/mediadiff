@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
 status: executing
-stopped_at: Completed 07-09-PLAN.md
-last_updated: "2026-10-01T18:26:05.547Z"
+stopped_at: Completed 07-10-PLAN.md
+last_updated: "2026-10-01T18:52:23.378Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 07 execution resumed (wave continue)
-state_head: bb460a3b25d22f5d47d402f2cf8cc5d865648cdc
+state_head: 3e137132d9bcd5283f9b83f5a8f7c13c568825e9
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 127
-  completed_plans: 121
+  completed_plans: 122
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 ## Current Position
 
 Phase: 7 (Content & Quality) — EXECUTING
-Plan: 10 of 15
+Plan: 11 of 15
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 07 execution resumed (wave continue)
 
@@ -173,6 +173,7 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 07 P07 | 25 min | 3 tasks | 19 files |
 | Phase 07 P08 | n/a | 3 tasks | 39 files |
 | Phase 07 P09 | 12min | 3 tasks | 16 files |
+| Phase 07 P10 | 24min | 3 tasks | 38 files |
 
 ## Accumulated Context
 
@@ -428,6 +429,9 @@ Recent decisions affecting current work:
 - [Phase 7]: 07-08: perceptual is live-compare only (D-01); min pair score gates, time pairing with index fallback (D-02/D-03); tol/dist --tol override gap deferred
 - [Phase 07]: 07-09: TRUST-04 path preconditions are a generic evidence-key table in compare_tol (scaler_path, decode_path_signature); a mismatch or one-sided key skips as path_incomparable even inside tolerance; codecs are never a precondition — A score from different decode or scaler paths is not comparable; evidence-driven so quality.* checks inherit it
 - [Phase 07]: 07-09: dir --content probes each pair via fingerprint_pair and derives the per-side cap from 2 * resolved_threads — Two sweeps are in flight per job under lockstep; DIR-06's per-in-flight-file budget must hold
+- [Phase 07]: [07-10] PSNR gates on the floor mean of per-frame sample-weighted Y+U+V milli-dB capped at (6*bpc)+12 dB; baseline self-score is the cap; min/per-plane in evidence (D-01, D-03) — Identical frames score the cap so the delta is exactly 0 and no infinity reaches JSON; the integer fixed-point log keeps --json byte-identical across libm implementations
+- [Phase 07]: [07-10] --psnr/--ssim are usage errors without content decoding, and exist only on compare and dir (snapshot and inspect reject them) — A silent requires_decode skip would be unconnectable to the flag; snapshots must never store a two-file score (CONTENT-10 as amended by D-01)
+- [Phase 07]: [07-10] quality.* carries scaler_path ('native (no scaler)') and decode_path_signature on both sides so 07-09's tol precondition table guards it (TRUST-04 proven in test_quality.cpp) — TRUST-04's text names quality.*; the table is evidence-driven so the keys must exist on both sides
 
 ### Pending Todos
 
@@ -475,6 +479,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-01T18:26:05.252Z
-Stopped at: Completed 07-09-PLAN.md
+Last session: 2026-10-01T18:52:23.063Z
+Stopped at: Completed 07-10-PLAN.md
 Resume file: None

@@ -158,9 +158,9 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **CONTENT-05**: When frame counts differ, perceptual comparison pairs the overlapping prefix and notes truncation in evidence rather than silently misaligning (amended, 07-03-PLAN.md, 2026-09-30: D-02 replaces "pairs the overlapping prefix" with "pairs the overlapping time range by presentation time" — each side's frames are timed from its own first frame and paired within strictly less than half the finer frame interval, in exact rational arithmetic, with decode-index fallback when either side lacks usable timestamps or a frame interval, and unpaired frames counted in evidence rather than shifting every later pair; src/core/frame_pairing.h is the one rule)
 - [x] **CONTENT-06**: `content.video.frozen_runs` and `content.video.black_runs` detect spans, with black detection normalized by color range and bit depth so a range flip does not false-alarm the detector
 - [x] **CONTENT-07**: Hashing, perceptual scoring, and the frozen/black detectors all run inside one decode sweep
-- [ ] **CONTENT-08**: `quality.psnr` and `quality.ssim` compute in-tree at native resolution, reporting min and mean
+- [x] **CONTENT-08**: `quality.psnr` and `quality.ssim` compute in-tree at native resolution, reporting min and mean
 - [ ] **CONTENT-09**: `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint, reporting harmonic mean and min, and refusing `--sample` as `skipped:sampling_conflict`
-- [ ] **CONTENT-10**: `quality.*` against a snapshot reports `skipped:requires_media` while still showing stored scores for trend context (amended, 07-10-PLAN.md, 2026-09-30, D-01: two-file scores exist only in a live media-vs-media compare; against a snapshot on either side every `quality.*` check and `content.video.perceptual` report `skipped:requires_media`; snapshots store no scores in v1, so there is no stored trend score to show)
+- [x] **CONTENT-10**: `quality.*` against a snapshot reports `skipped:requires_media` while still showing stored scores for trend context (amended, 07-10-PLAN.md, 2026-09-30, D-01: two-file scores exist only in a live media-vs-media compare; against a snapshot on either side every `quality.*` check and `content.video.perceptual` report `skipped:requires_media`; snapshots store no scores in v1, so there is no stored trend score to show)
 - [x] **CONTENT-11**: `compare` decodes baseline and candidate in lockstep with one frame in flight per side — two full decoded sequences are never resident
 
 ### Trust & Determinism Guarantees
@@ -360,9 +360,9 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONTENT-05 | Phase 7 | Complete |
 | CONTENT-06 | Phase 7 | Complete |
 | CONTENT-07 | Phase 7 | Complete |
-| CONTENT-08 | Phase 7 | Pending |
+| CONTENT-08 | Phase 7 | Complete |
 | CONTENT-09 | Phase 7 | Pending |
-| CONTENT-10 | Phase 7 | Pending |
+| CONTENT-10 | Phase 7 | Complete |
 | CONTENT-11 | Phase 7 | Complete |
 | TRUST-01 | Phase 6 | Complete |
 | TRUST-02 | Phase 6 | Complete |
