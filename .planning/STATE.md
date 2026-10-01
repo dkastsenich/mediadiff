@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
 status: executing
-stopped_at: Completed 07-12-PLAN.md
-last_updated: "2026-10-01T20:01:41.511Z"
+stopped_at: Completed 07-13-PLAN.md
+last_updated: "2026-10-01T20:27:29.743Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 07 execution resumed (wave continue)
-state_head: cacf7c28e1bd1f919ab86c6fc294bf49662eaad6
+state_head: e39b9fd648f6c558523b4916a16c5d98a98d8ebd
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 127
-  completed_plans: 124
+  completed_plans: 125
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 ## Current Position
 
 Phase: 7 (Content & Quality) — EXECUTING
-Plan: 13 of 15
+Plan: 14 of 15
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 07 execution resumed (wave continue)
 
@@ -176,6 +176,7 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 07 P10 | 24min | 3 tasks | 38 files |
 | Phase 07 P11 | 39min | 3 tasks | 28 files |
 | Phase 07 P12 | 22min | 3 tasks | 17 files |
+| Phase 07 P13 | 20min | 3 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -438,6 +439,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-11: libvmaf 3.2.0 aborts on pictures 16 px or smaller in either dimension; kVmafMinDimension=17 (measured) so such frames report skipped:insufficient_data and never reach libvmaf — a tiny clip must not crash the gate
 - [Phase 07]: 07-12: bench-capped scan is not partial; stop_reason=bench_packet_cap carries the cap and the bench rejects a run that did not reach it — stores are complete up to the stop so analyzers do real work; a file shorter than the slice would silently measure a different workload
 - [Phase 07]: 07-12: PERF-02 measured 22.8x realtime single-threaded (production, D-11) vs 39.9x automatic threads on the D-16 reference; ratchet on first 1800 video packets, video_plain/full_instructions provisional (ubuntu:24.04 container, valgrind 3.22.0) until 07-15 transcribes the designated leg — no valgrind on the workstation; Docker measurement follows 06-12; TRUST-07 and PERF-02 left pending because 07-15 also declares them
+- [Phase 07]: 07-13: pair stall watchdog uses per-side heartbeat slots (Heartbeat::candidate_side) so a trip names the right file; dir publishes results only through AbandonControl::commit under the lock abandon takes (commit-under-lock, not a bare CAS) — A shared position is overwritten by the still-running side; a CAS alone does not make completion imply fully-written results (T-07-41)
 
 ### Pending Todos
 
@@ -485,6 +487,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-01T20:01:41.220Z
-Stopped at: Completed 07-12-PLAN.md
+Last session: 2026-10-01T20:27:29.456Z
+Stopped at: Completed 07-13-PLAN.md
 Resume file: None
