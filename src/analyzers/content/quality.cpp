@@ -12,7 +12,8 @@
 #include "probe/pass.h"
 
 // 07-10-PLAN.md (CONTENT-08, CONTENT-10; D-01, 07-CHECK-ROSTER.md two-file scope
-// rule): quality.psnr and quality.ssim's ONE-SIDED emission.
+// rule): quality.psnr, quality.ssim and (07-11, CONTENT-09) quality.vmaf's ONE-SIDED
+// emission.
 //
 // A full-reference quality score is a property of a PAIR of videos, so a single
 // file can never measure it (D-01). What a one-sided probe emits is an explicit
@@ -22,8 +23,7 @@
 // stored score (CONTENT-10 as amended by D-01: snapshots never hold a two-file
 // score), and SNAP-06 stays clean. The live two-file measurement is written by
 // probe/lockstep.cpp, which REPLACES each placeholder on both fingerprints of a
-// media-vs-media compare (it never adds a second one). 07-11 adds quality.vmaf
-// to this same analyzer.
+// media-vs-media compare (it never adds a second one).
 //
 // Which stream: the primary one -- content_has_primary_video, the same rule
 // content.video.perceptual uses. A file with no such stream emits nothing,
@@ -62,6 +62,9 @@ void run_content_quality(const ProbeResults& results, Fingerprint& fp) {
   const Scope scope{Scope::Kind::video, 0};
   push_skip(CheckId::quality_psnr, scope, reason, fp);
   push_skip(CheckId::quality_ssim, scope, reason, fp);
+  // 07-11-PLAN.md (CONTENT-09): quality.vmaf is registered on every build, so
+  // every build records its honest one-sided skip.
+  push_skip(CheckId::quality_vmaf, scope, reason, fp);
 }
 
 }  // namespace

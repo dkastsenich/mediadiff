@@ -24,6 +24,7 @@
 #include "probe/audio_decode.h"
 #include "probe/packet_scan.h"
 #include "util/fs.h"
+#include "util/version.h"
 
 namespace mediadiff {
 
@@ -520,11 +521,12 @@ mediadiff::expected<int, Error> resolve_sample_stride(const SampleArgs& args, bo
 QualityArgs add_quality_flags(CLI::App& cmd) {
   // One help string for both flags, as the plan words it.
   static constexpr const char* kHelp =
-      "Also score PSNR / SSIM of the candidate against the baseline at native resolution (live media compares only; "
-      "snapshots report requires_media)";
+      "Also score PSNR / SSIM / VMAF of the candidate against the baseline at native resolution (live media compares "
+      "only; snapshots report requires_media; --vmaf needs a build with MEDIADIFF_WITH_VMAF=ON)";
   QualityArgs args;
   args.psnr_flag = cmd.add_flag("--psnr", kHelp);
   args.ssim_flag = cmd.add_flag("--ssim", kHelp);
+  args.vmaf_flag = cmd.add_flag("--vmaf", kHelp);
   return args;
 }
 
@@ -532,6 +534,15 @@ mediadiff::expected<QualityRequest, Error> resolve_quality_request(const Quality
   QualityRequest request;
   request.psnr = opt_flag(args.psnr_flag);
   request.ssim = opt_flag(args.ssim_flag);
+  request.vmaf = opt_flag(args.vmaf_flag);
+  if (request.vmaf && !vmaf_built_in()) {
+    // The build decides, asked through vmaf_built_in() so this file (compiled on
+    // every platform) carries no preprocessor branch of its own.
+    return mediadiff::unexpected(Error{
+        ErrorKind::usage,
+        "'--vmaf' requires a build configured with MEDIADIFF_WITH_VMAF=ON (the default build keeps libvmaf absent; "
+        "the libvmaf port does not support Windows)"});
+  }
   if (request.psnr && !content_enabled) {
     return mediadiff::unexpected(Error{ErrorKind::usage,
                                        "'--psnr' needs the content decode pass, which is off for this run "
@@ -542,6 +553,12 @@ mediadiff::expected<QualityRequest, Error> resolve_quality_request(const Quality
     return mediadiff::unexpected(Error{ErrorKind::usage,
                                        "'--ssim' needs the content decode pass, which is off for this run "
                                        "(--no-content, or this command needs --content) -- drop --ssim or enable "
+                                       "content decoding"});
+  }
+  if (request.vmaf && !content_enabled) {
+    return mediadiff::unexpected(Error{ErrorKind::usage,
+                                       "'--vmaf' needs the content decode pass, which is off for this run "
+                                       "(--no-content, or this command needs --content) -- drop --vmaf or enable "
                                        "content decoding"});
   }
   return request;

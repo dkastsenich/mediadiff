@@ -50,11 +50,11 @@ std::string scratch(const std::string& name) {
 std::string snapshot_bytes(const mediadiff::Fingerprint& fp, const std::string& name, bool drop_perceptual) {
   mediadiff::Fingerprint copy = fp;
   if (drop_perceptual) {
-    // The ids a pair probe replaces: content.video.perceptual and (07-10)
-    // quality.psnr / quality.ssim.
+    // The ids a pair probe replaces: content.video.perceptual and (07-10 / 07-11)
+    // quality.psnr / quality.ssim / quality.vmaf.
     const mediadiff::CheckRegistry& registry = mediadiff::builtin_registry();
-    const std::array<std::uint32_t, 3> pair_ids = {*registry.find(kPerceptual), *registry.find("quality.psnr"),
-                                                   *registry.find("quality.ssim")};
+    const std::array<std::uint32_t, 4> pair_ids = {*registry.find(kPerceptual), *registry.find("quality.psnr"),
+                                                   *registry.find("quality.ssim"), *registry.find("quality.vmaf")};
     std::vector<mediadiff::Measurement> kept;
     for (mediadiff::Measurement& m : copy.measurements) {
       if (std::find(pair_ids.begin(), pair_ids.end(), m.check_index) == pair_ids.end()) {

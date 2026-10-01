@@ -59,15 +59,15 @@ std::string scratch(const std::string& name) {
 }
 
 // The canonical snapshot bytes of `fp`, with the ids a pair probe REPLACES
-// removed -- content.video.perceptual and, from 07-10, quality.psnr and
-// quality.ssim (each a one-sided placeholder in a one-sided probe and a live or
+// removed -- content.video.perceptual and, from 07-10 / 07-11, quality.psnr,
+// quality.ssim and quality.vmaf (each a one-sided placeholder in a one-sided probe and a live or
 // not_requested two-file measurement in a pair probe): the byte-identity
 // yardstick for "every other measurement is what a one-sided probe gives".
 std::string bytes_without_perceptual(const mediadiff::Fingerprint& fp, const std::string& name) {
   mediadiff::Fingerprint copy = fp;
   const mediadiff::CheckRegistry& registry = mediadiff::builtin_registry();
-  const std::array<std::uint32_t, 3> pair_ids = {*registry.find(kPerceptual), *registry.find("quality.psnr"),
-                                                 *registry.find("quality.ssim")};
+  const std::array<std::uint32_t, 4> pair_ids = {*registry.find(kPerceptual), *registry.find("quality.psnr"),
+                                                 *registry.find("quality.ssim"), *registry.find("quality.vmaf")};
   std::vector<mediadiff::Measurement> kept;
   for (mediadiff::Measurement& m : copy.measurements) {
     if (std::find(pair_ids.begin(), pair_ids.end(), m.check_index) == pair_ids.end()) {
@@ -226,7 +226,7 @@ TEST_CASE("lockstep - one side without video", "[integration]") {
   CHECK(find_perceptual(result.baseline) == nullptr);
   CHECK(find_perceptual(result.candidate) == nullptr);
   // 07-10: the quality placeholders are erased the same way (Pitfall 10).
-  for (const char* id : {"quality.psnr", "quality.ssim"}) {
+  for (const char* id : {"quality.psnr", "quality.ssim", "quality.vmaf"}) {
     const std::uint32_t index = *mediadiff::builtin_registry().find(id);
     for (const mediadiff::Fingerprint* fp : {&result.baseline, &result.candidate}) {
       CHECK(std::none_of(fp->measurements.begin(), fp->measurements.end(),

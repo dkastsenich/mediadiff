@@ -494,8 +494,13 @@ mediadiff::expected<void, Error> assemble_quality(const std::string& baseline_pa
     bool requested;
     bool psnr;
   };
-  const std::array<Target, 2> targets = {{{CheckId::quality_psnr, scorer.quality_request().psnr, true},
-                                          {CheckId::quality_ssim, scorer.quality_request().ssim, false}}};
+  // quality.vmaf (07-11, CONTENT-09) is registered on every build, so its
+  // placeholder is replaced or erased here like the others'; it is only ever
+  // `requested` in a build that links libvmaf (fingerprint_pair refuses the
+  // request otherwise), and its scored measurement is written by assemble_vmaf.
+  const std::array<Target, 3> targets = {{{CheckId::quality_psnr, scorer.quality_request().psnr, true},
+                                          {CheckId::quality_ssim, scorer.quality_request().ssim, false},
+                                          {CheckId::quality_vmaf, false, false}}};
   std::optional<InputIdentity> identity;
 
   for (const Target& target : targets) {
@@ -754,6 +759,12 @@ mediadiff::expected<PairResult, Error> fingerprint_pair(const std::string& basel
                                                           const CheckRegistry& registry,
                                                           const ProbeOptions& options,
                                                           const QualityRequest& quality) {
+  if (quality.vmaf && !vmaf_built_in()) {
+    // The CLI turns this into a usage error before it gets here; a library
+    // caller gets the same refusal rather than a silent not_requested.
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, "VMAF scoring requires a build configured with MEDIADIFF_WITH_VMAF=ON"});
+  }
   ProbeOptions plain = options;
   plain.frame_tap = nullptr;
 

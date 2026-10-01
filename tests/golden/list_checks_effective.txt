@@ -83,6 +83,7 @@ content.video.black_runs  severity=fail  tolerance=<none>
 content.video.perceptual  severity=info  tolerance=15/1000 score
 quality.psnr  severity=fail  tolerance=5/10 dB
 quality.ssim  severity=fail  tolerance=5/1000 score
+quality.vmaf  severity=fail  tolerance=5/10 score
 audio.codec  severity=fail  tolerance=<none>
 audio.sample_rate  severity=fail  tolerance=<none>
 audio.sample_fmt  severity=fail  tolerance=<none>

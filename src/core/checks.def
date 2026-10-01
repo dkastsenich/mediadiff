@@ -1696,6 +1696,35 @@ value_kind = "rational"
 severity = "fail"
 tolerance = "0.005"
 
+# 07-11-PLAN.md (CONTENT-09; 07-CHECK-ROSTER.md, approve-as-proposed 2026-09-30;
+# D-01, D-03), src/analyzers/content/quality.cpp and src/probe/{lockstep,
+# pair_scorer,vmaf_scorer}.cpp: quality.vmaf -- Netflix libvmaf's VMAF score of
+# the candidate against the baseline's primary video stream, model
+# `vmaf_v0.6.1` pinned and recorded, opt-in with `--vmaf`. REGISTERED ON EVERY
+# BUILD so a config or snapshot that names the id never breaks, but only a build
+# configured with MEDIADIFF_WITH_VMAF=ON (Linux and macOS: the vcpkg libvmaf port
+# declares `!windows`) can score it; every other build reports
+# `skipped:not_requested` in a live compare and treats `--vmaf` as a usage error
+# (exit 64) naming the option. `tol` semantic, `score` unit (bare tolerance, no
+# suffix), `rational` value (num/den in thousandths: 97.43 is 97430/1000), the
+# `vmaf_drop: 0.5` of doc 06 section 3. D-01: a live media-vs-media compare only;
+# one-sided probes and snapshot compares report `skipped:requires_media`. D-03:
+# the HARMONIC mean gates (it punishes bad frames); min and arithmetic mean ride
+# in evidence. The baseline's self-score is COMPUTED (a second libvmaf context fed
+# the baseline against itself; research Q8 measured 97.43 on identical input),
+# never assumed to be 100. `--sample N` (N >= 2) is `skipped:sampling_conflict`:
+# VMAF's temporal features need consecutive frames. Both sides carry
+# `scaler_path` and `decode_path_signature`, so 07-09's tol precondition table
+# (TRUST-04) guards it as it does the other two quality.* checks.
+[[check]]
+id = "quality.vmaf"
+group = "quality"
+semantic = "tol"
+unit = "score"
+value_kind = "rational"
+severity = "fail"
+tolerance = "0.5"
+
 # 06-03-PLAN.md (AUDIO-01, AUDIO-02), src/analyzers/audio/stream_params.cpp
 # -- the six per-audio-stream identity checks: codec, sample rate, sample
 # format, bit depth, channel count and canonical layout. Approved at

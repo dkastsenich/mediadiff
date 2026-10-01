@@ -214,7 +214,7 @@ TEST_CASE("quality_snapshot - the flags exist only where a score can be computed
   // `snapshot` and `inspect` are one-file probes: they do not accept the flags
   // (a usage error, never a silent no-op), so no snapshot can ever be taken
   // "with" a score.
-  for (const char* flag : {"--psnr", "--ssim"}) {
+  for (const char* flag : {"--psnr", "--ssim", "--vmaf"}) {
     INFO("flag " << flag);
     const CliResult snap = run_cli({"snapshot", fixture("video_hash_base.mp4"), "--out", scratch("flag.snap.json"),
                                     "--force", flag});

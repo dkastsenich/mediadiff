@@ -296,21 +296,26 @@ SampleArgs add_sample_flag(CLI::App& cmd);
 // leaves the fingerprint byte-identical to one taken without the flag.
 mediadiff::expected<int, Error> resolve_sample_stride(const SampleArgs& args, bool content_enabled);
 
-// 07-10-PLAN.md (CONTENT-08, D-01): shared option storage for `--psnr` and
-// `--ssim`, the opt-in native-resolution quality scores, mirroring SampleArgs's
+// 07-10-PLAN.md (CONTENT-08, D-01): shared option storage for `--psnr`,
+// `--ssim` and (07-11) `--vmaf`, the opt-in native-resolution quality scores, mirroring SampleArgs's
 // borrowed-`CLI::Option*` shape. Registered on `compare` and `dir` ONLY -- a
 // snapshot never stores a two-file score, so `snapshot` and `inspect` do not
 // accept them (a usage error there, never a silent no-op).
 struct QualityArgs {
   CLI::Option* psnr_flag = nullptr;
   CLI::Option* ssim_flag = nullptr;
+  // 07-11-PLAN.md (CONTENT-09): `--vmaf`, accepted by every build and a usage
+  // error naming MEDIADIFF_WITH_VMAF on one that does not link libvmaf.
+  CLI::Option* vmaf_flag = nullptr;
 };
 
-// Registers `--psnr` and `--ssim` on `cmd`.
+// Registers `--psnr`, `--ssim` and `--vmaf` on `cmd`.
 QualityArgs add_quality_flags(CLI::App& cmd);
 
-// Resolves the two flags to the QualityRequest handed to fingerprint_pair. A
-// flag with content decode off (`--no-content`, or `dir` without `--content`)
+// Resolves the flags to the QualityRequest handed to fingerprint_pair. `--vmaf`
+// on a build without libvmaf (vmaf_built_in() is false: the default build and
+// every Windows build) is a usage error naming MEDIADIFF_WITH_VMAF -- never a
+// silent skip. A flag with content decode off (`--no-content`, or `dir` without `--content`)
 // is a usage error naming the flag, since the scores come from the decode pass
 // that switch disables -- the same rule `--sample N` follows. A QualityArgs
 // with null options (the implicit two-positional route) resolves to nothing

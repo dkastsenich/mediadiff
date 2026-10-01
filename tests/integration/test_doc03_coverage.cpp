@@ -62,7 +62,12 @@
 // 07-06-PLAN.md registers video.closed_captions (VIDEO-11), bringing the
 // running total to ninety-five. 07-08-PLAN.md registers
 // content.video.perceptual (CONTENT-04), bringing the running total to
-// ninety-six. This file is where a gap becomes visible.
+// ninety-six. 07-10-PLAN.md registers quality.psnr and quality.ssim, bringing it to
+// ninety-eight, and 07-11-PLAN.md registers quality.vmaf (CONTENT-09),
+// bringing the running total to ninety-nine -- verified build-conditionally:
+// a build with libvmaf runs the declared pairs, a build without it asserts the
+// check's stated default-build contract (see contract_holds_without_build).
+// This file is where a gap becomes visible.
 //
 // Every declared pair below was proven empirically against the real
 // binary before being committed here (never guessed from a fixture's
@@ -77,6 +82,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -85,6 +91,7 @@
 #include "core/registry.h"
 #include "coverage_pairs.h"
 #include "support/fixture_paths.h"
+#include "util/version.h"
 
 using mediadiff::CheckRegistry;
 using mediadiff::builtin_registry;
@@ -133,6 +140,55 @@ std::vector<std::string> statuses_for(const std::string& baseline, const std::st
   return statuses;
 }
 
+// The build option a CoveragePair::requires_build names, resolved to "does this
+// build have it". An option this gate does not know is a failure, never a silent
+// "no": a new build-conditional row must teach the gate how to ask.
+bool build_has(const std::string& option) {
+  INFO("requires_build: " << option);
+  REQUIRE(option == "MEDIADIFF_WITH_VMAF");
+  return mediadiff::vmaf_built_in();
+}
+
+// 07-11-PLAN.md (CONTENT-09): the default-build contract of a check whose pairs
+// need a build option this build lacks. Stated, not an exemption: the check is
+// still registered and reports in a live compare of its OWN declared pairs --
+// as skipped:not_requested, never a silent absence -- and asking for it is a
+// usage error (exit 64) that names the option, never a silent skip.
+bool contract_holds_without_build(const std::string& id, const CoveragePair& pair) {
+  for (const auto& [baseline, candidate] : {std::pair<std::string, std::string>{pair.trigger_baseline, pair.trigger_candidate},
+                                            std::pair<std::string, std::string>{pair.clean_baseline, pair.clean_candidate}}) {
+    INFO("baseline: " << baseline << " candidate: " << candidate);
+    REQUIRE(fs::exists(baseline));
+    REQUIRE(fs::exists(candidate));
+    const CliResult live = run_cli({"compare", baseline, candidate, "--profile", "sw-encoder", "--json"});
+    const nlohmann::ordered_json report = nlohmann::ordered_json::parse(live.out, nullptr, false);
+    INFO("compare stdout: " << live.out << "\ncompare stderr: " << live.err);
+    REQUIRE_FALSE(report.is_discarded());
+    bool seen = false;
+    for (const auto& finding : report.at("findings")) {
+      if (finding.at("id").get<std::string>() != id) {
+        continue;
+      }
+      seen = true;
+      if (finding.at("status").get<std::string>() != "skipped" ||
+          finding.at("skip_reason").get<std::string>() != "not_requested") {
+        return false;
+      }
+    }
+    if (!seen) {
+      return false;
+    }
+
+    const CliResult requested = run_cli({"compare", baseline, candidate, "--profile", "sw-encoder", "--json",
+                                         pair.extra_args.at(0)});
+    INFO("requested stderr: " << requested.err);
+    if (requested.exit_code != 64 || requested.err.find(pair.requires_build) == std::string::npos) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool any_non_clean(const std::vector<std::string>& statuses) {
   for (const std::string& status : statuses) {
     if (status != "pass" && status != "skipped") {
@@ -166,6 +222,7 @@ TEST_CASE("doc03_coverage - every registered check has a declared triggering fix
   std::vector<std::string> uncovered_no_pair;
   std::vector<std::string> uncovered_trigger_did_not_fire;
   std::vector<std::string> uncovered_clean_was_not_clean;
+  std::vector<std::string> uncovered_default_build_contract;
   std::size_t verified_count = 0;
 
   const auto& pairs = declared_pairs();
@@ -189,6 +246,15 @@ TEST_CASE("doc03_coverage - every registered check has a declared triggering fix
     }
 
     const CoveragePair& pair = found->second;
+    if (!pair.requires_build.empty() && !build_has(pair.requires_build)) {
+      // A build without the option: its stated contract, counted like any other.
+      if (contract_holds_without_build(id, pair)) {
+        ++verified_count;
+      } else {
+        uncovered_default_build_contract.push_back(id);
+      }
+      continue;
+    }
     const std::vector<std::string> trigger_statuses =
         statuses_for(pair.trigger_baseline, pair.trigger_candidate, id, pair.extra_args);
     const std::vector<std::string> clean_statuses =
@@ -225,6 +291,14 @@ TEST_CASE("doc03_coverage - every registered check has a declared triggering fix
     std::string names;
     for (const auto& name : uncovered_clean_was_not_clean) names += name + " ";
     FAIL("DOC-03 gap -- declared CLEAN pair did not compare all-pass for: " << names);
+  }
+
+  if (!uncovered_default_build_contract.empty()) {
+    std::string names;
+    for (const auto& name : uncovered_default_build_contract) names += name + " ";
+    FAIL("DOC-03 gap -- the default-build contract (skipped:not_requested live, --vmaf exits 64 naming the build "
+         "option) did not hold for: "
+         << names);
   }
 
   // The count-must-equal-the-registry assertion this task's own

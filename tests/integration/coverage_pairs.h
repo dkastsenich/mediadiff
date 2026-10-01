@@ -49,6 +49,14 @@ struct CoveragePair {
   std::string clean_baseline;
   std::string clean_candidate;
   std::vector<std::string> extra_args{};
+  // 07-11-PLAN.md (CONTENT-09): the build option a check's real triggering and
+  // clean pairs need, or empty when every build can score it. quality.vmaf is
+  // registered on every build but scored only by one configured with
+  // MEDIADIFF_WITH_VMAF=ON; the DOC-03 gate runs the pairs as written when the
+  // build has it and asserts the check's stated default-build contract (live
+  // compares report skipped:not_requested, `--vmaf` is a usage error naming the
+  // option) when it does not. Consumers that only sweep clean pairs ignore it.
+  std::string requires_build{};
 };
 
 // meta.missing_candidate/meta.extra_candidate are dir-mode-only synthetic
@@ -627,6 +635,16 @@ inline const std::map<std::string, CoveragePair>& declared_pairs() {
       {"quality.ssim",
        {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
         fixture("video_hash_base.ts"), {"--ssim"}}},
+
+      // 07-11-PLAN.md (CONTENT-09): quality.vmaf, opt-in with `--vmaf` and
+      // scored only by a build configured with MEDIADIFF_WITH_VMAF=ON
+      // (`requires_build`). The pairs are quality.psnr's: the degraded encode
+      // drops the harmonic-mean VMAF far past the 0.5 point tolerance, and the
+      // stream-copy remux decodes to identical pixels, so the candidate score
+      // equals the baseline's COMPUTED self-score and the delta is exactly 0.
+      {"quality.vmaf",
+       {fixture("video_hash_base.mp4"), fixture("video_perc_degraded.mp4"), fixture("video_hash_base.mp4"),
+        fixture("video_hash_base.ts"), {"--vmaf"}, "MEDIADIFF_WITH_VMAF"}},
 
       // --- 06-03-PLAN.md (AUDIO-01, AUDIO-02): the six per-audio-stream
       // header-pass identity checks -- codec/sample_rate/sample_fmt/

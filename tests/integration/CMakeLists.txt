@@ -255,6 +255,14 @@ add_executable(mediadiff_integration_tests
   # no score, an unchanged snapshot compare stays clean, and the flags exist only
   # on compare and dir.
   test_quality_snapshot.cpp
+  # CONTENT-09 (07-11-PLAN.md; D-01, D-03, TRUST-04): quality.vmaf. Every build
+  # proves the id is registered and documented, a live compare without --vmaf
+  # reports skipped:not_requested, a snapshot holds it only as requires_media,
+  # and a build without libvmaf refuses --vmaf with a usage error naming
+  # MEDIADIFF_WITH_VMAF. A build configured with it proves the score: the pinned
+  # model and computed self-score, the harmonic mean against an independent
+  # libvmaf oracle, --sample N refused, geometry, determinism and TRUST-04.
+  test_vmaf.cpp
   # CONTENT-05 (07-09-PLAN.md; D-02): the lockstep's pairing on real fixtures --
   # a dropped frame leaves exactly one baseline frame unpaired, a 60 fps
   # baseline against its 30 fps decimation scores only the coinciding frames, an
