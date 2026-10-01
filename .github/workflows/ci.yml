@@ -592,6 +592,46 @@ jobs:
             ctest --test-dir "$TEST_DIR" --output-on-failure -E "$EXCLUDED_TEST_REGEX"
           fi
 
+      # 07-11-PLAN.md (CONTENT-09; flagged assumption A22): quality.vmaf needs
+      # libvmaf, which only a build configured with MEDIADIFF_WITH_VMAF=ON links
+      # (the default single static binary stays libvmaf-free, BUILD-09). That
+      # build is proven on the designated x64-linux leg ONLY: the vcpkg
+      # `libvmaf` port declares `!windows`, and its macOS build is supported by
+      # the port but not exercised here. The step runs UNCONDITIONALLY (no `if:`)
+      # and decides designated-vs-not inside its own script, printing an explicit
+      # skip reason on every other leg -- the same shape the perf ratchet steps
+      # use, so a log reader sees why a leg did not run it. The extra libvmaf
+      # port is restored from, or built into, the same NuGet binary cache as the
+      # rest of the manifest (the `vmaf` feature of the pinned vcpkg.json); no
+      # new feed, port or install step is involved. The VMAF build lives in its
+      # own binary directory, so it never touches the default build above.
+      #
+      # `--no-tests=error` stops a pattern that matched nothing from passing, and
+      # the post-run guard below fails the leg when the VMAF scoring tests did not
+      # actually RUN: the VMAF tests SKIP on a build without libvmaf, and a skip
+      # exits 0 -- a gate that quietly stops gating, the defect class this file
+      # guards against everywhere else.
+      - name: VMAF build and tests (CONTENT-09, designated leg only)
+        run: |
+          DESIGNATED_LEG="x64-linux"
+          if [ "${{ matrix.preset }}" = "$DESIGNATED_LEG" ]; then
+            cmake --preset x64-linux-vmaf
+            cmake --build build/x64-linux-vmaf
+            set +e
+            ctest --test-dir build/x64-linux-vmaf -R "vmaf|quality|doc03_coverage" --no-tests=error --output-on-failure 2>&1 | tee build/x64-linux-vmaf/ctest-vmaf.log
+            VMAF_CTEST_STATUS=${PIPESTATUS[0]}
+            set -e
+            for REQUIRED in 'integration.vmaf - identical media' 'integration.vmaf - degraded' 'integration.vmaf - TRUST-04 path preconditions' 'integration.doc03_coverage - every registered check'; do
+              if ! grep -F "$REQUIRED" build/x64-linux-vmaf/ctest-vmaf.log | grep -q 'Passed'; then
+                echo "::error::the VMAF build's test '$REQUIRED' did not pass (missing or skipped) -- the VMAF build was not proven, so CONTENT-09 is not gated."
+                exit 1
+              fi
+            done
+            exit "$VMAF_CTEST_STATUS"
+          else
+            echo "This leg (${{ matrix.preset }}) is NOT the designated leg ($DESIGNATED_LEG) for the VMAF build (07-11-PLAN.md, CONTENT-09): the vcpkg libvmaf port does not support Windows and its macOS build is not exercised in CI, so the MEDIADIFF_WITH_VMAF=ON build and its tests only run there. This leg builds and tests the default, libvmaf-free binary above."
+          fi
+
       # 05-12-PLAN.md (PERF-01/PERF-03/PERF-05, D-13/D-14/D-16): valgrind is
       # NOT preinstalled on the ubuntu-24.04 runner image (05-RESEARCH.md
       # confirmed this against the image's own README) -- installed
