@@ -47,6 +47,8 @@ Flags: `--profile --config --set --tol --no-content --content --hash-decoder aut
 --sample N --first-divergence --hwaccel auto|none|cuda --threads N
 --json[=path] --report md=path --report junit=path --strict -q -v --no-color --ascii`
 
+**`--threads N` (07-12-PLAN.md, D-11):** the size of `dir`'s file-level worker pool and nothing else -- it never reaches the video decoder. Every video decode runs one libavcodec thread (`threads=1` in the recorded decoder flags), because damaged streams decode non-deterministically at more than one thread; CONTEXT's discretion default "decoder threading stays automatic" is narrowed to that pin. The cost is measured and recorded (22.8 x realtime single-threaded against 39.9 x with libavcodec's automatic count, on the 10-minute 1080p30 reference), not hidden; see `claude_docs/06-content-and-size-analysis.md` section 1.
+
 Exit codes: `0` clean · `1` fail findings · `2` warn + `--strict` · `64` usage · `65` unreadable input · `66` decode failure mid-analysis (partial JSON still emitted) · `70` internal. The `<3` vs `≥64` split is a CI contract: "regression" vs "could not run".
 
 **`--content` / `--no-content` (06-01-PLAN.md Task 3, D-05):** resolved per command via `resolve_content_enabled` (`src/cli/options.{h,cpp}`), a three-way `explicit flag > (per-command default)` precedence — there is no config-file layer for this one, unlike `--probe-timeout`. Both flags given together is always `ErrorKind::usage` (exit 64), naming both spellings. Per-command default when NEITHER flag is given:
