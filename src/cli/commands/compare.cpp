@@ -23,6 +23,7 @@
 #include "core/registry.h"
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
+#include "probe/lockstep.h"
 #include "probe/orchestrator.h"
 #include "probe/packet_scan.h"
 #include "report/json.h"
@@ -219,18 +220,21 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
 
   ProbeOptions probe_options{/*content_enabled=*/content_enabled, /*hash_decoder=*/hash_decoder};
   probe_options.sample_stride = sample_stride;
-  auto baseline = fingerprint_input(baseline_path, registry, probe_options);
-  if (!baseline) {
-    const Error& err = baseline.error();
+  // 07-08-PLAN.md (CONTENT-11): one fingerprint_pair call replaces the two
+  // sequential fingerprint_input calls. Two media files decode in lockstep (one
+  // sweep per side on its own thread, one frame in flight per side) so the
+  // perceptual score can pair frames without holding two decoded sequences; a
+  // snapshot on either side, or --no-content, takes the sequential path exactly
+  // as before. The first error -- baseline, then candidate -- maps to the same
+  // exit codes through the same report_cli_error path.
+  auto fingerprints = fingerprint_pair(baseline_path, candidate_path, registry, probe_options);
+  if (!fingerprints) {
+    const Error& err = fingerprints.error();
     report_cli_error(err.message);
     std::exit(exit_code_for(err.kind));
   }
-  auto candidate = fingerprint_input(candidate_path, registry, probe_options);
-  if (!candidate) {
-    const Error& err = candidate.error();
-    report_cli_error(err.message);
-    std::exit(exit_code_for(err.kind));
-  }
+  Fingerprint* baseline = &fingerprints->baseline;
+  Fingerprint* candidate = &fingerprints->candidate;
 
   auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
   if (!cli_overrides) {

@@ -90,7 +90,7 @@ nlohmann::ordered_json tolerance_to_json(const Tolerance& tolerance) {
   nlohmann::ordered_json j;
   j["num"] = tolerance.num;
   j["den"] = tolerance.den;
-  j["unit"] = std::string(unit_suffix(tolerance.unit));
+  j["unit"] = std::string(unit_label(tolerance.unit));
   j["is_relative"] = tolerance.is_relative;
   j["warn_num"] = tolerance.warn_num.has_value() ? nlohmann::ordered_json(*tolerance.warn_num)
                                                   : nlohmann::ordered_json(nullptr);
@@ -139,7 +139,7 @@ nlohmann::ordered_json finding_to_json(const Finding& finding, Group group, cons
   j["delta"] = nullptr;
 
   const ResolvedCheck* resolved = find_resolved(policy, finding.id);
-  const std::string_view unit_text = unit_suffix(finding_unit);
+  const std::string_view unit_text = unit_label(finding_unit);
   j["tolerance"] = (resolved != nullptr && resolved->tolerance.has_value()) ? tolerance_to_json(*resolved->tolerance)
                                                                              : nlohmann::ordered_json(nullptr);
   j["unit"] = std::string(unit_text);

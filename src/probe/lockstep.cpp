@@ -1,0 +1,600 @@
+#include "probe/lockstep.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <optional>
+#include <string>
+#include <system_error>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include <nlohmann/json.hpp>
+
+#include "core/check_id.h"
+#include "core/rational.h"
+#include "core/snapshot.h"
+#include "core/value.h"
+#include "probe/pair_scorer.h"
+#include "util/version.h"
+
+namespace mediadiff {
+
+// ---------------------------------------------------------------------------
+// FrameSlot: the single-slot rendezvous. Every wait is a predicate loop.
+// ---------------------------------------------------------------------------
+
+bool FrameSlot::publish(const TappedFrame& frame) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (closed_) {
+    return false;
+  }
+  entry_ = frame;
+  has_entry_ = true;
+  taken_ = false;
+  ++published_;
+  // Counted, not assumed: published and not yet released. The producer blocks
+  // below until the consumer releases, so a second publish can never start
+  // while one is in flight, and this stays 1.
+  const std::int64_t occupancy = published_ - released_;
+  if (occupancy > max_occupancy_) {
+    max_occupancy_ = static_cast<int>(occupancy);
+  }
+  cv_.notify_all();
+  cv_.wait(lock, [this] { return !has_entry_ || closed_; });
+  return !closed_;
+}
+
+void FrameSlot::finish(const TapEnd& end) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (finished_) {
+    return;
+  }
+  end_ = end;
+  finished_ = true;
+  cv_.notify_all();
+}
+
+bool FrameSlot::take(TappedFrame* out) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  cv_.wait(lock, [this] { return (has_entry_ && !taken_) || finished_ || closed_; });
+  if (has_entry_ && !taken_ && !closed_) {
+    *out = entry_;
+    taken_ = true;
+    return true;
+  }
+  return false;
+}
+
+void FrameSlot::release() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!has_entry_) {
+    return;
+  }
+  has_entry_ = false;
+  taken_ = false;
+  ++released_;
+  cv_.notify_all();
+}
+
+void FrameSlot::close() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  closed_ = true;
+  if (has_entry_) {
+    // The consumer has stopped using the frame (this function's contract):
+    // closing releases it, so the producer's blocked publish() can return.
+    has_entry_ = false;
+    taken_ = false;
+    ++released_;
+  }
+  cv_.notify_all();
+}
+
+bool FrameSlot::finished() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return finished_;
+}
+
+TapEnd FrameSlot::end() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return end_;
+}
+
+int FrameSlot::max_occupancy() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return max_occupancy_;
+}
+
+std::int64_t FrameSlot::published() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return published_;
+}
+
+namespace {
+
+// ---------------------------------------------------------------------------
+// The producer threads.
+// ---------------------------------------------------------------------------
+
+struct ProducerJob {
+  const std::string* path = nullptr;
+  const std::vector<AnalyzerSpec>* analyzers = nullptr;
+  ProbeOptions options;
+  FrameSlot* slot = nullptr;
+  std::optional<mediadiff::expected<Fingerprint, Error>> result;
+  detail::ProbeScanStats stats;
+};
+
+// One side's unchanged one-sided sweep. No exception leaves this function: a
+// throw (std::bad_alloc, ...) becomes an Error, and `finish` always runs so the
+// consumer never waits on a side that is gone. FrameSlot::finish is idempotent,
+// so this is a no-op when the sweep already reported its real end.
+void run_producer(ProducerJob* job) {
+  try {
+    job->result.emplace(detail::run_probe(*job->path, *job->analyzers, nullptr, job->options, &job->stats));
+  } catch (const std::exception& error) {
+    job->result.emplace(mediadiff::unexpected(Error{ErrorKind::internal, std::string("probe thread failed: ") + error.what()}));
+  } catch (...) {
+    job->result.emplace(mediadiff::unexpected(Error{ErrorKind::internal, "probe thread failed with an unknown exception"}));
+  }
+  job->slot->finish(TapEnd{});
+}
+
+// Owns the two threads: on EVERY path out of a scope -- normal, early stop or an
+// exception on the calling thread -- both slots are closed (releasing any
+// blocked producer) and both threads are joined before it is destroyed.
+class ProducerThreads {
+ public:
+  ProducerThreads(FrameSlot& baseline, FrameSlot& candidate) : baseline_(baseline), candidate_(candidate) {}
+  ProducerThreads(const ProducerThreads&) = delete;
+  ProducerThreads& operator=(const ProducerThreads&) = delete;
+  ~ProducerThreads() { close_and_join(); }
+
+  // False when a thread could not be started (the started one is closed and
+  // joined, the caller falls back to the sequential path).
+  bool start(ProducerJob* baseline_job, ProducerJob* candidate_job) {
+    try {
+      baseline_thread_ = std::thread(run_producer, baseline_job);
+      candidate_thread_ = std::thread(run_producer, candidate_job);
+    } catch (const std::system_error&) {
+      close_and_join();
+      return false;
+    }
+    return true;
+  }
+
+  void close_and_join() {
+    baseline_.close();
+    candidate_.close();
+    if (baseline_thread_.joinable()) {
+      baseline_thread_.join();
+    }
+    if (candidate_thread_.joinable()) {
+      candidate_thread_.join();
+    }
+  }
+
+ private:
+  FrameSlot& baseline_;
+  FrameSlot& candidate_;
+  std::thread baseline_thread_;
+  std::thread candidate_thread_;
+};
+
+// ---------------------------------------------------------------------------
+// The consumer (the calling thread).
+// ---------------------------------------------------------------------------
+
+struct Side {
+  FrameSlot* slot = nullptr;
+  TappedFrame current{};
+  bool have = false;
+  bool done = false;
+  std::int64_t taken = 0;
+};
+
+void fetch(Side& side) {
+  if (side.have || side.done) {
+    return;
+  }
+  if (side.slot->take(&side.current)) {
+    side.have = true;
+    ++side.taken;
+  } else {
+    side.done = true;
+  }
+}
+
+void release(Side& side) {
+  if (side.have) {
+    side.slot->release();
+    side.have = false;
+  }
+}
+
+// Pairs the two sides' frames until one or both end or the scorer stops. On
+// return neither side holds a frame; the caller closes both slots.
+void consume(FrameSlot& baseline_slot, FrameSlot& candidate_slot, PairScorer& scorer) {
+  Side baseline{&baseline_slot};
+  Side candidate{&candidate_slot};
+  for (;;) {
+    fetch(baseline);
+    fetch(candidate);
+    if (baseline.done && candidate.done) {
+      return;
+    }
+    if (baseline.done || candidate.done) {
+      Side& live = baseline.done ? candidate : baseline;
+      const Side& dead = baseline.done ? baseline : candidate;
+      const bool live_is_baseline = &live == &baseline;
+      if (dead.taken == 0) {
+        // The other side never produced a frame: there is no partner to score
+        // against. Stop, and let the caller's close() free the live producer to
+        // finish its own sweep untapped -- it is never blocked by this side.
+        scorer.stop(PairScorer::StopReason::no_partner);
+        release(live);
+        return;
+      }
+      // One side ended first: drain the other's remaining frames, counting each
+      // unpaired, so its producer still runs to its own end (and never
+      // deadlocks against a consumer that stopped taking).
+      while (live.have) {
+        scorer.count_unpaired(live_is_baseline, 1);
+        release(live);
+        fetch(live);
+      }
+      return;
+    }
+
+    switch (scorer.step(baseline.current, candidate.current)) {
+      case PairScorer::Action::advance_both:
+        release(baseline);
+        release(candidate);
+        break;
+      case PairScorer::Action::advance_baseline:
+        release(baseline);
+        break;
+      case PairScorer::Action::advance_candidate:
+        release(candidate);
+        break;
+    }
+    if (scorer.stopped()) {
+      release(baseline);
+      release(candidate);
+      return;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Assembling the two-file measurement, after both threads joined.
+// ---------------------------------------------------------------------------
+
+constexpr std::int64_t kMicro = 1000000;
+
+nlohmann::ordered_json micro_json(std::int64_t micro) {
+  return nlohmann::ordered_json{{"num", micro}, {"den", kMicro}};
+}
+
+nlohmann::ordered_json pair_json(const PairScore& pair) {
+  nlohmann::ordered_json out{{"baseline_index", pair.baseline_index},
+                             {"candidate_index", pair.candidate_index},
+                             {"score", micro_json(pair.score_micro)}};
+  if (pair.has_pts) {
+    out["pts"] = nlohmann::ordered_json{{"value", pair.pts},
+                                        {"tb", nlohmann::ordered_json{{"num", pair.tb_num}, {"den", pair.tb_den}}}};
+  }
+  return out;
+}
+
+// The placeholder the one-sided analyzer left on `fp`, or null.
+Measurement* find_perceptual(Fingerprint& fp) {
+  const std::uint32_t index = static_cast<std::uint32_t>(CheckId::content_video_perceptual);
+  for (Measurement& measurement : fp.measurements) {
+    if (measurement.check_index == index && measurement.scope.kind == Scope::Kind::video &&
+        measurement.scope.index == 0) {
+      return &measurement;
+    }
+  }
+  return nullptr;
+}
+
+void erase_perceptual(Fingerprint& fp) {
+  const std::uint32_t index = static_cast<std::uint32_t>(CheckId::content_video_perceptual);
+  fp.measurements.erase(std::remove_if(fp.measurements.begin(), fp.measurements.end(),
+                                       [index](const Measurement& measurement) {
+                                         return measurement.check_index == index &&
+                                                measurement.scope.kind == Scope::Kind::video &&
+                                                measurement.scope.index == 0;
+                                       }),
+                        fp.measurements.end());
+}
+
+void set_skip(Measurement& measurement, SkipReason reason, nlohmann::ordered_json evidence) {
+  measurement.value = Absent{};
+  measurement.skip_reason = reason;
+  measurement.evidence = std::move(evidence);
+}
+
+// D-04's decode-path record for one side: the library versions, build triplet
+// and CPU flags, then the decoder settings the side decoded under.
+std::string decode_path_signature(const TapEnd& end) {
+  return compose_decode_path_signature() + " flags/" + end.flags_recorded;
+}
+
+// Writes the two-file content.video.perceptual measurement into both
+// fingerprints (D-01), replacing the one-sided placeholder each carries.
+mediadiff::expected<void, Error> assemble_perceptual(const std::string& baseline_path, const PairScorer& scorer,
+                                                       const TapEnd& baseline_end, const TapEnd& candidate_end,
+                                                       Fingerprint& baseline, Fingerprint& candidate) {
+  Measurement* baseline_m = find_perceptual(baseline);
+  Measurement* candidate_m = find_perceptual(candidate);
+  if (baseline_m == nullptr && candidate_m == nullptr) {
+    return {};
+  }
+  if (baseline_m == nullptr || candidate_m == nullptr || !baseline_end.has_primary || !candidate_end.has_primary) {
+    // A file with no primary video stream on one side: nothing to score against.
+    // The side that has one carries no measurement either (Pitfall 10).
+    erase_perceptual(baseline);
+    erase_perceptual(candidate);
+    return {};
+  }
+
+  if (!baseline_end.attempted || !candidate_end.attempted) {
+    nlohmann::ordered_json b_evidence = nlohmann::ordered_json::object();
+    nlohmann::ordered_json c_evidence = nlohmann::ordered_json::object();
+    if (!baseline_end.fallback_reason.empty()) {
+      b_evidence["fallback_reason"] = baseline_end.fallback_reason;
+    }
+    if (!candidate_end.fallback_reason.empty()) {
+      c_evidence["fallback_reason"] = candidate_end.fallback_reason;
+    }
+    set_skip(*baseline_m, SkipReason::requires_decode, std::move(b_evidence));
+    set_skip(*candidate_m, SkipReason::requires_decode, std::move(c_evidence));
+    return {};
+  }
+
+  if (!baseline_end.complete || !candidate_end.complete) {
+    // A prefix's worst frame says nothing about the rest: never a score.
+    set_skip(*baseline_m, SkipReason::partial_scan,
+             nlohmann::ordered_json{{"reason", baseline_end.complete ? std::string("other_side_incomplete")
+                                                                        : baseline_end.incomplete_reason}});
+    set_skip(*candidate_m, SkipReason::partial_scan,
+             nlohmann::ordered_json{{"reason", candidate_end.complete ? std::string("other_side_incomplete")
+                                                                         : candidate_end.incomplete_reason}});
+    return {};
+  }
+
+  if (scorer.stop_reason() == PairScorer::StopReason::geometry_mismatch) {
+    const std::string b_label =
+        std::to_string(kThumbnailWidth) + "x" + std::to_string(scorer.mismatch_baseline_height());
+    const std::string c_label =
+        std::to_string(kThumbnailWidth) + "x" + std::to_string(scorer.mismatch_candidate_height());
+    const nlohmann::ordered_json evidence{{"baseline_thumbnail", b_label}, {"candidate_thumbnail", c_label}};
+    set_skip(*baseline_m, SkipReason::geometry_mismatch, evidence);
+    set_skip(*candidate_m, SkipReason::geometry_mismatch, evidence);
+    return {};
+  }
+  if (scorer.stop_reason() == PairScorer::StopReason::thumbnail_unavailable ||
+      scorer.stop_reason() == PairScorer::StopReason::thumbnail_too_small) {
+    const nlohmann::ordered_json evidence{{"reason", std::string(PairScorer::stop_reason_name(scorer.stop_reason()))}};
+    set_skip(*baseline_m, SkipReason::insufficient_data, evidence);
+    set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
+    return {};
+  }
+  const std::optional<PerceptualSummary> summary = scorer.summary();
+  if (!summary.has_value()) {
+    const nlohmann::ordered_json evidence{{"reason", std::string("no_pairs_scored")}};
+    set_skip(*baseline_m, SkipReason::insufficient_data, evidence);
+    set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
+    return {};
+  }
+
+  auto identity = compute_input_identity(baseline_path);
+  if (!identity) {
+    return mediadiff::unexpected(identity.error());
+  }
+
+  const std::string sampling_state =
+      scorer.sample_stride() > 1 ? sampling_state_sampled(scorer.sample_stride()) : std::string(kSamplingStateFull);
+
+  // The baseline's self-score is exactly 1 by construction of the integer
+  // formula (a thumbnail against itself scores 1 << 24), so it is recorded as
+  // the exact rational, never re-measured.
+  baseline_m->value = RationalValue{kMicro, kMicro, Rational{1, 1}};
+  baseline_m->skip_reason = SkipReason::none;
+  baseline_m->evidence = nlohmann::ordered_json{
+      {"self_score", true},
+      {"baseline_stream_index", baseline_end.stream_index},
+      {"scaler_path", baseline_end.scaler_record},
+      {"decode_path_signature", decode_path_signature(baseline_end)},
+      {"sampling_state", sampling_state},
+  };
+
+  nlohmann::ordered_json worst = nlohmann::ordered_json::array();
+  for (const PairScore& pair : summary->worst) {
+    worst.push_back(pair_json(pair));
+  }
+  nlohmann::ordered_json evidence{
+      {"reference_identity", identity->xxh3_128},
+      {"baseline_stream_index", baseline_end.stream_index},
+      {"candidate_stream_index", candidate_end.stream_index},
+      {"pairing", std::string(scorer.pairing() == PairingMode::time ? "time" : "index")},
+  };
+  if (scorer.pairing() == PairingMode::index) {
+    evidence["pairing_fallback"] = scorer.pairing_fallback();
+  }
+  evidence["pairs_scored"] = summary->pairs_scored;
+  evidence["unpaired_baseline"] = scorer.unpaired_baseline();
+  evidence["unpaired_candidate"] = scorer.unpaired_candidate();
+  evidence["unpaired_no_pts"] = scorer.unpaired_no_pts();
+  evidence["mean"] = micro_json(summary->mean_micro);
+  evidence["first_below_threshold"] =
+      summary->first_below.has_value() ? pair_json(*summary->first_below) : nlohmann::ordered_json(nullptr);
+  evidence["worst"] = std::move(worst);
+  evidence["threshold"] = micro_json(kPerceptualThresholdMicro);
+  evidence["scaler_path"] = candidate_end.scaler_record;
+  evidence["decode_path_signature"] = decode_path_signature(candidate_end);
+  evidence["sampling_state"] = sampling_state;
+
+  candidate_m->value = RationalValue{summary->min_micro, kMicro, Rational{1, 1}};
+  candidate_m->skip_reason = SkipReason::none;
+  candidate_m->evidence = std::move(evidence);
+  return {};
+}
+
+// The sequential route: two independent one-sided probes, no tap, exactly what
+// two fingerprint_input calls produce for media inputs.
+mediadiff::expected<PairResult, Error> probe_sequentially(const std::string& baseline_path,
+                                                            const std::string& candidate_path,
+                                                            const std::vector<AnalyzerSpec>& analyzers,
+                                                            ProbeOptions options) {
+  options.frame_tap = nullptr;
+  auto baseline = detail::run_probe(baseline_path, analyzers, nullptr, options);
+  if (!baseline) {
+    return mediadiff::unexpected(baseline.error());
+  }
+  auto candidate = detail::run_probe(candidate_path, analyzers, nullptr, options);
+  if (!candidate) {
+    return mediadiff::unexpected(candidate.error());
+  }
+  return PairResult{std::move(*baseline), std::move(*candidate)};
+}
+
+}  // namespace
+
+namespace detail {
+
+mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baseline_path,
+                                                        const std::string& candidate_path,
+                                                        const std::vector<AnalyzerSpec>& analyzers,
+                                                        const ProbeOptions& options, PairProbeLog* log) {
+  FrameSlot baseline_slot;
+  FrameSlot candidate_slot;
+
+  ProducerJob baseline_job;
+  baseline_job.path = &baseline_path;
+  baseline_job.analyzers = &analyzers;
+  baseline_job.options = options;
+  baseline_job.options.frame_tap = &baseline_slot;
+  baseline_job.slot = &baseline_slot;
+
+  ProducerJob candidate_job;
+  candidate_job.path = &candidate_path;
+  candidate_job.analyzers = &analyzers;
+  candidate_job.options = options;
+  candidate_job.options.frame_tap = &candidate_slot;
+  candidate_job.slot = &candidate_slot;
+
+  PairScorer scorer(options.sample_stride, log != nullptr ? log->stop_after_scored_pairs : 0);
+
+  {
+    ProducerThreads threads(baseline_slot, candidate_slot);
+    if (!threads.start(&baseline_job, &candidate_job)) {
+      // No thread could be started: the same answer, one side at a time.
+      return probe_sequentially(baseline_path, candidate_path, analyzers, options);
+    }
+    consume(baseline_slot, candidate_slot, scorer);
+    // Close both slots (freeing a producer blocked in publish) and join both
+    // threads: from here on nothing runs concurrently with this function.
+    threads.close_and_join();
+  }
+
+  if (log != nullptr) {
+    log->baseline_read_frame_calls = baseline_job.stats.read_frame_call_count;
+    log->candidate_read_frame_calls = candidate_job.stats.read_frame_call_count;
+    log->baseline_max_occupancy = baseline_slot.max_occupancy();
+    log->candidate_max_occupancy = candidate_slot.max_occupancy();
+    log->baseline_frames_published = baseline_slot.published();
+    log->candidate_frames_published = candidate_slot.published();
+    log->pairs_paired = scorer.pairs_paired();
+    log->pairs_scored = scorer.pairs_scored();
+    log->unpaired_baseline = scorer.unpaired_baseline();
+    log->unpaired_candidate = scorer.unpaired_candidate();
+    log->stopped_early = scorer.stopped();
+    log->stop_reason = PairScorer::stop_reason_name(scorer.stop_reason());
+  }
+
+  // The first producer error, baseline then candidate.
+  if (!baseline_job.result.has_value() || !*baseline_job.result) {
+    return mediadiff::unexpected(baseline_job.result.has_value() ? baseline_job.result->error()
+                                                                 : Error{ErrorKind::internal, "probe thread did not run"});
+  }
+  if (!candidate_job.result.has_value() || !*candidate_job.result) {
+    return mediadiff::unexpected(candidate_job.result.has_value() ? candidate_job.result->error()
+                                                                  : Error{ErrorKind::internal, "probe thread did not run"});
+  }
+
+  PairResult result{std::move(**baseline_job.result), std::move(**candidate_job.result)};
+  if (options.content_enabled) {
+    auto assembled = assemble_perceptual(baseline_path, scorer, baseline_slot.end(), candidate_slot.end(),
+                                         result.baseline, result.candidate);
+    if (!assembled) {
+      return mediadiff::unexpected(assembled.error());
+    }
+  }
+  return result;
+}
+
+}  // namespace detail
+
+mediadiff::expected<PairResult, Error> fingerprint_pair(const std::string& baseline_path,
+                                                          const std::string& candidate_path,
+                                                          const CheckRegistry& registry,
+                                                          const ProbeOptions& options) {
+  ProbeOptions plain = options;
+  plain.frame_tap = nullptr;
+
+  auto baseline_input = detail::resolve_input(baseline_path, registry);
+  if (!baseline_input) {
+    return mediadiff::unexpected(baseline_input.error());
+  }
+  const bool baseline_is_media = !baseline_input->has_value();
+
+  auto candidate_input = detail::resolve_input(candidate_path, registry);
+  if (!candidate_input) {
+    if (baseline_is_media) {
+      // fingerprint_input(baseline) ran to completion before the candidate was
+      // looked at: a baseline that fails to probe still reports first.
+      auto baseline = detail::run_probe(baseline_path, all_analyzers(), nullptr, plain);
+      if (!baseline) {
+        return mediadiff::unexpected(baseline.error());
+      }
+    }
+    return mediadiff::unexpected(candidate_input.error());
+  }
+  const bool candidate_is_media = !candidate_input->has_value();
+
+  if (baseline_is_media && candidate_is_media && plain.content_enabled) {
+    return detail::run_pair_probe(baseline_path, candidate_path, all_analyzers(), plain, nullptr);
+  }
+
+  // Sequential: a snapshot side keeps its read_snapshot short-circuit, a media
+  // side is probed one-sidedly (so its perceptual measurement is the honest
+  // skipped:requires_media or requires_decode), and `--no-content` decodes
+  // nothing.
+  PairResult result;
+  if (baseline_is_media) {
+    auto baseline = detail::run_probe(baseline_path, all_analyzers(), nullptr, plain);
+    if (!baseline) {
+      return mediadiff::unexpected(baseline.error());
+    }
+    result.baseline = std::move(*baseline);
+  } else {
+    result.baseline = std::move(**baseline_input);
+  }
+  if (candidate_is_media) {
+    auto candidate = detail::run_probe(candidate_path, all_analyzers(), nullptr, plain);
+    if (!candidate) {
+      return mediadiff::unexpected(candidate.error());
+    }
+    result.candidate = std::move(*candidate);
+  } else {
+    result.candidate = std::move(**candidate_input);
+  }
+  return result;
+}
+
+}  // namespace mediadiff

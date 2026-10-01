@@ -7,6 +7,7 @@
 #include <vector>
 
 extern "C" {
+#include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
@@ -14,6 +15,7 @@ extern "C" {
 
 #include "core/rational.h"
 #include "probe/demux_session.h"
+#include "probe/lockstep.h"
 
 namespace mediadiff {
 
@@ -144,6 +146,35 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     outputs.video_decode = VideoDecodeResult{};
     outputs.video_decode->per_stream.resize(stream_count);
     video_decode_states.resize(stream_count);
+
+    // 07-08-PLAN.md (CONTENT-04, CONTENT-11): the PRIMARY video stream is the
+    // first video stream that is not an attached picture (cover art is a
+    // one-packet video stream, Pitfall 12), decided from stream metadata alone
+    // so it holds even where no decoder can be opened. Every video stream also
+    // records its rank among ALL video streams -- the Scope index every video.*
+    // measurement uses, attached pictures included.
+    int primary_stream = -1;
+    int video_rank = 0;
+    std::vector<int> ranks(stream_count, -1);
+    for (std::size_t i = 0; i < stream_count; ++i) {
+      const AVStream& avstream = *ctx->streams[i];
+      if (avstream.codecpar == nullptr || avstream.codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
+        continue;
+      }
+      ranks[i] = video_rank++;
+      if (primary_stream < 0 && (avstream.disposition & AV_DISPOSITION_ATTACHED_PIC) == 0) {
+        primary_stream = static_cast<int>(i);
+      }
+    }
+    for (std::size_t i = 0; i < stream_count; ++i) {
+      const bool primary = static_cast<int>(i) == primary_stream;
+      video_decode_states[i].set_primary(primary, static_cast<int>(i), ranks[i], primary ? request.frame_tap : nullptr);
+    }
+    if (request.frame_tap != nullptr && primary_stream < 0) {
+      // No stream to score on this side: tell the consumer at once, so the
+      // other side's producer is never held waiting on it (Pitfall 10).
+      request.frame_tap->finish(TapEnd{});
+    }
   }
 
   ScratchPacket pkt;
@@ -362,8 +393,8 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     // (Pitfall 1). finalize() can still charge frame records, so it runs
     // BEFORE the final accounted_bytes is published below.
     for (std::size_t i = 0; i < video_decode_states.size(); ++i) {
-      outputs.video_decode->per_stream[i] =
-          video_decode_states[i].finalize(detail::DecodeBudget{&accounted_bytes, limits.max_bytes});
+      outputs.video_decode->per_stream[i] = video_decode_states[i].finalize(
+          detail::DecodeBudget{&accounted_bytes, limits.max_bytes}, result.per_stream[i].partial);
     }
   }
 

@@ -68,6 +68,11 @@ enum class Unit {
   samples,
   ticks,
   count,
+  // 07-08-PLAN.md (07-CHECK-ROSTER.md, additive vocabulary): a unitless score
+  // -- content.video.perceptual's SSIM, later quality.ssim and quality.vmaf --
+  // whose tolerance is written BARE ("0.015"), like Unit::count's bare form.
+  // Appended after `count` so no existing enumerator moves.
+  score,
 };
 
 // Resolved per-finding severity (doc 01 section 4). `ignore` is distinct
@@ -127,12 +132,23 @@ inline std::string_view unit_suffix(Unit unit) {
       return "tick";
     case Unit::count:
       return "bytes";
+    case Unit::score:
+      // Bare: a score tolerance carries no suffix at all (07-CHECK-ROSTER.md).
+      return "";
   }
   // Unreachable for any valid Unit: every enumerator is handled above, with
   // deliberately no default: arm so -Wswitch (-Werror project-wide) catches
   // a future enumerator added without a matching case. This return exists
   // only to satisfy -Wreturn-type.
   return "none";
+}
+
+// The unit as a DISPLAY label (list-checks' unit column, the report's `unit`
+// field): the tolerance suffix a user would type, except for Unit::score whose
+// suffix is empty (its tolerance is written bare, 07-CHECK-ROSTER.md) and
+// would otherwise render as a blank column or an empty JSON string.
+inline std::string_view unit_label(Unit unit) {
+  return unit == Unit::score ? std::string_view("score") : unit_suffix(unit);
 }
 
 // Whether `unit` denotes a DURATION (a magnitude that means something
@@ -161,6 +177,7 @@ inline bool unit_is_time(Unit unit) {
     case Unit::samples:
     case Unit::ticks:
     case Unit::count:
+    case Unit::score:
       return false;
   }
   // Unreachable for any valid Unit -- see unit_suffix's own

@@ -239,5 +239,7 @@ video_pcm_cc.h264
 video_pcm_crop.h264
 video_pcm_hdr.h264
 video_pcm_plain.h264
+video_perc_degraded.mp4
+video_perc_upscaled.mp4
 video_trim.mkv
 video_trim.mp4

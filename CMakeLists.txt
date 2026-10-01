@@ -197,6 +197,11 @@ add_library(libmediadiff STATIC
   # 07-05-PLAN.md (CONTENT-06): the frozen (SSIM hysteresis) and black
   # (range- and depth-normalized) detector sinks over those thumbnails.
   src/probe/video_detectors.cpp
+  # 07-08-PLAN.md (CONTENT-11): the lockstep driver -- two unchanged one-sided
+  # sweeps on two std::threads joined by one single-slot rendezvous per side --
+  # and (CONTENT-04) the online pairing and integer-SSIM scorer that consumes it.
+  src/probe/lockstep.cpp
+  src/probe/pair_scorer.cpp
   src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
@@ -251,6 +256,10 @@ add_library(libmediadiff STATIC
   # 07-05-PLAN.md (CONTENT-06): content.video.frozen_runs/black_runs -- the
   # detector sinks' span-list consumer.
   src/analyzers/content/video_runs.cpp
+  # 07-08-PLAN.md (CONTENT-04; D-01): content.video.perceptual's one-sided
+  # requires_media emission (the live two-file score is written by
+  # probe/lockstep.cpp).
+  src/analyzers/content/video_perceptual.cpp
   # 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/sample_fmt/
   # bit_depth/channels/layout -- the six per-audio-stream identity checks,
   # codecpar-only extraction mirroring video/stream_params.cpp's own shape.
@@ -279,7 +288,9 @@ target_include_directories(libmediadiff PUBLIC
 )
 target_include_directories(libmediadiff SYSTEM PUBLIC ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(libmediadiff PUBLIC ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash ${EBUR128_LIBRARY})
+# Threads::Threads is PUBLIC: probe/lockstep.cpp (07-08, CONTENT-11) starts
+# std::threads inside the library, so every consumer of libmediadiff links it.
+target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash ${EBUR128_LIBRARY} Threads::Threads)
 
 # --- Header compilation gate --------------------------------------------------
 # A header nothing includes is a header nothing type-checks, and Phase 2
@@ -326,6 +337,8 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/hdr_static.h
   src/probe/video_thumbnail.h
   src/probe/video_detectors.h
+  src/probe/lockstep.h
+  src/probe/pair_scorer.h
   src/util/ssim_int.h
   src/probe/cadence.h
   src/probe/bmff_scan.h

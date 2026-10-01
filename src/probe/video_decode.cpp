@@ -27,6 +27,7 @@ extern "C" {
 #include "analyzers/video/analyzers.h"
 #include "core/rational.h"
 #include "probe/hdr_static.h"
+#include "probe/lockstep.h"
 #include "util/version.h"
 
 namespace mediadiff {
@@ -223,7 +224,14 @@ VideoDecodeState::VideoDecodeState(VideoDecodeState&& other) noexcept
       tap_interval_den_(other.tap_interval_den_),
       cc_frame_count_(other.cc_frame_count_),
       cc_first_frame_(other.cc_first_frame_),
-      first_frame_hdr_(std::move(other.first_frame_hdr_)) {
+      first_frame_hdr_(std::move(other.first_frame_hdr_)),
+      is_primary_(other.is_primary_),
+      stream_index_(other.stream_index_),
+      video_scope_index_(other.video_scope_index_),
+      tap_(other.tap_),
+      tap_closed_(other.tap_closed_),
+      tap_published_(other.tap_published_) {
+  other.tap_ = nullptr;
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
@@ -287,10 +295,24 @@ VideoDecodeState& VideoDecodeState::operator=(VideoDecodeState&& other) noexcept
   cc_frame_count_ = other.cc_frame_count_;
   cc_first_frame_ = other.cc_first_frame_;
   first_frame_hdr_ = std::move(other.first_frame_hdr_);
+  is_primary_ = other.is_primary_;
+  stream_index_ = other.stream_index_;
+  video_scope_index_ = other.video_scope_index_;
+  tap_ = other.tap_;
+  tap_closed_ = other.tap_closed_;
+  tap_published_ = other.tap_published_;
+  other.tap_ = nullptr;
   other.codec_ctx_ = nullptr;
   other.attempted_init_ = false;
   other.attempted_ = false;
   return *this;
+}
+
+void VideoDecodeState::set_primary(bool is_primary, int stream_index, int video_scope_index, FrameTap* tap) {
+  is_primary_ = is_primary;
+  stream_index_ = stream_index;
+  video_scope_index_ = video_scope_index;
+  tap_ = is_primary ? tap : nullptr;
 }
 
 bool VideoDecodeState::ensure_initialized(const AVStream& stream, int threads_override, int sample_stride) {
@@ -459,6 +481,63 @@ void VideoDecodeState::tap_first_frame_hdr(const AVFrame& frame) {
   first_frame_hdr_ = hdr;
 }
 
+void VideoDecodeState::publish_to_tap(const AVFrame& frame, std::int64_t decode_index) {
+  // 07-08-PLAN.md (CONTENT-11, CONTENT-07): the LAST thing a frame does. Every
+  // one-sided sink -- hash, thumbnail, detectors, captions, first-frame HDR --
+  // has already seen it, so a one-sided value can never depend on the consumer;
+  // publish() then blocks until the consumer released the previous pair, which
+  // is the only back-pressure this sweep ever feels.
+  if (tap_ == nullptr || tap_closed_) {
+    return;
+  }
+  TappedFrame tapped;
+  tapped.stream_index = stream_index_;
+  tapped.decode_index = decode_index;
+  tapped.has_pts = frame.pts != AV_NOPTS_VALUE;
+  tapped.pts = tapped.has_pts ? frame.pts : 0;
+  tapped.tb_num = tb_num_;
+  tapped.tb_den = tb_den_;
+  tapped.interval_num = tap_interval_num_;
+  tapped.interval_den = tap_interval_den_;
+  tapped.thumbnail = detectors_unavailable_ ? nullptr : &thumb_;
+  tapped.frame = &frame;
+  if (tap_->publish(tapped)) {
+    ++tap_published_;
+  } else {
+    // The consumer closed the slot: finish this sweep without tapping.
+    tap_closed_ = true;
+  }
+}
+
+void VideoDecodeState::end_tap(bool scan_partial, bool undecodable) {
+  if (tap_ == nullptr) {
+    return;
+  }
+  TapEnd end;
+  end.has_primary = true;
+  end.stream_index = stream_index_;
+  end.video_scope_index = video_scope_index_;
+  end.attempted = attempted_;
+  end.fallback_reason = fallback_reason_;
+  end.frames_published = tap_published_;
+  if (attempted_) {
+    end.scaler_record = scaler_record_;
+    end.thumbnail_height = thumbnail_height_;
+    end.flags_recorded = flags_recorded_;
+    if (scan_partial) {
+      end.complete = false;
+      end.incomplete_reason = "scan_partial";
+    } else if (undecodable) {
+      end.complete = false;
+      end.incomplete_reason = "undecodable";
+    } else if (!decode_truncation_reason_.empty()) {
+      end.complete = false;
+      end.incomplete_reason = decode_truncation_reason_;
+    }
+  }
+  tap_->finish(end);
+}
+
 void VideoDecodeState::consume_frame(const AVFrame& frame) {
   // Nothing after a stop is hashed or counted -- a stream that latched a
   // truncation reason never resumes (mirrors AudioDecodeState::consume_frame).
@@ -556,6 +635,9 @@ void VideoDecodeState::consume_frame(const AVFrame& frame) {
     }
   }
   ++frame_count_;
+
+  // 07-08-PLAN.md (CONTENT-11): the lockstep tap, after every sink above.
+  publish_to_tap(frame, decode_index);
 }
 
 void VideoDecodeState::consume_frame_for_test(const AVFrame& frame) { consume_frame(frame); }
@@ -612,13 +694,17 @@ void VideoDecodeState::feed_packet(AVPacket& pkt, const DecodeBudget& budget) {
   av_frame_free(&frame);
 }
 
-StreamVideoDecode VideoDecodeState::finalize(const DecodeBudget& budget) {
+StreamVideoDecode VideoDecodeState::finalize(const DecodeBudget& budget, bool scan_partial) {
   budget_ = budget;
   StreamVideoDecode result;
   result.attempted = attempted_;
   result.attached_picture = attached_picture_;
+  result.is_primary = is_primary_;
   if (!attempted_) {
     result.fallback_reason = fallback_reason_;
+    // A bound tap still needs its end-of-stream report (the decoder could not
+    // be opened: the consumer must not wait for a frame that will never come).
+    end_tap(scan_partial, false);
     return result;
   }
 
@@ -685,6 +771,10 @@ StreamVideoDecode VideoDecodeState::finalize(const DecodeBudget& budget) {
   result.decode_truncated = !decode_truncation_reason_.empty();
   result.decode_truncation_reason = decode_truncation_reason_;
   result.undecodable = frame_count_ == 0 && decode_error_count_ > 0;
+
+  // 07-08-PLAN.md: the drain above published its frames too; now the bound tap
+  // learns this side is over, and whether it ran to a meaningful end.
+  end_tap(scan_partial, result.undecodable);
 
   if (!frame_digests_.empty()) {
     std::string concat;

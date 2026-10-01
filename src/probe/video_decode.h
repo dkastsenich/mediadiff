@@ -70,6 +70,11 @@ struct AVStream;
 
 namespace mediadiff {
 
+// 07-08-PLAN.md (CONTENT-11): the producer-facing half of the lockstep
+// rendezvous (probe/lockstep.h); forward-declared so this header does not pull
+// the orchestrator in.
+class FrameTap;
+
 // T-07-01's decode-bomb bound, handed to AVCodecContext::max_pixels and also
 // checked against the stream's declared dimensions before the decoder is ever
 // opened (libavcodec itself applies max_pixels at frame allocation, not at
@@ -239,6 +244,13 @@ struct StreamVideoDecode {
   // an engaged optional holding neither entry is an observed absence; a
   // disengaged one means no frame was ever read.
   std::optional<HdrStaticMetadata> first_frame_hdr;
+
+  // --- 07-08-PLAN.md (CONTENT-04, CONTENT-11): the primary-stream marker. ---
+  // True for the file's PRIMARY video stream: the first video stream that is
+  // not an attached picture (by stream metadata alone, so it holds even when
+  // no decoder could be opened). The two-file checks score this stream on each
+  // side (07-CHECK-ROSTER.md). Set whether or not a lockstep tap is bound.
+  bool is_primary = false;
 };
 
 // One decode sweep's whole result, index-aligned with AVStream (mirrors
@@ -317,6 +329,15 @@ class VideoDecodeState {
   // of it are hashed and stored. Values below 1 are treated as 1.
   bool ensure_initialized(const AVStream& stream, int threads_override, int sample_stride = 1);
 
+  // 07-08-PLAN.md (CONTENT-04, CONTENT-11): marks this state's stream as the
+  // file's primary video stream (or not), records its libav stream index and its
+  // rank among ALL video streams (the Scope index every video.* measurement
+  // uses), and -- for the primary stream only -- binds the lockstep tap, which
+  // may be null. Called once, before the first packet. A bound tap receives
+  // every frame that passed every one-sided sink (after them, never before) and
+  // exactly one finish() from finalize.
+  void set_primary(bool is_primary, int stream_index, int video_scope_index, FrameTap* tap);
+
   bool attempted() const { return attempted_; }
 
   // Clears AV_PKT_FLAG_DISCARD on `pkt` (the sweep's own scratch packet, AFTER
@@ -329,7 +350,10 @@ class VideoDecodeState {
   // (Pitfall 1: the last DPB-depth frames are otherwise never hashed -- also
   // when the sweep ended early), and returns the stream's result. Called
   // exactly once, after run_packet_scan's loop.
-  StreamVideoDecode finalize(const DecodeBudget& budget);
+  // `scan_partial` is the packet scan's own verdict for this stream (its packet
+  // store ceiling ended the sweep for it): a bound tap's end-of-stream report
+  // says so, because a prefix's worst frame is not a perceptual measurement.
+  StreamVideoDecode finalize(const DecodeBudget& budget, bool scan_partial = false);
 
   // Test seam (mirrors AudioDecodeState::consume_frame_for_test): hashes and
   // records one hand-built AVFrame with no real decode and no budget behind it.
@@ -344,6 +368,10 @@ class VideoDecodeState {
   void tap_captions(const AVFrame& frame, std::int64_t decode_index);
   // 07-07-PLAN.md: reads the first decoded frame's HDR static side data.
   void tap_first_frame_hdr(const AVFrame& frame);
+  // 07-08-PLAN.md: hands `frame` to the lockstep tap, AFTER every one-sided sink.
+  void publish_to_tap(const AVFrame& frame, std::int64_t decode_index);
+  // 07-08-PLAN.md: the bound tap's single end-of-stream report.
+  void end_tap(bool scan_partial, bool undecodable);
 
   AVCodecContext* codec_ctx_ = nullptr;
   bool attempted_init_ = false;
@@ -409,6 +437,16 @@ class VideoDecodeState {
 
   // 07-07-PLAN.md: the first-frame HDR arm's state (see StreamVideoDecode).
   std::optional<HdrStaticMetadata> first_frame_hdr_;
+
+  // 07-08-PLAN.md: the primary-stream marker and the lockstep tap (see
+  // set_primary). `tap_closed_` latches when publish() returned false: the
+  // consumer stopped, and this sweep finishes untapped.
+  bool is_primary_ = false;
+  int stream_index_ = -1;
+  int video_scope_index_ = -1;
+  FrameTap* tap_ = nullptr;
+  bool tap_closed_ = false;
+  std::int64_t tap_published_ = 0;
 };
 
 }  // namespace detail

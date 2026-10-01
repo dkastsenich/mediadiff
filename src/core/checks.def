@@ -11,7 +11,7 @@
 #   group         the check's family, e.g. "meta"
 #   semantic      exact | tol | set | presence | hash | dist | span
 #   unit          none | ms | ms_per_min | frames | percent | db | lu |
-#                 samples | ticks | count
+#                 samples | ticks | count | score
 #   value_kind    int64 | rational | real | string | string_set |
 #                 histogram | span_list | hash_chain
 #   severity      ignore | info | warn | fail        (baseline, D-04)
@@ -1621,6 +1621,42 @@ semantic = "span"
 unit = "ms"
 value_kind = "span_list"
 severity = "fail"
+
+# 07-08-PLAN.md (CONTENT-04, CONTENT-07, CONTENT-11; 07-CHECK-ROSTER.md,
+# approve-as-proposed 2026-09-30; D-01, D-02, D-03), src/analyzers/content/
+# video_perceptual.cpp and src/probe/{lockstep,pair_scorer}.cpp:
+# content.video.perceptual -- the WORST per-pair SSIM between the baseline's and
+# the candidate's primary video stream (the first non-attached-picture one, at
+# Scope{video, 0}), computed on the deterministic 128-wide 8-bit luma
+# thumbnails by exact integer SSIM, in units of one millionth. `tol` semantic,
+# `score` unit (a bare tolerance, "0.015": the additive unit this check forces,
+# 07-CHECK-ROSTER.md), `rational` value (num/den in the declared unit: a score
+# of 0.987654 is 987654/1000000). D-01: it exists only in a LIVE media-vs-media
+# compare -- the baseline records its self-score (exactly 1000000/1000000) and
+# the candidate records its score against the baseline -- and every one-sided
+# probe (snapshot, inspect, the snapshot side of a compare) reports
+# `skipped:requires_media`, so nothing is ever stored as a comparable score.
+# D-03: the gate is the minimum pair, so one wrecked frame cannot hide in a
+# mean; the mean, the first pair below 0.985 and the ten worst pairs ride in
+# evidence. Baseline severity `info` (a re-encode is expected to move pixels
+# under sw_encoder, doc 06 section 2.2); a hardware encoder or a declared
+# transform must not drift below the threshold, hence `fail`; a bit-exact or
+# remux run carries no pixel expectation of its own (frame_hash owns that), so
+# `ignore`.
+[[check]]
+id = "content.video.perceptual"
+group = "content"
+semantic = "tol"
+unit = "score"
+value_kind = "rational"
+severity = "info"
+tolerance = "0.015"
+
+[check.profile_severity]
+hw_encoder = "fail"
+transform = "fail"
+strict_bitexact = "ignore"
+remux = "ignore"
 
 # 06-03-PLAN.md (AUDIO-01, AUDIO-02), src/analyzers/audio/stream_params.cpp
 # -- the six per-audio-stream identity checks: codec, sample rate, sample

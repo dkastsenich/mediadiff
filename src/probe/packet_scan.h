@@ -343,6 +343,13 @@ struct PacketScanRequest {
   // whose decode index is a multiple of it are hashed and stored. 1 is full.
   // Ignored when `decode_video` is false.
   int video_sample_stride = 1;
+  // 07-08-PLAN.md (CONTENT-11): the lockstep tap (probe/lockstep.h), or null.
+  // Bound to the file's PRIMARY video stream -- the first one that is not an
+  // attached picture -- and told when that stream's sweep is over. When the
+  // file has no such stream the tap is finished at once with an empty report so
+  // the consumer never waits for a frame that cannot come. Ignored when
+  // `decode_video` is false.
+  FrameTap* frame_tap = nullptr;
 };
 
 struct PacketScanOutputs {

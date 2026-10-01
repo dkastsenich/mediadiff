@@ -7,6 +7,8 @@
 // snapshot, so every existing *.snap.json path (and every SNAP-* test's
 // assertions) is unchanged.
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,6 +19,11 @@
 #include "util/expected.h"
 
 namespace mediadiff {
+
+// 07-08-PLAN.md (CONTENT-11): the producer-facing half of the lockstep
+// rendezvous (probe/lockstep.h). Forward-declared here so ProbeOptions can
+// carry a pointer without this header depending on the lockstep one.
+class FrameTap;
 
 // 06-01-PLAN.md (Claude's Discretion, "Wiring --content/--no-content"):
 // per-invocation probe-layer options a command entry point resolves from
@@ -47,6 +54,13 @@ struct ProbeOptions {
   // before the option existed. Audio hashing is not sampled. The CLI's
   // resolve_sample_stride guarantees a positive value.
   int sample_stride = 1;
+  // 07-08-PLAN.md (CONTENT-11, D-01): the lockstep tap, or null. When set, the
+  // video decode state publishes each decoded frame of the file's PRIMARY video
+  // stream through it after every one-sided sink ran, and blocks until the
+  // consumer releases it. Set only by probe/lockstep.cpp's fingerprint_pair, on
+  // its own per-side copy of the options; no CLI flag ever sets it. A null tap
+  // (every other caller) leaves every sweep exactly as it was.
+  FrameTap* frame_tap = nullptr;
 };
 
 // Tries read_snapshot(utf8_path, registry) first and returns its result
@@ -81,6 +95,23 @@ using PassExecutionLog = std::vector<Pass>;
 
 namespace detail {
 
+// 07-08-PLAN.md (CONTENT-07): what a run_probe call can report about its own
+// packet sweep, for the single-sweep proofs. `read_frame_call_count` is the
+// PacketScanResult field of that name (the packets plus the terminating EOF
+// call), zero when no packet scan ran.
+struct ProbeScanStats {
+  std::int64_t read_frame_call_count = 0;
+};
+
+// 07-08-PLAN.md: the snapshot short-circuit fingerprint_input applies, factored
+// out so the lockstep driver (probe/lockstep.cpp) classifies an input exactly
+// the same way. An engaged optional is a snapshot's fingerprint; an empty one
+// means "not a snapshot: probe it as media". A failed open, or a JSON-shaped
+// file read_snapshot explicitly rejected, is the Error fingerprint_input would
+// have returned -- never reinterpreted as media.
+mediadiff::expected<std::optional<Fingerprint>, Error> resolve_input(const std::string& utf8_path,
+                                                                       const CheckRegistry& registry);
+
 // The actual probe-path implementation fingerprint_input calls (with
 // all_analyzers() and pass_log=nullptr) -- exposed here so
 // tests/unit/test_pass_union.cpp can inject a synthetic analyzer list and
@@ -102,7 +133,8 @@ namespace detail {
 mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
                                                      const std::vector<AnalyzerSpec>& analyzers,
                                                      PassExecutionLog* pass_log,
-                                                     const ProbeOptions& options = ProbeOptions{});
+                                                     const ProbeOptions& options = ProbeOptions{},
+                                                     ProbeScanStats* scan_stats = nullptr);
 
 }  // namespace detail
 

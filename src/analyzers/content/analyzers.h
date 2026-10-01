@@ -57,4 +57,18 @@ const AnalyzerSpec& content_video_frame_hash_analyzer();
 // interval, as integer-millisecond RationalValues.
 const AnalyzerSpec& content_video_runs_analyzer();
 
+// 07-08-PLAN.md (CONTENT-04; D-01, 07-CHECK-ROSTER.md two-file scope rule):
+// content.video.perceptual's ONE-SIDED emission -- required_passes =
+// {Pass::demux_header, Pass::packet_scan, Pass::video_decode}, scope =
+// ContainerFamily::other. For a file with a primary video stream (the first one
+// that is not an attached picture) it emits exactly one measurement at
+// Scope{video, 0}: skipped:requires_decode when content decode is off, else
+// skipped:requires_media. A perceptual score needs BOTH pictures, so it exists
+// only in a live media-vs-media compare, where probe/lockstep.cpp replaces this
+// placeholder on both fingerprints (never duplicates it); `snapshot`, `inspect`
+// and the snapshot side of a compare keep it, so `inspect` renders an explicit
+// skip row and SNAP-06 stays clean. A file with no video stream emits nothing,
+// matching the video.* family.
+const AnalyzerSpec& content_video_perceptual_analyzer();
+
 }  // namespace mediadiff
