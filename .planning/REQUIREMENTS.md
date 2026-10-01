@@ -155,7 +155,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **CONTENT-02**: A hash mismatch reports the first divergent frame (index + PTS), contiguous divergent ranges merged at 1-frame gaps, and the total differing count (alignment is by presentation time, not decode index — D-07, 07-03-PLAN.md, 2026-09-30: a dropped frame reads "missing from candidate" and later frames still line up; a side without usable timestamps falls back to decode order and the evidence says so)
 - [x] **CONTENT-03**: `--sample N` marks the fingerprint `sampled:N` and only equal-N fingerprints compare; mismatched sampling reports `skipped:sampling_mismatch`
 - [x] **CONTENT-04**: `content.video.perceptual` computes SSIM on downscaled luma (SWS_AREA to width 128, 8×8 window) with pinned swscale flags recorded as a precondition, reporting min, mean, first frame below threshold, and a worst-10 list
-- [ ] **CONTENT-05**: When frame counts differ, perceptual comparison pairs the overlapping prefix and notes truncation in evidence rather than silently misaligning (amended, 07-03-PLAN.md, 2026-09-30: D-02 replaces "pairs the overlapping prefix" with "pairs the overlapping time range by presentation time" — each side's frames are timed from its own first frame and paired within strictly less than half the finer frame interval, in exact rational arithmetic, with decode-index fallback when either side lacks usable timestamps or a frame interval, and unpaired frames counted in evidence rather than shifting every later pair; src/core/frame_pairing.h is the one rule)
+- [x] **CONTENT-05**: When frame counts differ, perceptual comparison pairs the overlapping prefix and notes truncation in evidence rather than silently misaligning (amended, 07-03-PLAN.md, 2026-09-30: D-02 replaces "pairs the overlapping prefix" with "pairs the overlapping time range by presentation time" — each side's frames are timed from its own first frame and paired within strictly less than half the finer frame interval, in exact rational arithmetic, with decode-index fallback when either side lacks usable timestamps or a frame interval, and unpaired frames counted in evidence rather than shifting every later pair; src/core/frame_pairing.h is the one rule)
 - [x] **CONTENT-06**: `content.video.frozen_runs` and `content.video.black_runs` detect spans, with black detection normalized by color range and bit depth so a range flip does not false-alarm the detector
 - [x] **CONTENT-07**: Hashing, perceptual scoring, and the frozen/black detectors all run inside one decode sweep
 - [ ] **CONTENT-08**: `quality.psnr` and `quality.ssim` compute in-tree at native resolution, reporting min and mean
@@ -168,7 +168,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00�
 - [x] **TRUST-01**: Every fingerprint records, per hashed stream, the decoder name, determinism class, flags, and (class 2) a path signature
 - [x] **TRUST-02**: A class-2 hash comparison across differing decode paths reports `skipped:hash_incomparable` with a remediation hint — never a fabricated pass or fail
 - [x] **TRUST-03**: **[R]** The class-2 path signature includes a toolchain component (libavcodec/libavformat/swscale versions at minimum), not only device/driver, so a dependency bump cannot silently produce a hash mismatch (research: PITFALLS — highest-value gap found; doc 01 §7 specifies driver only)
-- [ ] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
+- [x] **TRUST-04**: **[R]** `±tol` perceptual and `quality.*` checks carry the same path-signature preconditions as `hash` checks, since SSIM/VMAF are equally fragile to decode and scaler path drift (research: PITFALLS — FFmpeg 9.0's swscale float→rational rewrite makes this concrete, and UC2 is an FFmpeg major-version migration)
 - [x] **TRUST-05**: Running `compare` twice on the same inputs produces byte-identical `--json` output
 - [x] **TRUST-06**: Encoding a fixture twice with identical settings and comparing under `sw-encoder` produces a clean result — wired into CI as a release blocker
 - [ ] **TRUST-07**: Decoding a fixture at 1, 4, and 16 threads produces identical hash chains
@@ -357,7 +357,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | CONTENT-02 | Phase 7 | Complete |
 | CONTENT-03 | Phase 7 | Complete |
 | CONTENT-04 | Phase 7 | Complete |
-| CONTENT-05 | Phase 7 | Pending |
+| CONTENT-05 | Phase 7 | Complete |
 | CONTENT-06 | Phase 7 | Complete |
 | CONTENT-07 | Phase 7 | Complete |
 | CONTENT-08 | Phase 7 | Pending |
@@ -367,7 +367,7 @@ ROADMAP Phase N = design-doc phase N-1 = `claude_docs/0(N-1)-*.md`.
 | TRUST-01 | Phase 6 | Complete |
 | TRUST-02 | Phase 6 | Complete |
 | TRUST-03 | Phase 2 | Complete |
-| TRUST-04 | Phase 7 | Pending |
+| TRUST-04 | Phase 7 | Complete |
 | TRUST-05 | Phase 2 | Complete |
 | TRUST-06 | Phase 3 | Complete |
 | TRUST-07 | Phase 7 | Pending |
