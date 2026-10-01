@@ -340,6 +340,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/lockstep.h
   src/probe/pair_scorer.h
   src/util/ssim_int.h
+  src/util/quality_math.h
   src/probe/cadence.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h

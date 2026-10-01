@@ -30,7 +30,9 @@ using mediadiff::kSsimC1;
 using mediadiff::kSsimC2;
 using mediadiff::q24_to_micro;
 using mediadiff::ssim_plane_q24;
+using mediadiff::ssim_plane_q24_wide;
 using mediadiff::ssim_window_q24;
+using mediadiff::ssim_window_q24_wide;
 using mediadiff::Thumbnail;
 using mediadiff::ThumbnailScaler;
 
@@ -427,4 +429,207 @@ TEST_CASE("video_thumbnail - simd equals c", "[video_thumbnail]") {
   }
   REQUIRE(c_path.pixels == auto_path.pixels);
   REQUIRE(c_path.pixels.size() == 128u * 104u);
+}
+
+// ---------------------------------------------------------------------------
+// 07-10-PLAN.md (CONTENT-08; T-07-31): the high-depth variant.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+using WideWindow = std::array<std::uint16_t, 64>;
+
+// The same five window sums, from 16-bit storage.
+Sums wide_sums_of(const WideWindow& a, const WideWindow& b) {
+  Sums s;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    const std::int64_t x = a[i];
+    const std::int64_t y = b[i];
+    s.sx += x;
+    s.sy += y;
+    s.sxx += x * x;
+    s.syy += y * y;
+    s.sxy += x * y;
+  }
+  return s;
+}
+
+std::int64_t wide_window_q24(const WideWindow& a, const WideWindow& b, int bpc) {
+  const Sums s = wide_sums_of(a, b);
+  const std::optional<std::int64_t> q = ssim_window_q24_wide(s.sx, s.sy, s.sxx, s.syy, s.sxy, bpc);
+  REQUIRE(q.has_value());
+  return *q;
+}
+
+// The textbook per-pixel SSIM of one window with constants scaled by
+// (2^bpc - 1)^2: an independent route that exists only in this test.
+double wide_reference_ssim(const WideWindow& a, const WideWindow& b, int bpc) {
+  double ma = 0.0;
+  double mb = 0.0;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    ma += a[i];
+    mb += b[i];
+  }
+  ma /= 64.0;
+  mb /= 64.0;
+  double va = 0.0;
+  double vb = 0.0;
+  double cov = 0.0;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    va += (a[i] - ma) * (a[i] - ma);
+    vb += (b[i] - mb) * (b[i] - mb);
+    cov += (a[i] - ma) * (b[i] - mb);
+  }
+  va /= 64.0;
+  vb /= 64.0;
+  cov /= 64.0;
+  const double peak = static_cast<double>((1 << bpc) - 1);
+  const double c1 = (0.01 * peak) * (0.01 * peak);
+  const double c2 = (0.03 * peak) * (0.03 * peak);
+  return ((2.0 * ma * mb + c1) * (2.0 * cov + c2)) / ((ma * ma + mb * mb + c1) * (va + vb + c2));
+}
+
+WideWindow wide_from(const Window& w, int shift) {
+  WideWindow out{};
+  for (std::size_t i = 0; i < w.size(); ++i) {
+    // The low bits vary too, so a 10-bit window is not just an 8-bit one.
+    out[i] = static_cast<std::uint16_t>((static_cast<int>(w[i]) << shift) | static_cast<int>(i % (1U << shift)));
+  }
+  return out;
+}
+
+WideWindow wide_filled(int bpc, std::uint16_t v) {
+  WideWindow w{};
+  w.fill(static_cast<std::uint16_t>(v & ((1U << bpc) - 1U)));
+  return w;
+}
+
+}  // namespace
+
+TEST_CASE("ssim_int - wide identical windows score exactly one at 10 and 16 bits", "[ssim_int]") {
+  for (const int bpc : {10, 16}) {
+    const int shift = bpc - 8;
+    const std::uint16_t top = static_cast<std::uint16_t>((1U << bpc) - 1U);
+    for (const WideWindow& w : {wide_filled(bpc, 0), wide_filled(bpc, top), wide_from(textured(), shift),
+                                wide_from(random_window(3), shift)}) {
+      REQUIRE(wide_window_q24(w, w, bpc) == kOne);
+    }
+  }
+}
+
+TEST_CASE("ssim_int - wide known answers match a double-precision reference", "[ssim_int]") {
+  const Window base8 = textured();
+  const WideWindow base = wide_from(base8, 2);
+  WideWindow offset{};
+  WideWindow halved{};
+  WideWindow inverted{};
+  for (std::size_t i = 0; i < base.size(); ++i) {
+    offset[i] = static_cast<std::uint16_t>(std::min<int>(1023, base[i] + 40));
+    halved[i] = static_cast<std::uint16_t>(512 + (static_cast<int>(base[i]) - 512) / 2);
+    inverted[i] = static_cast<std::uint16_t>(1023 - base[i]);
+  }
+  const std::array<std::pair<WideWindow, WideWindow>, 5> cases = {
+      std::make_pair(base, offset), std::make_pair(base, halved), std::make_pair(base, inverted),
+      std::make_pair(wide_from(random_window(1), 2), wide_from(random_window(11), 2)),
+      std::make_pair(wide_from(random_window(2), 2), wide_from(random_window(22), 2))};
+  for (const auto& [a, b] : cases) {
+    const double got = static_cast<double>(wide_window_q24(a, b, 10)) / static_cast<double>(kOne);
+    const double want = wide_reference_ssim(a, b, 10);
+    INFO("got " << got << " want " << want);
+    REQUIRE(std::fabs(got - want) < 1e-6);
+  }
+  REQUIRE(wide_window_q24(base, inverted, 10) < 0);
+
+  // 16 bits reaches the largest products (about 2^90): still agrees.
+  const WideWindow base16 = wide_from(base8, 8);
+  WideWindow inverted16{};
+  WideWindow shifted16{};
+  for (std::size_t i = 0; i < base16.size(); ++i) {
+    inverted16[i] = static_cast<std::uint16_t>(65535 - base16[i]);
+    shifted16[i] = static_cast<std::uint16_t>(std::min<int>(65535, base16[i] + 2000));
+  }
+  for (const auto& [a, b] : {std::make_pair(base16, inverted16), std::make_pair(base16, shifted16),
+                              std::make_pair(wide_filled(16, 65535), wide_filled(16, 0))}) {
+    const double got = static_cast<double>(wide_window_q24(a, b, 16)) / static_cast<double>(kOne);
+    REQUIRE(std::fabs(got - wide_reference_ssim(a, b, 16)) < 1e-6);
+  }
+}
+
+TEST_CASE("ssim_int - wide agrees with the 8-bit function at depth 8", "[ssim_int]") {
+  // Both are floors of the same ratio; the 8-bit one trades its last place for
+  // int64-only division, so they are asserted equal to within one unit in the
+  // last place, and exactly equal when the windows are identical.
+  const Window base = textured();
+  Window offset{};
+  Window halved{};
+  Window inverted{};
+  for (std::size_t i = 0; i < base.size(); ++i) {
+    offset[i] = static_cast<std::uint8_t>(std::min<int>(255, base[i] + 10));
+    halved[i] = static_cast<std::uint8_t>(128 + (static_cast<int>(base[i]) - 128) / 2);
+    inverted[i] = static_cast<std::uint8_t>(255 - base[i]);
+  }
+  const std::array<std::pair<Window, Window>, 8> cases = {
+      std::make_pair(base, offset),         std::make_pair(base, halved),
+      std::make_pair(base, inverted),       std::make_pair(random_window(1), random_window(11)),
+      std::make_pair(random_window(2), random_window(22)), std::make_pair(filled(255), filled(0)),
+      std::make_pair(base, base),           std::make_pair(filled(128), filled(128))};
+  for (const auto& [a, b] : cases) {
+    WideWindow wa{};
+    WideWindow wb{};
+    for (std::size_t i = 0; i < a.size(); ++i) {
+      wa[i] = a[i];
+      wb[i] = b[i];
+    }
+    const std::int64_t narrow = window_q24(a, b);
+    const std::int64_t wide = wide_window_q24(wa, wb, 8);
+    INFO("narrow " << narrow << " wide " << wide);
+    REQUIRE(std::llabs(narrow - wide) <= 1);
+    if (a == b) {
+      REQUIRE(narrow == wide);
+    }
+  }
+}
+
+TEST_CASE("ssim_int - wide plane score is the floor mean and honours the strides", "[ssim_int]") {
+  constexpr int kW = 16;
+  constexpr int kH = 12;
+  constexpr int kStrideA = 20;
+  constexpr int kStrideB = 24;
+  std::vector<std::uint16_t> a(static_cast<std::size_t>(kStrideA) * kH, 0xEEEE);
+  std::vector<std::uint16_t> b(static_cast<std::size_t>(kStrideB) * kH, 0xDDDD);
+  Lcg rng(9);
+  for (int y = 0; y < kH; ++y) {
+    for (int x = 0; x < kW; ++x) {
+      const std::uint16_t va = static_cast<std::uint16_t>((x * 131 + y * 277) & 0x3FF);
+      a[static_cast<std::size_t>(y * kStrideA + x)] = va;
+      b[static_cast<std::size_t>(y * kStrideB + x)] = static_cast<std::uint16_t>(va ^ (rng.next() & 0x3F));
+    }
+  }
+  // Windows at x in {0, 4, 8} and y in {0, 4}: six of them.
+  std::int64_t total = 0;
+  int windows = 0;
+  for (int wy = 0; wy + 8 <= kH; wy += 4) {
+    for (int wx = 0; wx + 8 <= kW; wx += 4) {
+      WideWindow wa{};
+      WideWindow wb{};
+      for (int dy = 0; dy < 8; ++dy) {
+        for (int dx = 0; dx < 8; ++dx) {
+          wa[static_cast<std::size_t>(dy * 8 + dx)] = a[static_cast<std::size_t>((wy + dy) * kStrideA + wx + dx)];
+          wb[static_cast<std::size_t>(dy * 8 + dx)] = b[static_cast<std::size_t>((wy + dy) * kStrideB + wx + dx)];
+        }
+      }
+      total += wide_window_q24(wa, wb, 10);
+      ++windows;
+    }
+  }
+  REQUIRE(windows == 6);
+  const std::optional<std::int64_t> plane = ssim_plane_q24_wide(a.data(), kStrideA, b.data(), kStrideB, kW, kH, 10);
+  REQUIRE(plane.has_value());
+  REQUIRE(*plane == total / windows);  // the window scores are positive here: floor == truncation
+
+  // A plane against itself scores exactly one; a plane narrower than a window
+  // has no score.
+  REQUIRE(ssim_plane_q24_wide(a.data(), kStrideA, a.data(), kStrideA, kW, kH, 10) == std::optional<std::int64_t>(kOne));
+  REQUIRE_FALSE(ssim_plane_q24_wide(a.data(), kStrideA, b.data(), kStrideB, 7, kH, 10).has_value());
+  REQUIRE_FALSE(ssim_plane_q24_wide(a.data(), kStrideA, b.data(), kStrideB, kW, 7, 10).has_value());
 }

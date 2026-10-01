@@ -373,6 +373,10 @@ add_executable(mediadiff_unit_tests
   # known answers and bounds, and the deterministic 128-wide thumbnail's
   # height, depth normalization, range-preservation and SIMD-equals-C proof.
   test_ssim_int.cpp
+  # 07-10-PLAN.md (CONTENT-08, T-07-31, A21): the integer PSNR arithmetic -- exact
+  # plane SSE, the (6 * bpc) + 12 dB cap, the fixed-point log against a
+  # floating-point reference that exists only in the test, half-away rounding.
+  test_quality_math.cpp
   # 07-05-PLAN.md (CONTENT-06, T-07-16): the frozen hysteresis boundaries, the
   # range- and depth-normalized black rule, run ordering and the geometry
   # handling of both detectors, on synthetic thumbnails.
