@@ -29,6 +29,7 @@
 #include "core/snapshot.h"
 #include "core/value.h"
 #include "probe/demux_session.h"
+#include "probe/lockstep.h"
 #include "probe/orchestrator.h"
 #include "probe/packet_scan.h"
 #include "report/json.h"
@@ -349,7 +350,16 @@ void register_dir_command(CLI::App& app) {
       report_cli_error(err.message);
       std::exit(exit_code_for(err.kind));
     }
-    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes_result, resolved_threads));
+    // 07-09-PLAN.md (DIR-06, T-07-29): with content decode on, every job runs
+    // BOTH sides of its pair in lockstep (fingerprint_pair, below), so two
+    // sweeps -- each holding its own packet store -- are in flight per worker
+    // thread. The per-side cap is therefore derived from `2 * resolved_threads`
+    // sweeps, which keeps the peak inside DIR-06's per-in-flight-file budget
+    // (budget / threads per job, two sides sharing it). Without content decode a
+    // job's two sides are probed one after the other, so one store at a time is
+    // live and the cap stays budget / threads.
+    set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(
+        *probe_budget_bytes_result, content_enabled ? 2 * resolved_threads : resolved_threads));
 
     // DIR-01/DIR-04: the full pair list, byte-wise sorted, computed BEFORE
     // any worker starts and never mutated afterward.
@@ -412,19 +422,24 @@ void register_dir_command(CLI::App& app) {
         // already applies to the base Policy and the probe-memory budget.
         ProbeOptions probe_options{/*content_enabled=*/content_enabled, /*hash_decoder=*/hash_decoder};
         probe_options.sample_stride = sample_stride;
-        auto baseline_fp = fingerprint_input(baseline_path, registry, probe_options);
-        if (!baseline_fp) {
-          outcomes[i].hard_error = baseline_fp.error();
+        // 07-09-PLAN.md (CONTENT-04, CONTENT-05): the pair goes through the same
+        // entry the single-file `compare` uses, so with content decode on both
+        // sides are probed in lockstep and content.video.perceptual is a live
+        // finding here too (otherwise it would read requires_media for every
+        // file). fingerprint_pair takes the sequential two-probe path when
+        // content decode is off and reports the first error baseline-then-
+        // candidate, so every per-file error and partial mapping below is
+        // unchanged.
+        auto pair_fp = fingerprint_pair(baseline_path, candidate_path, registry, probe_options);
+        if (!pair_fp) {
+          outcomes[i].hard_error = pair_fp.error();
           return;
         }
-        auto candidate_fp = fingerprint_input(candidate_path, registry, probe_options);
-        if (!candidate_fp) {
-          outcomes[i].hard_error = candidate_fp.error();
-          return;
-        }
+        Fingerprint& baseline_fp = pair_fp->baseline;
+        Fingerprint& candidate_fp = pair_fp->candidate;
 
-        bool partial = baseline_fp->partial || candidate_fp->partial;
-        auto compare_result = compare_fingerprints(*baseline_fp, *candidate_fp, per_file_policy, registry);
+        bool partial = baseline_fp.partial || candidate_fp.partial;
+        auto compare_result = compare_fingerprints(baseline_fp, candidate_fp, per_file_policy, registry);
         if (!compare_result) {
           if (compare_result.error().kind == ErrorKind::decode) {
             partial = true;
