@@ -261,7 +261,14 @@ ProbeArgs add_probe_flags(CLI::App& cmd) {
   // resolver runs); resolve_probe_timeout_ms/resolve_probe_memory_budget_bytes
   // below keep their own bound anyway, because the config path (`[probe]
   // timeout_seconds`/`memory_budget_mb`) never passes through CLI11 at all.
-  args.timeout_seconds = cmd.add_option("--probe-timeout", "Per-file wall-clock probe budget, in seconds (default: 30)")
+  // 07-13-PLAN.md (D-12): the help says what the budget does and does not bound.
+  // It governs opening and header probing only; a decode call that stalls later is
+  // bounded by the separate fixed stall watchdog (src/cli/watchdog.h), never by a
+  // wall-clock cut that could change a measured value (CR-05).
+  args.timeout_seconds = cmd.add_option("--probe-timeout",
+                                        "Wall-clock budget, in seconds, for opening and probing each input's header "
+                                        "(default: 30). A decode call that stalls later is bounded separately by a "
+                                        "fixed 300 s watchdog.")
                               ->type_name("SECONDS")
                               ->check(CLI::NonNegativeNumber)
                               ->check(CLI::Range(std::int64_t{0}, kMaxProbeTimeoutSeconds));
