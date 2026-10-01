@@ -383,6 +383,11 @@ add_executable(mediadiff_unit_tests
   # the named index fallbacks, the no-timestamp frame, `--sample N`, geometry
   # mismatch and the unscorable-thumbnail stops -- on synthetic thumbnails.
   test_pair_scorer.cpp
+  # 07-09-PLAN.md (TRUST-04, D-04): compare_tol's generic scaler_path /
+  # decode_path_signature precondition table -- a differing, one-sided or
+  # inside-tolerance mismatch is skipped:path_incomparable, equal paths and
+  # evidence-free measurements behave as before (synthetic evidence, A19).
+  test_tol_path_signature.cpp
   # 07-03-PLAN.md (CONTENT-02, D-02/D-07): the one exact frame-pairing rule --
   # the strict half-interval boundary, timebase rounding, 60 vs 30, a drop, a
   # duplicate, negative first PTS, the index fallbacks and online == batch.

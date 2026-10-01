@@ -30,7 +30,7 @@ Aliasing: `deprecated_alias("container.faststart", "container.mp4.faststart")` �
 | Semantic | Pass condition | Delta rendering | Notes |
 |---|---|---|---|
 | `exact` | values equal after per-check normalization | `a → b` | normalization examples: pix_fmt range-folding (doc 03), layout canonicalization (doc 05) |
-| `±tol` | `|Δ| ≤ tol` in the check's unit | signed Δ + `%` where meaningful | two thresholds allowed: `{warn, fail}`; rational-aware (compare in ticks/samples, never floats, when the unit is time) |
+| `±tol` | `|Δ| ≤ tol` in the check's unit | signed Δ + `%` where meaningful | two thresholds allowed: `{warn, fail}`; rational-aware (compare in ticks/samples, never floats, when the unit is time). Amended (07-09, TRUST-04/D-04): two-file tol checks carry `scaler_path` and `decode_path_signature` preconditions; a mismatch (or a key on one side only) is `skipped:path_incomparable`, even when the magnitudes are within tolerance; codecs are never a precondition. |
 | `set` | symmetric difference ∅ after removing ignored elements | `+added −removed` | element-level ignore lists (volatile metadata keys) |
 | `presence` | both present or both absent | `present → absent` | value comparison, if any, is a separate `±tol` check on the same extraction |
 | `hash` | chains equal **and** hash preconditions match | `differs (first divergence: …)` | preconditions: same decode-path class, same sampling, same normalization — mismatch ⇒ `skipped:hash_incomparable` + hint, never a fake fail (doc 06 §3) |
