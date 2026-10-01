@@ -733,6 +733,46 @@ jobs:
             echo "This leg (${{ matrix.preset }}) is NOT the designated leg ($DESIGNATED_LEG) for tests/golden/PERF_BASELINE.txt -- the audio instruction-count ratchet (06-12-PLAN.md, PERF-04) only runs there, mirroring the timeline ratchet's own designated-leg scoping above. This leg's audio perf gate is deliberately NOT run."
           fi
 
+      # 07-12-PLAN.md (PERF-02): the video-content-pass sibling of the timeline
+      # and audio ratchets above -- same designated-leg scoping, same
+      # read-only-against-the-ledger contract. Reuses the valgrind install
+      # above (already unconditional for this leg) and the D-16 reference the
+      # timeline ratchet already generated into .mediadiff-bench/ (the video
+      # script reuses that exact file); no second install and no second
+      # reference. The ratchet runs on the first 1800 video packets of the
+      # reference, about a minute under cachegrind; the whole-file realtime
+      # factor is a recorded number (scripts/measure_video_perf.sh with no
+      # arguments), never a gate.
+      - name: Build the video sweep benchmark target (designated leg only)
+        if: matrix.preset == 'x64-linux'
+        run: |
+          cmake -S . -B build/${{ matrix.preset }} -DMEDIADIFF_BUILD_BENCH=ON
+          cmake --build build/${{ matrix.preset }} --target mediadiff_video_sweep
+
+      - name: Video instruction-count ratchet (PERF-02, designated leg only)
+        run: |
+          DESIGNATED_LEG="x64-linux"
+          if [ "${{ matrix.preset }}" = "$DESIGNATED_LEG" ]; then
+            set +e
+            bash scripts/measure_video_perf.sh --instructions --check-baseline > video-perf-output.log 2>&1
+            PERF_RC=$?
+            set -e
+            # Surfaced unconditionally (success AND failure): the pasteable
+            # replacement line the script prints on every run must be visible
+            # in the job log either way.
+            cat video-perf-output.log
+            if ! grep -q 'instruction counts (valgrind --tool=cachegrind' video-perf-output.log; then
+              echo "::error::the video perf step produced no measurement output at all on the designated leg -- a gate that produced nothing cannot have checked anything."
+              exit 1
+            fi
+            if [ "$PERF_RC" -ne 0 ]; then
+              echo "::error::the video instruction-count ratchet failed on the designated leg -- see the output above for the specific regressed metric and its pasteable replacement line."
+              exit 1
+            fi
+          else
+            echo "This leg (${{ matrix.preset }}) is NOT the designated leg ($DESIGNATED_LEG) for tests/golden/PERF_BASELINE.txt -- the video instruction-count ratchet (07-12-PLAN.md, PERF-02) only runs there, mirroring the timeline and audio ratchets' own designated-leg scoping above. This leg's video perf gate is deliberately NOT run."
+          fi
+
       # CLI-09's remaining checkpoint needs a real Windows console, which CI
       # structurally cannot provide: Actions redirects stdout to a pipe, so
       # GetConsoleMode fails and enable_vt_output() correctly no-ops. Publish

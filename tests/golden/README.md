@@ -275,6 +275,42 @@ checks on every push, but a real regression on the designated leg is not
 yet provably caught — the provisional baseline is this workstation's own
 number, not that leg's.
 
+## `PERF_BASELINE.txt`'s video entries (PERF-02, 07-12-PLAN.md)
+
+`scripts/measure_video_perf.sh` adds `video_plain_instructions` and
+`video_full_instructions`: the retired-instruction counts
+`valgrind --tool=cachegrind` reports for, in order, `run_packet_scan` alone
+with the video decode disabled (no `Pass::video_decode` in the pass union),
+and the SAME packet scan with every video sink fused into the one
+`av_read_frame` loop (frame hash, frozen/black detectors, perceptual
+thumbnail, captions, first-frame HDR) plus every registered analyzer that
+declares `Pass::video_decode`. Both legs run on a **bounded slice** of the
+D-16 reference: its first **1800 video packets** (about 60 s at 30 fps),
+selected by `tools/bench/mediadiff_video_sweep --max-video-packets`, never a
+different file. The whole ten minutes would take about ten minutes under
+cachegrind per CI run; a bounded run records `stop_reason=bench_packet_cap`
+and the script fails loudly if either leg did not stop at the cap. The
+`video_full`/`video_plain` ratio (about 380x) is expected: decoding 1080p
+MPEG-4 and running every sink is a far larger unit of work than a decode-free
+packet scan.
+
+The reference input is the SAME file `scripts/measure_timeline_perf.sh`
+generates (`.mediadiff-bench/timeline_overhead_input_600s_1920x1080_30fps.mp4`,
+mpeg4/aac, gitignored, never in `tests/fixtures/`, never hashed into
+`CORPUS_DIGEST.txt`). Its bytes depend on the encoder's automatic thread
+count, so the slice's instruction count is scoped to the designated leg, like
+the timeline lines.
+
+**STATUS: PROVISIONAL.** Both lines were measured inside a throwaway
+`ubuntu:24.04` container (valgrind 3.22.0 installed in the container; this
+workstation has neither valgrind nor passwordless root), against the host-built
+`mediadiff_video_sweep` and the workstation's own reference file -- the
+closest available stand-in for the designated `x64-linux` runner, but not that
+runner. `07-15-PLAN.md` transcribes the designated leg's own counts over them.
+Until then the `.github/workflows/ci.yml` video ratchet step self-consistency
+checks on every push, but a real designated-leg regression is not yet provably
+caught.
+
 
 
 These three (`ts_scan_ts_single.txt`, `ts_scan_ts_multiprogram.txt`,
