@@ -204,6 +204,11 @@ add_executable(mediadiff_integration_tests
   # the production single-thread pin makes a corrupt stream decode to one chain
   # over ten runs (D-11).
   test_video_thread_invariance.cpp
+  # D-12 / D-13 / CLI-07 (07-13-PLAN.md): the decode stall watchdog proven by
+  # simulated stalls -- compare, snapshot, inspect and dir trip paths, the
+  # inert hooks, malformed hooks as usage errors, and byte-identical output
+  # when the armed watchdog never trips.
+  test_watchdog.cpp
   # VIDEO-11 (07-06-PLAN.md): video.closed_captions on the two no-GPL routes --
   # an MPEG-2 GA94 insert (every frame captioned, identical pixels to the
   # uncaptioned stream) and a hand-written H.264 I_PCM stream whose caption SEI

@@ -1,5 +1,6 @@
 #include "cli/commands/compare.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +15,7 @@
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "cli/tty_render.h"
+#include "cli/watchdog.h"
 #include "compare/engine.h"
 #include "config/toml_load.h"
 #include "core/error.h"
@@ -23,6 +25,7 @@
 #include "core/registry.h"
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
+#include "probe/heartbeat.h"
 #include "probe/lockstep.h"
 #include "probe/orchestrator.h"
 #include "probe/packet_scan.h"
@@ -31,6 +34,7 @@
 #include "report/markdown.h"
 #include "report/model.h"
 #include "util/fs.h"
+#include "util/version.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -83,6 +87,93 @@ mediadiff::expected<void, Error> write_report_file(const std::string& path, cons
     return mediadiff::unexpected(Error{ErrorKind::usage, "failed writing report destination: " + path});
   }
   return {};
+}
+
+// Everything the report-writing tail needs, resolved before any fingerprinting
+// starts (07-13-PLAN.md): the trip path of the stall watchdog writes the same
+// destinations through the same renderers as an ordinary partial run, so it must
+// not depend on anything the probe produces.
+struct CompareReportPlan {
+  const CheckRegistry* registry = nullptr;
+  const Policy* policy = nullptr;
+  bool strict = false;
+  bool verbose = false;
+  bool quiet = false;
+  const ColorArgs* color_args = nullptr;
+  bool json_requested = false;
+  std::string json_path;
+  const std::vector<ReportDestination>* destinations = nullptr;
+};
+
+// Builds one ReportModel from `envelope` and `findings` and writes every
+// requested output: the TTY report (only when --json was not requested and -q
+// was not given), the JSON report to stdout or its file, and each --report
+// destination. Returns the run's summary, or the first write error. Never exits:
+// the caller chooses between std::exit (an ordinary run) and std::_Exit (the
+// watchdog's trip).
+mediadiff::expected<Summary, Error> write_compare_reports(const CompareReportPlan& plan, const Envelope& envelope,
+                                                           const std::vector<Finding>& findings) {
+  const CheckRegistry& registry = *plan.registry;
+  // One ReportModel, shared by every renderer this run needs (D-08's
+  // write-side principle applied to the read side, this plan's own
+  // objective) -- built once, RenderOptions defaulted to "hide nothing"
+  // since none of JSON/Markdown/JUnit filter pass/ignored findings out
+  // of their own output (only a later TTY renderer does).
+  const RenderOptions render_options{/*show_pass=*/true, /*show_ignored=*/true, /*ascii=*/false,
+                                      /*strict=*/plan.strict};
+  const ReportModel model = build_report_model(envelope, findings, registry, render_options);
+
+  // TTY (REPORT-02) is the one renderer that filters: only non-pass and
+  // non-ignored findings show by default, with -v revealing both -- a
+  // SEPARATE ReportModel from `model` above, built with its own
+  // RenderOptions, since JSON/Markdown/JUnit must never hide a pass or
+  // ignored finding from their own output (02-08-SUMMARY.md's own
+  // "deliberately scoped boundary"). Printed to stdout only when --json
+  // was not requested in any form and -q was not given -- a caller
+  // asking for machine-readable output on stdout does not also want
+  // human-readable text interleaved into the same stream, and -q's own
+  // contract ("suppress non-error output") means no TTY report at all.
+  if (!plan.json_requested && !plan.quiet) {
+    const ColorInputs color_inputs = read_color_inputs(*plan.color_args);
+    const ColorDecision color = decide_color(color_inputs);
+    const RenderOptions tty_options{/*show_pass=*/plan.verbose, /*show_ignored=*/plan.verbose,
+                                     /*ascii=*/color.ascii_glyphs, /*strict=*/plan.strict};
+    const ReportModel tty_model = build_report_model(envelope, findings, registry, tty_options);
+    // CONT-03's `-v` half: the same `verbose` flag that already widened
+    // this model to show_pass/show_ignored also reveals each finding's
+    // ignored-volatile-tag-key evidence.
+    const std::string tty_report = render_tty(tty_model, registry, color, query_terminal_width(), plan.verbose);
+    std::fwrite(tty_report.data(), 1, tty_report.size(), stdout);
+  }
+
+  if (plan.json_requested) {
+    const std::string report = render_json(model, registry, *plan.policy, plan.verbose);
+    if (!plan.json_path.empty()) {
+      auto write_result = write_report_file(plan.json_path, report);
+      if (!write_result) {
+        return mediadiff::unexpected<Error>(write_result.error());
+      }
+    } else {
+      std::fwrite(report.data(), 1, report.size(), stdout);
+    }
+  }
+
+  for (const ReportDestination& dest : *plan.destinations) {
+    std::string rendered;
+    switch (dest.kind) {
+      case ReportDestination::Kind::md:
+        rendered = render_markdown(model, registry, plan.strict);
+        break;
+      case ReportDestination::Kind::junit:
+        rendered = render_junit(model, registry, plan.strict);
+        break;
+    }
+    auto write_result = write_report_file(dest.path, rendered);
+    if (!write_result) {
+      return mediadiff::unexpected<Error>(write_result.error());
+    }
+  }
+  return model.summary;
 }
 
 }  // namespace
@@ -229,24 +320,12 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
   }
   set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
 
-  ProbeOptions probe_options{/*content_enabled=*/content_enabled, /*hash_decoder=*/hash_decoder};
-  probe_options.sample_stride = sample_stride;
-  // 07-08-PLAN.md (CONTENT-11): one fingerprint_pair call replaces the two
-  // sequential fingerprint_input calls. Two media files decode in lockstep (one
-  // sweep per side on its own thread, one frame in flight per side) so the
-  // perceptual score can pair frames without holding two decoded sequences; a
-  // snapshot on either side, or --no-content, takes the sequential path exactly
-  // as before. The first error -- baseline, then candidate -- maps to the same
-  // exit codes through the same report_cli_error path.
-  auto fingerprints = fingerprint_pair(baseline_path, candidate_path, registry, probe_options, quality);
-  if (!fingerprints) {
-    const Error& err = fingerprints.error();
-    report_cli_error(err.message);
-    std::exit(exit_code_for(err.kind));
-  }
-  Fingerprint* baseline = &fingerprints->baseline;
-  Fingerprint* candidate = &fingerprints->candidate;
-
+  // 07-13-PLAN.md (D-12): everything that can be a usage error -- the CLI
+  // overrides, the profile, the policy and the report destinations -- is
+  // resolved BEFORE any input is fingerprinted, so a decode stall can write the
+  // report it owes (CLI-07) from state that already exists. Every usage error
+  // still exits 64 with the same message as before; only its order relative to
+  // an input error (65) moved, and only when both are present at once.
   auto cli_overrides = parse_cli_overrides(opt_strings(policy_args.set_flags), opt_strings(policy_args.tol_flags));
   if (!cli_overrides) {
     const Error& err = cli_overrides.error();
@@ -302,6 +381,67 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     }
   }
 
+  // 07-13-PLAN.md: the stall watchdog's two test-only variables are read here,
+  // with every other usage input; a malformed one is a usage error naming it.
+  auto watchdog_settings = resolve_watchdog_settings();
+  if (!watchdog_settings) {
+    const Error& err = watchdog_settings.error();
+    report_cli_error(err.message);
+    std::exit(exit_code_for(err.kind));
+  }
+
+  const CompareReportPlan report_plan{&registry,       &policy,        strict,
+                                       verbose,         quiet,          &color_args,
+                                       json_requested,  json_to_file ? json_path : std::string(),
+                                       &*report_destinations};
+
+  ProbeOptions probe_options{/*content_enabled=*/content_enabled, /*hash_decoder=*/hash_decoder};
+  probe_options.sample_stride = sample_stride;
+
+  // 07-13-PLAN.md (D-12, D-13, CLI-07): a libav call that never returns ends the
+  // run as could-not-run. The trip handler runs on the watchdog's thread: it
+  // writes the report the run owes -- no findings (the stalled pair produced no
+  // measurements), diagnostics carrying `partial: true` and the stall line --
+  // through the same renderers as the partial path below, flushes, and ends the
+  // process with std::_Exit WITHOUT joining the stuck thread (T-07-44).
+  const std::chrono::milliseconds watchdog_limit = watchdog_settings->limit;
+  const auto on_trip = [&report_plan, watchdog_limit](const WatchdogTrip& trip) {
+    Envelope envelope;
+    envelope.schema_version = std::string(kSchemaVersion);
+    envelope.tool_version = tool_version();
+    envelope.diagnostics["partial"] = true;
+    envelope.diagnostics["watchdog"] = describe_trip(trip, watchdog_limit);
+    auto written = write_compare_reports(report_plan, envelope, std::vector<Finding>{});
+    if (!written) {
+      report_cli_error(written.error().message);
+      exit_after_trip(exit_code_for(written.error().kind));
+    }
+    exit_after_trip(kExitDecode);
+  };
+
+  // 07-08-PLAN.md (CONTENT-11): one fingerprint_pair call replaces the two
+  // sequential fingerprint_input calls. Two media files decode in lockstep (one
+  // sweep per side on its own thread, one frame in flight per side) so the
+  // perceptual score can pair frames without holding two decoded sequences; a
+  // snapshot on either side, or --no-content, takes the sequential path exactly
+  // as before. The first error -- baseline, then candidate -- maps to the same
+  // exit codes through the same report_cli_error path. The watchdog runs only
+  // while fingerprints are produced and is stopped before any exit below.
+  auto fingerprints = [&]() {
+    WatchedRun watch(*watchdog_settings, baseline_path, &candidate_path, on_trip);
+    const ScopedHeartbeatBinding binding(watch.heartbeat());
+    auto result = fingerprint_pair(baseline_path, candidate_path, registry, probe_options, quality);
+    watch.stop();
+    return result;
+  }();
+  if (!fingerprints) {
+    const Error& err = fingerprints.error();
+    report_cli_error(err.message);
+    std::exit(exit_code_for(err.kind));
+  }
+  Fingerprint* baseline = &fingerprints->baseline;
+  Fingerprint* candidate = &fingerprints->candidate;
+
   // 02-10-PLAN.md Task 2 (CLI-07): a mid-analysis failure still finishes
   // the run -- build a ReportModel from whatever was computed, write every
   // requested destination, and only THEN return 66 -- rather than
@@ -337,74 +477,17 @@ void run_compare(const std::string& baseline_path, const std::string& candidate_
     candidate->envelope.diagnostics["partial"] = true;
   }
 
-  // One ReportModel, shared by every renderer this run needs (D-08's
-  // write-side principle applied to the read side, this plan's own
-  // objective) — built once, RenderOptions defaulted to "hide nothing"
-  // since none of JSON/Markdown/JUnit filter pass/ignored findings out
-  // of their own output (only a later TTY renderer does).
-  const RenderOptions render_options{/*show_pass=*/true, /*show_ignored=*/true, /*ascii=*/false,
-                                      /*strict=*/strict};
-  const ReportModel model = build_report_model(candidate->envelope, findings, registry, render_options);
-
-  // TTY (REPORT-02) is the one renderer that filters: only non-pass and
-  // non-ignored findings show by default, with -v revealing both -- a
-  // SEPARATE ReportModel from `model` above, built with its own
-  // RenderOptions, since JSON/Markdown/JUnit must never hide a pass or
-  // ignored finding from their own output (02-08-SUMMARY.md's own
-  // "deliberately scoped boundary"). Printed to stdout only when --json
-  // was not requested in any form and -q was not given -- a caller
-  // asking for machine-readable output on stdout does not also want
-  // human-readable text interleaved into the same stream, and -q's own
-  // contract ("suppress non-error output") means no TTY report at all.
-  if (!json_requested && !quiet) {
-    const ColorInputs color_inputs = read_color_inputs(color_args);
-    const ColorDecision color = decide_color(color_inputs);
-    const RenderOptions tty_options{/*show_pass=*/verbose, /*show_ignored=*/verbose, /*ascii=*/color.ascii_glyphs,
-                                     /*strict=*/strict};
-    const ReportModel tty_model = build_report_model(candidate->envelope, findings, registry, tty_options);
-    // CONT-03's `-v` half: the same `verbose` flag that already widened
-    // this model to show_pass/show_ignored also reveals each finding's
-    // ignored-volatile-tag-key evidence.
-    const std::string tty_report = render_tty(tty_model, registry, color, query_terminal_width(), verbose);
-    std::fwrite(tty_report.data(), 1, tty_report.size(), stdout);
-  }
-
-  if (json_requested) {
-    const std::string report = render_json(model, registry, policy, verbose);
-    if (json_to_file) {
-      auto write_result = write_report_file(json_path, report);
-      if (!write_result) {
-        const Error& err = write_result.error();
-        report_cli_error(err.message);
-        std::exit(exit_code_for(err.kind));
-      }
-    } else {
-      std::fwrite(report.data(), 1, report.size(), stdout);
-    }
-  }
-
-  for (const ReportDestination& dest : *report_destinations) {
-    std::string rendered;
-    switch (dest.kind) {
-      case ReportDestination::Kind::md:
-        rendered = render_markdown(model, registry, strict);
-        break;
-      case ReportDestination::Kind::junit:
-        rendered = render_junit(model, registry, strict);
-        break;
-    }
-    auto write_result = write_report_file(dest.path, rendered);
-    if (!write_result) {
-      const Error& err = write_result.error();
-      report_cli_error(err.message);
-      std::exit(exit_code_for(err.kind));
-    }
+  auto written = write_compare_reports(report_plan, candidate->envelope, findings);
+  if (!written) {
+    const Error& err = written.error();
+    report_cli_error(err.message);
+    std::exit(exit_code_for(err.kind));
   }
 
   if (partial) {
     std::exit(kExitDecode);
   }
-  std::exit(exit_code_for_findings(model.summary, strict));
+  std::exit(exit_code_for_findings(*written, strict));
 }
 
 }  // namespace mediadiff

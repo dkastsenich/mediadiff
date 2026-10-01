@@ -1,6 +1,7 @@
 #include "cli/commands/dir.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -17,6 +18,7 @@
 #include "cli/exit_code.h"
 #include "cli/options.h"
 #include "cli/tty_render.h"
+#include "cli/watchdog.h"
 #include "cli/worker_pool.h"
 #include "compare/engine.h"
 #include "compare/semantics.h"
@@ -29,6 +31,7 @@
 #include "core/snapshot.h"
 #include "core/value.h"
 #include "probe/demux_session.h"
+#include "probe/heartbeat.h"
 #include "probe/lockstep.h"
 #include "probe/orchestrator.h"
 #include "probe/packet_scan.h"
@@ -116,6 +119,42 @@ std::string join_relative(const std::string& root, const std::string& relative_p
 struct JobOutcome {
   std::optional<Error> hard_error;
   bool partial = false;
+  // 07-13-PLAN.md (D-13): the watchdog abandoned this job (a libav call that never
+  // returned). Its hard_error is the could-not-run diagnostic.
+  bool abandoned = false;
+};
+
+// 07-13-PLAN.md (D-12, D-13): one pair job's two heartbeat slots (baseline and
+// candidate side), registered with the watchdog for the job's lifetime. The
+// object lives on the job's own stack, so an abandoned job -- a thread stuck
+// inside a libav call -- keeps its slots alive for as long as it exists, and the
+// sampler never reads a destroyed heartbeat.
+class JobHeartbeats {
+ public:
+  JobHeartbeats(Watchdog& watchdog, const WatchdogSettings& settings, const std::string& baseline_path,
+                const std::string& candidate_path, std::size_t job_index)
+      : watchdog_(watchdog) {
+    apply_stall_hook(settings, primary_, baseline_path);
+    apply_stall_hook(settings, secondary_, candidate_path);
+    primary_.candidate_side = &secondary_;
+    primary_id_ = watchdog_.add(&primary_, baseline_path, job_index);
+    secondary_id_ = watchdog_.add(&secondary_, candidate_path, job_index);
+  }
+  ~JobHeartbeats() {
+    watchdog_.remove(primary_id_);
+    watchdog_.remove(secondary_id_);
+  }
+  JobHeartbeats(const JobHeartbeats&) = delete;
+  JobHeartbeats& operator=(const JobHeartbeats&) = delete;
+
+  Heartbeat* heartbeat() { return &primary_; }
+
+ private:
+  Watchdog& watchdog_;
+  Heartbeat primary_;
+  Heartbeat secondary_;
+  Watchdog::SlotId primary_id_ = 0;
+  Watchdog::SlotId secondary_id_ = 0;
 };
 
 }  // namespace
@@ -401,15 +440,28 @@ void register_dir_command(CLI::App& app) {
     const auto inject_internal_env = getenv_utf8("MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR");
     const bool inject_internal_error = inject_internal_env.has_value() && !inject_internal_env->empty();
 
+    // 07-13-PLAN.md (D-12, D-13): the stall watchdog's two test-only variables,
+    // read once beside the other test hook, before any worker starts.
+    auto watchdog_settings_result = resolve_watchdog_settings();
+    if (!watchdog_settings_result) {
+      const Error& err = watchdog_settings_result.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const WatchdogSettings& watchdog_settings = *watchdog_settings_result;
+
     std::vector<FileResult> results(pairs.size());
     std::vector<JobOutcome> outcomes(pairs.size());
 
-    auto job = [&](std::size_t i) {
+    // One file's own work, writing only into the two out-parameters (a local
+    // result, never the shared vectors): the caller publishes them through the
+    // pool's commit, which a watchdog abandonment can pre-empt (T-07-41).
+    auto run_job = [&](std::size_t i, FileResult& file_result, JobOutcome& file_outcome, Watchdog& watchdog) {
       const FilePair& pair = pairs[i];
-      results[i].relative_path = pair.relative_path;
+      file_result.relative_path = pair.relative_path;
 
       if (inject_internal_error) {
-        outcomes[i].hard_error =
+        file_outcome.hard_error =
             Error{ErrorKind::internal, "injected test failure (MEDIADIFF_DIR_TEST_INJECT_INTERNAL_ERROR)"};
         return;
       }
@@ -417,7 +469,7 @@ void register_dir_command(CLI::App& app) {
       auto per_file_policy_result =
           resolve_policy_for_file(base_policy, registry, config, pair.relative_path, cli_overrides);
       if (!per_file_policy_result) {
-        outcomes[i].hard_error = per_file_policy_result.error();
+        file_outcome.hard_error = per_file_policy_result.error();
         return;
       }
       const Policy& per_file_policy = *per_file_policy_result;
@@ -441,9 +493,13 @@ void register_dir_command(CLI::App& app) {
         // content decode is off and reports the first error baseline-then-
         // candidate, so every per-file error and partial mapping below is
         // unchanged.
+        // The heartbeat slots live for exactly this call: a stall in either
+        // side's libav work abandons THIS file only.
+        JobHeartbeats heartbeats(watchdog, watchdog_settings, baseline_path, candidate_path, i);
+        const ScopedHeartbeatBinding binding(heartbeats.heartbeat());
         auto pair_fp = fingerprint_pair(baseline_path, candidate_path, registry, probe_options, quality);
         if (!pair_fp) {
-          outcomes[i].hard_error = pair_fp.error();
+          file_outcome.hard_error = pair_fp.error();
           return;
         }
         Fingerprint& baseline_fp = pair_fp->baseline;
@@ -455,13 +511,13 @@ void register_dir_command(CLI::App& app) {
           if (compare_result.error().kind == ErrorKind::decode) {
             partial = true;
           } else {
-            outcomes[i].hard_error = compare_result.error();
+            file_outcome.hard_error = compare_result.error();
             return;
           }
         } else {
-          results[i].findings = std::move(*compare_result);
+          file_result.findings = std::move(*compare_result);
         }
-        outcomes[i].partial = partial;
+        file_outcome.partial = partial;
         return;
       }
 
@@ -488,12 +544,47 @@ void register_dir_command(CLI::App& app) {
 
       auto finding_result = compare_presence(check, baseline_measurement, candidate_measurement, per_file_policy);
       if (finding_result) {
-        results[i].findings.push_back(std::move(*finding_result));
+        file_result.findings.push_back(std::move(*finding_result));
       }
     };
 
+    // The shared state every abandonment goes through, and the watchdog that
+    // decides one. A trip abandons the one file whose slot stalled and records a
+    // could-not-run error for it; the pool replaces that file's worker and the
+    // rest of the corpus carries on (D-13). The trip handler writes results[i]
+    // and outcomes[i] only inside AbandonControl::abandon, i.e. under the lock a
+    // job's commit takes, so a job that finishes at the same moment either
+    // publishes completely first or is discarded -- never merged late.
+    AbandonControl control;
+    const std::chrono::milliseconds watchdog_limit = watchdog_settings.limit;
+    Watchdog watchdog(watchdog_limit, [&](const WatchdogTrip& trip) {
+      const std::size_t index = trip.tag;
+      control.abandon(index, [&]() {
+        results[index].relative_path = pairs[index].relative_path;
+        outcomes[index].hard_error = Error{ErrorKind::decode, "watchdog: " + describe_trip(trip, watchdog_limit)};
+        outcomes[index].abandoned = true;
+      });
+    });
+    watchdog.start();
+
+    auto job = [&](std::size_t i) {
+      FileResult file_result;
+      JobOutcome file_outcome;
+      run_job(i, file_result, file_outcome, watchdog);
+      control.commit(i, [&]() {
+        results[i] = std::move(file_result);
+        outcomes[i] = std::move(file_outcome);
+      });
+    };
+
+    // Always worker threads while a watchdog is active, even at --threads 1 (a
+    // job stuck on the calling thread could not be abandoned; flagged
+    // assumption A28). Results are unchanged: they are index-addressed.
     WorkerPool pool(static_cast<std::size_t>(resolved_threads));
-    pool.run_indexed(pairs.size(), job);
+    pool.run_indexed_abandonable(pairs.size(), job, control);
+    // Every file is finished or abandoned. The sampler is joined before any
+    // exit below; an abandoned job's thread is deliberately left running.
+    watchdog.stop();
 
     // Structural exit-code priority, decided over the full, now-completed
     // corpus (matching src/cli/commands/compare.cpp's own "finish
@@ -506,7 +597,11 @@ void register_dir_command(CLI::App& app) {
     // every file the pool actually ran.
     std::optional<Error> first_hard_error;
     bool any_partial = false;
+    bool any_abandoned = false;
     for (const JobOutcome& outcome : outcomes) {
+      if (outcome.abandoned) {
+        any_abandoned = true;
+      }
       if (outcome.hard_error.has_value() && !first_hard_error.has_value()) {
         first_hard_error = outcome.hard_error;
       }
@@ -581,6 +676,12 @@ void register_dir_command(CLI::App& app) {
       }
     }
 
+    if (any_abandoned) {
+      // A stuck libav call may still be running on a detached thread: end the
+      // process without exit handlers or joins (T-07-44), with the report
+      // already written. The exit code is the could-not-run one (CLI-07).
+      exit_after_trip(kExitDecode);
+    }
     if (first_hard_error.has_value()) {
       std::exit(exit_code_for(first_hard_error->kind));
     }

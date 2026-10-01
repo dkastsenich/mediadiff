@@ -1,5 +1,6 @@
 #include "cli/commands/inspect.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
@@ -9,12 +10,14 @@
 #include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
+#include "cli/watchdog.h"
 #include "config/toml_load.h"
 #include "core/error.h"
 #include "core/model.h"
 #include "core/profiles.h"
 #include "core/registry.h"
 #include "probe/demux_session.h"
+#include "probe/heartbeat.h"
 #include "probe/orchestrator.h"
 #include "probe/packet_scan.h"
 
@@ -120,7 +123,26 @@ void register_inspect_command(CLI::App& app) {
     }
     set_default_packet_scan_max_bytes(derive_per_file_cap_bytes(*probe_budget_bytes, /*threads=*/1));
 
-    auto fp = fingerprint_input(opt_string(file_path), registry, probe_options);
+    // 07-13-PLAN.md (D-12, CLI-07): a libav call that never returns ends the run
+    // as could-not-run, with the stall diagnostic on stderr and exit 66.
+    const std::string file_path_text = opt_string(file_path);
+    auto watchdog_settings = resolve_watchdog_settings();
+    if (!watchdog_settings) {
+      const Error& err = watchdog_settings.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const std::chrono::milliseconds watchdog_limit = watchdog_settings->limit;
+    auto fp = [&]() {
+      WatchedRun watch(*watchdog_settings, file_path_text, nullptr, [watchdog_limit](const WatchdogTrip& trip) {
+        report_cli_error("watchdog: " + describe_trip(trip, watchdog_limit));
+        exit_after_trip(kExitDecode);
+      });
+      const ScopedHeartbeatBinding binding(watch.heartbeat());
+      auto result = fingerprint_input(file_path_text, registry, probe_options);
+      watch.stop();
+      return result;
+    }();
     if (!fp) {
       const Error& err = fp.error();
       report_cli_error(err.message);

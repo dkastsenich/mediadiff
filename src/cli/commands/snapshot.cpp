@@ -1,5 +1,6 @@
 #include "cli/commands/snapshot.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -11,8 +12,10 @@
 #include "cli/diagnostics.h"
 #include "cli/exit_code.h"
 #include "cli/options.h"
+#include "cli/watchdog.h"
 #include "core/snapshot.h"
 #include "probe/demux_session.h"
+#include "probe/heartbeat.h"
 #include "probe/orchestrator.h"
 #include "probe/packet_scan.h"
 #include "util/fs.h"
@@ -364,7 +367,28 @@ void register_snapshot_command(CLI::App& app) {
     // the media bytes only when the input opened but was not a snapshot
     // (PROBE-01, this plan).
     const std::string input_path_text = opt_string(input_path);
-    auto fp = fingerprint_input(input_path_text, registry, probe_options);
+
+    // 07-13-PLAN.md (D-12, CLI-07): a libav call that never returns ends the run
+    // as could-not-run. Snapshots are written only after fingerprinting, so a trip
+    // leaves no output file: the handler prints the stall diagnostic to stderr,
+    // flushes and ends the process with exit 66 without joining the stuck thread.
+    auto watchdog_settings = resolve_watchdog_settings();
+    if (!watchdog_settings) {
+      const Error& err = watchdog_settings.error();
+      report_cli_error(err.message);
+      std::exit(exit_code_for(err.kind));
+    }
+    const std::chrono::milliseconds watchdog_limit = watchdog_settings->limit;
+    auto fp = [&]() {
+      WatchedRun watch(*watchdog_settings, input_path_text, nullptr, [watchdog_limit](const WatchdogTrip& trip) {
+        report_cli_error("watchdog: " + describe_trip(trip, watchdog_limit));
+        exit_after_trip(kExitDecode);
+      });
+      const ScopedHeartbeatBinding binding(watch.heartbeat());
+      auto result = fingerprint_input(input_path_text, registry, probe_options);
+      watch.stop();
+      return result;
+    }();
     if (!fp) {
       const Error& err = fp.error();
       report_cli_error(err.message);

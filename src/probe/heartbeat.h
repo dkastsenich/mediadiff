@@ -51,7 +51,7 @@ bool parse_libav_site(std::string_view name, LibavSite* out);
 
 // "No timestamp": the value libav's own AV_NOPTS_VALUE has, kept here so this
 // header needs no libav include.
-inline constexpr std::int64_t kHeartbeatNoPts = std::numeric_limits<std::int64_t>::min();
+inline constexpr std::int64_t kHeartbeatNoPts = (std::numeric_limits<std::int64_t>::min)();
 
 struct Heartbeat {
   // Advanced on every guard entry and exit: any movement means progress.

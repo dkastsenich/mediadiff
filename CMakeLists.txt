@@ -343,6 +343,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/cli/commands/inspect_render.h
   src/cli/dir_pairing.h
   src/cli/worker_pool.h
+  src/cli/watchdog.h
   src/probe/pass.h
   src/probe/demux_session.h
   src/probe/packet_scan.h
@@ -456,6 +457,8 @@ add_executable(mediadiff
   src/cli/commands/explain.cpp
   src/cli/dir_pairing.cpp
   src/cli/worker_pool.cpp
+  # 07-13-PLAN.md (D-12, D-13): the CLI half of the decode stall watchdog.
+  src/cli/watchdog.cpp
 )
 target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11 Threads::Threads)
 mediadiff_apply_warnings(mediadiff)

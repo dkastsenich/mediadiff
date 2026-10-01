@@ -16,8 +16,50 @@
 
 #include <cstddef>
 #include <functional>
+#include <memory>
 
 namespace mediadiff {
+
+// 07-13-PLAN.md (D-13, T-07-41): the shared state of one abandonable run. The
+// caller creates it BEFORE the run, hands it to whatever may decide a job is
+// stuck (the watchdog's trip handler), and passes it to
+// WorkerPool::run_indexed_abandonable.
+//
+// Every job index has a state: pending, running, finished or abandoned. A job
+// publishes its result only through `commit`, which runs the publish closure
+// under the same lock `abandon` takes -- so exactly one of the two wins. A job
+// that was abandoned never publishes (its late result is discarded), and a
+// result that was published is never half-written when the pool observes it.
+//
+// The pool-internal storage is shared with the worker threads (including an
+// abandoned one that may outlive the run), so it can never dangle; the control
+// OBJECT itself must still outlive any job closure that refers to it.
+class AbandonControl {
+ public:
+  AbandonControl();
+
+  // Marks the running job `index` abandoned (running -> abandoned) and, while
+  // still holding the lock, runs `record` (the caller writes the could-not-run
+  // result for that index there). Returns false, and runs nothing, when the job
+  // is not running (not started yet, or already finished or abandoned). Safe to
+  // call from any thread.
+  bool abandon(std::size_t index, const std::function<void()>& record);
+
+  // Called by the job: if `index` is still running, runs `publish` under the lock
+  // and marks it finished, returning true. Returns false, running nothing, when
+  // the job was abandoned. Call it at most once per job.
+  bool commit(std::size_t index, const std::function<void()>& publish);
+
+  // True once `index` has been abandoned.
+  bool abandoned(std::size_t index) const;
+
+  // The pool-internal state, opaque outside worker_pool.cpp.
+  struct Shared;
+
+ private:
+  friend class WorkerPool;
+  std::shared_ptr<Shared> shared_;
+};
 
 // A fixed-size pool over a pre-sorted, index-addressed job list. Every job
 // index is submitted exactly once and the caller is responsible for
@@ -49,6 +91,18 @@ class WorkerPool {
   // relying on run_indexed to report it, since run_indexed's own job
   // signature returns nothing.
   void run_indexed(std::size_t job_count, const std::function<void(std::size_t)>& job);
+
+  // 07-13-PLAN.md (D-13): run_indexed for a corpus where one job may never
+  // return. ALWAYS runs on worker threads (at least one, even for a thread count
+  // of 0 or 1 -- a job stuck on the calling thread could not be abandoned), and
+  // returns once every index is finished or abandoned, without joining the
+  // thread of an abandoned job. Each job publishes through control.commit; an
+  // abandoned job's worker is detached and a replacement worker is started so
+  // the pool keeps its size. A job that returns without committing counts as
+  // finished with nothing published. Exceptions are contained exactly as in
+  // run_indexed.
+  void run_indexed_abandonable(std::size_t job_count, const std::function<void(std::size_t)>& job,
+                               AbandonControl& control);
 
  private:
   std::size_t thread_count_;
