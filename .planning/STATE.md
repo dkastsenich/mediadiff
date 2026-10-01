@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
 status: executing
-stopped_at: Completed 07-11-PLAN.md
-last_updated: "2026-10-01T19:36:05.477Z"
+stopped_at: Completed 07-12-PLAN.md
+last_updated: "2026-10-01T20:01:41.511Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 07 execution resumed (wave continue)
-state_head: 633da8d2e304abeef974a749f18957ed60cd917e
+state_head: cacf7c28e1bd1f919ab86c6fc294bf49662eaad6
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 127
-  completed_plans: 123
+  completed_plans: 124
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 ## Current Position
 
 Phase: 7 (Content & Quality) — EXECUTING
-Plan: 12 of 15
+Plan: 13 of 15
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 07 execution resumed (wave continue)
 
@@ -175,6 +175,7 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 07 P09 | 12min | 3 tasks | 16 files |
 | Phase 07 P10 | 24min | 3 tasks | 38 files |
 | Phase 07 P11 | 39min | 3 tasks | 28 files |
+| Phase 07 P12 | 22min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -435,6 +436,8 @@ Recent decisions affecting current work:
 - [Phase 07]: [07-10] quality.* carries scaler_path ('native (no scaler)') and decode_path_signature on both sides so 07-09's tol precondition table guards it (TRUST-04 proven in test_quality.cpp) — TRUST-04's text names quality.*; the table is evidence-driven so the keys must exist on both sides
 - [Phase 07]: 07-11: quality.vmaf links libvmaf only under MEDIADIFF_WITH_VMAF (Linux/macOS; x64-linux-vmaf preset), model vmaf_v0.6.1 pinned, baseline self-score computed by a second libvmaf context (99974/1000 on the 100-frame clip), harmonic mean gates, --vmaf is an exit-64 usage error naming the option on every other build, id registered everywhere — CONTENT-09; D-01, D-03; Windows excluded in the open (vcpkg port is !windows)
 - [Phase 07]: 07-11: libvmaf 3.2.0 aborts on pictures 16 px or smaller in either dimension; kVmafMinDimension=17 (measured) so such frames report skipped:insufficient_data and never reach libvmaf — a tiny clip must not crash the gate
+- [Phase 07]: 07-12: bench-capped scan is not partial; stop_reason=bench_packet_cap carries the cap and the bench rejects a run that did not reach it — stores are complete up to the stop so analyzers do real work; a file shorter than the slice would silently measure a different workload
+- [Phase 07]: 07-12: PERF-02 measured 22.8x realtime single-threaded (production, D-11) vs 39.9x automatic threads on the D-16 reference; ratchet on first 1800 video packets, video_plain/full_instructions provisional (ubuntu:24.04 container, valgrind 3.22.0) until 07-15 transcribes the designated leg — no valgrind on the workstation; Docker measurement follows 06-12; TRUST-07 and PERF-02 left pending because 07-15 also declares them
 
 ### Pending Todos
 
@@ -482,6 +485,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-01T19:36:05.185Z
-Stopped at: Completed 07-11-PLAN.md
+Last session: 2026-10-01T20:01:41.220Z
+Stopped at: Completed 07-12-PLAN.md
 Resume file: None
