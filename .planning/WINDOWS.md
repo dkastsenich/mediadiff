@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 24
+open_count: 25
 waived_count: 2
 fixed_count: 23
-total_count: 49
-last_updated: 2026-10-01T20:22:07.498Z
+total_count: 50
+last_updated: 2026-10-01T20:26:07.223Z
 ---
 
 # Broken Windows Ledger
@@ -64,6 +64,7 @@ last_updated: 2026-10-01T20:22:07.498Z
 | 47 | 07 | todo | src/probe/video_detectors.h |  | 07-05 (CONTENT-06, A10/A11): the frozen and black detector constants (kFrozenEnterMicro 999500, kFrozenContinueMicro 995000, kFrozenMinFrames 3, kBlackMeanMargin 2, kBlackVarianceLimit 4, kBlackMinFrames 3) are validated on synthetic content only (testsrc2 freeze across MPEG-4/MPEG-2/MJPEG/TS encodes; a synthetic black segment in tv and pc range). A real-content review against a sample of natural video is still owed. Known limit: a near-static smooth source is indistinguishable from frozen at 128 pixels wide (both sides of a compare flag it identically and only introduced runs gate, so it is not a false-positive source by itself), and a starved encode can start a frozen run one frame late (measured on a 1 Mbit/s CIF MPEG-2 encode). | open |  | 2026-09-30T22:37:47.397Z |  |
 | 48 | 7 | unrun-verify | .github/workflows/ci.yml |  | 07-11: the designated-leg 'VMAF build and tests (CONTENT-09)' CI step has never run on a GitHub runner; its steps and its did-the-VMAF-tests-pass guard were exercised locally against the x64-linux-vmaf build only. macOS libvmaf build is supported by the vcpkg port but not exercised in CI (A22). | open |  | 2026-10-01T19:34:51.001Z |  |
 | 49 | 07 | unrun-verify |  |  | 07-12: the ci.yml steps 'Build the video sweep benchmark target (designated leg only)' and 'Video instruction-count ratchet (PERF-02, designated leg only)' have never run on a GitHub runner (YAML validated; the script was exercised end to end in an ubuntu:24.04 container). The two video ratchet baselines are provisional until 07-15 transcribes the designated leg. | open |  | 2026-10-01T19:56:10.468Z |  |
+| 50 | 07 | unrun-verify | src/cli/watchdog.cpp |  | 07-13 (A27): the stall watchdog's trip path ends the process with std::_Exit, and the heartbeat, abandonable pool and watchdog are threaded cross-platform code compiled and run only on this Linux workstation. std::_Exit in MSVC v143's UCRT, the MSVC /W4 /WX and AppleClang -Werror builds, and the integration trip tests (a child process ending in _Exit with its report flushed) have not run on the Windows and macOS legs; if std::_Exit is missing on MSVC the plan's fallback is std::quick_exit with no registered handlers. | open |  | 2026-10-01T20:26:07.223Z |  |
 
 ````json
 [
@@ -577,7 +578,7 @@ last_updated: 2026-10-01T20:22:07.498Z
     "phase": "06",
     "file": "src/probe/demux_session.cpp",
     "line": 250,
-    "description": "T-06-34 (Denial of Service, high; accepted 2026-09-28 at the phase 6 security audit, with a Phase 7 follow-up). Nothing bounds a crafted stream that makes a libav decoder hang, i.e. a single avcodec_send_packet/avcodec_receive_frame call that never returns. The wall-clock budget is disarmed right after open (demux_session.cpp:250), and libav consults AVIOInterruptCB only for I/O, never inside a decode call. The packet caps (packet_scan.cpp:183-215) and the 64-consecutive-error stop (audio_decode.h:112-120) bound every case that makes progress or returns errors. Accepted for Phase 6: the hang sits inside the libav trust boundary, and 06-18 (CR-05) removed post-open wall-clock bounds so that results stay deterministic. FOLLOW-UP for Phase 7: build a single process-level decode watchdog there, because the video DecodeSession has the same exposure. A watchdog trip must surface as a could-not-run Error and exit, never as a changed value (CR-05's determinism rule). RESOLVED in 07-13 (D-12, D-13): heartbeat guards at every post-open libav call site, a fixed 300 s watchdog in src/cli, exit 66 with the report written, and dir abandons only the hung file; proven by simulated stalls in tests/integration/test_watchdog.cpp.",
+    "description": "T-06-34 (Denial of Service, high; accepted 2026-09-28 at the phase 6 security audit, with a Phase 7 follow-up). Nothing bounds a crafted stream that makes a libav decoder hang, i.e. a single avcodec_send_packet/avcodec_receive_frame call that never returns. The wall-clock budget is disarmed right after open (demux_session.cpp:250), and libav consults AVIOInterruptCB only for I/O, never inside a decode call. The packet caps (packet_scan.cpp:183-215) and the 64-consecutive-error stop (audio_decode.h:112-120) bound every case that makes progress or returns errors. Accepted for Phase 6: the hang sits inside the libav trust boundary, and 06-18 (CR-05) removed post-open wall-clock bounds so that results stay deterministic. FOLLOW-UP for Phase 7: build a single process-level decode watchdog there, because the video DecodeSession has the same exposure. A watchdog trip must surface as a could-not-run Error and exit, never as a changed value (CR-05's determinism rule).",
     "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-28T13:04:20.285Z",
@@ -653,6 +654,18 @@ last_updated: 2026-10-01T20:22:07.498Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-01T19:56:10.468Z",
+    "resolved_at": null
+  },
+  {
+    "id": 50,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/cli/watchdog.cpp",
+    "line": null,
+    "description": "07-13 (A27): the stall watchdog's trip path ends the process with std::_Exit, and the heartbeat, abandonable pool and watchdog are threaded cross-platform code compiled and run only on this Linux workstation. std::_Exit in MSVC v143's UCRT, the MSVC /W4 /WX and AppleClang -Werror builds, and the integration trip tests (a child process ending in _Exit with its report flushed) have not run on the Windows and macOS legs; if std::_Exit is missing on MSVC the plan's fallback is std::quick_exit with no registered handlers.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T20:26:07.223Z",
     "resolved_at": null
   }
 ]
