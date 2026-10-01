@@ -198,6 +198,12 @@ add_executable(mediadiff_integration_tests
   # colour-range flip, dark grey not black, --sample independence, the
   # truncated and --no-content skips and introduced/removed gating.
   test_video_detectors.cpp
+  # TRUST-07 (07-12-PLAN.md): the video hash chains are identical at 1, 4 and
+  # 16 decoder threads on every clean corpus codec, the flags string records
+  # the real count, a thread count above the frame count changes nothing, and
+  # the production single-thread pin makes a corrupt stream decode to one chain
+  # over ten runs (D-11).
+  test_video_thread_invariance.cpp
   # VIDEO-11 (07-06-PLAN.md): video.closed_captions on the two no-GPL routes --
   # an MPEG-2 GA94 insert (every frame captioned, identical pixels to the
   # uncaptioned stream) and a hand-written H.264 I_PCM stream whose caption SEI
