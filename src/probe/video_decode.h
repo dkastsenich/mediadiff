@@ -51,6 +51,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -264,6 +265,15 @@ struct VideoDecodeResult {
 // promotes a decoder (07-15). Never returns 3 for a deterministic decoder.
 // Pure, so it is directly unit-testable without a decode.
 int determinism_class_for_video_decoder(std::string_view decoder_name);
+
+// 07-14-PLAN.md (D-09): a read-only view of the SAME class-1 name table
+// determinism_class_for_video_decoder() consults, empty today. It exists so
+// the proof test (tests/integration/test_video_hash_decoder.cpp) can enumerate
+// the table and fail for any class-1 decoder that has no row in
+// tests/golden/VIDEO_PROOF_CHAINS.txt: a class-1 claim cannot be made without
+// committed cross-architecture evidence. One table backs both functions, so
+// they can never disagree.
+std::span<const std::string_view> class1_video_decoder_names();
 
 namespace detail {
 

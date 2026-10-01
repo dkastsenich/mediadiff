@@ -331,3 +331,77 @@ these three files is `scripts/capture_tsduck_golden.sh`, run on a
 developer machine with `tsanalyze` installed, followed by a human review
 of the resulting diff against `tests/golden/TSDUCK_MANIFEST.json`'s
 recorded TSDuck version (D-04's own "a deliberate, reviewed act" rule).
+
+
+## `VIDEO_PROOF_CHAINS.txt` (CONTENT-01, D-09/D-10, 07-14-PLAN.md)
+
+The ledger of the cross-architecture video-decoder proof. A video decoder may
+only be called class 1 (path-independent: the same bytes hash the same on
+every architecture) with committed evidence, and this file is that evidence.
+It is **human-transcribed** like `CORPUS_DIGEST.txt` and `PERF_BASELINE.txt`:
+CI measures, a human updates (Phase 5 D-15). Nothing writes it, it has no
+`UPDATE_GOLDENS` path, and a row is never predicted -- only copied from a real
+CI run's printed output.
+
+**The streams.** `scripts/gen_video_proof.sh` encodes eleven streams (x264 and
+x265 at 8 and 10 bit, VP9, libaom AV1, MPEG-4, MPEG-2, MJPEG, HuffYUV, FFV1)
+exactly once per CI run, in the `video-proof-streams` job on ubuntu-24.04
+x86_64 with the pinned linux-x86_64 ffmpeg (the only pin carrying libx264 and
+libx265; the Windows pin is LGPL without them). Even the native encoders emit
+different bytes per architecture (07-RESEARCH.md Q2), so every stream travels
+as the `video-proof-streams` artifact and every build leg decodes the same
+bytes. They are CI test inputs: never committed, never linked into the binary,
+never written under `tests/`, and never part of `CORPUS_DIGEST.txt`.
+
+**The row** (one per stream, exactly this shape; `flags` has no spaces):
+
+```
+stream=<name> xxh3=<hex> frames=<n> chain=<hex> decoder=<name> flags=<string>
+```
+
+`xxh3` is the stream's own XXH3-128 (its identity), `frames` the decoded frame
+count, `chain` the `content.video.frame_hash` chain digest, `decoder`/`flags`
+the decoder name and the recorded settings (TRUST-01). The file also carries
+one `# MODE: report-only|gate` line. `tests/support/video_proof_golden.cpp`
+parses it strictly: an unknown key, a duplicated key or stream, a malformed
+digest or an absent, unknown or repeated mode line is an error.
+
+**What the test does** (`integration.video_hash_decoder - ...`). With
+`MEDIADIFF_VIDEO_PROOF_DIR` pointing at the downloaded artifact, for every
+stream in its `MANIFEST.sha256` the cross-leg test: asserts the stream's
+XXH3-128 against its row when one exists (identity first, both digests printed
+on a mismatch -- a producer that emitted different bytes fails by name);
+decodes it through `fingerprint_input` and requires zero decode errors (a chain
+over an error-bearing stream proves nothing); and prints the row it computed.
+In `report-only` mode every leg prints its own rows and passes. In `gate` mode
+every stream needs a row, and a row whose decoder is class 1 must match
+`frames` and `chain` exactly on every leg; differences for a class-2 decoder
+are printed, not failed. A second test enumerates the class-1 table
+(`class1_video_decoder_names()` in `src/probe/video_decode.h`) and fails for any
+class-1 decoder with no row here, so a promotion without evidence cannot pass.
+
+**The proof cannot silently stop running.** Locally, with the directory
+variable unset, the cross-leg test skips and says why. In CI the Test step sets
+`MEDIADIFF_REQUIRE_VIDEO_PROOF=1`, which turns a missing or empty directory
+into a failure, and a post-test guard requires the test to appear as `Passed`
+in the ctest log.
+
+**Promotion procedure (07-15-PLAN.md).**
+
+1. Run CI; on the designated leg (x64-linux) copy the printed
+   `stream=... xxh3=... frames=... chain=... decoder=... flags=...` lines into
+   this file, one per stream, unchanged.
+2. Check that every other leg printed the same `frames` and `chain` for every
+   stream whose decoder is to be promoted. A decoder with any leg differing
+   stays class 2.
+3. Add each proven decoder's name to the class-1 table in
+   `src/probe/video_decode.cpp`; the table-driven test then requires its rows.
+4. Flip the mode line to `# MODE: gate`.
+
+If the producer's bytes ever change between CI runs, the identity assertion
+names the stream: re-transcribe the row by review, never loosen the assertion.
+The producer's run-to-run reproducibility is measured on one machine class
+(two consecutive runs, and one under a different CPU set, gave identical
+manifests); variation across GitHub runner CPU generations is not measured
+(07-14-PLAN.md A30), and x265 and SVT-AV1 select assembly by CPU, which is why
+the AV1 stream uses libaom.

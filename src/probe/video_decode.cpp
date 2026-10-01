@@ -90,17 +90,26 @@ void record_first_error(std::string* first_error_reason, const char* what, int r
 
 }  // namespace
 
+namespace {
+
+// D-09: EMPTY until a committed cross-architecture proof row exists for a
+// decoder (07-15 fills this from tests/golden/VIDEO_PROOF_CHAINS.txt, and the
+// table-driven test in tests/integration/test_video_hash_decoder.cpp asserts
+// every name here has a row). An unproven decoder is class 2 -- comparable
+// only within one machine class via the path_signature -- never a fabricated
+// class 1, and never class 3 (class 3 is reserved for a decoder
+// non-deterministic on one machine, single-threaded, which research measured
+// for none of the decoders this project opens).
+constexpr std::array<std::string_view, 0> kClass1Names = {};
+
+}  // namespace
+
+std::span<const std::string_view> class1_video_decoder_names() {
+  return std::span<const std::string_view>(kClass1Names.data(), kClass1Names.size());
+}
+
 int determinism_class_for_video_decoder(std::string_view decoder_name) {
-  // D-09: EMPTY until a committed cross-architecture proof row exists for a
-  // decoder (07-15 fills this from tests/golden proof rows, and a
-  // table-driven test asserts every name here has one). An unproven decoder
-  // is class 2 -- comparable only within one machine class via the
-  // path_signature -- never a fabricated class 1, and never class 3 (class 3
-  // is reserved for a decoder non-deterministic on one machine,
-  // single-threaded, which research measured for none of the decoders this
-  // project opens).
-  static constexpr std::array<std::string_view, 0> kClass1Names = {};
-  for (std::string_view name : kClass1Names) {
+  for (std::string_view name : class1_video_decoder_names()) {
     if (decoder_name == name) {
       return 1;
     }
