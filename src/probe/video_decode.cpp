@@ -360,9 +360,13 @@ bool VideoDecodeState::ensure_initialized(const AVStream& stream, int threads_ov
   codec_ctx_->flags |= AV_CODEC_FLAG_BITEXACT | AV_CODEC_FLAG_UNALIGNED;
   codec_ctx_->idct_algo = FF_IDCT_SIMPLE;
   codec_ctx_->max_pixels = kMaxVideoPixels;
-  const int threads = threads_override > 0 ? threads_override : 1;
+  // 07-12-PLAN.md (D-11): a negative override is the BENCH-ONLY "automatic"
+  // thread count (libavcodec's own `thread_count = 0`), used by
+  // tools/bench/video_sweep.cpp to report what the single-thread pin costs.
+  const bool automatic_threads = threads_override < 0;
+  const int threads = automatic_threads ? 0 : (threads_override > 0 ? threads_override : 1);
   codec_ctx_->thread_count = threads;
-  if (threads > 1) {
+  if (threads != 1) {
     codec_ctx_->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
   }
 
@@ -374,7 +378,8 @@ bool VideoDecodeState::ensure_initialized(const AVStream& stream, int threads_ov
   decoder_name_ = decoder->name != nullptr ? decoder->name : "";
   decoder_class_ = determinism_class_for_video_decoder(decoder_name_);
   flags_recorded_ = threads == 1 ? std::string(kVideoDecoderFlagsRecorded)
-                                 : fmt::format("bitexact+unaligned;idct=simple;threads={}", threads);
+                    : automatic_threads ? std::string("bitexact+unaligned;idct=simple;threads=auto")
+                                        : fmt::format("bitexact+unaligned;idct=simple;threads={}", threads);
   if (decoder_class_ == 2) {
     path_signature_ = compose_decode_path_signature();
   }

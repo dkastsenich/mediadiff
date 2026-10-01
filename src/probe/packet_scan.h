@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -71,6 +72,10 @@ inline constexpr std::int64_t kMaxPacketsPerStream = 5'000'000;
 // -packet worst case for a single stream (~190 MB), while still being a
 // real, assertable ceiling rather than "unbounded".
 inline constexpr std::int64_t kDefaultProbeMemoryBudgetMb = 1024;
+
+// 07-12-PLAN.md: the PacketScanResult::stop_reason a bench-capped sweep records
+// (published once, never renamed).
+inline constexpr std::string_view kStopReasonBenchPacketCap = "bench_packet_cap";
 
 // The current process-wide default PER-FILE PacketScan byte ceiling
 // (D-01): the resolved global probe-memory budget divided by the
@@ -282,6 +287,15 @@ struct PacketScanResult {
   // free to ignore it.
   std::int64_t read_frame_call_count = 0;
 
+  // 07-12-PLAN.md: why the sweep stopped before the end of the file, when it did
+  // so on purpose. Empty for every ordinary scan (it ran to EOF, or ended on a
+  // ceiling or a read error, which `partial` already says). Today the one value
+  // is kStopReasonBenchPacketCap, written only when a bench set
+  // PacketScanRequest::stop_after_video_packets and that many video packets were
+  // read; a capped scan is NOT `partial` (every stream's store is complete up to
+  // the stop), so a consumer that must refuse a bounded run checks this field.
+  std::string stop_reason;
+
   // The peak value `accounted_bytes` ever reached during the scan --
   // identical to `accounted_bytes` today, since the store only ever
   // grows during a scan (nothing is ever removed mid-sweep). Exposed
@@ -336,8 +350,20 @@ struct PacketScanRequest {
   // `video_decode_threads` is 0 for the production default of exactly one
   // decoder thread; any other value exists ONLY for TRUST-07's thread-
   // invariance tests. Both are ignored entirely when `decode_video` is false.
+  // 07-12-PLAN.md (D-11): -1 asks libavcodec for its AUTOMATIC thread count
+  // (`thread_count = 0`, frame and slice threading) and is a BENCH-ONLY value,
+  // used by tools/bench/video_sweep.cpp solely to report what the single-thread
+  // pin costs; no CLI flag and no orchestrator path ever sets it.
   bool decode_video = false;
   int video_decode_threads = 0;
+  // 07-12-PLAN.md (PERF-02): BENCH-ONLY, never set by the orchestrator. When
+  // positive, the sweep stops reading once this many packets of the FIRST
+  // non-attached-picture video stream have been read, still drains the video
+  // decoder, and records PacketScanResult::stop_reason = kStopReasonBenchPacketCap
+  // so a bounded slice can never be mistaken for a full run. 0 is unlimited. The
+  // count applies whether or not `decode_video` is set, so a plain leg and a full
+  // leg of tools/bench/video_sweep.cpp stop at the same packet.
+  std::int64_t stop_after_video_packets = 0;
   // 07-04-PLAN.md (D-08, CONTENT-03): `--sample N`'s stride, forwarded from
   // ProbeOptions::sample_stride. Every frame is still decoded; only frames
   // whose decode index is a multiple of it are hashed and stored. 1 is full.

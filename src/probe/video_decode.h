@@ -324,6 +324,8 @@ class VideoDecodeState {
   // the production default of exactly one thread; any other value is for
   // TRUST-07's thread-invariance tests only (it also selects frame+slice
   // threading and records the real count in the flags string).
+  // 07-12-PLAN.md: a NEGATIVE value is the bench-only automatic count
+  // (thread_count = 0), recorded as `threads=auto`.
   // `sample_stride` (07-04-PLAN.md, D-08) is the `--sample N` stride: every
   // frame is still decoded, but only frames whose decode index is a multiple
   // of it are hashed and stored. Values below 1 are treated as 1.

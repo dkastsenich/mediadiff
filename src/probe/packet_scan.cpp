@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -139,23 +140,18 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     audio_decode_states.resize(stream_count);
   }
 
-  // 07-01-PLAN.md (CONTENT-01, PROBE-08): mirrors the audio_decode_states
-  // allocation immediately above.
-  std::vector<detail::VideoDecodeState> video_decode_states;
-  if (request.decode_video) {
-    outputs.video_decode = VideoDecodeResult{};
-    outputs.video_decode->per_stream.resize(stream_count);
-    video_decode_states.resize(stream_count);
-
-    // 07-08-PLAN.md (CONTENT-04, CONTENT-11): the PRIMARY video stream is the
-    // first video stream that is not an attached picture (cover art is a
-    // one-packet video stream, Pitfall 12), decided from stream metadata alone
-    // so it holds even where no decoder can be opened. Every video stream also
-    // records its rank among ALL video streams -- the Scope index every video.*
-    // measurement uses, attached pictures included.
-    int primary_stream = -1;
+  // 07-08-PLAN.md (CONTENT-04, CONTENT-11): the PRIMARY video stream is the
+  // first video stream that is not an attached picture (cover art is a
+  // one-packet video stream, Pitfall 12), decided from stream metadata alone
+  // so it holds even where no decoder can be opened. Every video stream also
+  // records its rank among ALL video streams -- the Scope index every video.*
+  // measurement uses, attached pictures included. 07-12-PLAN.md: also needed
+  // (and so computed) when a bench bounds the sweep by video packets, whether
+  // or not a video decode was requested.
+  int primary_stream = -1;
+  std::vector<int> ranks(stream_count, -1);
+  if (request.decode_video || request.stop_after_video_packets > 0) {
     int video_rank = 0;
-    std::vector<int> ranks(stream_count, -1);
     for (std::size_t i = 0; i < stream_count; ++i) {
       const AVStream& avstream = *ctx->streams[i];
       if (avstream.codecpar == nullptr || avstream.codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
@@ -166,6 +162,16 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
         primary_stream = static_cast<int>(i);
       }
     }
+  }
+
+  // 07-01-PLAN.md (CONTENT-01, PROBE-08): mirrors the audio_decode_states
+  // allocation immediately above.
+  std::vector<detail::VideoDecodeState> video_decode_states;
+  if (request.decode_video) {
+    outputs.video_decode = VideoDecodeResult{};
+    outputs.video_decode->per_stream.resize(stream_count);
+    video_decode_states.resize(stream_count);
+
     for (std::size_t i = 0; i < stream_count; ++i) {
       const bool primary = static_cast<int>(i) == primary_stream;
       video_decode_states[i].set_primary(primary, static_cast<int>(i), ranks[i], primary ? request.frame_tap : nullptr);
@@ -176,6 +182,10 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
       request.frame_tap->finish(TapEnd{});
     }
   }
+
+  // 07-12-PLAN.md (PERF-02): packets read so far on the primary video stream,
+  // for the bench-only cap. Counted when read, not when accepted.
+  std::int64_t primary_video_packets_read = 0;
 
   ScratchPacket pkt;
   if (!pkt.valid()) {
@@ -380,6 +390,16 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     }
 
     pkt.unref();
+
+    // 07-12-PLAN.md (PERF-02): the bench-only cap. Checked after the packet has
+    // been fully consumed, so the Nth packet is decoded, and before the next
+    // read, so exactly N packets of the primary stream (and whatever
+    // interleaved packets of other streams preceded the Nth) were read.
+    if (request.stop_after_video_packets > 0 && static_cast<int>(stream_index) == primary_stream &&
+        ++primary_video_packets_read >= request.stop_after_video_packets) {
+      result.stop_reason = std::string(kStopReasonBenchPacketCap);
+      break;
+    }
   }
 
   if (request.decode_audio) {

@@ -44,7 +44,8 @@ struct ProbeOptions {
   // `threads=1` in the flags string (07-CHECK-ROSTER.md finding 1: corrupt
   // streams decode non-deterministically at more than one thread even at a
   // fixed count). Any other value is a TEST-ONLY control for TRUST-07's
-  // 1/4/16 thread-invariance suite; no CLI flag ever sets it.
+  // 1/4/16 thread-invariance suite; no CLI flag ever sets it. -1 (libavcodec's
+  // automatic count) exists for tools/bench/video_sweep.cpp alone (07-12).
   int video_decode_threads = 0;
   // 07-04-PLAN.md (D-08, CONTENT-03): `--sample N`. Every video frame is still
   // decoded (detectors and error counts see them all), but only frames whose

@@ -493,6 +493,14 @@ if(MEDIADIFF_BUILD_BENCH)
   target_link_libraries(mediadiff_audio_sweep PRIVATE libmediadiff fmt::fmt)
   mediadiff_apply_warnings(mediadiff_audio_sweep)
   mediadiff_apply_platform_definitions(mediadiff_audio_sweep)
+
+  # 07-12-PLAN.md Task 2 (PERF-02): the video content-pass benchmark -- one
+  # leg per invocation (plain / full), optionally bounded to the first N video
+  # packets -- same four lines, same opt-in gate, same no-CTest-case rule.
+  add_executable(mediadiff_video_sweep tools/bench/video_sweep.cpp)
+  target_link_libraries(mediadiff_video_sweep PRIVATE libmediadiff fmt::fmt)
+  mediadiff_apply_warnings(mediadiff_video_sweep)
+  mediadiff_apply_platform_definitions(mediadiff_video_sweep)
 endif()
 
 enable_testing()
