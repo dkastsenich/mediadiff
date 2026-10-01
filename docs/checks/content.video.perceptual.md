@@ -28,6 +28,24 @@ open), the whole comparison pairs by decode index and says so (`pairing: index` 
 (`unpaired_baseline`, `unpaired_candidate`; `unpaired_no_pts` counts frames in a time-paired stream
 that lacked a timestamp).
 
+Worked examples (the corpus fixtures, proven in `tests/integration/test_lockstep_pairing.cpp`):
+
+- **A dropped frame.** `video_loc_huffyuv.mkv` against `video_loc_huffyuv_drop40.mkv` (packet 40
+  removed, its 40 ms gap left in the timestamps) scores a minimum of `1000000` with
+  `unpaired_baseline: 1`, `unpaired_candidate: 0` and `pairing: time`; pairing by index would score
+  every frame after the drop against its neighbour.
+- **A rate change.** `video_perc_60.mkv` (60 fps, 180 frames) against `video_perc_30.mkv` (its 30 fps
+  decimation) pairs only the coinciding frames: `pairs_scored: 90`, `unpaired_baseline: 90`, minimum
+  `1000000`.
+- **A remux.** An MP4 against its Matroska remux pairs every frame by time across the 1 ms timestamp
+  rounding; against its MPEG-TS remux (1.4 s start offset, no declared frame rate) it pairs every frame
+  by decode index with `pairing_fallback: candidate_interval_unknown`.
+- **A duplicated frame.** A candidate frame repeated at the same presentation time pairs once; the
+  repeat is counted in `unpaired_candidate`.
+- **An empty side.** Two non-empty sides always pair their first frames (each side is measured from its
+  own first frame), so zero pairs arise only when one side publishes no frame for scoring; both sides
+  then report `skipped:insufficient_data`, never a score.
+
 **What gates (D-03).** The compared value is the **minimum** pair score, so one wrecked frame cannot
 hide in a mean. Evidence also carries `mean` (the floor of the mean score), `first_below_threshold`
 (the first pair strictly below **0.985**: both decode indices, the baseline PTS and the score, or
@@ -40,6 +58,10 @@ index ascending). A pair scoring exactly 0.985 is not below the threshold; 0.984
 side's evidence records its `scaler_path` (the exact swscale algorithm, flags, destination size and
 library version) and `decode_path_signature` (the library versions, build triplet, CPU flags and the
 decoder settings), the record a later precondition compares.
+A pair whose two records differ, or where only one side carries one, is `skipped:path_incomparable`
+even when the two scores would sit within tolerance (07-09, TRUST-04/D-04). The comparison is of build
+and device paths, never of codecs: an H.264 baseline against an HEVC candidate from the same build still
+scores.
 
 **Sampling.** `--sample N` scores every Nth paired frame (`pairs_scored` is about `1/N` of the pairs)
 and records `sampling_state: sampled:N`. The frozen and black detectors still see every frame; only

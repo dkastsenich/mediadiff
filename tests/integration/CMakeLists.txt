@@ -242,6 +242,13 @@ add_executable(mediadiff_integration_tests
   # with no entry), cross-resolution and geometry mismatch, --sample N, profile
   # severities and the bare score tolerance.
   test_perceptual.cpp
+  # CONTENT-05 (07-09-PLAN.md; D-02): the lockstep's pairing on real fixtures --
+  # a dropped frame leaves exactly one baseline frame unpaired, a 60 fps
+  # baseline against its 30 fps decimation scores only the coinciding frames, an
+  # MP4 against its Matroska and MPEG-TS remuxes pairs every frame despite the
+  # rounding and the start offset, and a raw MPEG-2 elementary stream falls back
+  # to index pairing with the reason recorded.
+  test_lockstep_pairing.cpp
   # AUDIO-01/AUDIO-02 (06-03-PLAN.md Task 2): audio.codec/sample_rate/
   # sample_fmt/bit_depth/channels/layout proven through the real CLI --
   # 5.1 vs 5.1(side) on an equal channel count, unspecified-layout-as-a-

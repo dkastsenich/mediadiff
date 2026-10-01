@@ -347,3 +347,40 @@ TEST_CASE("pair_scorer - tail frames are counted per side", "[pair_scorer]") {
   CHECK(scorer.unpaired_baseline() == 3);
   CHECK(scorer.unpaired_candidate() == 50);
 }
+
+// 07-09-PLAN.md Task 2 (CONTENT-05): the two pairing edges that need no decode.
+
+TEST_CASE("pair_scorer - empty side", "[pair_scorer]") {
+  // The candidate side finishes without publishing any frame, so the driver
+  // never steps the scorer and counts the baseline's ten frames as the tail of
+  // a side whose partner ended first (lockstep.cpp's drain). Zero pairs, ten
+  // unpaired baseline frames and NO summary -- the caller reports
+  // insufficient_data, never a fabricated score of 1.
+  PairScorer scorer(1, 0);
+  scorer.count_unpaired(true, 10);
+  CHECK(scorer.pairs_paired() == 0);
+  CHECK(scorer.pairs_scored() == 0);
+  CHECK(scorer.unpaired_baseline() == 10);
+  CHECK(scorer.unpaired_candidate() == 0);
+  CHECK_FALSE(scorer.summary().has_value());
+}
+
+TEST_CASE("pair_scorer - duplicate", "[pair_scorer]") {
+  // 25 fps, candidate frame 5 (PTS 200 ms) repeated at the SAME PTS. Baseline
+  // frames 0..6 sit at 0, 40, ... 240 ms. Frames 0-5 pair one to one; baseline
+  // 6 (240 ms) against the duplicate (200 ms) is 40 ms > 20 ms apart, so the
+  // earlier -- the duplicate -- advances unpaired; then 240/240 pair. Frame 5
+  // pairs ONCE and the duplicate is counted in unpaired_candidate.
+  const Thumbnail t = texture(104);
+  PairScorer scorer(1, 0);
+  for (int i = 0; i <= 5; ++i) {
+    CHECK(scorer.step(frame(i, i * 40, &t), frame(i, i * 40, &t)) == PairScorer::Action::advance_both);
+  }
+  CHECK(scorer.step(frame(6, 240, &t), frame(6, 200, &t)) == PairScorer::Action::advance_candidate);
+  CHECK(scorer.step(frame(6, 240, &t), frame(7, 240, &t)) == PairScorer::Action::advance_both);
+  CHECK(scorer.pairs_paired() == 7);
+  CHECK(scorer.unpaired_candidate() == 1);
+  CHECK(scorer.unpaired_baseline() == 0);
+  CHECK(scorer.summary()->min_micro == 1000000);
+  CHECK(scorer.pairing() == mediadiff::PairingMode::time);
+}
