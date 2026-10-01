@@ -42,7 +42,10 @@ while the other checks still honour the stride; `--sample 1` scores normally.
 
 **Geometry.** libvmaf needs the same width, height, plane layout and bit depth on both sides and accepts 4:2:0,
 4:2:2, 4:4:4 and gray; a lower bit depth is promoted by an exact left shift. A different resolution or layout is
-`skipped:geometry_mismatch` on both sides; mediadiff does not rescale the reference to make a pair fit.
+`skipped:geometry_mismatch` on both sides; mediadiff does not rescale the reference to make a pair fit. A picture
+16 pixels or smaller in either dimension cannot be scored (libvmaf itself aborts on it, measured against
+libvmaf 3.2.0), so it reports `skipped:insufficient_data` with `reason: frame_too_small` and is never handed to
+libvmaf.
 
 **Which frames pair and path preconditions.** The same time-based pairing as the other quality checks (D-02).
 Both sides carry `scaler_path` (`native (no scaler)`) and `decode_path_signature`; a differing or one-sided

@@ -464,6 +464,12 @@ nlohmann::ordered_json milli_db_json(std::int64_t milli_db) {
   return nlohmann::ordered_json{{"num", milli_db}, {"den", 1000}};
 }
 
+// A VMAF score in evidence: the same {num, den} thousandths the compared value
+// uses (97.43 is 97430/1000).
+nlohmann::ordered_json thousandths_json(std::int64_t value) {
+  return nlohmann::ordered_json{{"num", value}, {"den", kVmafQuantiserDen}};
+}
+
 nlohmann::ordered_json quality_point_json(const QualityPoint& point, bool psnr) {
   nlohmann::ordered_json out{{"value", psnr ? milli_db_json(point.value) : micro_json(point.value)},
                              {"baseline_index", point.baseline_index},
@@ -482,6 +488,89 @@ nlohmann::ordered_json quality_point_json(const QualityPoint& point, bool psnr) 
 // sides.
 constexpr const char* kNativeScalerPath = "native (no scaler)";
 
+// Writes the two-file quality.vmaf measurements into both fingerprints once the
+// shared prefix of assemble_quality has ruled every skip out (CONTENT-09; D-01,
+// D-03). The compared value is the HARMONIC mean (it punishes bad frames); the
+// minimum and the arithmetic mean ride in evidence. The baseline's value is its
+// COMPUTED self-score -- libvmaf's harmonic mean of the baseline against itself
+// (97.43 on identical input, research Q8) -- never an assumed 100, so identical
+// media report a delta of exactly 0 after the single quantization to thousandths.
+// Both sides carry the model, libvmaf's version and the two TRUST-04 path keys.
+mediadiff::expected<void, Error> assemble_vmaf_target(const std::string& baseline_path, const PairScorer& scorer,
+                                                        const TapEnd& baseline_end, const TapEnd& candidate_end,
+                                                        Measurement& baseline_m, Measurement& candidate_m,
+                                                        std::optional<InputIdentity>* identity) {
+  const std::optional<VmafSummary>& summary = scorer.vmaf_summary();
+  if (!summary.has_value() || summary->pairs_scored == 0) {
+    const nlohmann::ordered_json evidence{{"reason", std::string("no_pairs_scored")}};
+    set_skip(baseline_m, SkipReason::insufficient_data, evidence);
+    set_skip(candidate_m, SkipReason::insufficient_data, evidence);
+    return {};
+  }
+  if (!summary->finite) {
+    // A non-finite pooled score is never written to the report (Pitfall 13).
+    const nlohmann::ordered_json evidence{{"reason", std::string("non_finite_score")}};
+    set_skip(baseline_m, SkipReason::insufficient_data, evidence);
+    set_skip(candidate_m, SkipReason::insufficient_data, evidence);
+    return {};
+  }
+  if (!identity->has_value()) {
+    auto computed = compute_input_identity(baseline_path);
+    if (!computed) {
+      return mediadiff::unexpected(computed.error());
+    }
+    *identity = *computed;
+  }
+  const std::string model = kVmafModelVersion;
+#if defined(MEDIADIFF_WITH_VMAF)
+  const std::string version = VmafAccumulator::libvmaf_version();
+#else
+  // Unreachable on a build without libvmaf: no VmafSummary exists there (the
+  // early return above reports no_pairs_scored), and VmafAccumulator is not linked.
+  const std::string version;
+#endif
+
+  baseline_m.value = RationalValue{summary->self_harmonic, kVmafQuantiserDen, Rational{1, 1}};
+  baseline_m.skip_reason = SkipReason::none;
+  baseline_m.evidence = nlohmann::ordered_json{
+      {"self_score", true},
+      {"baseline_stream_index", baseline_end.stream_index},
+      {"model", model},
+      {"libvmaf_version", version},
+      {"scaler_path", std::string(kNativeScalerPath)},
+      {"decode_path_signature", decode_path_signature(baseline_end)},
+      {"sampling_state", std::string(kSamplingStateFull)},
+  };
+
+  nlohmann::ordered_json evidence{
+      {"reference_identity", (*identity)->xxh3_128},
+      {"baseline_stream_index", baseline_end.stream_index},
+      {"candidate_stream_index", candidate_end.stream_index},
+      {"model", model},
+      {"libvmaf_version", version},
+      {"pairing", std::string(scorer.pairing() == PairingMode::time ? "time" : "index")},
+  };
+  if (scorer.pairing() == PairingMode::index) {
+    evidence["pairing_fallback"] = scorer.pairing_fallback();
+  }
+  evidence["pairs_scored"] = summary->pairs_scored;
+  evidence["unpaired_baseline"] = scorer.unpaired_baseline();
+  evidence["unpaired_candidate"] = scorer.unpaired_candidate();
+  evidence["unpaired_no_pts"] = scorer.unpaired_no_pts();
+  evidence["harmonic_mean"] = thousandths_json(summary->harmonic_mean);
+  evidence["min"] = thousandths_json(summary->min);
+  evidence["mean"] = thousandths_json(summary->mean);
+  evidence["bpc"] = scorer.quality_bpc();
+  evidence["scaler_path"] = std::string(kNativeScalerPath);
+  evidence["decode_path_signature"] = decode_path_signature(candidate_end);
+  evidence["sampling_state"] = std::string(kSamplingStateFull);
+
+  candidate_m.value = RationalValue{summary->harmonic_mean, kVmafQuantiserDen, Rational{1, 1}};
+  candidate_m.skip_reason = SkipReason::none;
+  candidate_m.evidence = std::move(evidence);
+  return {};
+}
+
 // Writes the two-file quality.psnr / quality.ssim measurements into both
 // fingerprints (D-01), replacing the one-sided placeholders each carries.
 // CONTENT-08; D-03: the compared value is the floor MEAN over the scored pairs,
@@ -489,18 +578,20 @@ constexpr const char* kNativeScalerPath = "native (no scaler)";
 mediadiff::expected<void, Error> assemble_quality(const std::string& baseline_path, const PairScorer& scorer,
                                                     const TapEnd& baseline_end, const TapEnd& candidate_end,
                                                     Fingerprint& baseline, Fingerprint& candidate) {
+  enum class Kind { psnr, ssim, vmaf };
   struct Target {
     CheckId id;
     bool requested;
-    bool psnr;
+    Kind kind;
   };
   // quality.vmaf (07-11, CONTENT-09) is registered on every build, so its
   // placeholder is replaced or erased here like the others'; it is only ever
   // `requested` in a build that links libvmaf (fingerprint_pair refuses the
-  // request otherwise), and its scored measurement is written by assemble_vmaf.
-  const std::array<Target, 3> targets = {{{CheckId::quality_psnr, scorer.quality_request().psnr, true},
-                                          {CheckId::quality_ssim, scorer.quality_request().ssim, false},
-                                          {CheckId::quality_vmaf, false, false}}};
+  // request otherwise), and its scored measurement is written by
+  // assemble_vmaf_target.
+  const std::array<Target, 3> targets = {{{CheckId::quality_psnr, scorer.quality_request().psnr, Kind::psnr},
+                                          {CheckId::quality_ssim, scorer.quality_request().ssim, Kind::ssim},
+                                          {CheckId::quality_vmaf, scorer.quality_request().vmaf, Kind::vmaf}}};
   std::optional<InputIdentity> identity;
 
   for (const Target& target : targets) {
@@ -521,6 +612,15 @@ mediadiff::expected<void, Error> assemble_quality(const std::string& baseline_pa
       continue;
     }
     if (apply_common_skips(*baseline_m, *candidate_m, baseline_end, candidate_end)) {
+      continue;
+    }
+
+    // CONTENT-09: VMAF's temporal features need consecutive frames, so a strided
+    // frame set is refused outright (the other checks still honour the stride).
+    if (target.kind == Kind::vmaf && scorer.sample_stride() >= 2) {
+      const nlohmann::ordered_json evidence{{"sample_stride", scorer.sample_stride()}};
+      set_skip(*baseline_m, SkipReason::sampling_conflict, evidence);
+      set_skip(*candidate_m, SkipReason::sampling_conflict, evidence);
       continue;
     }
 
@@ -550,7 +650,35 @@ mediadiff::expected<void, Error> assemble_quality(const std::string& baseline_pa
       set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
       continue;
     }
-    if (!target.psnr && scorer.ssim_frame_too_small()) {
+    if (target.kind == Kind::vmaf) {
+      // A libvmaf failure is the one thing here that is not a skip: the compare
+      // cannot report a score and says so (T-07-36).
+      if (scorer.vmaf_error().has_value()) {
+        return mediadiff::unexpected(*scorer.vmaf_error());
+      }
+      if (scorer.vmaf_layout_unsupported()) {
+        const nlohmann::ordered_json evidence{{"reason", std::string("unsupported_layout")},
+                                              {"baseline_native", scorer.quality_baseline_label()},
+                                              {"candidate_native", scorer.quality_candidate_label()}};
+        set_skip(*baseline_m, SkipReason::geometry_mismatch, evidence);
+        set_skip(*candidate_m, SkipReason::geometry_mismatch, evidence);
+        continue;
+      }
+      if (scorer.vmaf_frame_too_small()) {
+        const nlohmann::ordered_json evidence{{"reason", std::string("frame_too_small")},
+                                              {"minimum_dimension", kVmafMinDimension}};
+        set_skip(*baseline_m, SkipReason::insufficient_data, evidence);
+        set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
+        continue;
+      }
+      auto assembled = assemble_vmaf_target(baseline_path, scorer, baseline_end, candidate_end, *baseline_m,
+                                            *candidate_m, &identity);
+      if (!assembled) {
+        return mediadiff::unexpected(assembled.error());
+      }
+      continue;
+    }
+    if (target.kind == Kind::ssim && scorer.ssim_frame_too_small()) {
       const nlohmann::ordered_json evidence{{"reason", std::string("frame_too_small")}};
       set_skip(*baseline_m, SkipReason::insufficient_data, evidence);
       set_skip(*candidate_m, SkipReason::insufficient_data, evidence);
@@ -564,7 +692,8 @@ mediadiff::expected<void, Error> assemble_quality(const std::string& baseline_pa
     std::int64_t identical_frames = 0;
     nlohmann::ordered_json min_json;
     nlohmann::ordered_json per_plane;
-    if (target.psnr) {
+    const bool is_psnr = target.kind == Kind::psnr;
+    if (is_psnr) {
       const std::optional<PsnrSummary> summary = scorer.psnr_summary();
       if (summary.has_value()) {
         pairs_scored = summary->pairs_scored;
@@ -635,9 +764,9 @@ mediadiff::expected<void, Error> assemble_quality(const std::string& baseline_pa
     evidence["unpaired_baseline"] = scorer.unpaired_baseline();
     evidence["unpaired_candidate"] = scorer.unpaired_candidate();
     evidence["unpaired_no_pts"] = scorer.unpaired_no_pts();
-    evidence["mean"] = target.psnr ? milli_db_json(mean) : micro_json(mean);
+    evidence["mean"] = is_psnr ? milli_db_json(mean) : micro_json(mean);
     evidence["min"] = std::move(min_json);
-    if (target.psnr) {
+    if (is_psnr) {
       evidence["per_plane"] = std::move(per_plane);
     }
     evidence["identical_frames"] = identical_frames;
@@ -738,6 +867,8 @@ mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baselin
 
   PairResult result{std::move(**baseline_job.result), std::move(**candidate_job.result)};
   if (options.content_enabled) {
+    // 07-11: flush and pool libvmaf (a no-op unless a VMAF build was asked for it).
+    scorer.finish_vmaf();
     auto assembled = assemble_perceptual(baseline_path, scorer, baseline_slot.end(), candidate_slot.end(),
                                          result.baseline, result.candidate);
     if (!assembled) {

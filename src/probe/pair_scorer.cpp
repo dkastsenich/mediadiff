@@ -287,7 +287,20 @@ std::optional<NativeSsimSummary> NativeSsimAccumulator::summary() const {
 PairScorer::PairScorer(int sample_stride, std::int64_t stop_after_scored_pairs, QualityRequest quality)
     : sample_stride_(sample_stride > 1 ? sample_stride : 1),
       stop_after_scored_pairs_(stop_after_scored_pairs),
-      quality_(quality) {}
+      quality_(quality) {
+#if defined(MEDIADIFF_WITH_VMAF)
+  // Only at a stride of 1: under `--sample N` (N >= 2) quality.vmaf is refused
+  // (skipped:sampling_conflict) and libvmaf is never opened.
+  if (quality_.vmaf && sample_stride_ == 1) {
+    auto created = VmafAccumulator::create();
+    if (created) {
+      vmaf_ = std::shared_ptr<VmafAccumulator>(std::move(*created));
+    } else {
+      vmaf_error_ = created.error();
+    }
+  }
+#endif
+}
 
 const char* PairScorer::quality_stop_name(QualityStop reason) {
   switch (reason) {
@@ -410,7 +423,7 @@ void PairScorer::score_pair(const TappedFrame& baseline, const TappedFrame& cand
   }
   // The native scorers read the frames, not the thumbnails, and latch their own
   // stops: perceptual below runs whether or not they did.
-  if ((quality_.psnr || quality_.ssim) && quality_stop_ == QualityStop::none) {
+  if ((quality_.psnr || quality_.ssim || quality_.vmaf) && quality_stop_ == QualityStop::none) {
     score_quality(baseline, candidate);
   }
   if (baseline.thumbnail == nullptr || candidate.thumbnail == nullptr) {
@@ -495,7 +508,9 @@ void PairScorer::score_quality(const TappedFrame& baseline, const TappedFrame& c
   if (quality_.ssim && !want_ssim) {
     ssim_too_small_ = true;
   }
-  const int planes = quality_.psnr ? a.planes : 1;
+  // Only quality.vmaf requested: no plane is scored natively here.
+  const bool native = quality_.psnr || quality_.ssim;
+  const int planes = !native ? 0 : (quality_.psnr ? a.planes : 1);
 
   std::uint64_t total_sse = 0;
   std::uint64_t total_samples = 0;
@@ -546,6 +561,93 @@ void PairScorer::score_quality(const TappedFrame& baseline, const TappedFrame& c
       ssim_too_small_ = true;
     }
   }
+
+#if defined(MEDIADIFF_WITH_VMAF)
+  if (quality_.vmaf && vmaf_ != nullptr && !vmaf_error_.has_value() && !vmaf_layout_unsupported_ &&
+      !vmaf_frame_too_small_) {
+    if (a.width < kVmafMinDimension || a.height < kVmafMinDimension) {
+      // libvmaf aborts on a picture this small (see kVmafMinDimension): it is
+      // never handed one.
+      vmaf_frame_too_small_ = true;
+      return;
+    }
+    // libvmaf accepts 4:2:0, 4:2:2, 4:4:4 and gray (A23); any other layout is
+    // reported as geometry_mismatch rather than converted, which would change
+    // the reference.
+    VmafPairLayout layout;
+    bool layout_ok = true;
+    if (a.planes == 1) {
+      layout.layout = VmafLayout::yuv400;
+    } else if (a.log2_chroma_w == 1 && a.log2_chroma_h == 1) {
+      layout.layout = VmafLayout::yuv420;
+    } else if (a.log2_chroma_w == 1 && a.log2_chroma_h == 0) {
+      layout.layout = VmafLayout::yuv422;
+    } else if (a.log2_chroma_w == 0 && a.log2_chroma_h == 0) {
+      layout.layout = VmafLayout::yuv444;
+    } else {
+      layout_ok = false;
+    }
+    if (!layout_ok) {
+      vmaf_layout_unsupported_ = true;
+      quality_baseline_label_ = a.label;
+      quality_candidate_label_ = b.label;
+      return;
+    }
+    // libvmaf takes 8, 10, 12 or 16 bits per component: a depth in between (9,
+    // 11, 14 ...) is promoted by the same exact left shift the other quality
+    // checks use for a depth mismatch.
+    const int vmaf_bpc = bpc <= 8 ? 8 : (bpc <= 10 ? 10 : (bpc <= 12 ? 12 : 16));
+    layout.bpc = vmaf_bpc;
+    layout.width = a.width;
+    layout.height = a.height;
+    const int vmaf_shift_a = vmaf_bpc - a.depth;
+    const int vmaf_shift_b = vmaf_bpc - b.depth;
+    auto begun = vmaf_->begin_pair(layout);
+    if (!begun) {
+      vmaf_error_ = begun.error();
+      return;
+    }
+    for (int c = 0; c < a.planes; ++c) {
+      const int pw = c == 0 ? a.width : plane_dimension(a.width, a.log2_chroma_w);
+      const int ph = c == 0 ? a.height : plane_dimension(a.height, a.log2_chroma_h);
+      if (vmaf_bpc == 8) {
+        const Plane8 pa = acquire_plane8(*baseline.frame, a, c, pw, ph, vmaf_shift_a, &scratch8_[0], &row_);
+        const Plane8 pb = acquire_plane8(*candidate.frame, b, c, pw, ph, vmaf_shift_b, &scratch8_[1], &row_);
+        vmaf_->put_plane(c, pa.data, pa.stride, pb.data, pb.stride);
+      } else {
+        const std::uint16_t* pa = acquire_plane16(*baseline.frame, a, c, pw, ph, vmaf_shift_a, &scratch16_[0]);
+        const std::uint16_t* pb = acquire_plane16(*candidate.frame, b, c, pw, ph, vmaf_shift_b, &scratch16_[1]);
+        const std::ptrdiff_t stride = static_cast<std::ptrdiff_t>(pw) * 2;
+        vmaf_->put_plane(c, pa, stride, pb, stride);
+      }
+    }
+    auto read = vmaf_->end_pair();
+    if (!read) {
+      vmaf_error_ = read.error();
+    }
+  }
+#endif
+}
+
+void PairScorer::finish_vmaf() {
+#if defined(MEDIADIFF_WITH_VMAF)
+  if (vmaf_ == nullptr || vmaf_finished_ || vmaf_error_.has_value()) {
+    return;
+  }
+  vmaf_finished_ = true;
+  // What the accumulator saw is a prefix when the pairing stopped, or a stream
+  // the quality checks could not follow: the caller reports a skip, so the
+  // (costly) pooling is not run.
+  if (stopped() || quality_stop_ != QualityStop::none || vmaf_layout_unsupported_ || vmaf_frame_too_small_) {
+    return;
+  }
+  auto pooled = vmaf_->finish();
+  if (!pooled) {
+    vmaf_error_ = pooled.error();
+    return;
+  }
+  vmaf_summary_ = *pooled;
+#endif
 }
 
 }  // namespace mediadiff

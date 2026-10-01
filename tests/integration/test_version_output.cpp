@@ -7,6 +7,7 @@
 #include <string>
 
 #include "cli_harness.h"
+#include "util/version.h"
 
 namespace {
 
@@ -110,6 +111,12 @@ TEST_CASE("version_output - CLI-05 fields present in real binary output", "[inte
 // default value — a default-off option that nonetheless linked the optional
 // library would pass the weaker check.
 TEST_CASE("vmaf_absent - BUILD-09 optional feature not advertised by default", "[integration]") {
+  // 07-11-PLAN.md: a build configured with MEDIADIFF_WITH_VMAF=ON lists the
+  // feature (version_output - vmaf listed, below); this is the DEFAULT build's
+  // contract, so it is skipped -- visibly -- on the other.
+  if (mediadiff::vmaf_built_in()) {
+    SKIP("this build is configured with MEDIADIFF_WITH_VMAF=ON; the default-build contract is for a build without it");
+  }
   CliResult result = run_cli({"--version"});
   REQUIRE(result.exit_code == 0);
 
@@ -125,4 +132,21 @@ TEST_CASE("vmaf_absent - BUILD-09 optional feature not advertised by default", "
   // Case-insensitive: "CUDA" or "Cuda" would be just as much a leak as
   // lowercase "cuda".
   REQUIRE(to_lower(result.out).find("cuda") == std::string::npos);
+}
+
+// 07-11-PLAN.md (CONTENT-09): the other half of BUILD-09. A build that links
+// libvmaf says so in --version's rendered features line, so no user and no CI
+// log can mistake which binary they hold; it never advertises CUDA (v2 scope).
+TEST_CASE("version_output - vmaf listed", "[integration]") {
+  if (!mediadiff::vmaf_built_in()) {
+    SKIP("this build does not link libvmaf (MEDIADIFF_WITH_VMAF is OFF)");
+  }
+  CliResult result = run_cli({"--version"});
+  REQUIRE(result.exit_code == 0);
+  const auto features_pos = result.out.find("features: ");
+  REQUIRE(features_pos != std::string::npos);
+  const auto line_end = result.out.find('\n', features_pos);
+  const std::string features_line = result.out.substr(features_pos, line_end - features_pos);
+  CHECK(features_line.find("vmaf") != std::string::npos);
+  CHECK(to_lower(result.out).find("cuda") == std::string::npos);
 }

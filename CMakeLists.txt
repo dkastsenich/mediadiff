@@ -20,6 +20,14 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERS
 endif()
 
 option(MEDIADIFF_WITH_VMAF "Enable libvmaf-backed quality metrics" OFF)
+# 07-11-PLAN.md (CONTENT-09): the vcpkg `libvmaf` port declares
+# `"supports": "!windows"`, so there is no libvmaf to link on Windows. Say so at
+# configure time, naming the port, instead of failing later inside vcpkg or the
+# linker. (`--vmaf` on a Windows build is the same usage error as on any build
+# without the option: src/cli/options.cpp asks vmaf_built_in().)
+if(MEDIADIFF_WITH_VMAF AND WIN32)
+  message(FATAL_ERROR "MEDIADIFF_WITH_VMAF=ON is not supported on Windows: the vcpkg 'libvmaf' port declares \"supports\": \"!windows\". quality.vmaf (CONTENT-09) is available on Linux and macOS builds only.")
+endif()
 # 04-03-PLAN.md Task 1 (PROBE-03, D-11): the opt-in parser-overhead
 # benchmark. OFF by default so none of the five CI legs builds or pays for
 # it -- D-11 forbids a CI/CTest gate on this measurement, and building the
@@ -344,6 +352,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/lockstep.h
   src/probe/pair_scorer.h
   src/probe/quality_request.h
+  src/probe/vmaf_scorer.h
   src/util/ssim_int.h
   src/util/quality_math.h
   src/probe/cadence.h
@@ -378,6 +387,15 @@ target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VERSION="${PROJECT_VER
 # existing version-triple fields (src/util/version.cpp).
 target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VCPKG_TRIPLET="${VCPKG_TARGET_TRIPLET}")
 if(MEDIADIFF_WITH_VMAF)
+  # 07-11-PLAN.md (CONTENT-09): libvmaf ships a pkg-config file and no CMake
+  # package. The vcpkg toolchain puts this triplet's lib/pkgconfig on
+  # PKG_CONFIG_PATH, so the pinned port is what is found, never a system copy.
+  # The default build never reaches this block, so libvmaf stays out of the
+  # default single static binary (BUILD-09, integration.vmaf_absent).
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(LIBVMAF REQUIRED IMPORTED_TARGET libvmaf)
+  target_sources(libmediadiff PRIVATE src/probe/vmaf_scorer.cpp)
+  target_link_libraries(libmediadiff PUBLIC PkgConfig::LIBVMAF)
   target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_WITH_VMAF)
 endif()
 

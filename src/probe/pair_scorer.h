@@ -20,18 +20,28 @@
 // evidence. Their latched failures (a geometry the two sides cannot pair, a
 // format that cannot be read) stop the QUALITY checks only -- perceptual keeps
 // running.
+//
+// 07-11-PLAN.md (CONTENT-09): `--vmaf` rides the same paired frames. A build
+// configured with MEDIADIFF_WITH_VMAF feeds each scored pair to a
+// VmafAccumulator (probe/vmaf_scorer.h) and pools once at the end; any other
+// build never constructs one. `--sample N` (N >= 2) refuses VMAF outright --
+// its temporal features need consecutive frames -- so the accumulator exists
+// only at a stride of 1.
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "core/error.h"
 #include "core/exact_int.h"
 #include "core/frame_pairing.h"
 #include "core/rational.h"
 #include "probe/lockstep.h"
+#include "probe/vmaf_scorer.h"
 
 namespace mediadiff {
 
@@ -244,6 +254,23 @@ class PairScorer {
   const std::string& quality_baseline_label() const { return quality_baseline_label_; }
   const std::string& quality_candidate_label() const { return quality_candidate_label_; }
 
+  // --- 07-11: quality.vmaf (CONTENT-09) ---
+  // Flushes and pools the VMAF contexts, once, after the last pair. A no-op
+  // unless a VmafAccumulator exists (VMAF requested, a build that links libvmaf,
+  // stride 1) and the pairing and the native quality latch both ran to the end.
+  void finish_vmaf();
+  // A libvmaf failure (construction, a pair, or pooling): the compare cannot
+  // report a score and fails with this internal error rather than guess.
+  const std::optional<Error>& vmaf_error() const { return vmaf_error_; }
+  // Empty until finish_vmaf() ran and pooled.
+  const std::optional<VmafSummary>& vmaf_summary() const { return vmaf_summary_; }
+  // The pair's chroma layout is none libvmaf accepts (4:2:0, 4:2:2, 4:4:4, gray):
+  // reported as geometry_mismatch, never converted. PSNR and SSIM are unaffected.
+  bool vmaf_layout_unsupported() const { return vmaf_layout_unsupported_; }
+  // The frames are smaller than libvmaf can score (kVmafMinDimension): reported as
+  // insufficient_data, and libvmaf is never handed such a picture.
+  bool vmaf_frame_too_small() const { return vmaf_frame_too_small_; }
+
  private:
   void decide_mode(const TappedFrame& baseline, const TappedFrame& candidate);
   // Scores the pair just decided; may latch a stop.
@@ -281,6 +308,15 @@ class PairScorer {
   std::string quality_candidate_label_;
   PsnrAccumulator psnr_;
   NativeSsimAccumulator ssim_;
+  // shared_ptr, not unique_ptr: a build without libvmaf never defines
+  // VmafAccumulator's destructor, and a shared_ptr (whose deleter is captured at
+  // construction) does not need it to be.
+  std::shared_ptr<VmafAccumulator> vmaf_;
+  std::optional<Error> vmaf_error_;
+  std::optional<VmafSummary> vmaf_summary_;
+  bool vmaf_layout_unsupported_ = false;
+  bool vmaf_frame_too_small_ = false;
+  bool vmaf_finished_ = false;
   // Reused plane buffers, one pair per side: a plane is read into them (when it
   // is not directly usable), scored, and overwritten by the next plane.
   std::array<std::vector<std::uint8_t>, 2> scratch8_;

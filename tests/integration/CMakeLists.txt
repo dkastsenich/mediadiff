@@ -381,6 +381,14 @@ target_compile_definitions(mediadiff_integration_tests PRIVATE
 # Explicit dependency so the integration target is never built (or run)
 # before the executable it spawns exists.
 add_dependencies(mediadiff_integration_tests mediadiff)
+# 07-11-PLAN.md (CONTENT-09): test_vmaf.cpp's independent oracle drives libvmaf
+# directly, so it needs the header only in a build that has the library. The
+# library arrives transitively (libmediadiff links PkgConfig::LIBVMAF PUBLICly);
+# the tests ask vmaf_built_in() at run time, this definition only decides whether
+# the oracle's code is compiled.
+if(MEDIADIFF_WITH_VMAF)
+  target_compile_definitions(mediadiff_integration_tests PRIVATE MEDIADIFF_TEST_WITH_VMAF)
+endif()
 mediadiff_apply_warnings(mediadiff_integration_tests)
 mediadiff_apply_platform_definitions(mediadiff_integration_tests)
 
