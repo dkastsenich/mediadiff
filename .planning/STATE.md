@@ -4,16 +4,16 @@ milestone: v0.6.1
 current_phase: 7
 current_phase_name: Content & Quality
 status: executing
-stopped_at: Completed 07-10-PLAN.md
-last_updated: "2026-10-01T18:52:23.378Z"
+stopped_at: Completed 07-11-PLAN.md
+last_updated: "2026-10-01T19:36:05.477Z"
 last_activity: 2026-10-01
 last_activity_desc: Phase 07 execution resumed (wave continue)
-state_head: 3e137132d9bcd5283f9b83f5a8f7c13c568825e9
+state_head: 633da8d2e304abeef974a749f18957ed60cd917e
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 127
-  completed_plans: 122
+  completed_plans: 123
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-28)
 ## Current Position
 
 Phase: 7 (Content & Quality) — EXECUTING
-Plan: 11 of 15
+Plan: 12 of 15
 Status: Ready to execute
 Last activity: 2026-10-01 — Phase 07 execution resumed (wave continue)
 
@@ -174,6 +174,7 @@ Progress: [█████████░] 86% (6/7 phases complete; Phase 7 not
 | Phase 07 P08 | n/a | 3 tasks | 39 files |
 | Phase 07 P09 | 12min | 3 tasks | 16 files |
 | Phase 07 P10 | 24min | 3 tasks | 38 files |
+| Phase 07 P11 | 39min | 3 tasks | 28 files |
 
 ## Accumulated Context
 
@@ -432,6 +433,8 @@ Recent decisions affecting current work:
 - [Phase 07]: [07-10] PSNR gates on the floor mean of per-frame sample-weighted Y+U+V milli-dB capped at (6*bpc)+12 dB; baseline self-score is the cap; min/per-plane in evidence (D-01, D-03) — Identical frames score the cap so the delta is exactly 0 and no infinity reaches JSON; the integer fixed-point log keeps --json byte-identical across libm implementations
 - [Phase 07]: [07-10] --psnr/--ssim are usage errors without content decoding, and exist only on compare and dir (snapshot and inspect reject them) — A silent requires_decode skip would be unconnectable to the flag; snapshots must never store a two-file score (CONTENT-10 as amended by D-01)
 - [Phase 07]: [07-10] quality.* carries scaler_path ('native (no scaler)') and decode_path_signature on both sides so 07-09's tol precondition table guards it (TRUST-04 proven in test_quality.cpp) — TRUST-04's text names quality.*; the table is evidence-driven so the keys must exist on both sides
+- [Phase 07]: 07-11: quality.vmaf links libvmaf only under MEDIADIFF_WITH_VMAF (Linux/macOS; x64-linux-vmaf preset), model vmaf_v0.6.1 pinned, baseline self-score computed by a second libvmaf context (99974/1000 on the 100-frame clip), harmonic mean gates, --vmaf is an exit-64 usage error naming the option on every other build, id registered everywhere — CONTENT-09; D-01, D-03; Windows excluded in the open (vcpkg port is !windows)
+- [Phase 07]: 07-11: libvmaf 3.2.0 aborts on pictures 16 px or smaller in either dimension; kVmafMinDimension=17 (measured) so such frames report skipped:insufficient_data and never reach libvmaf — a tiny clip must not crash the gate
 
 ### Pending Todos
 
@@ -479,6 +482,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-10-01T18:52:23.063Z
-Stopped at: Completed 07-10-PLAN.md
+Last session: 2026-10-01T19:36:05.185Z
+Stopped at: Completed 07-11-PLAN.md
 Resume file: None
