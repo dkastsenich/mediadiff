@@ -18,6 +18,7 @@ extern "C" {
 }
 
 #include "core/rational.h"
+#include "probe/heartbeat.h"
 
 namespace mediadiff {
 
@@ -228,10 +229,12 @@ bool ThumbnailScaler::scale(const AVFrame& frame, Thumbnail* out) {
   std::uint8_t* dst_planes[4] = {dst_, nullptr, nullptr, nullptr};
   int dst_strides[4] = {static_cast<int>(dst_stride), 0, 0, 0};
   if (plan.convert) {
+    LibavCall guard(LibavSite::sws_scale);
     scaled_rows = sws_scale(ctx_, frame.data, frame.linesize, 0, frame.height, dst_planes, dst_strides);
   } else {
     const std::uint8_t* src_planes[4] = {frame.data[0], nullptr, nullptr, nullptr};
     const int src_strides[4] = {frame.linesize[0], 0, 0, 0};
+    LibavCall guard(LibavSite::sws_scale);
     scaled_rows = sws_scale(ctx_, src_planes, src_strides, 0, frame.height, dst_planes, dst_strides);
   }
   if (scaled_rows != thumb_height) {

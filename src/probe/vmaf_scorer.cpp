@@ -10,6 +10,8 @@
 
 #include <libvmaf/libvmaf.h>
 
+#include "probe/heartbeat.h"
+
 namespace mediadiff {
 
 namespace {
@@ -198,12 +200,19 @@ mediadiff::expected<void, Error> VmafAccumulator::end_pair() {
   // libvmaf consumes (unrefs) the two pictures of a successful read; on a
   // failure it leaves them with us, and release_pictures() frees whatever is
   // left of the pair.
-  int err = vmaf_read_pictures(impl.self, &impl.pictures[0], &impl.pictures[1], impl.next_index);
+  int err = 0;
+  {
+    LibavCall guard(LibavSite::vmaf);
+    err = vmaf_read_pictures(impl.self, &impl.pictures[0], &impl.pictures[1], impl.next_index);
+  }
   if (err != 0) {
     impl.release_pictures();
     return libvmaf_error("vmaf_read_pictures (self)", err);
   }
-  err = vmaf_read_pictures(impl.candidate, &impl.pictures[2], &impl.pictures[3], impl.next_index);
+  {
+    LibavCall guard(LibavSite::vmaf);
+    err = vmaf_read_pictures(impl.candidate, &impl.pictures[2], &impl.pictures[3], impl.next_index);
+  }
   if (err != 0) {
     impl.release_pictures();
     return libvmaf_error("vmaf_read_pictures (candidate)", err);
@@ -224,11 +233,18 @@ mediadiff::expected<VmafSummary, Error> VmafAccumulator::finish() {
     return summary;
   }
   if (!impl.flushed) {
-    int err = vmaf_read_pictures(impl.self, nullptr, nullptr, 0);
+    int err = 0;
+    {
+      LibavCall guard(LibavSite::vmaf);
+      err = vmaf_read_pictures(impl.self, nullptr, nullptr, 0);
+    }
     if (err != 0) {
       return libvmaf_error("vmaf_read_pictures flush (self)", err);
     }
-    err = vmaf_read_pictures(impl.candidate, nullptr, nullptr, 0);
+    {
+      LibavCall guard(LibavSite::vmaf);
+      err = vmaf_read_pictures(impl.candidate, nullptr, nullptr, 0);
+    }
     if (err != 0) {
       return libvmaf_error("vmaf_read_pictures flush (candidate)", err);
     }
@@ -239,7 +255,11 @@ mediadiff::expected<VmafSummary, Error> VmafAccumulator::finish() {
   const auto pooled = [&](VmafContext* context, enum VmafPoolingMethod method,
                           const char* call) -> mediadiff::expected<std::optional<std::int64_t>, Error> {
     double score = 0.0;
-    const int err = vmaf_score_pooled(context, impl.model, method, &score, 0, last);
+    int err = 0;
+    {
+      LibavCall guard(LibavSite::vmaf);
+      err = vmaf_score_pooled(context, impl.model, method, &score, 0, last);
+    }
     if (err != 0) {
       return libvmaf_error(call, err);
     }

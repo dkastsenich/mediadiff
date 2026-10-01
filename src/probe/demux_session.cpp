@@ -47,6 +47,7 @@ extern "C" {
 #include "core/container_family.h"
 #include "probe/audio_config.h"
 #include "probe/hdr_static.h"
+#include "probe/heartbeat.h"
 #include "probe/pass.h"
 
 namespace mediadiff {
@@ -380,7 +381,12 @@ mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> probe_implicit_s
 
   std::optional<SbrProbeDecodeResult> result;
   for (int packets_scanned = 0; packets_scanned < kMaxSbrProbeContainerPacketsScanned; ++packets_scanned) {
-    if (av_read_frame(probe_ctx, pkt) < 0) {
+    int read_rc = 0;
+    {
+      LibavCall guard(LibavSite::open_probe_decode, -1, kHeartbeatNoPts);
+      read_rc = av_read_frame(probe_ctx, pkt);
+    }
+    if (read_rc < 0) {
       // A1: no target packet found within the packet-count bound --
       // deterministic, ok(nullopt) via the fall-through below.
       break;
@@ -390,7 +396,11 @@ mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> probe_implicit_s
       continue;
     }
 
-    const int send_rc = avcodec_send_packet(codec_ctx, pkt);
+    int send_rc = 0;
+    {
+      LibavCall guard(LibavSite::open_probe_decode, pkt->stream_index, pkt->pts != AV_NOPTS_VALUE ? pkt->pts : pkt->dts);
+      send_rc = avcodec_send_packet(codec_ctx, pkt);
+    }
     av_packet_unref(pkt);
     if (send_rc < 0 && send_rc != AVERROR(EAGAIN)) {
       // A1: a send failure is deterministic for this packet's own bytes --
@@ -405,7 +415,12 @@ mediadiff::expected<std::optional<SbrProbeDecodeResult>, Error> probe_implicit_s
       // the file's own bytes.
       return mediadiff::unexpected(Error{ErrorKind::internal, "SBR probe: av_frame_alloc failed"});
     }
-    if (avcodec_receive_frame(codec_ctx, frame) >= 0) {
+    int receive_rc = 0;
+    {
+      LibavCall guard(LibavSite::open_probe_decode);
+      receive_rc = avcodec_receive_frame(codec_ctx, frame);
+    }
+    if (receive_rc >= 0) {
       SbrProbeDecodeResult r;
       r.declared_sample_rate_hz = declared_rate;
       r.decoded_sample_rate_hz = frame->sample_rate > 0 ? frame->sample_rate : 0;

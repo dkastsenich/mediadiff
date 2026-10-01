@@ -16,6 +16,7 @@ extern "C" {
 
 #include "core/rational.h"
 #include "probe/demux_session.h"
+#include "probe/heartbeat.h"
 #include "probe/lockstep.h"
 
 namespace mediadiff {
@@ -194,7 +195,19 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
 
   std::int64_t accounted_bytes = 0;
   for (;;) {
-    const int rc = av_read_frame(ctx, pkt.get());
+    int rc = 0;
+    {
+      // 07-13-PLAN.md (D-12): the heartbeat guard wraps exactly the libav call.
+      // The position it publishes is the packet this call returns (the decode
+      // calls that follow report against it).
+      LibavCall guard(LibavSite::read_frame);
+      rc = av_read_frame(ctx, pkt.get());
+      if (rc >= 0) {
+        const AVPacket& read_packet = *pkt.get();
+        guard.note_position(read_packet.stream_index,
+                            read_packet.pts != AV_NOPTS_VALUE ? read_packet.pts : read_packet.dts);
+      }
+    }
     ++result.read_frame_call_count;
 
     if (rc == AVERROR_EOF) {

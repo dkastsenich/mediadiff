@@ -27,6 +27,7 @@ extern "C" {
 #include "analyzers/video/analyzers.h"
 #include "core/rational.h"
 #include "probe/hdr_static.h"
+#include "probe/heartbeat.h"
 #include "probe/lockstep.h"
 #include "util/version.h"
 
@@ -661,7 +662,11 @@ void VideoDecodeState::feed_packet(AVPacket& pkt, const DecodeBudget& budget) {
   // flag) and BEFORE send.
   pkt.flags &= ~AV_PKT_FLAG_DISCARD;
 
-  const int send_rc = avcodec_send_packet(codec_ctx_, &pkt);
+  int send_rc = 0;
+  {
+    LibavCall guard(LibavSite::video_send, pkt.stream_index, pkt.pts != AV_NOPTS_VALUE ? pkt.pts : pkt.dts);
+    send_rc = avcodec_send_packet(codec_ctx_, &pkt);
+  }
   if (send_rc < 0 && send_rc != AVERROR(EAGAIN)) {
     ++decode_error_count_;
     record_first_error(&first_error_reason_, "avcodec_send_packet", send_rc);
@@ -680,7 +685,11 @@ void VideoDecodeState::feed_packet(AVPacket& pkt, const DecodeBudget& budget) {
     return;
   }
   for (;;) {
-    const int recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+    int recv_rc = 0;
+    {
+      LibavCall guard(LibavSite::video_receive);
+      recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+    }
     if (recv_rc == AVERROR(EAGAIN) || recv_rc == AVERROR_EOF) {
       break;
     }
@@ -719,11 +728,18 @@ StreamVideoDecode VideoDecodeState::finalize(const DecodeBudget& budget, bool sc
     // when the sweep ended early, because `undecodable` below is decided from
     // the FINAL frame count and a buffered frame can be exactly what turns a
     // zero-frames-so-far stream into a comparable one.
-    avcodec_send_packet(codec_ctx_, nullptr);
+    {
+      LibavCall guard(LibavSite::video_drain);
+      avcodec_send_packet(codec_ctx_, nullptr);
+    }
     AVFrame* frame = av_frame_alloc();
     if (frame != nullptr) {
       for (;;) {
-        const int recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+        int recv_rc = 0;
+        {
+          LibavCall guard(LibavSite::video_drain);
+          recv_rc = avcodec_receive_frame(codec_ctx_, frame);
+        }
         if (recv_rc < 0) {
           break;
         }

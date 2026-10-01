@@ -18,6 +18,7 @@
 #include "core/rational.h"
 #include "core/snapshot.h"
 #include "core/value.h"
+#include "probe/heartbeat.h"
 #include "probe/pair_scorer.h"
 #include "util/quality_math.h"
 #include "util/version.h"
@@ -125,6 +126,9 @@ struct ProducerJob {
   const std::vector<AnalyzerSpec>* analyzers = nullptr;
   ProbeOptions options;
   FrameSlot* slot = nullptr;
+  // 07-13-PLAN.md (D-12): the heartbeat this side's thread reports into (the
+  // caller's binding, copied across the thread start); null means unbound.
+  Heartbeat* heartbeat = nullptr;
   std::optional<mediadiff::expected<Fingerprint, Error>> result;
   detail::ProbeScanStats stats;
 };
@@ -134,6 +138,7 @@ struct ProducerJob {
 // consumer never waits on a side that is gone. FrameSlot::finish is idempotent,
 // so this is a no-op when the sweep already reported its real end.
 void run_producer(ProducerJob* job) {
+  const ScopedHeartbeatBinding binding(job->heartbeat);
   try {
     job->result.emplace(detail::run_probe(*job->path, *job->analyzers, nullptr, job->options, &job->stats));
   } catch (const std::exception& error) {
@@ -793,6 +798,7 @@ mediadiff::expected<PairResult, Error> probe_sequentially(const std::string& bas
   if (!baseline) {
     return mediadiff::unexpected(baseline.error());
   }
+  const ScopedHeartbeatBinding candidate_binding(candidate_heartbeat());
   auto candidate = detail::run_probe(candidate_path, analyzers, nullptr, options);
   if (!candidate) {
     return mediadiff::unexpected(candidate.error());
@@ -818,6 +824,7 @@ mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baselin
   baseline_job.options = options;
   baseline_job.options.frame_tap = &baseline_slot;
   baseline_job.slot = &baseline_slot;
+  baseline_job.heartbeat = current_heartbeat();
 
   ProducerJob candidate_job;
   candidate_job.path = &candidate_path;
@@ -825,6 +832,7 @@ mediadiff::expected<PairResult, Error> run_pair_probe(const std::string& baselin
   candidate_job.options = options;
   candidate_job.options.frame_tap = &candidate_slot;
   candidate_job.slot = &candidate_slot;
+  candidate_job.heartbeat = candidate_heartbeat();
 
   PairScorer scorer(options.sample_stride, log != nullptr ? log->stop_after_scored_pairs : 0, quality);
 
@@ -938,6 +946,7 @@ mediadiff::expected<PairResult, Error> fingerprint_pair(const std::string& basel
     result.baseline = std::move(**baseline_input);
   }
   if (candidate_is_media) {
+    const ScopedHeartbeatBinding candidate_binding(candidate_heartbeat());
     auto candidate = detail::run_probe(candidate_path, all_analyzers(), nullptr, plain);
     if (!candidate) {
       return mediadiff::unexpected(candidate.error());

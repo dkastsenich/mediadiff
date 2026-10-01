@@ -209,6 +209,10 @@ add_library(libmediadiff STATIC
   # sweeps on two std::threads joined by one single-slot rendezvous per side --
   # and (CONTENT-04) the online pairing and integer-SSIM scorer that consumes it.
   src/probe/lockstep.cpp
+  # 07-13-PLAN.md (D-12, T-06-34): the library half of the decode stall
+  # watchdog -- a per-thread heartbeat every post-open libav call advances
+  # through an RAII guard. The watchdog thread itself lives in src/cli/.
+  src/probe/heartbeat.cpp
   src/probe/pair_scorer.cpp
   src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
@@ -350,6 +354,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/probe/video_thumbnail.h
   src/probe/video_detectors.h
   src/probe/lockstep.h
+  src/probe/heartbeat.h
   src/probe/pair_scorer.h
   src/probe/quality_request.h
   src/probe/vmaf_scorer.h
