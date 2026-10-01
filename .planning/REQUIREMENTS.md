@@ -160,7 +160,7 @@ Requirements are derived from the seven design documents in `claude_docs/` (00â€
 - [x] **CONTENT-07**: Hashing, perceptual scoring, and the frozen/black detectors all run inside one decode sweep
 - [ ] **CONTENT-08**: `quality.psnr` and `quality.ssim` compute in-tree at native resolution, reporting min and mean
 - [ ] **CONTENT-09**: `quality.vmaf` runs behind `MEDIADIFF_WITH_VMAF` with model `vmaf_v0.6.1` pinned and recorded in the fingerprint, reporting harmonic mean and min, and refusing `--sample` as `skipped:sampling_conflict`
-- [ ] **CONTENT-10**: `quality.*` against a snapshot reports `skipped:requires_media` while still showing stored scores for trend context
+- [ ] **CONTENT-10**: `quality.*` against a snapshot reports `skipped:requires_media` while still showing stored scores for trend context (amended, 07-10-PLAN.md, 2026-09-30, D-01: two-file scores exist only in a live media-vs-media compare; against a snapshot on either side every `quality.*` check and `content.video.perceptual` report `skipped:requires_media`; snapshots store no scores in v1, so there is no stored trend score to show)
 - [x] **CONTENT-11**: `compare` decodes baseline and candidate in lockstep with one frame in flight per side â€” two full decoded sequences are never resident
 
 ### Trust & Determinism Guarantees

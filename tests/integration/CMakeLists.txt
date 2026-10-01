@@ -250,6 +250,11 @@ add_executable(mediadiff_integration_tests
   # runs, and the path preconditions that make a differing decode path
   # skipped:path_incomparable for both checks.
   test_quality.cpp
+  # CONTENT-10 (07-10-PLAN.md; D-01 amendment, T-07-33): against a snapshot on
+  # either side both quality checks are skipped:requires_media, snapshots store
+  # no score, an unchanged snapshot compare stays clean, and the flags exist only
+  # on compare and dir.
+  test_quality_snapshot.cpp
   # CONTENT-05 (07-09-PLAN.md; D-02): the lockstep's pairing on real fixtures --
   # a dropped frame leaves exactly one baseline frame unpaired, a 60 fps
   # baseline against its 30 fps decimation scores only the coinciding frames, an
