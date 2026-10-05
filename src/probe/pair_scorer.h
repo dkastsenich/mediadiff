@@ -316,7 +316,11 @@ class PairScorer {
   std::optional<VmafSummary> vmaf_summary_;
   bool vmaf_layout_unsupported_ = false;
   bool vmaf_frame_too_small_ = false;
-  bool vmaf_finished_ = false;
+  // Read only by finish_vmaf()'s MEDIADIFF_WITH_VMAF branch. The define is
+  // PRIVATE to libmediadiff, so guarding the member would change this class's
+  // layout between the library and any TU that includes the header; keep it
+  // unconditional and silence -Wunused-private-field on non-VMAF builds.
+  [[maybe_unused]] bool vmaf_finished_ = false;
   // Reused plane buffers, one pair per side: a plane is read into them (when it
   // is not directly usable), scored, and overwritten by the next plane.
   std::array<std::vector<std::uint8_t>, 2> scratch8_;

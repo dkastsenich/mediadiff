@@ -493,7 +493,7 @@ WideWindow wide_from(const Window& w, int shift) {
   WideWindow out{};
   for (std::size_t i = 0; i < w.size(); ++i) {
     // The low bits vary too, so a 10-bit window is not just an 8-bit one.
-    out[i] = static_cast<std::uint16_t>((static_cast<int>(w[i]) << shift) | static_cast<int>(i % (1U << shift)));
+    out[i] = static_cast<std::uint16_t>((static_cast<int>(w[i]) << shift) | static_cast<int>(i % (std::size_t{1} << shift)));
   }
   return out;
 }
