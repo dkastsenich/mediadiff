@@ -2918,20 +2918,39 @@ rm -rf "$GEOM_TMP_DIR"
 # payload in Matroska. `video_corrupt_mpeg4.mkv` is a stream copy of it with ONE
 # packet damaged by the `noise` bitstream filter: `amount` is an expression
 # evaluated PER PACKET (its default would corrupt every packet), so it is 0 for
-# every packet except packet 40. Amount 50 was measured with the pinned ffmpeg
-# to make libavcodec's mpeg4 decoder reject that packet ("header damaged",
+# every packet except packet 40. Amount 50 was measured (07-02, on the x86
+# bytes only; the amount in use now is the CROSS-ARCHITECTURE note below) with
+# the pinned ffmpeg to make libavcodec's mpeg4 decoder reject that packet ("header damaged",
 # AVERROR_INVALIDDATA: a negative send return, 99 of 100 frames decoded); a
 # smaller damage would be concealed silently and count as nothing, and 500
 # reaches the corrupt-frame flag instead ("ac-tex damaged"). The filter's noise
 # is a deterministic function of the packet bytes, so the output is identical
 # on every run (two runs were compared). Only the damaged packet differs from
 # the base (`-c copy -f framemd5` of both: one line of 100).
+#
+# CROSS-ARCHITECTURE (07-15, CI run 36928305270): the fixtures are NOT byte-equal
+# across legs -- even the lossless HuffYUV twin video_loc_huffyuv.mkv hashes
+# differently on arm64-linux and on x64-osx than on x64-linux, so the difference
+# is upstream of any lossy encoder (the generator's own frames) and no ffmpeg flag
+# such as `-cpuflags 0` can remove it. The `noise` BSF's damage is a chaotic
+# function of the packet's own bytes, and whether a damaged MPEG-4 packet is
+# REJECTED ("header damaged": 99 frames) or CONCEALED (100 frames) flips with the
+# exact damage: the amount-50 damage that was rejected on the x86 bytes was
+# concealed on arm64-linux (100 frames, no `first_error_reason`) and three tests
+# failed there. A literal amount tuned on one machine's bytes is therefore wrong
+# by construction, and the damage is chosen so the OUTCOME holds on any bytes:
+# amount 1 makes `state % 1 == 0` hold for every byte, so the whole packet is
+# overwritten with the BSF's running-state noise, which contains no VOP start code
+# and is rejected on every input (measured with the pinned 9.0.1: 99 frames,
+# frame 40 absent, frames 41-49 differing from the base and the I-frame at 50
+# re-syncing, on 51 different MPEG-4 encodes of this recipe -- q:v 2..8, five
+# frame sizes, SIMD and `-cpuflags 0` -- 51 of 51; the literal 30 gave 6 of 16).
 "$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
   -c:v mpeg4 -bf 0 -g 25 -q:v 4 -threads 1 -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_corrupt_mpeg4_base.mkv"
 
 "$FFMPEG_BIN" -i "$OUT_DIR/video_corrupt_mpeg4_base.mkv" -c copy \
-  -bsf:v "noise=amount='if(eq(n\,40)\,50\,0)'" -flags +bitexact -fflags +bitexact -y \
+  -bsf:v "noise=amount='if(eq(n\,40)\,1\,0)'" -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_corrupt_mpeg4.mkv"
 
 # --- 07-03-PLAN.md Task 2 (CONTENT-02, D-07: the time-aligned frame locator) ---
@@ -2972,15 +2991,28 @@ rm -rf "$GEOM_TMP_DIR"
 
 # `video_loc_mpeg4_c40.mkv`: the MPEG-4 propagation proof. The same packet 40 of
 # 07-02's `video_corrupt_mpeg4_base.mkv` (`-g 25`, no B-frames) damaged by the
-# `noise` BSF, but at amount 200 rather than 07-02's 50. Measured with the pinned
-# ffmpeg: amount 50 makes the decoder REJECT packet 40 (99 frames out, so the
-# locator reports frame 40 missing and 41-49 differing, which is what
-# `video_corrupt_mpeg4.mkv` shows), while amount 200 is decoded and concealed:
+# `noise` BSF, but concealed rather than rejected (07-03 used amount 200 against
+# 07-02's 50; the amounts in use are the CROSS-ARCHITECTURE notes). Measured with
+# the pinned ffmpeg: a rejected packet 40 (99 frames out, so the locator reports
+# frame 40 missing and 41-49 differing, which is what `video_corrupt_mpeg4.mkv`
+# shows), while the concealed one is decoded:
 # all 100 frames come out and `-f framemd5` against the base differs on exactly
 # frames 40-49, because the damage propagates through the P-frames to the next
 # I-frame at 50. Deterministic on every run (two runs compared).
+#
+# CROSS-ARCHITECTURE (07-15): the damage is chosen so the CONCEALED outcome holds on
+# any bytes, not on one machine's. A literal amount N alters about size/N bytes at
+# chaotic positions, and a hit on the VOP header makes the decoder reject the
+# packet instead (a literal 200 was concealed on three byte sets and rejected on a
+# fourth, 209, 190 and others likewise on the C-path base). `size` is the packet's
+# byte count, so `size/5` alters about five bytes whatever the encoder produced:
+# few enough to leave the header alone, enough to always damage the picture.
+# Measured with the pinned 9.0.1 on 51 different MPEG-4 encodes of the base recipe
+# (q:v 2..8, five frame sizes, SIMD and `-cpuflags 0`): 51 of 51 decode 100 frames
+# and differ from their own base on exactly frames 40-49. (size/4: 34 of 35;
+# size/6 and size/8: 50 of 51; size/2: 10 of 16, the rest altering nothing at all.)
 "$FFMPEG_BIN" -i "$OUT_DIR/video_corrupt_mpeg4_base.mkv" -c copy \
-  -bsf:v "noise=amount='if(eq(n\,40)\,200\,0)'" -flags +bitexact -fflags +bitexact -y \
+  -bsf:v "noise=amount='if(eq(n\,40)\,size/5\,0)'" -flags +bitexact -fflags +bitexact -y \
   "$OUT_DIR/video_loc_mpeg4_c40.mkv"
 
 # --- 07-05-PLAN.md Task 2 (CONTENT-06: content.video.frozen_runs / black_runs) ---

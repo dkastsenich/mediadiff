@@ -204,6 +204,16 @@
 # encoder involved). Workstation-computed the same way
 # (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`), awaiting the designated
 # leg's transcription. The mpeg4 encode carries `-threads 1`.
+#
+# STATUS (07-15 round-trip iteration 1, CI run 36928305270): the lines of
+# video_corrupt_mpeg4.mkv and video_loc_mpeg4_c40.mkv were RE-PREDICTED (the base
+# video_corrupt_mpeg4_base.mkv is unchanged). arm64-linux decoded the amount-50
+# damage as concealed (100 frames) instead of rejected (99): the damage amount is a
+# chaotic function of the packet bytes, and the bytes differ between legs. The two
+# recipes now damage so the OUTCOME is byte-independent (amount 1: always rejected;
+# size/5: always concealed; scripts/gen_corpus.sh has the 51-encode measurement).
+# Predicted the same way (`TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh`);
+# still awaiting the designated leg's transcription.
 video_black_base.mkv
 video_black_pc.mkv
 video_black_tv.mkv
