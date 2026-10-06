@@ -156,6 +156,108 @@ evidence, the 4:2:0 `video_perc_*` thresholds. Each passed on the real arm64-lin
 
 Not run here and therefore unobserved: any Windows, macOS or arm64 execution of the new code.
 
-## Iteration 2 - next capture
+## Iteration 2 - capture run 37511324806 (head e3d3d5a, conclusion failure)
+
+Push #2 (e58df65..e3d3d5a) was human-approved and went to pull request 9. Iteration 1's
+fixes held on every leg that reached Test; the one remaining failure is a Windows build break.
+
+### Per-leg results
+
+| Job | Result | Where it stopped |
+|---|---|---|
+| lint (ENG-16 boundary) | success | - |
+| video-proof-streams | success | - |
+| build (x64-linux), designated | success | - |
+| build (arm64-linux) | success | - (the three corruption-fixture tests of run 36928305270 now pass) |
+| build (arm64-osx) | success | - |
+| build (x64-osx) | success | - |
+| build (x64-windows-static-md), REQUIRED | failure (job 112433062073) | Build |
+
+The iteration-1 damage recipes (`amount 1`, `size/5`) therefore held on arm64-linux, arm64-osx
+and x64-osx, and the designated leg passed the corpus-digest assertion against the re-predicted
+lines. Nothing was transcribed from this run: the Windows leg never reached Test, so the plan's
+"every blocking leg reached and finished its Test step" condition is unmet.
+
+### The Windows error, verbatim
+
+```
+D:\a\mediadiff\mediadiff\tests\integration\test_quality.cpp(576): error C2513: 'const std::unique_ptr<AVFrame,`anonymous-namespace'::FrameDeleter>': no variable declared before '='
+D:\a\mediadiff\mediadiff\tests\integration\test_quality.cpp(576): error C2628: '`anonymous-namespace'::FramePtr' followed by 'char' is illegal (did you forget a ';'?)
+D:\a\mediadiff\mediadiff\tests\integration\test_quality.cpp(579): error C2660: '`anonymous-namespace'::tapped': function does not take 0 arguments
+D:\a\mediadiff\mediadiff\tests\integration\test_vmaf.cpp(708): error C2513: ... no variable declared before '='
+D:\a\mediadiff\mediadiff\tests\integration\test_vmaf.cpp(708): error C2628: '`anonymous-namespace'::FramePtr' followed by 'char' is illegal (did you forget a ';'?)
+D:\a\mediadiff\mediadiff\tests\integration\test_vmaf.cpp(710): error C2660: '`anonymous-namespace'::score_two_pairs': function does not take 0 arguments
+FAILED: [code=2] tests/integration/CMakeFiles/mediadiff_integration_tests.dir/test_quality.cpp.obj
+FAILED: [code=2] tests/integration/CMakeFiles/mediadiff_integration_tests.dir/test_vmaf.cpp.obj
+```
+
+Root cause: the Windows SDK's `<rpcndr.h>` (reached through `<windows.h>`) does `#define small char`,
+so `const FramePtr small = yuv420(...)` (test_quality.cpp:576) and `const FramePtr small =
+make_frame(...)` (test_vmaf.cpp:708) became `const FramePtr char = ...`. This is the same defect
+class as the `far` local recorded in `.planning/WINDOWS.md` (renamed to `pcr_far` in Phase 3).
+Ninja stops at the first failures, so other integration translation units may not have been
+compiled on Windows in this run either; the sweep below does not rely on that.
+
+### Fix
+
+| Commit | Concern |
+|---|---|
+| 984bfc2 | `small`/`large` locals renamed `small_frame`/`large_frame` in tests/integration/test_quality.cpp and tests/integration/test_vmaf.cpp (the two broken lines); the same sweep also renamed `small` in tests/unit/test_pair_scorer.cpp (`too_small_scorer`) and tests/unit/test_video_detectors.cpp (`small_thumb`/`large_thumb`) |
+
+Deviation (outside 07-15's `files_modified`, Rule 1): all four files. The two unit-test renames
+are defensive: unit translation units evidently do not reach `<windows.h>` today (see below),
+but nothing in the source guarantees that.
+
+### Sweep for the whole class
+
+Phase-7-changed set: `git diff --name-only 1696d28 -- '*.cpp' '*.h'` = 113 files.
+
+1. Mechanical pass. A scratch header (outside the repo) `#define`s the SDK's object-like macros
+   the way the SDK does: `small`, `hyper`, `near`, `far`, `NEAR`, `FAR`, `pascal`, `cdecl`, `IN`,
+   `OUT`, `OPTIONAL`, `CALLBACK`, `WINAPI`, `APIENTRY`, `CONST`, `VOID`, `DELETE`, `ERROR`,
+   `OPAQUE`, `TRANSPARENT`, `ABSOLUTE`, `RELATIVE`, `IGNORE`, `INFINITE`, `interface`, `TRUE`,
+   `FALSE`, `NO_ERROR`, `MAX_PATH`, and about 60 A/W macros (`GetObject`, `CreateFile`,
+   `DeleteFile`, `CopyFile`, `MoveFile`, `CreateWindow`, `MessageBox`, `DrawText`, `LoadImage`,
+   `SendMessage`, `GetMessage`, `GetCurrentTime`, `Yield`, `GetUserName`, `FormatMessage`, ...).
+   clang++-18 `-fsyntax-only -Wall -Wextra -Werror -include <header>` over every translation unit
+   of `build/x64-linux` (318) and `build/x64-linux-vmaf` (315), libstdc++ 13 and the iteration-1
+   `util/expected.h` overlay. Diagnostics reported only from Phase-7-changed files.
+   - Validation of the detector: with the header and the pre-fix sources (`git show e3d3d5a:...`)
+     it reproduces the Windows error on test_quality.cpp:576 (`cannot combine with previous
+     'type-name' declaration specifier`) and finds the same defect at test_pair_scorer.cpp:315
+     and test_video_detectors.cpp:265. Without the header the same pass reports 0 diagnostics.
+   - Result after the fix: 0 diagnostics in Phase-7-changed files, in both builds, and no
+     third-party or system header aborted a translation unit. The only translation unit that
+     fails with the header is the unchanged, pre-Phase-7 tests/unit/test_mp4_analyzer.cpp
+     (`const Fingerprint far = ...` at :158). It compiles on `main`'s Windows leg, which is the
+     evidence that unit translation units do not see the SDK macros; it was left alone.
+2. Grep pass (catches silent cases such as a macro expanding to nothing). Comments and string
+   literals stripped, every identifier equal to a macro name above or to a Windows
+   typedef/constant (`BOOL`, `BYTE`, `DWORD`, `HANDLE`, `LPWSTR`, `GENERIC_WRITE`, ...) in the 113
+   files: the only hits left are the intended Windows API uses in `src/cli/main.cpp`,
+   `src/cli/commands/{compare,dir,snapshot}.cpp` (`HANDLE`, `TRUE`, `BOOL`, `DWORD`, `INFINITE`,
+   `LPWSTR`, `GENERIC_WRITE`), all inside the existing `_WIN32` blocks and all already on `main`'s
+   Windows leg. Findings before the renames: a local named `small` in four files (test_quality,
+   test_vmaf, test_pair_scorer, test_video_detectors), nothing else.
+3. Not covered: a macro defined by a header reached only on Windows that is not in the list.
+   No Windows build was run here.
+
+### Pre-flight #3 (HEAD 984bfc2, before this log's commit)
+
+- `TZ=UTC taskset -c 0-3 bash scripts/gen_corpus.sh` exit 0; `bash scripts/check_corpus.sh`: `clean. Verified 246 fixture(s) present and non-empty under tests/fixtures/, derived from scripts/gen_corpus.sh.`
+- Digest: all 41 provisional names matched their committed CORPUS_DIGEST.txt lines (41 of 41; the name set equals iteration 1's), and the whole 246-line listing and `CORPUS_DIGEST_SUMMARY=9f48dc2ace4b539f16329a7abee4f13ddb61423ce8635c3d0033e445db3209f6` are identical to pre-flight #2. This iteration touched no fixture or recipe.
+- `cmake --build build/x64-linux`: 6 steps (the four changed test files and two links), no `error`/`FAILED:`; `ctest --test-dir build/x64-linux`: `100% tests passed, 0 tests failed out of 1529` (17 designated-leg/VMAF-only skips).
+- `MEDIADIFF_DESIGNATED_LEG=1 ctest --preset x64-linux -R "(inspect_container - golden|ts_scan_golden|size_checks - the size)"`: `100% tests passed, 0 tests failed out of 5`.
+- `bash scripts/assert_corpus_digest.sh` exit 0, `compared 244 line(s)`; no-rewrite guard `git diff -U0 main -- tests/golden/CORPUS_DIGEST.txt | grep -cE '^-[0-9a-f]{64}  '` = 0.
+- All 11 lints PASS (the ci.yml order, including `test_gen_corpus_pin_gate`: `ran 40 assertion(s) across 11 cases; 0 failure(s).`); `lint_corpus_digest_provenance.sh`: `all clauses passed.`
+- VMAF: `cmake --preset x64-linux-vmaf` and build clean; `ctest --test-dir build/x64-linux-vmaf`: `100% tests passed, 0 tests failed out of 1529`; the `vmaf|quality|doc03_coverage` filter: `100% tests passed, 0 tests failed out of 42`.
+- Proof: `bash scripts/gen_video_proof.sh build/video-proof` exit 0, then `MEDIADIFF_REQUIRE_VIDEO_PROOF=1 ... ctest -R "integration\.video_hash_decoder"`: `100% tests passed, 0 tests failed out of 4`.
+- clang-18 syntax pass after the last change (`-Wall -Wextra -Werror`, no macro header): x64-linux `TUs 318 with-diagnostics 0`, x64-linux-vmaf `TUs 315 with-diagnostics 0`; with the macro header `diagnostics-in-changed-files 0` on both.
+
+Not run here and therefore unobserved: any Windows execution of the new code. The Windows leg has
+not yet reached its Test step for the Phase-7 tests, and macOS/arm64 execution of the code
+after e3d3d5a is the same code as run 37511324806 plus this rename.
+
+## Iteration 3 - next capture
 
 (appended by the continuation that reads the run produced by the push of the head above)
