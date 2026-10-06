@@ -205,8 +205,12 @@ compiled on Windows in this run either; the sweep below does not rely on that.
 | 984bfc2 | `small`/`large` locals renamed `small_frame`/`large_frame` in tests/integration/test_quality.cpp and tests/integration/test_vmaf.cpp (the two broken lines); the same sweep also renamed `small` in tests/unit/test_pair_scorer.cpp (`too_small_scorer`) and tests/unit/test_video_detectors.cpp (`small_thumb`/`large_thumb`) |
 
 Deviation (outside 07-15's `files_modified`, Rule 1): all four files. The two unit-test renames
-are defensive: unit translation units evidently do not reach `<windows.h>` today (see below),
-but nothing in the source guarantees that.
+are defensive: neither test_pair_scorer.cpp nor test_video_detectors.cpp includes a header that
+reaches `<windows.h>` today, but nothing in the source guarantees that. Other translation units
+do reach it: test_quality.cpp and test_vmaf.cpp through cli_harness.h -> process_spawn.h, and six
+unit translation units (test_console_vt.cpp, test_dir_pairing.cpp, test_fs_utf8.cpp,
+test_golden.cpp, test_process_spawn.cpp, test_registry_generator.cpp). (Corrected by the
+orchestrator before push #3; the first wording said no unit translation unit reaches it.)
 
 ### Sweep for the whole class
 
@@ -229,8 +233,8 @@ Phase-7-changed set: `git diff --name-only 1696d28 -- '*.cpp' '*.h'` = 113 files
    - Result after the fix: 0 diagnostics in Phase-7-changed files, in both builds, and no
      third-party or system header aborted a translation unit. The only translation unit that
      fails with the header is the unchanged, pre-Phase-7 tests/unit/test_mp4_analyzer.cpp
-     (`const Fingerprint far = ...` at :158). It compiles on `main`'s Windows leg, which is the
-     evidence that unit translation units do not see the SDK macros; it was left alone.
+     (`const Fingerprint far = ...` at :158). It compiles on `main`'s Windows leg because that
+     translation unit does not reach `<windows.h>`; it was left alone.
 2. Grep pass (catches silent cases such as a macro expanding to nothing). Comments and string
    literals stripped, every identifier equal to a macro name above or to a Windows
    typedef/constant (`BOOL`, `BYTE`, `DWORD`, `HANDLE`, `LPWSTR`, `GENERIC_WRITE`, ...) in the 113
