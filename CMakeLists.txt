@@ -20,6 +20,14 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERS
 endif()
 
 option(MEDIADIFF_WITH_VMAF "Enable libvmaf-backed quality metrics" OFF)
+# 07-11-PLAN.md (CONTENT-09): the vcpkg `libvmaf` port declares
+# `"supports": "!windows"`, so there is no libvmaf to link on Windows. Say so at
+# configure time, naming the port, instead of failing later inside vcpkg or the
+# linker. (`--vmaf` on a Windows build is the same usage error as on any build
+# without the option: src/cli/options.cpp asks vmaf_built_in().)
+if(MEDIADIFF_WITH_VMAF AND WIN32)
+  message(FATAL_ERROR "MEDIADIFF_WITH_VMAF=ON is not supported on Windows: the vcpkg 'libvmaf' port declares \"supports\": \"!windows\". quality.vmaf (CONTENT-09) is available on Linux and macOS builds only.")
+endif()
 # 04-03-PLAN.md Task 1 (PROBE-03, D-11): the opt-in parser-overhead
 # benchmark. OFF by default so none of the five CI legs builds or pays for
 # it -- D-11 forbids a CI/CTest gate on this measurement, and building the
@@ -158,6 +166,10 @@ add_library(libmediadiff STATIC
   src/core/profiles.cpp
   src/core/policy.cpp
   src/core/container_family.cpp
+  # 07-03-PLAN.md (CONTENT-02, D-02/D-07): the one frame-pairing rule -- exact
+  # rational time alignment with an index fallback, shared by the divergence
+  # locator (compare/hash.cpp) and, later, the lockstep scorer.
+  src/core/frame_pairing.cpp
   src/config/toml_load.cpp
   src/compare/engine.cpp
   src/compare/exact.cpp
@@ -181,6 +193,27 @@ add_library(libmediadiff STATIC
   # av_read_frame loop.
   src/probe/audio_config.cpp
   src/probe/audio_decode.cpp
+  # 07-01-PLAN.md (CONTENT-01, PROBE-08): the video decode pass, fused inside
+  # packet_scan.cpp's own av_read_frame loop beside the audio one.
+  src/probe/video_decode.cpp
+  # 07-07-PLAN.md (VIDEO-09): the one HDR static-metadata conversion path both
+  # the stream arm (demux) and the first-decoded-frame arm share.
+  src/probe/hdr_static.cpp
+  # 07-05-PLAN.md (CONTENT-06): the deterministic 128-wide luma thumbnail
+  # (swscale, pinned flags) every video content sink shares.
+  src/probe/video_thumbnail.cpp
+  # 07-05-PLAN.md (CONTENT-06): the frozen (SSIM hysteresis) and black
+  # (range- and depth-normalized) detector sinks over those thumbnails.
+  src/probe/video_detectors.cpp
+  # 07-08-PLAN.md (CONTENT-11): the lockstep driver -- two unchanged one-sided
+  # sweeps on two std::threads joined by one single-slot rendezvous per side --
+  # and (CONTENT-04) the online pairing and integer-SSIM scorer that consumes it.
+  src/probe/lockstep.cpp
+  # 07-13-PLAN.md (D-12, T-06-34): the library half of the decode stall
+  # watchdog -- a per-thread heartbeat every post-open libav call advances
+  # through an RAII guard. The watchdog thread itself lives in src/cli/.
+  src/probe/heartbeat.cpp
+  src/probe/pair_scorer.cpp
   src/probe/cadence.cpp
   src/probe/bmff_scan.cpp
   src/probe/ebml_scan.cpp
@@ -198,6 +231,7 @@ add_library(libmediadiff STATIC
   src/analyzers/video/color.cpp
   src/analyzers/video/interlace.cpp
   src/analyzers/video/hdr.cpp
+  src/analyzers/video/closed_captions.cpp
   src/analyzers/timeline/start_duration.cpp
   # TIME-02 (05-02-PLAN.md Task 2): unwrap_ts_timestamps, doc 04 section
   # 1.2's 33-bit MPEG-TS PTS/DTS unwrap as a pure function -- consumed by
@@ -228,6 +262,20 @@ add_library(libmediadiff STATIC
   # audio decode-sink consumer, first real populator of hash.cpp's
   # kPreconditionKeys.
   src/analyzers/content/sample_hash.cpp
+  # 07-01-PLAN.md (CONTENT-01): content.video.frame_hash -- the video decode
+  # sweep's first consumer.
+  src/analyzers/content/video_frame_hash.cpp
+  # 07-05-PLAN.md (CONTENT-06): content.video.frozen_runs/black_runs -- the
+  # detector sinks' span-list consumer.
+  src/analyzers/content/video_runs.cpp
+  # 07-08-PLAN.md (CONTENT-04; D-01): content.video.perceptual's one-sided
+  # requires_media emission (the live two-file score is written by
+  # probe/lockstep.cpp).
+  src/analyzers/content/video_perceptual.cpp
+  # 07-10-PLAN.md (CONTENT-08, CONTENT-10; D-01): quality.psnr/quality.ssim's
+  # one-sided requires_media emission (the live scores are written by
+  # probe/lockstep.cpp).
+  src/analyzers/content/quality.cpp
   # 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/sample_fmt/
   # bit_depth/channels/layout -- the six per-audio-stream identity checks,
   # codecpar-only extraction mirroring video/stream_params.cpp's own shape.
@@ -256,7 +304,9 @@ target_include_directories(libmediadiff PUBLIC
 )
 target_include_directories(libmediadiff SYSTEM PUBLIC ${FFMPEG_INCLUDE_DIRS})
 target_link_directories(libmediadiff PUBLIC ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash ${EBUR128_LIBRARY})
+# Threads::Threads is PUBLIC: probe/lockstep.cpp (07-08, CONTENT-11) starts
+# std::threads inside the library, so every consumer of libmediadiff links it.
+target_link_libraries(libmediadiff PUBLIC ${FFMPEG_LIBRARIES} fmt::fmt nlohmann_json::nlohmann_json tomlplusplus::tomlplusplus xxHash::xxhash ${EBUR128_LIBRARY} Threads::Threads)
 
 # --- Header compilation gate --------------------------------------------------
 # A header nothing includes is a header nothing type-checks, and Phase 2
@@ -278,6 +328,7 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/core/tolerance.h
   src/core/check_explain.h
   src/core/container_family.h
+  src/core/frame_pairing.h
   src/config/toml_load.h
   src/compare/semantics.h
   src/compare/engine.h
@@ -292,12 +343,24 @@ target_sources(libmediadiff PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_SOURCE_DIR
   src/cli/commands/inspect_render.h
   src/cli/dir_pairing.h
   src/cli/worker_pool.h
+  src/cli/watchdog.h
   src/probe/pass.h
   src/probe/demux_session.h
   src/probe/packet_scan.h
   src/probe/parser_scan.h
   src/probe/audio_config.h
   src/probe/audio_decode.h
+  src/probe/video_decode.h
+  src/probe/hdr_static.h
+  src/probe/video_thumbnail.h
+  src/probe/video_detectors.h
+  src/probe/lockstep.h
+  src/probe/heartbeat.h
+  src/probe/pair_scorer.h
+  src/probe/quality_request.h
+  src/probe/vmaf_scorer.h
+  src/util/ssim_int.h
+  src/util/quality_math.h
   src/probe/cadence.h
   src/probe/bmff_scan.h
   src/probe/ebml_scan.h
@@ -330,6 +393,15 @@ target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VERSION="${PROJECT_VER
 # existing version-triple fields (src/util/version.cpp).
 target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_VCPKG_TRIPLET="${VCPKG_TARGET_TRIPLET}")
 if(MEDIADIFF_WITH_VMAF)
+  # 07-11-PLAN.md (CONTENT-09): libvmaf ships a pkg-config file and no CMake
+  # package. The vcpkg toolchain puts this triplet's lib/pkgconfig on
+  # PKG_CONFIG_PATH, so the pinned port is what is found, never a system copy.
+  # The default build never reaches this block, so libvmaf stays out of the
+  # default single static binary (BUILD-09, integration.vmaf_absent).
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(LIBVMAF REQUIRED IMPORTED_TARGET libvmaf)
+  target_sources(libmediadiff PRIVATE src/probe/vmaf_scorer.cpp)
+  target_link_libraries(libmediadiff PUBLIC PkgConfig::LIBVMAF)
   target_compile_definitions(libmediadiff PRIVATE MEDIADIFF_WITH_VMAF)
 endif()
 
@@ -385,6 +457,8 @@ add_executable(mediadiff
   src/cli/commands/explain.cpp
   src/cli/dir_pairing.cpp
   src/cli/worker_pool.cpp
+  # 07-13-PLAN.md (D-12, D-13): the CLI half of the decode stall watchdog.
+  src/cli/watchdog.cpp
 )
 target_link_libraries(mediadiff PRIVATE libmediadiff CLI11::CLI11 Threads::Threads)
 mediadiff_apply_warnings(mediadiff)
@@ -427,6 +501,14 @@ if(MEDIADIFF_BUILD_BENCH)
   target_link_libraries(mediadiff_audio_sweep PRIVATE libmediadiff fmt::fmt)
   mediadiff_apply_warnings(mediadiff_audio_sweep)
   mediadiff_apply_platform_definitions(mediadiff_audio_sweep)
+
+  # 07-12-PLAN.md Task 2 (PERF-02): the video content-pass benchmark -- one
+  # leg per invocation (plain / full), optionally bounded to the first N video
+  # packets -- same four lines, same opt-in gate, same no-CTest-case rule.
+  add_executable(mediadiff_video_sweep tools/bench/video_sweep.cpp)
+  target_link_libraries(mediadiff_video_sweep PRIVATE libmediadiff fmt::fmt)
+  mediadiff_apply_warnings(mediadiff_video_sweep)
+  mediadiff_apply_platform_definitions(mediadiff_video_sweep)
 endif()
 
 enable_testing()

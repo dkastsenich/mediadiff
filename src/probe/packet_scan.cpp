@@ -3,10 +3,12 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
 extern "C" {
+#include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
@@ -14,6 +16,8 @@ extern "C" {
 
 #include "core/rational.h"
 #include "probe/demux_session.h"
+#include "probe/heartbeat.h"
+#include "probe/lockstep.h"
 
 namespace mediadiff {
 
@@ -137,6 +141,53 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
     audio_decode_states.resize(stream_count);
   }
 
+  // 07-08-PLAN.md (CONTENT-04, CONTENT-11): the PRIMARY video stream is the
+  // first video stream that is not an attached picture (cover art is a
+  // one-packet video stream, Pitfall 12), decided from stream metadata alone
+  // so it holds even where no decoder can be opened. Every video stream also
+  // records its rank among ALL video streams -- the Scope index every video.*
+  // measurement uses, attached pictures included. 07-12-PLAN.md: also needed
+  // (and so computed) when a bench bounds the sweep by video packets, whether
+  // or not a video decode was requested.
+  int primary_stream = -1;
+  std::vector<int> ranks(stream_count, -1);
+  if (request.decode_video || request.stop_after_video_packets > 0) {
+    int video_rank = 0;
+    for (std::size_t i = 0; i < stream_count; ++i) {
+      const AVStream& avstream = *ctx->streams[i];
+      if (avstream.codecpar == nullptr || avstream.codecpar->codec_type != AVMEDIA_TYPE_VIDEO) {
+        continue;
+      }
+      ranks[i] = video_rank++;
+      if (primary_stream < 0 && (avstream.disposition & AV_DISPOSITION_ATTACHED_PIC) == 0) {
+        primary_stream = static_cast<int>(i);
+      }
+    }
+  }
+
+  // 07-01-PLAN.md (CONTENT-01, PROBE-08): mirrors the audio_decode_states
+  // allocation immediately above.
+  std::vector<detail::VideoDecodeState> video_decode_states;
+  if (request.decode_video) {
+    outputs.video_decode = VideoDecodeResult{};
+    outputs.video_decode->per_stream.resize(stream_count);
+    video_decode_states.resize(stream_count);
+
+    for (std::size_t i = 0; i < stream_count; ++i) {
+      const bool primary = static_cast<int>(i) == primary_stream;
+      video_decode_states[i].set_primary(primary, static_cast<int>(i), ranks[i], primary ? request.frame_tap : nullptr);
+    }
+    if (request.frame_tap != nullptr && primary_stream < 0) {
+      // No stream to score on this side: tell the consumer at once, so the
+      // other side's producer is never held waiting on it (Pitfall 10).
+      request.frame_tap->finish(TapEnd{});
+    }
+  }
+
+  // 07-12-PLAN.md (PERF-02): packets read so far on the primary video stream,
+  // for the bench-only cap. Counted when read, not when accepted.
+  std::int64_t primary_video_packets_read = 0;
+
   ScratchPacket pkt;
   if (!pkt.valid()) {
     return mediadiff::unexpected(Error{ErrorKind::internal, "could not allocate AVPacket for a packet scan"});
@@ -144,7 +195,19 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
 
   std::int64_t accounted_bytes = 0;
   for (;;) {
-    const int rc = av_read_frame(ctx, pkt.get());
+    int rc = 0;
+    {
+      // 07-13-PLAN.md (D-12): the heartbeat guard wraps exactly the libav call.
+      // The position it publishes is the packet this call returns (the decode
+      // calls that follow report against it).
+      LibavCall guard(LibavSite::read_frame);
+      rc = av_read_frame(ctx, pkt.get());
+      if (rc >= 0) {
+        const AVPacket& read_packet = *pkt.get();
+        guard.note_position(read_packet.stream_index,
+                            read_packet.pts != AV_NOPTS_VALUE ? read_packet.pts : read_packet.dts);
+      }
+    }
     ++result.read_frame_call_count;
 
     if (rc == AVERROR_EOF) {
@@ -322,12 +385,49 @@ mediadiff::expected<PacketScanOutputs, Error> run_packet_scan(DemuxSession& sess
       }
     }
 
+    // 07-01-PLAN.md (CONTENT-01, PROBE-08): the video decode fusion point --
+    // directly AFTER the audio block, BEFORE pkt.unref(), inside this SAME
+    // loop iteration (never a second av_read_frame sweep). It goes last on
+    // purpose: VideoDecodeState::feed_packet clears AV_PKT_FLAG_DISCARD on
+    // this scratch packet (D-06), and make_packet_record above has already
+    // captured the original flags. Each stored frame charges the SAME
+    // accounted_bytes / limits.max_bytes budget the PacketRecord append above
+    // enforces (T-07-02).
+    if (request.decode_video) {
+      detail::VideoDecodeState& vstate = video_decode_states[stream_index];
+      vstate.ensure_initialized(*ctx->streams[stream_index], request.video_decode_threads,
+                                request.video_sample_stride);
+      if (vstate.attempted()) {
+        vstate.feed_packet(*pkt.get(), detail::DecodeBudget{&accounted_bytes, limits.max_bytes});
+      }
+    }
+
     pkt.unref();
+
+    // 07-12-PLAN.md (PERF-02): the bench-only cap. Checked after the packet has
+    // been fully consumed, so the Nth packet is decoded, and before the next
+    // read, so exactly N packets of the primary stream (and whatever
+    // interleaved packets of other streams preceded the Nth) were read.
+    if (request.stop_after_video_packets > 0 && static_cast<int>(stream_index) == primary_stream &&
+        ++primary_video_packets_read >= request.stop_after_video_packets) {
+      result.stop_reason = std::string(kStopReasonBenchPacketCap);
+      break;
+    }
   }
 
   if (request.decode_audio) {
     for (std::size_t i = 0; i < audio_decode_states.size(); ++i) {
       outputs.audio_decode->per_stream[i] = audio_decode_states[i].finalize();
+    }
+  }
+
+  if (request.decode_video) {
+    // Drain every stream's decoder -- also when the sweep ended early
+    // (Pitfall 1). finalize() can still charge frame records, so it runs
+    // BEFORE the final accounted_bytes is published below.
+    for (std::size_t i = 0; i < video_decode_states.size(); ++i) {
+      outputs.video_decode->per_stream[i] = video_decode_states[i].finalize(
+          detail::DecodeBudget{&accounted_bytes, limits.max_bytes}, result.per_stream[i].partial);
     }
   }
 

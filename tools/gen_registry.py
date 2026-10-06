@@ -114,7 +114,7 @@ REQUIRED_KEYS = ("id", "group", "semantic", "unit", "value_kind", "severity")
 SEMANTICS = {"exact", "tol", "set", "presence", "hash", "dist", "span", "state"}
 VALUE_KINDS = {"int64", "rational", "real", "string", "string_set", "histogram", "span_list", "hash_chain"}
 SEVERITIES = {"ignore", "info", "warn", "fail"}
-UNITS = {"none", "ms", "ms_per_min", "frames", "percent", "db", "lu", "samples", "ticks", "count"}
+UNITS = {"none", "ms", "ms_per_min", "frames", "percent", "db", "lu", "samples", "ticks", "count", "score"}
 PROFILES = {"strict_bitexact", "sw_encoder", "hw_encoder", "remux", "transform"}
 
 # The three level-2 headings every docs/checks/<id>.md must contain (D-02).

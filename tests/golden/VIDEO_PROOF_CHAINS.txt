@@ -1,0 +1,24 @@
+# VIDEO_PROOF_CHAINS.txt -- the cross-architecture video-decoder proof ledger
+# (07-14-PLAN.md, CONTENT-01, D-09/D-10).
+#
+# PROVENANCE. Human-transcribed. The `video-proof-streams` CI job encodes the
+# proof streams once; every build leg downloads those exact bytes, decodes them
+# and prints one pasteable row per stream (the `video_hash_decoder - cross-leg
+# proof` test). A human copies the DESIGNATED leg's (x64-linux) rows below.
+# CI measures and humans update (Phase 5 D-15): nothing writes this file, no
+# UPDATE_GOLDENS-style refresh exists for it, and a row is never predicted --
+# only transcribed from a real run's output.
+#
+# ROW FORMAT (one per proof stream, exactly this shape):
+#   stream=<name> xxh3=<hex> frames=<n> chain=<hex> decoder=<name> flags=<string>
+#   xxh3     the proof stream's own XXH3-128 (its identity)
+#   frames   decoded frame count
+#   chain    the frame-hash chain digest (content.video.frame_hash)
+#   decoder  the decoder name; flags the recorded decoder settings (TRUST-01)
+#
+# MODE. `report-only`: every leg prints its own rows and passes. `gate`: every
+# stream needs a row here, and a class-1 decoder's frames/chain must match on
+# every leg (src/probe/video_decode.cpp's class-1 table; a class-1 decoder with
+# no row here fails the table-driven test). It starts report-only; the
+# promotion procedure is in tests/golden/README.md.
+# MODE: report-only

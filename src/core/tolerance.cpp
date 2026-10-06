@@ -32,7 +32,8 @@ namespace mediadiff {
 //              digits, never through a locale-sensitive C-library
 //              string-to-floating-point conversion
 //   suffix   := "ms" | "ms/min" | "frames" | "%" | "dB" | "LU" | "samples"
-//              | "tick" | "bytes" | ""  (bare — Unit::count only)
+//              | "tick" | "bytes" | ""  (bare — Unit::count, and Unit::score
+//              where bare is the ONLY spelling: "0.015", 07-08-PLAN.md)
 // Every byte outside the leading sign must be ASCII: a full-width digit or
 // a Unicode minus sign is rejected rather than normalised, so a crafted
 // value can never silently become a different number than it reads as
@@ -79,6 +80,11 @@ mediadiff::expected<Tolerance, Error> parse_tolerance(std::string_view raw, Unit
   const std::string_view expected_suffix = unit_suffix(expected_unit);
 
   auto usage_error = [&](std::string_view detail) -> mediadiff::unexpected<Error> {
+    if (expected_unit == Unit::score) {
+      // A score has no unit suffix: name the bare form a user must type.
+      return mediadiff::unexpected(
+          Error{ErrorKind::usage, std::string(detail) + " (expected a bare score tolerance with no unit suffix, e.g. \"0.015\")"});
+    }
     return mediadiff::unexpected(
         Error{ErrorKind::usage, std::string(detail) + " (expected a tolerance in '" + std::string(expected_suffix) +
                                      "', e.g. \"5" + std::string(expected_suffix) + "\")"});

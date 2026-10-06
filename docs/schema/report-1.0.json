@@ -125,7 +125,11 @@
             "partial_scan",
             "insufficient_data",
             "no_timing_data",
-            "hash_disabled"
+            "hash_disabled",
+            "not_requested",
+            "sampling_conflict",
+            "path_incomparable",
+            "geometry_mismatch"
           ]
         },
         "evidence": {},

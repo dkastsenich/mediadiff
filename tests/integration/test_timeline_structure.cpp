@@ -93,6 +93,17 @@ TEST_CASE("timeline_structure - the dts_backward trigger pair declares its compl
   expect_declared_set(
       report,
       {
+          // 07-01-PLAN.md (content.video.frame_hash): the candidate splices two separately
+          // encoded 2s segments whose testsrc2 picture restarts at the splice, so its decoded
+          // frames 50-99 genuinely differ from the baseline's continuous 4s encode (first
+          // divergent frame 50; `ffmpeg -f framemd5` agrees).
+          "content.video.frame_hash",
+          // 07-08-PLAN.md (content.video.perceptual): the same splice. The two files'
+          // presentation timelines no longer line up, so 38 frames per side find no partner
+          // inside half a frame interval (D-02 time pairing) and the worst paired frame's
+          // score is 0.750640 against the 0.015 tolerance (verified against the real binary;
+          // the profile's severity for it is ignore, the finding is still a non-pass entry).
+          "content.video.perceptual",
           // The container format itself genuinely changed (mov -> mpegts),
           // same as every other MP4-to-TS pair in this phase.
           "container.format",
@@ -250,7 +261,13 @@ TEST_CASE("timeline_structure - the pts_dupe trigger pair declares its complete 
   // interval is enough for derive_cadence's own D-05 grid-conformance test
   // to reclassify the whole-file cadence as VFR -- one more legitimate
   // effect of the same one-PTS-rewrite root cause (D-02).
+  //
+  // 07-08-PLAN.md's content.video.perceptual: the rewritten PTS moves one frame off its
+  // time slot, so D-02 time pairing leaves one frame unpaired per side and pairs the
+  // neighbours across the rewrite; the worst pair scores 0.946106 (verified against the
+  // real binary). The pictures are the same encode, the timeline is what differs.
   expect_declared_set(report, {
+                                   "content.video.perceptual",
                                    "timeline.pts_unique",
                                    "timeline.vfr_profile",
                                });
@@ -281,6 +298,11 @@ TEST_CASE(
   expect_declared_set(
       report,
       {
+          // 07-08-PLAN.md's content.video.perceptual: the 3-frame PTS shift moves every later
+          // frame off its baseline time slot, so D-02 time pairing leaves three frames
+          // unpaired per side and scores neighbours across the shift; the worst pair is
+          // 0.701355 (verified against the real binary). Same encode, different timeline.
+          "content.video.perceptual",
           // The MP4 edit-list's own `trim` entry segment_duration is
           // computed from the track's own (now shift-lengthened) media
           // duration -- verified via evidence: baseline
@@ -520,6 +542,11 @@ TEST_CASE(
   expect_declared_set(
       report,
       {
+          // 07-01-PLAN.md (content.video.frame_hash): the same two-independently-encoded-
+          // segments splice -- segment B's picture restarts, so decoded frames 50-99 differ
+          // from timeline_ts_nowrap.ts's continuous encode (first divergent frame 50;
+          // `ffmpeg -f framemd5` agrees).
+          "content.video.frame_hash",
           // Each segment's own TS mux restarts its continuity_counter
           // sequence at 0 independently -- a genuine, UNEXPLAINED CC break
           // at the splice on every PID this two-segment technique

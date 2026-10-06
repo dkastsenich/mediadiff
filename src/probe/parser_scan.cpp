@@ -8,6 +8,8 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 }
 
+#include "probe/heartbeat.h"
+
 namespace mediadiff {
 
 std::string picture_type_name(int pict_type) {
@@ -409,7 +411,10 @@ bool StreamParserState::parse_packet(const std::uint8_t* data, int size, std::in
   // Test 2) -- no loop-until-fully-consumed is needed for that shape, and
   // this translation unit never decodes, so there is no frame to flush
   // across calls the way a real decoder loop would.
-  av_parser_parse2(parser_, codec_ctx_, &out_buf, &out_size, data, size, pts, dts, pos);
+  {
+    LibavCall guard(LibavSite::parser_parse);
+    av_parser_parse2(parser_, codec_ctx_, &out_buf, &out_size, data, size, pts, dts, pos);
+  }
   if (out_size <= 0) {
     return false;
   }

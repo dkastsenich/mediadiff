@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -23,6 +24,7 @@
 #include "probe/audio_decode.h"
 #include "probe/packet_scan.h"
 #include "util/fs.h"
+#include "util/version.h"
 
 namespace mediadiff {
 
@@ -259,7 +261,14 @@ ProbeArgs add_probe_flags(CLI::App& cmd) {
   // resolver runs); resolve_probe_timeout_ms/resolve_probe_memory_budget_bytes
   // below keep their own bound anyway, because the config path (`[probe]
   // timeout_seconds`/`memory_budget_mb`) never passes through CLI11 at all.
-  args.timeout_seconds = cmd.add_option("--probe-timeout", "Per-file wall-clock probe budget, in seconds (default: 30)")
+  // 07-13-PLAN.md (D-12): the help says what the budget does and does not bound.
+  // It governs opening and header probing only; a decode call that stalls later is
+  // bounded by the separate fixed stall watchdog (src/cli/watchdog.h), never by a
+  // wall-clock cut that could change a measured value (CR-05).
+  args.timeout_seconds = cmd.add_option("--probe-timeout",
+                                        "Wall-clock budget, in seconds, for opening and probing each input's header "
+                                        "(default: 30). A decode call that stalls later is bounded separately by a "
+                                        "fixed 300 s watchdog.")
                               ->type_name("SECONDS")
                               ->check(CLI::NonNegativeNumber)
                               ->check(CLI::Range(std::int64_t{0}, kMaxProbeTimeoutSeconds));
@@ -457,6 +466,109 @@ mediadiff::expected<std::string, Error> resolve_hash_decoder(const HashDecoderAr
                                      "' does not name a decoder registered in this build's linked FFmpeg"});
   }
   return text;
+}
+
+// 07-04-PLAN.md: see options.h's own doc comment for the full contract.
+SampleArgs add_sample_flag(CLI::App& cmd) {
+  SampleArgs args;
+  args.sample_flag =
+      cmd.add_option("--sample",
+                      "Hash and store every Nth video frame. Every frame is still decoded, and "
+                      "frozen/black/caption/HDR detection still see every frame, so this makes snapshots "
+                      "smaller and quality scoring cheaper, not decoding faster. Audio hashing is not "
+                      "sampled. Only fingerprints taken with the same N compare.")
+          ->type_name("N");
+  return args;
+}
+
+mediadiff::expected<int, Error> resolve_sample_stride(const SampleArgs& args, bool content_enabled) {
+  if (args.sample_flag == nullptr || args.sample_flag->count() == 0) {
+    return 1;
+  }
+  const std::string text = opt_string(args.sample_flag);
+  // Strict decimal: an optional leading '-', then digits only. std::stoi would
+  // accept "2x" and leading whitespace, and throw on overflow.
+  std::size_t digits_from = (!text.empty() && text.front() == '-') ? 1 : 0;
+  bool well_formed = text.size() > digits_from;
+  for (std::size_t i = digits_from; i < text.size(); ++i) {
+    if (text[i] < '0' || text[i] > '9') {
+      well_formed = false;
+      break;
+    }
+  }
+  if (!well_formed) {
+    return mediadiff::unexpected(
+        Error{ErrorKind::usage, "'--sample " + text + "' is not an integer -- give a whole number of frames, 1 or more"});
+  }
+  if (digits_from == 1) {
+    return mediadiff::unexpected(Error{
+        ErrorKind::usage, "'--sample " + text + "' must be 1 or more (1 is full; 2 keeps every second frame)"});
+  }
+  std::int64_t value = 0;
+  for (const char c : text) {
+    value = value * 10 + (c - '0');
+    if (value > std::numeric_limits<int>::max()) {
+      return mediadiff::unexpected(Error{
+          ErrorKind::usage, "'--sample " + text + "' is too large -- it must fit a 32-bit signed integer"});
+    }
+  }
+  if (value < 1) {
+    return mediadiff::unexpected(Error{
+        ErrorKind::usage, "'--sample " + text + "' must be 1 or more (1 is full; 2 keeps every second frame)"});
+  }
+  if (value >= 2 && !content_enabled) {
+    return mediadiff::unexpected(Error{
+        ErrorKind::usage, "'--sample " + text + "' needs the content decode pass, which is off for this run "
+                            "(--no-content, or this command needs --content) -- drop --sample or enable content decoding"});
+  }
+  return static_cast<int>(value);
+}
+
+// 07-10-PLAN.md: see options.h's own doc comment for the full contract.
+QualityArgs add_quality_flags(CLI::App& cmd) {
+  // One help string for both flags, as the plan words it.
+  static constexpr const char* kHelp =
+      "Also score PSNR / SSIM / VMAF of the candidate against the baseline at native resolution (live media compares "
+      "only; snapshots report requires_media; --vmaf needs a build with MEDIADIFF_WITH_VMAF=ON)";
+  QualityArgs args;
+  args.psnr_flag = cmd.add_flag("--psnr", kHelp);
+  args.ssim_flag = cmd.add_flag("--ssim", kHelp);
+  args.vmaf_flag = cmd.add_flag("--vmaf", kHelp);
+  return args;
+}
+
+mediadiff::expected<QualityRequest, Error> resolve_quality_request(const QualityArgs& args, bool content_enabled) {
+  QualityRequest request;
+  request.psnr = opt_flag(args.psnr_flag);
+  request.ssim = opt_flag(args.ssim_flag);
+  request.vmaf = opt_flag(args.vmaf_flag);
+  if (request.vmaf && !vmaf_built_in()) {
+    // The build decides, asked through vmaf_built_in() so this file (compiled on
+    // every platform) carries no preprocessor branch of its own.
+    return mediadiff::unexpected(Error{
+        ErrorKind::usage,
+        "'--vmaf' requires a build configured with MEDIADIFF_WITH_VMAF=ON (the default build keeps libvmaf absent; "
+        "the libvmaf port does not support Windows)"});
+  }
+  if (request.psnr && !content_enabled) {
+    return mediadiff::unexpected(Error{ErrorKind::usage,
+                                       "'--psnr' needs the content decode pass, which is off for this run "
+                                       "(--no-content, or this command needs --content) -- drop --psnr or enable "
+                                       "content decoding"});
+  }
+  if (request.ssim && !content_enabled) {
+    return mediadiff::unexpected(Error{ErrorKind::usage,
+                                       "'--ssim' needs the content decode pass, which is off for this run "
+                                       "(--no-content, or this command needs --content) -- drop --ssim or enable "
+                                       "content decoding"});
+  }
+  if (request.vmaf && !content_enabled) {
+    return mediadiff::unexpected(Error{ErrorKind::usage,
+                                       "'--vmaf' needs the content decode pass, which is off for this run "
+                                       "(--no-content, or this command needs --content) -- drop --vmaf or enable "
+                                       "content decoding"});
+  }
+  return request;
 }
 
 PolicyArgs default_policy_args() { return {}; }

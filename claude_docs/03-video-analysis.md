@@ -33,7 +33,7 @@ Extraction source is `AVStream.codecpar` unless stated; all comparisons per doc 
 | `video.gop.idr_interval` | IDR cadence (NAL-classified, §1); open/closed classification (H.264: I-without-IDR after non-IDR = open; HEVC: CRA = open) | interval `±tol` · fail; open/closed `exact` · fail | the segment-alignment killer (UC3) |
 | `video.gop.refs` | `refs` from SPS via parser where available, else `codecpar` evidence-only | `exact` · warn | decoder DPB/memory contract |
 | `video.interlace` | `codecpar->field_order` cross-checked against parser per-frame field flags; mixed content → `mixed` value + proportions in evidence | `exact` · fail | TFF/BFF flip = judder previews hide |
-| `video.closed_captions` | A53/CEA-708 presence: v1 detects during the decode pass (frame side data `AV_FRAME_DATA_A53_CC`); under `--no-content` → `skipped:requires_decode` | `presence` · fail | stretch goal (post-v1): SEI ITU-T T.35 scan in ParserScan to lift the decode requirement — tracked, not promised |
+| `video.closed_captions` | A53/CEA-708 presence: v1 detects during the decode pass (frame side data `AV_FRAME_DATA_A53_CC`); under `--no-content` → `skipped:requires_decode` | `presence` · fail | stretch goal (post-v1): SEI ITU-T T.35 scan in ParserScan to lift the decode requirement — tracked, not promised <br>**Amended 2026-09-30 (07-06):** registered in Phase 7, not Phase 4 (04-CHECK-ROSTER.md held the id out); detection is real and runs in the one video decode sweep. Any decoded frame carrying `AV_FRAME_DATA_A53_CC` counts (captions may start mid-stream), a decoded stream with none is a real `Absent{}`, and `--no-content` reports `skipped:requires_decode`. Its fixtures need no GPL encoder: an MPEG-2 GA94 user-data insert and a hand-written H.264 I_PCM stream with a T.35 SEI. |
 
 ## 3. Checks — color & colorimetry (`video.color.*`)
 
@@ -49,9 +49,9 @@ Extraction: `codecpar->color_range / color_primaries / color_trc / color_space /
 
 ## 4. Checks — HDR metadata (`video.hdr.*`)
 
-Extraction precedence (recorded in evidence as `source: stream | first_frame`):
+Extraction precedence (recorded in evidence as `source: stream | frame`; amended, 07-07-PLAN.md, 2026-09-30: first-frame arm implemented -- the spelling shipped is `frame`; H.264 added to the frame-capable codecs, since libavcodec's H.264 and HEVC decoders share one SEI export; Dolby Vision stays stream-level):
 1. **Stream-level:** `codecpar->coded_side_data` (FFmpeg ≥ 6.1) — `AV_PKT_DATA_MASTERING_DISPLAY_METADATA`, `AV_PKT_DATA_CONTENT_LIGHT_LEVEL`, `AV_PKT_DATA_DOVI_CONF`.
-2. **Fallback:** first decoded frame's side data (`AV_FRAME_DATA_MASTERING_DISPLAY_METADATA`, `AV_FRAME_DATA_CONTENT_LIGHT_LEVEL`) when the decode pass runs; else `skipped:requires_decode` if stream-level absent but the codec could carry frame-level (HEVC/AV1).
+2. **Fallback:** first decoded frame's side data (`AV_FRAME_DATA_MASTERING_DISPLAY_METADATA`, `AV_FRAME_DATA_CONTENT_LIGHT_LEVEL`) when the decode pass runs; else `skipped:requires_decode` if stream-level absent but the codec could carry frame-level (HEVC/AV1/H.264). With the decode pass and no entry on the first frame the absence is real (`Absent{}`, no skip); a decode that never reached a first frame is `skipped:partial_scan` (cut short or undecodable) or `skipped:insufficient_data` (a complete decode with zero frames). The first frame is read whatever `--sample N` is, and stream-level metadata keeps precedence.
 
 | Check ID | Extraction | Semantic / default | Details |
 |---|---|---|---|

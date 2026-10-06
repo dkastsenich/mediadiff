@@ -18,6 +18,26 @@ zero-magnitude tolerance (`tol`/`count`/`"0"`, the same shape `timeline.dts_mono
 uses and for the identical reason: this behaves like exact equality while leaving
 `--tol meta.decode_errors=2` meaningful for a pipeline with known, accepted noise).
 
+### Video streams
+
+Every decoded **video** stream is measured too, at `Scope{video, rank}`, inside the same video decode
+sweep `content.video.frame_hash` consumes (no second decode), with the same skip priority and the same
+single place the fingerprint is marked partial. One thing differs: the counting unit. MPEG-family video
+decoders usually *conceal* a damaged slice and return success, so a count of negative `send`/`receive`
+returns alone would read 0 on a visibly corrupted stream. A video stream's value is therefore
+`decode_errors + corrupt_frames` -- the negative returns plus the frames the decoder flagged
+(`AV_FRAME_FLAG_CORRUPT`, or a non-zero `decode_error_flags`) -- and both components are named in the
+measurement's evidence (`decode_errors`, `corrupt_frames`, and `first_error_reason` once there is one).
+A clean video stream reports a real `0`. An attached picture (cover art) is never decoded and emits
+nothing. As for audio, only a wholly undecodable video stream -- zero decoded frames and at least one
+error -- skips as `partial_scan`, marks the fingerprint partial and exits 66 with the report still
+written; a stream with a few damaged frames is a counted, gating finding at exit 1.
+
+A stream whose declared size is over the decode bound (`max_pixels_exceeded`, see
+`content.video.frame_hash`) was never opened, so it skips as `requires_decode`. A file of parse-only
+Annex-B streams that libavcodec cannot decode at all is exactly the undecodable case: a decoding compare
+of it exits 66, and `--no-content` is the way to ask for the parse-level checks alone.
+
 ### The narrow `undecodable` case
 
 A stream is `undecodable` — and ONLY a stream is `undecodable` — when it produces **zero decoded

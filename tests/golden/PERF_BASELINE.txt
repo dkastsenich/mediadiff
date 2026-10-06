@@ -108,3 +108,26 @@ leg=x64-linux metric=full_instructions value=344956981 commit=a56dd9b
 # either leg.
 leg=x64-linux metric=audio_plain_instructions value=89344287 commit=e5a1677
 leg=x64-linux metric=audio_full_instructions value=47339403661 commit=e5a1677
+
+# --- PERF-02 (07-12-PLAN.md): video_plain_instructions / video_full_instructions ---
+#
+# STATUS: PROVISIONAL. Both values were measured with `valgrind
+# --tool=cachegrind` (v3.22.0) by `scripts/measure_video_perf.sh
+# --instructions`, inside a throwaway `ubuntu:24.04` container (this
+# workstation lacks valgrind and passwordless root), against the host-built
+# `mediadiff_video_sweep` and the workstation's own copy of the D-16 reference
+# (`timeline_overhead_input_600s_1920x1080_30fps.mp4`, 122914409 bytes), on the
+# BOUNDED SLICE the ratchet gates: the first 1800 video packets, 1800 frames
+# decoded, one decoder thread (D-11). The commit field names the commit that
+# built the measured binary. 07-15-PLAN.md replaces both lines with the
+# designated x64-linux CI leg's own output, exactly as the timeline and audio
+# lines above were transcribed -- CI computes, a human transcribes.
+#
+# `<metric>` is either `video_plain_instructions` (PacketScan alone, video
+# decode disabled -- `Pass::video_decode` never enters the pass union) or
+# `video_full_instructions` (the SAME packet scan, PLUS the fused video decode
+# sweep and every registered analyzer declaring `Pass::video_decode`). The
+# roughly 380x ratio reflects that decoding and analyzing 1080p MPEG-4 is a much
+# larger unit of work than a decode-free packet scan, not a defect in either leg.
+leg=x64-linux metric=video_plain_instructions value=77402404 commit=65089a4
+leg=x64-linux metric=video_full_instructions value=29555396665 commit=65089a4

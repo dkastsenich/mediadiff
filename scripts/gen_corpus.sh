@@ -1521,6 +1521,19 @@ if [ "$PYTHON3_VERSION_OK" != "1" ]; then
   exit 1
 fi
 
+# 07-06-PLAN.md (VIDEO-11): the MPEG-2 closed-caption route. `video_cc_base.m2v`
+# is an ordinary native-encoder MPEG-2 elementary stream (352x288, 50 frames, I
+# and P only, one thread so the bytes do not vary with the runner's CPU count);
+# the Python invocation below inserts an ATSC GA94 user-data unit before the
+# first slice of EVERY picture to make `video_cc_a53.m2v`, so the pair decodes
+# to IDENTICAL pixels and differs in exactly the captions. Only the native
+# `mpeg2video` encoder is used -- never a GPL encoder (the Windows leg's pinned
+# ffmpeg is an LGPL build). The writer's own H.264 I_PCM outputs
+# (`video_pcm_*.h264`) need no encoder at all.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=2" \
+  -c:v mpeg2video -g 12 -bf 0 -b:v 2M -threads 1 -flags +bitexact -fflags +bitexact -f mpeg2video -y \
+  "$OUT_DIR/video_cc_base.m2v"
+
 # One invocation, every hand-constructed fixture's output path passed as an
 # explicit literal $OUT_DIR/<name> token -- the only form
 # scripts/check_corpus.sh's mechanical extraction can see (its own header
@@ -1533,6 +1546,7 @@ python3 tools/gen_video_fixtures.py \
   --h264-open "$OUT_DIR/video_h264_open.h264" \
   --h264-refs1 "$OUT_DIR/video_h264_refs1.h264" \
   --h264-refs4 "$OUT_DIR/video_h264_refs4.h264" \
+  --h264-huge-dims "$OUT_DIR/video_huge_dims.h264" \
   --hevc-idr "$OUT_DIR/video_hevc_idr.hevc" \
   --hevc-cra "$OUT_DIR/video_hevc_cra.hevc" \
   --dovi-carrier "$OUT_DIR/video_base.mp4" \
@@ -1540,7 +1554,18 @@ python3 tools/gen_video_fixtures.py \
   --dovi-b "$OUT_DIR/video_dovi_b.mp4" \
   --dovi-a-copy "$OUT_DIR/video_dovi_a_copy.mp4" \
   --sar-carrier "$OUT_DIR/video_sar_4_3.mp4" \
-  --sar-conflict "$OUT_DIR/video_sar_conflict.mp4"
+  --sar-conflict "$OUT_DIR/video_sar_conflict.mp4" \
+  --pcm-plain "$OUT_DIR/video_pcm_plain.h264" \
+  --pcm-cc "$OUT_DIR/video_pcm_cc.h264" \
+  --pcm-crop "$OUT_DIR/video_pcm_crop.h264" \
+  --pcm-hdr "$OUT_DIR/video_pcm_hdr.h264" \
+  --mpeg2-cc-in "$OUT_DIR/video_cc_base.m2v" \
+  --mpeg2-cc-out "$OUT_DIR/video_cc_a53.m2v"
+
+# 07-06-PLAN.md: video.closed_captions' DOC-03 clean pair -- the captioned
+# stream against its byte-identical copy (the same "prove nothing changed"
+# shape every *_copy.* fixture above follows).
+cp "$OUT_DIR/video_cc_a53.m2v" "$OUT_DIR/video_cc_a53_copy.m2v"
 
 # 04-09-PLAN.md Task 3: video.gop.idr_interval/video.gop.closed/
 # video.gop.refs' own DOC-03 clean pair needs a byte-identical copy of
@@ -2785,4 +2810,379 @@ with open(undecodable_path, 'wb') as fh:
     fh.write(bytes(undecodable_data))
 PYEOF
 
-echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac, audio_stereo_s16.wav, audio_stereo_s24.wav, audio_mono_s16.wav, audio_flt_base.ogg, audio_mp2_base.mpg, audio_51.flac, audio_51_side.flac, audio_prime_base.mp4, audio_prime_roundtrip.mkv, audio_prime_roundtrip2.mp4, audio_prime_copy.ts, audio_prime_multiedit.mp4, audio_prime_fragmented.mp4, audio_corrupt_clean.mp4, audio_corrupt_frames.mp4, audio_undecodable.mp4."
+# --- 07-01-PLAN.md (Phase 7's tracer, content.video.frame_hash) ------------
+# `video_hash_base.mp4`: a 4s 352x288 25 fps MPEG-4 Part 2 payload, VIDEO ONLY
+# (the per-frame hash needs only the picture essence), with B-frames
+# (`-bf 2`, so the decoder's reorder buffer and the end-of-stream drain are
+# really exercised) and a 12-frame GOP. Only `mpeg4`, which is in
+# scripts/install_pinned_ffmpeg.sh's REQUIRED_ENCODERS and is LGPL, so this
+# recipe runs unchanged on the Windows leg's LGPL build. `-threads 1` makes the
+# encoder's slice layout independent of the runner's CPU count (mpeg4 writes
+# one slice per encoder thread), so this fixture's bytes do not vary with the
+# core count -- the pixel-domain claims below never depended on it, but the
+# committed digest line is easier to transcribe honestly when they do not.
+# `video_hash_base_copy.mp4` is a SECOND, independent encoder invocation with
+# byte-identical arguments (idem_a.mp4/idem_b.mp4's own precedent: proves the
+# ENCODER's determinism, never a `cp`) -- the same-recipe clean pair.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=4" \
+  -c:v mpeg4 -q:v 4 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hash_base.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=4" \
+  -c:v mpeg4 -q:v 4 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hash_base_copy.mp4"
+
+# D-05's cross-container proof: `-c copy` stream copies of the SAME encoded
+# MPEG-4 payload into Matroska and MPEG-TS -- no re-encode, so every decoded
+# pixel is identical and any hash difference would be a container artifact.
+# The MPEG-TS muxer shifts every PTS by about 1.4 s, which is exactly why the
+# timestamp is NOT part of the hash. The MPEG-TS copy adds
+# `-bsf:v dump_extra=freq=keyframe`: MPEG-4's VOL header lives only in the
+# MP4's extradata, so without it the TS is not decodable from its first frame
+# (measured with the pinned ffmpeg: "Picture size 0x0 is invalid"). The BSF only
+# REPEATS the header bytes in-band before each keyframe; the decoded pixels
+# are unchanged (verified with `-f framemd5`: the md5 column and the 100-frame
+# count of the .mp4, .mkv and .ts are identical).
+"$FFMPEG_BIN" -i "$OUT_DIR/video_hash_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hash_base.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/video_hash_base.mp4" -c copy -bsf:v dump_extra=freq=keyframe \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hash_base.ts"
+
+# The TRIGGER pair's candidate: the identical recipe at a much coarser
+# quantizer -- a genuinely different picture essence, never a container artifact.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=4" \
+  -c:v mpeg4 -q:v 12 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hash_alt.mp4"
+
+# --- 07-02-PLAN.md Task 1 (content.video.frame_hash edge cases) -------------
+# One fixture per decode edge, each derived from 07-01's `video_hash_base.mp4`
+# so the pixels under test are the ones already proven.
+#
+# D-06: `-ss 0.5 -c copy` (input-side seek) starts the copy at the keyframe at
+# or before 0.5 s (frame 12, 0.48 s) and writes an MP4 edit list that trims the
+# 0.02 s pre-roll; the MP4 demuxer flags that leading packet
+# AV_PKT_FLAG_DISCARD. Measured with the pinned ffmpeg: a default decode of
+# this file yields 87 frames (libavcodec destroys the discarded frame), while
+# its Matroska stream copy -- which keeps no edit list -- decodes 88. The hash
+# keeps every decoded frame, so the trimmed MP4 and its MKV remux must agree.
+"$FFMPEG_BIN" -ss 0.5 -i "$OUT_DIR/video_hash_base.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_trim.mp4"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/video_trim.mp4" -c copy -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_trim.mkv"
+
+# Pitfall 12: the base video (stream copy) plus ONE 64x64 red MJPEG picture
+# carried as cover art (`attached_pic`). The MP4 muxer accepts it (confirmed:
+# ffprobe reports stream 1 with the attached_pic disposition). The picture is
+# one packet long and must never be decoded or hashed as "the video". The
+# one-second, one-frame `color` source (rate=1) is what bounds the picture to a
+# single packet: adding `-frames:v:1 1` instead makes ffmpeg put the streams in
+# one sync queue and end the stream-copied video at that frame's timestamp
+# (measured: 25 packets of the 100, not all of them).
+"$FFMPEG_BIN" -i "$OUT_DIR/video_hash_base.mp4" -f lavfi -i "color=c=red:size=64x64:rate=1:duration=1" \
+  -map 0:v -map 1:v -c:v:0 copy -c:v:1 mjpeg -disposition:v:1 attached_pic \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_cover.mp4"
+
+# D-05: a mid-stream resolution change. Two raw MPEG-2 elementary streams of
+# different sizes (352x288, then 320x240, one second each, no B-frames) are
+# joined with `cat` into ONE elementary stream: the decoder meets a second
+# sequence header with a new size and keeps decoding. A raw elementary stream
+# carries no timestamps (Pitfall 11), so this fixture also proves the
+# `timestamps: unusable` shape. The two halves are written to a temporary
+# directory (never under `$OUT_DIR`, so check_corpus.sh does not expect them)
+# and removed. The decoder itself emits 49 frames for the 50
+# packets (24 + 25: libavcodec drops the last frame of the first sequence at
+# the size change; `ffprobe -show_frames` reports the same 24 + 25), which the
+# test records as its oracle.
+GEOM_TMP_DIR="$(mktemp -d)"
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -c:v mpeg2video -g 12 -bf 0 -threads 1 -flags +bitexact -fflags +bitexact -f mpeg2video -y \
+  "$GEOM_TMP_DIR/part1.m2v"
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=1" \
+  -c:v mpeg2video -g 12 -bf 0 -threads 1 -flags +bitexact -fflags +bitexact -f mpeg2video -y \
+  "$GEOM_TMP_DIR/part2.m2v"
+cat "$GEOM_TMP_DIR/part1.m2v" "$GEOM_TMP_DIR/part2.m2v" > "$OUT_DIR/video_geom_change.m2v"
+rm -rf "$GEOM_TMP_DIR"
+
+# VIDEO-03: a resolution change BETWEEN two files is video.resolution's
+# finding, not a second one from the hash: the identical recipe at 320x240.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg4 -q:v 4 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_hash_small.mp4"
+
+# --- 07-02-PLAN.md Task 2 (decode errors and hostile-input bounds) ----------
+# `video_corrupt_mpeg4_base.mkv`: an intra-light (`-g 25`, no B-frames) 4 s MPEG-4
+# payload in Matroska. `video_corrupt_mpeg4.mkv` is a stream copy of it with ONE
+# packet damaged by the `noise` bitstream filter: `amount` is an expression
+# evaluated PER PACKET (its default would corrupt every packet), so it is 0 for
+# every packet except packet 40. Amount 50 was measured (07-02, on the x86
+# bytes only; the amount in use now is the CROSS-ARCHITECTURE note below) with
+# the pinned ffmpeg to make libavcodec's mpeg4 decoder reject that packet ("header damaged",
+# AVERROR_INVALIDDATA: a negative send return, 99 of 100 frames decoded); a
+# smaller damage would be concealed silently and count as nothing, and 500
+# reaches the corrupt-frame flag instead ("ac-tex damaged"). The filter's noise
+# is a deterministic function of the packet bytes, so the output is identical
+# on every run (two runs were compared). Only the damaged packet differs from
+# the base (`-c copy -f framemd5` of both: one line of 100).
+#
+# CROSS-ARCHITECTURE (07-15, CI run 36928305270): the fixtures are NOT byte-equal
+# across legs -- even the lossless HuffYUV twin video_loc_huffyuv.mkv hashes
+# differently on arm64-linux and on x64-osx than on x64-linux, so the difference
+# is upstream of any lossy encoder (the generator's own frames) and no ffmpeg flag
+# such as `-cpuflags 0` can remove it. The `noise` BSF's damage is a chaotic
+# function of the packet's own bytes, and whether a damaged MPEG-4 packet is
+# REJECTED ("header damaged": 99 frames) or CONCEALED (100 frames) flips with the
+# exact damage: the amount-50 damage that was rejected on the x86 bytes was
+# concealed on arm64-linux (100 frames, no `first_error_reason`) and three tests
+# failed there. A literal amount tuned on one machine's bytes is therefore wrong
+# by construction, and the damage is chosen so the OUTCOME holds on any bytes:
+# amount 1 makes `state % 1 == 0` hold for every byte, so the whole packet is
+# overwritten with the BSF's running-state noise, which contains no VOP start code
+# and is rejected on every input (measured with the pinned 9.0.1: 99 frames,
+# frame 40 absent, frames 41-49 differing from the base and the I-frame at 50
+# re-syncing, on 51 different MPEG-4 encodes of this recipe -- q:v 2..8, five
+# frame sizes, SIMD and `-cpuflags 0` -- 51 of 51; the literal 30 gave 6 of 16).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v mpeg4 -bf 0 -g 25 -q:v 4 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_corrupt_mpeg4_base.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/video_corrupt_mpeg4_base.mkv" -c copy \
+  -bsf:v "noise=amount='if(eq(n\,40)\,1\,0)'" -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_corrupt_mpeg4.mkv"
+
+# --- 07-03-PLAN.md Task 2 (CONTENT-02, D-07: the time-aligned frame locator) ---
+# `video_loc_huffyuv.mkv`: a 4 s (100 frame) intra-only HuffYUV stream, so one
+# damaged packet changes exactly one decoded frame and nothing propagates. The
+# four variants are `-c copy` of it through the `noise` bitstream filter, whose
+# `amount` is an expression evaluated PER PACKET (its default would corrupt
+# every packet), so it is 0 for every packet but the named ones; `drop` removes
+# the named packet outright and leaves its 40 ms gap in the timestamps (the
+# dropped-frame case the locator must report as "missing", not as "everything
+# after frame 40 differs"). Amount 50 was measured with the pinned ffmpeg to
+# decode without error and change only the damaged frame: `-c copy -f framemd5`
+# of each variant against the base differs on exactly the intended lines
+# (c40: line 40; c40_42: lines 40 and 42; c40_43: lines 40 and 43; drop40: 99
+# lines, none differing from the base's except the missing one, so every later
+# frame keeps its PTS). The noise is a deterministic function of the packet
+# bytes, so the output is identical on every run. Encoders and filters are
+# LGPL-only (`huffyuv`, `testsrc2`, the `noise` BSF).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=25:duration=4" \
+  -c:v huffyuv -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_loc_huffyuv.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/video_loc_huffyuv.mkv" -c copy \
+  -bsf:v "noise=amount='if(eq(n\,40)\,50\,0)'" -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_loc_huffyuv_c40.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/video_loc_huffyuv.mkv" -c copy \
+  -bsf:v "noise=amount='if(eq(n\,40)+eq(n\,42)\,50\,0)'" -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_loc_huffyuv_c40_42.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/video_loc_huffyuv.mkv" -c copy \
+  -bsf:v "noise=amount='if(eq(n\,40)+eq(n\,43)\,50\,0)'" -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_loc_huffyuv_c40_43.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/video_loc_huffyuv.mkv" -c copy \
+  -bsf:v "noise=drop='eq(n\,40)':amount=0" -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_loc_huffyuv_drop40.mkv"
+
+# `video_loc_mpeg4_c40.mkv`: the MPEG-4 propagation proof. The same packet 40 of
+# 07-02's `video_corrupt_mpeg4_base.mkv` (`-g 25`, no B-frames) damaged by the
+# `noise` BSF, but concealed rather than rejected (07-03 used amount 200 against
+# 07-02's 50; the amounts in use are the CROSS-ARCHITECTURE notes). Measured with
+# the pinned ffmpeg: a rejected packet 40 (99 frames out, so the locator reports
+# frame 40 missing and 41-49 differing, which is what `video_corrupt_mpeg4.mkv`
+# shows), while the concealed one is decoded:
+# all 100 frames come out and `-f framemd5` against the base differs on exactly
+# frames 40-49, because the damage propagates through the P-frames to the next
+# I-frame at 50. Deterministic on every run (two runs compared).
+#
+# CROSS-ARCHITECTURE (07-15): the damage is chosen so the CONCEALED outcome holds on
+# any bytes, not on one machine's. A literal amount N alters about size/N bytes at
+# chaotic positions, and a hit on the VOP header makes the decoder reject the
+# packet instead (a literal 200 was concealed on three byte sets and rejected on a
+# fourth, 209, 190 and others likewise on the C-path base). `size` is the packet's
+# byte count, so `size/5` alters about five bytes whatever the encoder produced:
+# few enough to leave the header alone, enough to always damage the picture.
+# Measured with the pinned 9.0.1 on 51 different MPEG-4 encodes of the base recipe
+# (q:v 2..8, five frame sizes, SIMD and `-cpuflags 0`): 51 of 51 decode 100 frames
+# and differ from their own base on exactly frames 40-49. (size/4: 34 of 35;
+# size/6 and size/8: 50 of 51; size/2: 10 of 16, the rest altering nothing at all.)
+"$FFMPEG_BIN" -i "$OUT_DIR/video_corrupt_mpeg4_base.mkv" -c copy \
+  -bsf:v "noise=amount='if(eq(n\,40)\,size/5\,0)'" -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_loc_mpeg4_c40.mkv"
+
+# --- 07-05-PLAN.md Task 2 (CONTENT-06: content.video.frozen_runs / black_runs) ---
+# Every recipe here uses only encoders in scripts/install_pinned_ffmpeg.sh's
+# REQUIRED_ENCODERS (`mpeg4`, `mjpeg`) and filters with no GPL dependency
+# (`testsrc2`, `color`, `split`, `freezeframes`, `concat`, `format`, `scale`,
+# `lutyuv`, `setrange`; checked against the n8.1 configure: `blackframe` is
+# `blackframe_filter_deps="gpl"` and is deliberately NOT used), so the Windows
+# leg's LGPL ffmpeg runs them unchanged. The mpeg4 encodes keep `-threads 1`
+# (one slice per encoder thread would make the bytes vary with the runner's CPU
+# count).
+#
+# FROZEN. One 150-frame (6 s, 25 fps) `testsrc2` source with frames 51..100
+# replaced by frame 51 (`freezeframes`), so the truth is exactly one frozen run
+# over decode frames 51..100, i.e. [2040 ms, 4040 ms). Encoded three ways that
+# research Q5 measured to fragment under exact hash equality: MPEG-4 with
+# B-frames (`-bf 2`), MPEG-4 without (`-bf 0`), and intra-only MJPEG. The
+# detector must report the SAME span for all three (SSIM hysteresis, not hash
+# equality). `video_frozen_base.mp4` is the same source with no freeze.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen_base.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -filter_complex "[0:v]split[a][b];[a][b]freezeframes=first=51:last=100:replace=51[v]" -map "[v]" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -filter_complex "[0:v]split[a][b];[a][b]freezeframes=first=51:last=100:replace=51[v]" -map "[v]" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 0 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen_bf0.mp4"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -filter_complex "[0:v]split[a][b];[a][b]freezeframes=first=51:last=100:replace=51[v]" -map "[v]" \
+  -c:v mjpeg -q:v 3 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen_mjpeg.mkv"
+
+# Two more containers of the same freeze, for the two timing paths an MP4 never
+# exercises. `video_frozen.ts` is a stream copy (no re-encode, so every decoded
+# pixel equals `video_frozen.mp4`'s) into MPEG-TS: the muxer shifts every PTS by
+# about 1.4 s and declares no frame rate at open, so the span must come out
+# relative to the first frame and the interval from the stream's own timestamp
+# step (`-bsf:v dump_extra` repeats the MPEG-4 VOL header in-band, exactly as
+# `video_hash_base.ts` above needs). `video_frozen.m2v` is a raw MPEG-2
+# elementary stream, which carries no timestamps at all, so its span is placed
+# by decode index times the declared frame rate. It is encoded at `-q:v 5`, the
+# same quality as the MPEG-4 recipes: measured, a 1 Mbit/s rate-controlled
+# encode of this CIF clip starts the run ONE frame late (2080 ms), because the
+# pair (51, 52) is coded just below the 0.9995 enter threshold -- the honest
+# resolution of a two-threshold rule on a starved encode, documented in
+# docs/checks/content.video.frozen_runs.md.
+"$FFMPEG_BIN" -i "$OUT_DIR/video_frozen.mp4" -c copy -bsf:v dump_extra=freq=keyframe \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_frozen.ts"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=6" \
+  -filter_complex "[0:v]split[a][b];[a][b]freezeframes=first=51:last=100:replace=51[v]" -map "[v]" \
+  -c:v mpeg2video -g 12 -bf 0 -q:v 5 -threads 1 -flags +bitexact -fflags +bitexact -f mpeg2video -y \
+  "$OUT_DIR/video_frozen.m2v"
+
+# BLACK. Three 1 s segments of 25 frames (testsrc2 / black / testsrc2), so the
+# truth is one black run over decode frames 25..49, i.e. [1000 ms, 2000 ms).
+# `video_black_base` has no black segment (three `testsrc2` segments).
+# `video_black_tv` and `video_black_pc` are the SAME black segment encoded
+# limited-range and full-range: the range conversion happens in `scale=
+# out_range=`, so the black is luma 16 in one and luma 0 in the other, and the
+# range-normalized detector must report the same span for both (research Q5:
+# thumbnail mean 16.0 and 0.0, variance 0 in both). Each branch is brought to
+# yuv420p before `concat`, which needs one format.
+#
+# These are Matroska, not MP4: measured with the pinned ffmpeg, the MP4 muxer
+# DROPS `-color_range` for an MPEG-4 Part 2 stream (the read-back shows plain
+# `yuv420p`), while Matroska's Colour element keeps it (`yuv420p(pc, ...)`), and
+# a full-range label that does not survive the container would make the whole
+# range-normalization proof vacuous.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -filter_complex "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[2:v]format=yuv420p[c];[a][b][c]concat=n=3:v=1:a=0,scale=out_range=tv,format=yuv420p[v]" \
+  -map "[v]" -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range tv \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_black_base.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -f lavfi -i "color=c=black:size=352x288:rate=25:duration=1" \
+  -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -filter_complex "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[2:v]format=yuv420p[c];[a][b][c]concat=n=3:v=1:a=0,scale=out_range=tv,format=yuv420p[v]" \
+  -map "[v]" -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range tv \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_black_tv.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -f lavfi -i "color=c=black:size=352x288:rate=25:duration=1" \
+  -f lavfi -i "testsrc2=size=352x288:rate=25:duration=1" \
+  -filter_complex "[0:v]format=yuv420p[a];[1:v]format=yuv420p[b];[2:v]format=yuv420p[c];[a][b][c]concat=n=3:v=1:a=0,scale=out_range=pc,format=yuv420p[v]" \
+  -map "[v]" -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range pc \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_black_pc.mkv"
+
+# DARK GREY. The dark-grey counter-example to a range-unaware black rule: two
+# seconds of luma 17 (`lutyuv=y=17` on a black yuv420p source, so the pixels are
+# exactly 17, never a colour conversion's 31) that differ ONLY in the label.
+# `setrange` relabels the frames without touching a sample. Labelled full range
+# the picture is dark grey (black point 0, mean 17 > 2) and must NOT be black;
+# labelled limited range the very same pixels are black (black point 16, mean
+# 17 <= 18) and the whole clip must be one black run.
+"$FFMPEG_BIN" -f lavfi -i "color=c=black:size=352x288:rate=25:duration=2" \
+  -vf "format=yuv420p,lutyuv=y=17,setrange=full" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range pc \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_dark_pc.mkv"
+
+"$FFMPEG_BIN" -f lavfi -i "color=c=black:size=352x288:rate=25:duration=2" \
+  -vf "format=yuv420p,lutyuv=y=17,setrange=limited" \
+  -c:v mpeg4 -q:v 5 -g 12 -bf 2 -threads 1 -color_range tv \
+  -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_dark_tv.mkv"
+
+# --- 07-08-PLAN.md (CONTENT-04, content.video.perceptual) --------------------
+# `video_perc_degraded.mp4` is 07-01's `video_hash_base.mp4` recipe (4 s,
+# 352x288, 25 fps, `testsrc2`, `-g 12 -bf 2`) with the picture first reduced to
+# 88x72 and scaled back up, then encoded at the very coarse `-q:v 31`: the detail
+# is really gone, not merely re-quantized. Measured with the pinned ffmpeg, the
+# 128-wide thumbnail SSIM against `video_hash_base.mp4` bottoms out at 0.926
+# (every frame is below 0.985 or close to it), whereas `video_hash_alt.mp4` --
+# the same source at `-q:v 12` -- never drops below 0.995, because the
+# thumbnail's averaging hides plain re-quantization. The two scale steps carry
+# `accurate_rnd+bitexact` so the swscale filter's SIMD and C kernels agree and
+# the bytes do not depend on the runner's CPU. Only `mpeg4` (LGPL, in
+# scripts/install_pinned_ffmpeg.sh's REQUIRED_ENCODERS) and `scale` are used;
+# `-threads 1` keeps the slice layout independent of the core count.
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=352x288:rate=25:duration=4" \
+  -vf "scale=88:72:flags=area+accurate_rnd+bitexact,scale=352:288:flags=bicubic+accurate_rnd+bitexact" \
+  -c:v mpeg4 -q:v 31 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_perc_degraded.mp4"
+
+# `video_perc_upscaled.mp4`: the SAME picture at twice the size (704x576), a
+# bicubic upscale of `video_hash_base.mp4` encoded near-losslessly (`-q:v 2`).
+# Both sizes thumbnail to 128x104 (the 128-wide rule gives the same height for
+# 352x288 and 704x576), so they score against each other across resolutions
+# (07-CONTEXT.md, cross-resolution discretion); measured minimum 0.9988.
+# `video_hash_small.mp4` (320x240, thumbnail height 96) is the geometry-mismatch
+# partner.
+"$FFMPEG_BIN" -i "$OUT_DIR/video_hash_base.mp4" \
+  -vf "scale=704:576:flags=bicubic+accurate_rnd+bitexact" \
+  -c:v mpeg4 -q:v 2 -g 12 -bf 2 -threads 1 -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_perc_upscaled.mp4"
+
+# --- 07-09-PLAN.md Task 2 (CONTENT-05, D-02: rate change pairs by time) -------
+# `video_perc_60.mkv`: a 3 s (180 frame) 60 fps HuffYUV stream, and
+# `video_perc_30.mkv`: its 30 fps decimation, every second frame kept and
+# retimed to 1/30 s steps. A 60 fps baseline scored against it pairs only the
+# coinciding frames (90 pairs, 90 unpaired baseline frames), and because the 30
+# fps frames ARE the 60 fps frames, the minimum score is exactly 1000000.
+# Verified with the pinned ffmpeg: `-f framemd5` of video_perc_30.mkv equals
+# the framemd5 of every EVEN-indexed frame of video_perc_60.mkv (90 of 90
+# lines). The decimation uses `select` + `setpts` rather than the `fps` filter
+# the plan named: fed Matroska's 1 ms timestamps, `fps=30` rounds to the
+# NEIGHBOURING frame at some ticks (it kept 60 fps frames 0 2 5 6 8 11 12 ...),
+# so its output is not a pure decimation and would score below 1000000. Only
+# `huffyuv`, `testsrc2`, `select` and `setpts` are used (no filter or encoder
+# gated on --enable-gpl, so the Windows leg's LGPL ffmpeg builds them too).
+"$FFMPEG_BIN" -f lavfi -i "testsrc2=size=320x240:rate=60:duration=3" \
+  -c:v huffyuv -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_perc_60.mkv"
+
+"$FFMPEG_BIN" -i "$OUT_DIR/video_perc_60.mkv" \
+  -vf "select=not(mod(n\,2)),setpts=N/(30*TB)" -r 30 \
+  -c:v huffyuv -flags +bitexact -fflags +bitexact -y \
+  "$OUT_DIR/video_perc_30.mkv"
+
+echo "gen_corpus: manifest written to ${MANIFEST}. Generated tracer_a.mp4, tracer_a_copy.mp4, tracer_a.mkv, tracer_empty.mp4, idem_a.mp4, idem_b.mp4, topo_subs.mp4, topo_subs_copy.mp4, topo_nosubs.mp4, topo_type_order_a.mp4, topo_type_order_b.mp4, topo_order_a.mp4, topo_order_b.mp4, topo_tmcd.mp4, topo_notmcd.mp4, topo_chapters.mkv, topo_nochapters.mkv, topo_ts.ts, tags_volatile_a.mp4, tags_volatile_b.mp4, tags_title_a.mp4, tags_title_b.mp4, tags_stream_title_a.mp4, tags_stream_title_b.mp4, tags_esc_a.mp4, tags_esc_b.mp4, lang_und.mp4, lang_absent.mp4, lang_eng.mp4, lang_fra.mp4, mp4_faststart.mp4, mp4_faststart_copy.mp4, mp4_nofaststart.mp4, mp4_fragmented.mp4, mp4_fragmented_close.mp4, mp4_fragmented_far.mp4, mp4_editdelay.mp4, mp4_edittrim.mp4, mp4_ts_a.mp4, mp4_ts_b.mp4, mkv_cues_front.mkv, mkv_cues_front_copy.mkv, mkv_cues_end.mkv, mkv_noopus.mkv, mkv_opus_a.webm, mkv_opus_b.webm, mkv_tscale_a.mkv, mkv_tscale_b.mkv, mkv_noduration.mkv, ts_single.ts, ts_single_copy.ts, ts_204.ts, ts_192.ts, ts_multiprogram.ts, ts_ccgap.ts, ts_pcr_close_a.ts, ts_pcr_close_b.ts, ts_pcr_far_a.ts, ts_pcr_far_b.ts, ts_single_pcr.ts, ts_nullratio_a.ts, ts_nullratio_b.ts, ts_discontinuity.ts, ts_multiprogram_reordered.ts, ts_multiprogram_renumbered.ts, size_crf20.mp4, size_crf20_copy.mp4, size_crf23.mp4, size_near_a.mp4, size_near_b.mp4, size_peak_singlepass.mp4, size_peak_vbv.mp4, size_bitrate_a.mp4, size_bitrate_b.mp4, size_short.mp4, size_muxrate_a.ts, size_muxrate_b.ts, size_partial.mp4, video_gop_g48.mp4, video_gop_g48_copy.mp4, video_gop_g96.mp4, video_base.mp4, video_base_copy.mp4, video_codec_mpeg2.mp4, video_prof_a.mp4, video_prof_b.mp4, video_res_640.mp4, video_frames_50.mp4, video_sar_4_3.mp4, video_fps_30.mp4, video_vfr.mp4, video_bf3.mp4, video_noparser.mkv, video_noparser_copy.mkv, video_yuvj420p.mp4, video_yuv420p_pc.mp4, video_yuv420p_tv.mp4, video_color_bt709.mp4, video_color_bt601.mp4, video_color_unspec.mp4, video_range_pc.mp4, video_color_bt709_copy.mp4, video_chroma_left.mkv, video_chroma_center.mkv, video_ilace_tff.mp4, video_ilace_tff_copy.mp4, video_ilace_bff.mp4, video_ilace_mixed.mp4, video_hdr_a.mp4, video_hdr_a_copy.mp4, video_hdr_lum_b.mp4, video_hdr_prim_b.mp4, video_hdr_cll_b.mp4, video_hdr_none.mp4, video_hdr_coherent.mp4, video_hdr_coherent_copy.mp4, video_hdr_pq_nomdcv.mp4, video_hdr_sdr_mdcv.mp4, video_hdr_sdr_mdcv_copy.mp4, video_h264_closed.h264, video_h264_idr48.h264, video_h264_open.h264, video_h264_refs1.h264, video_h264_refs4.h264, video_h264_closed_copy.h264, video_hevc_idr.hevc, video_hevc_cra.hevc, video_dovi_a.mp4, video_dovi_b.mp4, video_dovi_a_copy.mp4, video_sar_conflict.mp4, video_hdr_hlg_nomdcv.mp4, timeline_start_base.mp4, timeline_start_base_copy.mp4, timeline_start_shift.ts, timeline_duration_short.mp4, timeline_ntsc_base.mp4, timeline_ntsc_remux.mkv, timeline_pts_dupe.mp4, timeline_dts_backward.ts, timeline_gap.mp4, timeline_ts_wrap.ts, timeline_ts_nowrap.ts, timeline_ts_nowrap_copy.ts, timeline_ts_jump.ts, timeline_ts_jump_flagged.ts, timeline_jitter.mp4, timeline_vfr.mp4, timeline_avoffset_video_shift.mp4, timeline_avoffset_unknown.ts, timeline_drift_linear.mp4, timeline_drift_base.mp4, timeline_drift_step.mp4, timeline_tc_ndf.mp4, timeline_tc_ndf_copy.mp4, timeline_tc_ndf_shifted.mp4, timeline_tc_absent.mp4, timeline_tc_df.mp4, audio_hash_base.mp4, audio_hash_base_copy.mp4, audio_hash_base.mkv, audio_hash_base.ts, audio_hash_alt.mp4, audio_pcm_base.wav, audio_pcm_base.mov, audio_pcm_flac_small.mkv, audio_pcm_flac_large.mkv, audio_sbr_explicit.mp4, audio_sbr_implicit.mp4, audio_sbr_explicit_copy.mp4, audio_aac_handwritten.mp4, audio_aac_handwritten_copy.mp4, audio_loud_ref.flac, audio_loud_ref_copy.flac, audio_loud_plus3.flac, audio_loud_floor.flac, audio_peak_under.flac, audio_peak_over.flac, audio_silence_none.flac, audio_silence_lead.flac, audio_silence_trail.flac, audio_dropout.flac, audio_dropout_clean.flac, audio_stereo_s16.wav, audio_stereo_s24.wav, audio_mono_s16.wav, audio_flt_base.ogg, audio_mp2_base.mpg, audio_51.flac, audio_51_side.flac, audio_prime_base.mp4, audio_prime_roundtrip.mkv, audio_prime_roundtrip2.mp4, audio_prime_copy.ts, audio_prime_multiedit.mp4, audio_prime_fragmented.mp4, audio_corrupt_clean.mp4, audio_corrupt_frames.mp4, audio_undecodable.mp4, video_hash_base.mp4, video_hash_base_copy.mp4, video_hash_base.mkv, video_hash_base.ts, video_hash_alt.mp4, video_trim.mp4, video_trim.mkv, video_cover.mp4, video_geom_change.m2v, video_hash_small.mp4, video_corrupt_mpeg4_base.mkv, video_corrupt_mpeg4.mkv, video_huge_dims.h264, video_loc_huffyuv.mkv, video_loc_huffyuv_c40.mkv, video_loc_huffyuv_c40_42.mkv, video_loc_huffyuv_c40_43.mkv, video_loc_huffyuv_drop40.mkv, video_loc_mpeg4_c40.mkv, video_frozen_base.mp4, video_frozen.mp4, video_frozen_bf0.mp4, video_frozen_mjpeg.mkv, video_frozen.ts, video_frozen.m2v, video_black_base.mkv, video_black_tv.mkv, video_black_pc.mkv, video_dark_pc.mkv, video_dark_tv.mkv, video_cc_base.m2v, video_cc_a53.m2v, video_cc_a53_copy.m2v, video_pcm_plain.h264, video_pcm_cc.h264, video_pcm_crop.h264, video_pcm_hdr.h264, video_perc_degraded.mp4, video_perc_upscaled.mp4, video_perc_60.mkv, video_perc_30.mkv."

@@ -1,5 +1,6 @@
 #include "compare/semantics.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -7,6 +8,7 @@
 #include <variant>
 
 #include <fmt/format.h>
+#include <nlohmann/json.hpp>
 
 #include "analyzers/audio/analyzers.h"
 #include "analyzers/timeline/analyzers.h"
@@ -58,6 +60,39 @@ std::optional<Magnitude> extract_magnitude(const Value& value) {
 // (core/exact_int.h's detail::ExactInt).
 constexpr std::int64_t kEstimatedToleranceFactor = 3;
 
+// 07-09-PLAN.md (TRUST-04, D-04): the `tol` analogue of compare_hash's
+// kPreconditionKeys. A two-file score (content.video.perceptual's, written by
+// probe/lockstep.cpp) is only a fair comparison when both sides were produced
+// by the same scaler and the same decode path, so those two evidence keys are
+// preconditions: a value that differs between the sides -- or a key carried by
+// only one side, never assumed to match its absence -- makes the pair
+// `skipped:path_incomparable`, even when the two magnitudes happen to sit
+// within tolerance (a coincidental match under different paths cannot be
+// trusted). The table is evidence-driven and names no check id, so a check
+// whose evidence carries neither key (every timeline, audio and meta `tol`
+// check) never reaches the branch. D-04 compares BUILD-level paths, never
+// codecs: neither key names the decoder, so an H.264 baseline against an HEVC
+// candidate from the same build still scores.
+constexpr std::array<std::string_view, 2> kTolPreconditionKeys = {"scaler_path", "decode_path_signature"};
+
+// The name of the first kTolPreconditionKeys entry that disagrees between the
+// two evidence objects, or an empty string when every key present on either
+// side agrees. Same one-sided rule as compare_hash's first_precondition_mismatch.
+std::string first_tol_precondition_mismatch(const nlohmann::ordered_json& baseline_evidence,
+                                             const nlohmann::ordered_json& candidate_evidence) {
+  for (std::string_view key : kTolPreconditionKeys) {
+    const bool baseline_has = baseline_evidence.contains(key);
+    const bool candidate_has = candidate_evidence.contains(key);
+    if (baseline_has != candidate_has) {
+      return std::string(key);
+    }
+    if (baseline_has && baseline_evidence.at(key) != candidate_evidence.at(key)) {
+      return std::string(key);
+    }
+  }
+  return "";
+}
+
 }  // namespace
 
 // compare_tol: doc 01 section 3's `±tol` semantic. This engine layer has
@@ -88,6 +123,20 @@ mediadiff::expected<Finding, Error> compare_tol(const CheckDef& check, const Mea
   auto tolerance = parse_tolerance(check.tolerance_for(policy.profile), check.unit);
   if (!tolerance) {
     return mediadiff::unexpected(tolerance.error());
+  }
+
+  // 07-09-PLAN.md (TRUST-04, D-04): checked after the tolerance parse and
+  // before any magnitude work -- a pair scored under different decode or
+  // scaler paths is incomparable whatever its magnitudes read.
+  const std::string mismatched_key = first_tol_precondition_mismatch(baseline.evidence, candidate.evidence);
+  if (!mismatched_key.empty()) {
+    finding.status = Status::skipped;
+    finding.skip_reason = SkipReason::path_incomparable;
+    finding.message = fmt::format(
+        "'{}' precondition differs between baseline and candidate -- the two scores came from different decode or "
+        "scaler paths (D-04); re-run both sides with the same build and scaler settings",
+        mismatched_key);
+    return finding;
   }
 
   auto baseline_mag = extract_magnitude(baseline.value);

@@ -24,7 +24,10 @@
 // src/analyzers/video/gop.cpp and stream_params.cpp for the two files in
 // this cohort where it still measurably fires.
 #include "probe/demux_session.h"
+#include "probe/hdr_static.h"
+#include "probe/packet_scan.h"
 #include "probe/pass.h"
+#include "probe/video_decode.h"
 
 // video.hdr.mdcv/video.hdr.mdcv.luminance/video.hdr.mdcv.primaries/
 // video.hdr.cll/video.hdr.cll.max/video.hdr.cll.avg (04-11-PLAN.md,
@@ -42,13 +45,18 @@
 //
 // D-08's precedence seam: VIDEO-09 names TWO sources in order -- stream-
 // level coded_side_data first, first-frame side data second, recording
-// which fired. Only the first can exist in this phase (a decode pass would
-// be needed to reach frame side data); the second arm is declared here
-// (resolve_hdr_source's own `requires_decode` branch), named and reachable,
-// but wired by nothing until Phase 7 fills it -- a later phase completes a
-// declared branch rather than reshaping a check whose `source` evidence
-// field has already reached committed snapshots and the --json contract
-// (D-08's own reversibility rating: costly).
+// which fired. 04-11 wired the first and declared the second as
+// resolve_hdr_source's `requires_decode` branch; 07-07-PLAN.md completes it:
+// the video decode sweep (probe/video_decode.cpp) reads the FIRST decoded
+// frame's mastering-display and content-light side data through the same
+// guarded helpers the stream arm uses (probe/hdr_static.h), and this file
+// reports it with evidence `source: "frame"`. Stream-level metadata keeps
+// precedence (libavcodec maps a container's entries onto every frame, so a
+// stream-level hit is never re-read from a frame), which is why every
+// pre-existing fixture's `source: "stream"` output is byte-identical. The arm
+// is evidence, never part of a measurement's identity: (check id, scope) is
+// unchanged, so a file whose metadata moves from the bitstream into the
+// container on remux compares equal values from different sources.
 //
 // video.hdr.dovi/video.hdr.dovi.config (04-12-PLAN.md, VIDEO-09's third
 // family): the Dolby Vision configuration record, read from the SAME
@@ -57,6 +65,10 @@
 // codec-capability decision. v1 compares the configuration record only;
 // per-frame RPU diffing is out of scope (04-CONTEXT.md's own Deferred
 // Ideas), stated here in code rather than only in a planning document.
+// 07-07-PLAN.md: Dolby Vision is also OUT of the first-frame arm -- it is a
+// configuration record, not per-frame static metadata, so video.hdr.dovi stays
+// stream-level only and keeps its own (hevc, av1) classification through
+// detail::could_carry_frame_level_dovi, never the widened HDR10 table.
 //
 // video.hdr.coherence (04-12-PLAN.md, VIDEO-10, D-10): reads the transfer
 // characteristic from the SAME codecpar field video.color.transfer reports
@@ -141,7 +153,18 @@ nlohmann::ordered_json rational_json(std::int64_t num, std::int64_t den) {
 
 namespace detail {
 
-bool could_carry_frame_level_hdr(const std::string& codec_name) { return codec_name == "hevc" || codec_name == "av1"; }
+// 07-07-PLAN.md (07-RESEARCH.md Q7): H.264 joins HEVC and AV1 -- libavcodec's
+// H.264 and HEVC decoders share h2645_sei.c's mastering-display and
+// content-light export, so an H.264 bitstream SEI reaches frame side data.
+bool could_carry_frame_level_hdr(const std::string& codec_name) {
+  return codec_name == "hevc" || codec_name == "av1" || codec_name == "h264";
+}
+
+// video.hdr.dovi's own (unchanged) classification: the pre-07-07 table. The
+// Dolby Vision record has no first-frame arm, so widening it with H.264 would
+// turn every H.264 stream's dovi absence into a permanent, unfixable
+// skipped:requires_decode.
+bool could_carry_frame_level_dovi(const std::string& codec_name) { return codec_name == "hevc" || codec_name == "av1"; }
 
 // The chromaticity/white-point quantisation grid (04-CHECK-ROSTER.md, doc
 // 03 section 4): 0.0002 absolute tolerance, expressed as a denominator of
@@ -201,92 +224,357 @@ bool dovi_payload_too_short(std::int64_t reported_size) { return reported_size <
 
 namespace {
 
-// The shared per-family "nothing extracted here" classification (D-08's
-// precedence seam, reused IDENTICALLY by the mastering-display and
-// content-light families per this plan's own Task 2 instruction: "a
-// duplicated codec-capability table would drift the moment one of the two
-// is updated"). `stream_present` is the ONE extraction arm this phase can
-// wire (StreamInfo::mdcv_present/cll_present, resolved once by
-// DemuxSession::stream_info). The second arm (first-frame side data, Phase
-// 7) is declared as the `requires_decode` branch below -- named, reachable,
-// wired by nothing today.
+// The shared per-family "where did this stream's value come from, or why is
+// there none" classification (D-08's precedence seam, reused IDENTICALLY by
+// the mastering-display and content-light families: "a duplicated
+// codec-capability table would drift the moment one of the two is updated").
+// Resolution per family, in this order:
+//   1. stream-level coded_side_data has the entry          -> stream
+//   2. the codec cannot carry frame-level metadata         -> not_applicable
+//   3. no decode slot, or the stream was not decoded       -> requires_decode
+//   4. decode ran but no first frame was read              -> partial_scan or
+//      insufficient_data (below)
+//   5. the first decoded frame carries the entry           -> frame
+//   6. the first frame was read and carries nothing        -> observed_absent
 enum class HdrSourceKind : std::uint8_t {
   // Arm 1 fired: codecpar->coded_side_data had the entry.
   stream,
-  // Arm 1 empty; this codec COULD carry frame-level HDR metadata (HEVC/
-  // AV1) -- arm 2 (Phase 7) would need a decode pass this phase does not
-  // have. `SkipReason::requires_decode` is this project's own existing
-  // vocabulary for exactly this situation (declared, unused, by Phase 3).
+  // Arm 2 fired (07-07-PLAN.md): the first decoded frame's side data had it.
+  frame,
+  // Arm 1 empty; this codec COULD carry frame-level HDR metadata (HEVC, AV1,
+  // H.264) but no decode result is available (`--no-content`, or this stream
+  // was not attempted). `SkipReason::requires_decode` is this project's own
+  // vocabulary for exactly this situation.
   requires_decode,
   // Arm 1 empty; this codec structurally CANNOT carry frame-level metadata
   // either (mpeg4, mpeg2video) -- a real, permanent absence, never a skip.
   not_applicable,
+  // Arm 1 empty, the decode pass read the first frame, and it carried neither
+  // entry: a REAL absence (`Absent{}`, no skip reason) -- a value never depends
+  // on which passes ran, only on whether it could be measured (Phase 6 D-12).
+  observed_absent,
+  // The decode ran but never reached a first frame because it was cut short
+  // (a truncated decode or packet scan) or the stream could not be decoded:
+  // "could not be measured", never a fabricated absence.
+  partial_scan,
+  // The decode completed without error and produced zero frames: nothing to
+  // read a first frame from (07-05/07-06's `insufficient_data` convention).
+  insufficient_data,
 };
 
-HdrSourceKind resolve_hdr_source(bool stream_present, const std::string& codec_name) {
-  if (stream_present) {
-    return HdrSourceKind::stream;
+// What the decode sweep said about one stream's FIRST frame (arm 2's input).
+struct FrameArm {
+  enum class State : std::uint8_t {
+    // No decode result for this stream (`--no-content`, or not attempted).
+    unavailable,
+    // Decoded, but no first frame was read (see HdrSourceKind::partial_scan).
+    partial_scan,
+    // Decoded to a clean end with zero frames.
+    insufficient_data,
+    // The first frame was read; `meta` holds what it carried (maybe nothing).
+    first_frame_read,
+  };
+  State state = State::unavailable;
+  HdrStaticMetadata meta;
+  // Why the state is partial_scan / insufficient_data, for evidence.
+  std::string reason;
+  std::string truncation_reason;
+};
+
+FrameArm resolve_frame_arm(const ProbeResults& results, std::size_t stream_index) {
+  FrameArm arm;
+  if (!results.video_decode.has_value() || stream_index >= results.video_decode->per_stream.size()) {
+    return arm;
   }
-  return detail::could_carry_frame_level_hdr(codec_name) ? HdrSourceKind::requires_decode
-                                                            : HdrSourceKind::not_applicable;
+  const StreamVideoDecode& decode = results.video_decode->per_stream[stream_index];
+  // A packet scan that stopped early: the whole-result flag covers a read error
+  // (which marks no individual stream), the per-stream one a packet ceiling.
+  const bool scan_partial = results.packet_scan.has_value() &&
+                            (results.packet_scan->partial || (stream_index < results.packet_scan->per_stream.size() &&
+                                                              results.packet_scan->per_stream[stream_index].partial));
+  if (!decode.attempted) {
+    // Not attempted for a reason of its own (cover art, no decoder in this
+    // build, an oversize stream) leaves the pre-07-07 `requires_decode`. A
+    // stream the sweep simply never reached -- its scan was cut short before
+    // its first packet -- is a truncated scan, named as one.
+    if (scan_partial && !decode.attached_picture && decode.fallback_reason.empty()) {
+      arm.state = FrameArm::State::partial_scan;
+      arm.reason = "packet_scan_partial";
+    }
+    return arm;
+  }
+  // An undecodable stream (zero frames, at least one error) has nothing a
+  // frame arm could honestly report.
+  if (decode.undecodable) {
+    arm.state = FrameArm::State::partial_scan;
+    arm.reason = "undecodable";
+    return arm;
+  }
+  // A first frame that was read stays valid however the decode ended later
+  // (D-08: the arm reads frame 0 only, whatever `--sample N` is).
+  if (decode.first_frame_hdr.has_value()) {
+    arm.state = FrameArm::State::first_frame_read;
+    arm.meta = *decode.first_frame_hdr;
+    return arm;
+  }
+  // No first frame: cut short (a truncated decode, or a packet scan that
+  // stopped early before any frame came out) is partial_scan; a complete decode
+  // that simply produced nothing is insufficient_data.
+  if (decode.decode_truncated || scan_partial) {
+    arm.state = FrameArm::State::partial_scan;
+    arm.reason = decode.decode_truncated ? "decode_truncated" : "packet_scan_partial";
+    arm.truncation_reason = decode.decode_truncation_reason;
+    return arm;
+  }
+  arm.state = FrameArm::State::insufficient_data;
+  arm.reason = "no_decoded_frames";
+  return arm;
 }
 
-HdrSourceKind resolve_mdcv_source(const StreamInfo& info) { return resolve_hdr_source(info.mdcv_present, info.codec_name); }
+// One family's resolved source plus the metadata that source points at.
+struct HdrResolution {
+  HdrSourceKind source = HdrSourceKind::not_applicable;
+  HdrStaticMetadata meta;
+  FrameArm arm;
+};
 
-HdrSourceKind resolve_cll_source(const StreamInfo& info) { return resolve_hdr_source(info.cll_present, info.codec_name); }
+// The stream arm's metadata, rebuilt from StreamInfo's plain fields.
+HdrStaticMetadata stream_metadata(const StreamInfo& info) {
+  HdrStaticMetadata m;
+  m.mdcv_present = info.mdcv_present;
+  m.mdcv_short_payload = info.mdcv_short_payload;
+  m.mdcv_has_primaries = info.mdcv_has_primaries;
+  m.mdcv_has_luminance = info.mdcv_has_luminance;
+  m.mdcv_r_x_num = info.mdcv_r_x_num;
+  m.mdcv_r_x_den = info.mdcv_r_x_den;
+  m.mdcv_r_y_num = info.mdcv_r_y_num;
+  m.mdcv_r_y_den = info.mdcv_r_y_den;
+  m.mdcv_g_x_num = info.mdcv_g_x_num;
+  m.mdcv_g_x_den = info.mdcv_g_x_den;
+  m.mdcv_g_y_num = info.mdcv_g_y_num;
+  m.mdcv_g_y_den = info.mdcv_g_y_den;
+  m.mdcv_b_x_num = info.mdcv_b_x_num;
+  m.mdcv_b_x_den = info.mdcv_b_x_den;
+  m.mdcv_b_y_num = info.mdcv_b_y_num;
+  m.mdcv_b_y_den = info.mdcv_b_y_den;
+  m.mdcv_wp_x_num = info.mdcv_wp_x_num;
+  m.mdcv_wp_x_den = info.mdcv_wp_x_den;
+  m.mdcv_wp_y_num = info.mdcv_wp_y_num;
+  m.mdcv_wp_y_den = info.mdcv_wp_y_den;
+  m.mdcv_min_luminance_num = info.mdcv_min_luminance_num;
+  m.mdcv_min_luminance_den = info.mdcv_min_luminance_den;
+  m.mdcv_max_luminance_num = info.mdcv_max_luminance_num;
+  m.mdcv_max_luminance_den = info.mdcv_max_luminance_den;
+  m.cll_present = info.cll_present;
+  m.cll_short_payload = info.cll_short_payload;
+  m.cll_max_cll = info.cll_max_cll;
+  m.cll_max_fall = info.cll_max_fall;
+  return m;
+}
+
+// Shared by both families: `stream_present` / `frame_present` are that
+// family's own presence flag on each arm. The returned `meta` is the stream's
+// unless the frame arm won (then the frame's); short-payload observations from
+// both arms are kept so a payload too short to read is never invisible.
+HdrResolution resolve_hdr_source(bool stream_present, bool frame_present, const std::string& codec_name,
+                                 const HdrStaticMetadata& stream_meta, FrameArm arm) {
+  HdrResolution out;
+  out.meta = stream_meta;
+  if (stream_present) {
+    out.source = HdrSourceKind::stream;
+    out.arm = std::move(arm);
+    return out;
+  }
+  if (!detail::could_carry_frame_level_hdr(codec_name)) {
+    out.source = HdrSourceKind::not_applicable;
+    out.arm = std::move(arm);
+    return out;
+  }
+  switch (arm.state) {
+    case FrameArm::State::unavailable:
+      out.source = HdrSourceKind::requires_decode;
+      break;
+    case FrameArm::State::partial_scan:
+      out.source = HdrSourceKind::partial_scan;
+      break;
+    case FrameArm::State::insufficient_data:
+      out.source = HdrSourceKind::insufficient_data;
+      break;
+    case FrameArm::State::first_frame_read:
+      if (frame_present) {
+        out.source = HdrSourceKind::frame;
+        out.meta = arm.meta;
+      } else {
+        out.source = HdrSourceKind::observed_absent;
+        out.meta.mdcv_short_payload = stream_meta.mdcv_short_payload || arm.meta.mdcv_short_payload;
+        out.meta.cll_short_payload = stream_meta.cll_short_payload || arm.meta.cll_short_payload;
+      }
+      break;
+  }
+  out.arm = std::move(arm);
+  return out;
+}
+
+HdrResolution resolve_mdcv_source(const StreamInfo& info, const FrameArm& arm) {
+  return resolve_hdr_source(info.mdcv_present, arm.meta.mdcv_present && arm.state == FrameArm::State::first_frame_read,
+                            info.codec_name, stream_metadata(info), arm);
+}
+
+HdrResolution resolve_cll_source(const StreamInfo& info, const FrameArm& arm) {
+  return resolve_hdr_source(info.cll_present, arm.meta.cll_present && arm.state == FrameArm::State::first_frame_read,
+                            info.codec_name, stream_metadata(info), arm);
+}
+
+// True for a source that holds a value: the stream arm or the frame arm.
+bool has_source(HdrSourceKind source) { return source == HdrSourceKind::stream || source == HdrSourceKind::frame; }
+
+// The `source` evidence spelling, published once and never renamed.
+const char* source_name(HdrSourceKind source) { return source == HdrSourceKind::frame ? "frame" : "stream"; }
+
+// `could_carry_frame_level` evidence: true for every kind that reached (or could
+// reach) a frame-capable codec. Legacy kinds keep their pre-07-07 values
+// (requires_decode true; stream and not_applicable false).
+bool could_carry_evidence(HdrSourceKind source) {
+  switch (source) {
+    case HdrSourceKind::stream:
+    case HdrSourceKind::not_applicable:
+      return false;
+    case HdrSourceKind::frame:
+    case HdrSourceKind::requires_decode:
+    case HdrSourceKind::observed_absent:
+    case HdrSourceKind::partial_scan:
+    case HdrSourceKind::insufficient_data:
+      return true;
+  }
+  return false;
+}
+
+// True when the decode pass ran for this stream (every kind the frame arm
+// resolved): the evidence then records it, plus why a skip happened.
+bool decode_ran(HdrSourceKind source) {
+  switch (source) {
+    case HdrSourceKind::frame:
+    case HdrSourceKind::observed_absent:
+    case HdrSourceKind::partial_scan:
+    case HdrSourceKind::insufficient_data:
+      return true;
+    case HdrSourceKind::stream:
+    case HdrSourceKind::requires_decode:
+    case HdrSourceKind::not_applicable:
+      return false;
+  }
+  return false;
+}
+
+// Adds the frame arm's own evidence keys to an absence/skip record. Legacy
+// kinds add nothing, so their output is byte-identical to before 07-07.
+void add_decode_evidence(nlohmann::ordered_json& evidence, const HdrResolution& resolution) {
+  if (!decode_ran(resolution.source)) {
+    return;
+  }
+  evidence["decode_available"] = true;
+  if (resolution.source == HdrSourceKind::partial_scan || resolution.source == HdrSourceKind::insufficient_data) {
+    evidence["reason"] = resolution.arm.reason;
+    if (!resolution.arm.truncation_reason.empty()) {
+      evidence["decode_truncation_reason"] = resolution.arm.truncation_reason;
+    }
+  }
+}
+
+// The skip reason for a value check with nothing to measure. The legacy kinds
+// (a stream entry without the field, a codec that cannot carry it, no decode
+// result) keep `requires_decode` exactly as before 07-07; the frame arm's own
+// kinds are honest about why: a truncated or undecodable decode is
+// `partial_scan`, a decode that ran and found nothing (or no frame at all) is
+// `insufficient_data` -- never `requires_decode`, which would tell a user to
+// decode something that was decoded.
+SkipReason value_skip_reason(HdrSourceKind source) {
+  switch (source) {
+    case HdrSourceKind::stream:
+    case HdrSourceKind::requires_decode:
+    case HdrSourceKind::not_applicable:
+      return SkipReason::requires_decode;
+    case HdrSourceKind::frame:
+    case HdrSourceKind::observed_absent:
+    case HdrSourceKind::insufficient_data:
+      return SkipReason::insufficient_data;
+    case HdrSourceKind::partial_scan:
+      return SkipReason::partial_scan;
+  }
+  return SkipReason::requires_decode;
+}
+
+// The skip reason for a presence check's absence. Only the kinds that could
+// not be measured skip; a permanent or observed absence is a real Absent{}.
+SkipReason presence_skip_reason(HdrSourceKind source) {
+  switch (source) {
+    case HdrSourceKind::requires_decode:
+      return SkipReason::requires_decode;
+    case HdrSourceKind::partial_scan:
+      return SkipReason::partial_scan;
+    case HdrSourceKind::insufficient_data:
+      return SkipReason::insufficient_data;
+    case HdrSourceKind::stream:
+    case HdrSourceKind::frame:
+    case HdrSourceKind::not_applicable:
+    case HdrSourceKind::observed_absent:
+      return SkipReason::none;
+  }
+  return SkipReason::none;
+}
 
 // video.hdr.mdcv: the `presence` semantic (doc 01 section 3) -- a short
-// canonical string ("present") when the stream-level source fired,
-// Absent{} otherwise. compare/presence.cpp never inspects the VALUE, only
-// whether each side holds Absent (container.mkv.duration_element's own
-// established precedent for this exact string choice). T-4-52's own
-// mitigation: evidence always carries the codec and whether it could carry
-// frame-level metadata, so an absence a user cannot account for never
-// reaches the report silently.
-void emit_mdcv(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+// canonical string ("present") when either arm fired, Absent{} otherwise.
+// compare/presence.cpp never inspects the VALUE, only whether each side holds
+// Absent (container.mkv.duration_element's own established precedent for this
+// exact string choice). T-4-52's own mitigation: evidence always carries the
+// codec and whether it could carry frame-level metadata, so an absence a user
+// cannot account for never reaches the report silently.
+void emit_mdcv(const StreamInfo& info, const FrameArm& arm, Scope scope, Fingerprint& fp) {
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_mdcv);
   measurement.scope = scope;
 
-  const HdrSourceKind source = resolve_mdcv_source(info);
-  if (source == HdrSourceKind::stream) {
+  const HdrResolution resolution = resolve_mdcv_source(info, arm);
+  const HdrStaticMetadata& meta = resolution.meta;
+  if (has_source(resolution.source)) {
     measurement.value = std::string("present");
     measurement.evidence = nlohmann::ordered_json{
-        {"source", "stream"},
-        {"has_primaries", info.mdcv_has_primaries},
-        {"has_luminance", info.mdcv_has_luminance},
-        {"short_payload", info.mdcv_short_payload},
+        {"source", source_name(resolution.source)},
+        {"has_primaries", meta.mdcv_has_primaries},
+        {"has_luminance", meta.mdcv_has_luminance},
+        {"short_payload", meta.mdcv_short_payload},
         {"primaries",
          nlohmann::ordered_json{
-             {"r", nlohmann::ordered_json{{"x", rational_json(info.mdcv_r_x_num, info.mdcv_r_x_den)},
-                                            {"y", rational_json(info.mdcv_r_y_num, info.mdcv_r_y_den)}}},
-             {"g", nlohmann::ordered_json{{"x", rational_json(info.mdcv_g_x_num, info.mdcv_g_x_den)},
-                                            {"y", rational_json(info.mdcv_g_y_num, info.mdcv_g_y_den)}}},
-             {"b", nlohmann::ordered_json{{"x", rational_json(info.mdcv_b_x_num, info.mdcv_b_x_den)},
-                                            {"y", rational_json(info.mdcv_b_y_num, info.mdcv_b_y_den)}}},
-             {"wp", nlohmann::ordered_json{{"x", rational_json(info.mdcv_wp_x_num, info.mdcv_wp_x_den)},
-                                             {"y", rational_json(info.mdcv_wp_y_num, info.mdcv_wp_y_den)}}},
+             {"r", nlohmann::ordered_json{{"x", rational_json(meta.mdcv_r_x_num, meta.mdcv_r_x_den)},
+                                            {"y", rational_json(meta.mdcv_r_y_num, meta.mdcv_r_y_den)}}},
+             {"g", nlohmann::ordered_json{{"x", rational_json(meta.mdcv_g_x_num, meta.mdcv_g_x_den)},
+                                            {"y", rational_json(meta.mdcv_g_y_num, meta.mdcv_g_y_den)}}},
+             {"b", nlohmann::ordered_json{{"x", rational_json(meta.mdcv_b_x_num, meta.mdcv_b_x_den)},
+                                            {"y", rational_json(meta.mdcv_b_y_num, meta.mdcv_b_y_den)}}},
+             {"wp", nlohmann::ordered_json{{"x", rational_json(meta.mdcv_wp_x_num, meta.mdcv_wp_x_den)},
+                                             {"y", rational_json(meta.mdcv_wp_y_num, meta.mdcv_wp_y_den)}}},
          }},
         {"luminance",
-         nlohmann::ordered_json{{"min", rational_json(info.mdcv_min_luminance_num, info.mdcv_min_luminance_den)},
-                                  {"max", rational_json(info.mdcv_max_luminance_num, info.mdcv_max_luminance_den)}}},
+         nlohmann::ordered_json{{"min", rational_json(meta.mdcv_min_luminance_num, meta.mdcv_min_luminance_den)},
+                                  {"max", rational_json(meta.mdcv_max_luminance_num, meta.mdcv_max_luminance_den)}}},
     };
   } else {
     measurement.value = Absent{};
     measurement.evidence = nlohmann::ordered_json{
         {"codec", info.codec_name},
-        {"could_carry_frame_level", source == HdrSourceKind::requires_decode},
-        {"short_payload", info.mdcv_short_payload},
+        {"could_carry_frame_level", could_carry_evidence(resolution.source)},
+        {"short_payload", meta.mdcv_short_payload},
     };
-    if (source == HdrSourceKind::requires_decode) {
-      // T-4-52: the could-not-decode-it-yet case is a distinct
-      // `requires_decode` status, never an indistinguishable absence.
-      measurement.skip_reason = SkipReason::requires_decode;
-    }
-    // source == not_applicable: SkipReason::none, Absent{} -- an ordinary,
-    // real, permanent absence. compare/presence.cpp handles this fine
-    // (never inspects the value) -- the codec that could-not-carry-it-
-    // either is still real information, always recorded in evidence.
+    add_decode_evidence(measurement.evidence, resolution);
+    // T-4-52: the could-not-decode-it-yet case is a distinct
+    // `requires_decode` status, never an indistinguishable absence; a decode
+    // that could not reach a first frame is its own named skip.
+    measurement.skip_reason = presence_skip_reason(resolution.source);
+    // not_applicable / observed_absent: SkipReason::none, Absent{} -- an
+    // ordinary, real absence. compare/presence.cpp handles this fine (never
+    // inspects the value) -- the codec that could-not-carry-it-either is still
+    // real information, always recorded in evidence.
   }
   fp.measurements.push_back(std::move(measurement));
 }
@@ -295,39 +583,43 @@ void emit_mdcv(const StreamInfo& info, Scope scope, Fingerprint& fp) {
 // presence.cpp's own documented "a value comparison is a separate tol
 // check on the same extraction" rule. `tol` at five percent over the max
 // luminance as an exact RationalValue; min luminance rides in evidence.
-// "Nothing to measure" (source != stream, OR source == stream but
+// "Nothing to measure" (no arm holds a value, OR an arm holds one but
 // has_luminance is false, OR the max_luminance denominator is invalid,
 // T-4-49) emits a named skip, NEVER Absent{} -- src/compare/tol.cpp turns
 // an absent value into an Status::error, which is a worse report than an
 // honest skip.
-void emit_mdcv_luminance(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+void emit_mdcv_luminance(const StreamInfo& info, const FrameArm& arm, Scope scope, Fingerprint& fp) {
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_mdcv_luminance);
   measurement.scope = scope;
 
-  const HdrSourceKind source = resolve_mdcv_source(info);
-  const bool has_value = source == HdrSourceKind::stream && info.mdcv_has_luminance && info.mdcv_max_luminance_den > 0;
+  const HdrResolution resolution = resolve_mdcv_source(info, arm);
+  const HdrStaticMetadata& meta = resolution.meta;
+  const bool has_value = has_source(resolution.source) && meta.mdcv_has_luminance && meta.mdcv_max_luminance_den > 0;
   if (has_value) {
-    measurement.value = RationalValue{info.mdcv_max_luminance_num, info.mdcv_max_luminance_den, Rational{1, 1}};
+    measurement.value = RationalValue{meta.mdcv_max_luminance_num, meta.mdcv_max_luminance_den, Rational{1, 1}};
     measurement.evidence = nlohmann::ordered_json{
-        {"source", "stream"}, {"min_luminance", rational_json(info.mdcv_min_luminance_num, info.mdcv_min_luminance_den)}};
+        {"source", source_name(resolution.source)},
+        {"min_luminance", rational_json(meta.mdcv_min_luminance_num, meta.mdcv_min_luminance_den)}};
   } else {
     measurement.value = Absent{};
     // This project's own vocabulary has no dedicated SkipReason for
     // "structurally can never carry this" separate from "would need a
     // decode pass we don't have" -- `requires_decode` is reused here for
-    // BOTH sub-cases (unlike the presence check above, which distinguishes
-    // them precisely, per T-4-52/VIDEO-09-E1); `could_carry_frame_level`
-    // in evidence still records the real distinction so a reader is never
-    // misled about whether decoding could ever help. See 04-11-SUMMARY.md
-    // "Decisions Made" for the full reasoning.
-    measurement.skip_reason = SkipReason::requires_decode;
+    // BOTH legacy sub-cases (unlike the presence check above, which
+    // distinguishes them precisely, per T-4-52/VIDEO-09-E1);
+    // `could_carry_frame_level` in evidence still records the real distinction
+    // so a reader is never misled about whether decoding could ever help. See
+    // 04-11-SUMMARY.md "Decisions Made" for the full reasoning. The frame
+    // arm's own kinds get their own honest reasons (value_skip_reason).
+    measurement.skip_reason = value_skip_reason(resolution.source);
     measurement.evidence = nlohmann::ordered_json{
         {"codec", info.codec_name},
-        {"could_carry_frame_level", source == HdrSourceKind::requires_decode},
-        {"mdcv_present", source == HdrSourceKind::stream},
-        {"has_luminance", info.mdcv_has_luminance},
+        {"could_carry_frame_level", could_carry_evidence(resolution.source)},
+        {"mdcv_present", has_source(resolution.source)},
+        {"has_luminance", meta.mdcv_has_luminance},
     };
+    add_decode_evidence(measurement.evidence, resolution);
   }
   fp.measurements.push_back(std::move(measurement));
 }
@@ -341,15 +633,15 @@ void emit_mdcv_luminance(const StreamInfo& info, Scope scope, Fingerprint& fp) {
 // instant any one of the eight fails to quantise (an invalid denominator
 // or an overflow, T-4-49/T-4-50) -- a partially-quantised string would be
 // a corrupt, non-canonical value, not an honest partial answer.
-std::optional<std::string> canonical_primaries_string(const StreamInfo& info) {
-  const std::optional<std::int64_t> r_x = detail::quantize_chromaticity(info.mdcv_r_x_num, info.mdcv_r_x_den);
-  const std::optional<std::int64_t> r_y = detail::quantize_chromaticity(info.mdcv_r_y_num, info.mdcv_r_y_den);
-  const std::optional<std::int64_t> g_x = detail::quantize_chromaticity(info.mdcv_g_x_num, info.mdcv_g_x_den);
-  const std::optional<std::int64_t> g_y = detail::quantize_chromaticity(info.mdcv_g_y_num, info.mdcv_g_y_den);
-  const std::optional<std::int64_t> b_x = detail::quantize_chromaticity(info.mdcv_b_x_num, info.mdcv_b_x_den);
-  const std::optional<std::int64_t> b_y = detail::quantize_chromaticity(info.mdcv_b_y_num, info.mdcv_b_y_den);
-  const std::optional<std::int64_t> wp_x = detail::quantize_chromaticity(info.mdcv_wp_x_num, info.mdcv_wp_x_den);
-  const std::optional<std::int64_t> wp_y = detail::quantize_chromaticity(info.mdcv_wp_y_num, info.mdcv_wp_y_den);
+std::optional<std::string> canonical_primaries_string(const HdrStaticMetadata& meta) {
+  const std::optional<std::int64_t> r_x = detail::quantize_chromaticity(meta.mdcv_r_x_num, meta.mdcv_r_x_den);
+  const std::optional<std::int64_t> r_y = detail::quantize_chromaticity(meta.mdcv_r_y_num, meta.mdcv_r_y_den);
+  const std::optional<std::int64_t> g_x = detail::quantize_chromaticity(meta.mdcv_g_x_num, meta.mdcv_g_x_den);
+  const std::optional<std::int64_t> g_y = detail::quantize_chromaticity(meta.mdcv_g_y_num, meta.mdcv_g_y_den);
+  const std::optional<std::int64_t> b_x = detail::quantize_chromaticity(meta.mdcv_b_x_num, meta.mdcv_b_x_den);
+  const std::optional<std::int64_t> b_y = detail::quantize_chromaticity(meta.mdcv_b_y_num, meta.mdcv_b_y_den);
+  const std::optional<std::int64_t> wp_x = detail::quantize_chromaticity(meta.mdcv_wp_x_num, meta.mdcv_wp_x_den);
+  const std::optional<std::int64_t> wp_y = detail::quantize_chromaticity(meta.mdcv_wp_y_num, meta.mdcv_wp_y_den);
   if (!r_x.has_value() || !r_y.has_value() || !g_x.has_value() || !g_y.has_value() || !b_x.has_value() ||
       !b_y.has_value() || !wp_x.has_value() || !wp_y.has_value()) {
     return std::nullopt;
@@ -361,73 +653,74 @@ std::optional<std::string> canonical_primaries_string(const StreamInfo& info) {
 // .luminance above. `exact` over canonical_primaries_string's own output --
 // evidence carries the RAW, unquantised rationals so a user can see the
 // real values behind the quantised comparison. "Nothing to measure" (same
-// three sub-cases as .luminance, substituting has_primaries) emits the
-// same named skip, never Absent{}.
-void emit_mdcv_primaries(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+// sub-cases as .luminance, substituting has_primaries) emits the same named
+// skip, never Absent{}.
+void emit_mdcv_primaries(const StreamInfo& info, const FrameArm& arm, Scope scope, Fingerprint& fp) {
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_mdcv_primaries);
   measurement.scope = scope;
 
-  const HdrSourceKind source = resolve_mdcv_source(info);
+  const HdrResolution resolution = resolve_mdcv_source(info, arm);
+  const HdrStaticMetadata& meta = resolution.meta;
   const std::optional<std::string> canonical =
-      (source == HdrSourceKind::stream && info.mdcv_has_primaries) ? canonical_primaries_string(info) : std::nullopt;
+      (has_source(resolution.source) && meta.mdcv_has_primaries) ? canonical_primaries_string(meta) : std::nullopt;
   if (canonical.has_value()) {
     measurement.value = *canonical;
     measurement.evidence = nlohmann::ordered_json{
-        {"source", "stream"},
+        {"source", source_name(resolution.source)},
         {"raw",
          nlohmann::ordered_json{
-             {"r", nlohmann::ordered_json{{"x", rational_json(info.mdcv_r_x_num, info.mdcv_r_x_den)},
-                                            {"y", rational_json(info.mdcv_r_y_num, info.mdcv_r_y_den)}}},
-             {"g", nlohmann::ordered_json{{"x", rational_json(info.mdcv_g_x_num, info.mdcv_g_x_den)},
-                                            {"y", rational_json(info.mdcv_g_y_num, info.mdcv_g_y_den)}}},
-             {"b", nlohmann::ordered_json{{"x", rational_json(info.mdcv_b_x_num, info.mdcv_b_x_den)},
-                                            {"y", rational_json(info.mdcv_b_y_num, info.mdcv_b_y_den)}}},
-             {"wp", nlohmann::ordered_json{{"x", rational_json(info.mdcv_wp_x_num, info.mdcv_wp_x_den)},
-                                             {"y", rational_json(info.mdcv_wp_y_num, info.mdcv_wp_y_den)}}},
+             {"r", nlohmann::ordered_json{{"x", rational_json(meta.mdcv_r_x_num, meta.mdcv_r_x_den)},
+                                            {"y", rational_json(meta.mdcv_r_y_num, meta.mdcv_r_y_den)}}},
+             {"g", nlohmann::ordered_json{{"x", rational_json(meta.mdcv_g_x_num, meta.mdcv_g_x_den)},
+                                            {"y", rational_json(meta.mdcv_g_y_num, meta.mdcv_g_y_den)}}},
+             {"b", nlohmann::ordered_json{{"x", rational_json(meta.mdcv_b_x_num, meta.mdcv_b_x_den)},
+                                            {"y", rational_json(meta.mdcv_b_y_num, meta.mdcv_b_y_den)}}},
+             {"wp", nlohmann::ordered_json{{"x", rational_json(meta.mdcv_wp_x_num, meta.mdcv_wp_x_den)},
+                                             {"y", rational_json(meta.mdcv_wp_y_num, meta.mdcv_wp_y_den)}}},
          }},
     };
   } else {
     measurement.value = Absent{};
-    measurement.skip_reason = SkipReason::requires_decode;
+    measurement.skip_reason = value_skip_reason(resolution.source);
     measurement.evidence = nlohmann::ordered_json{
         {"codec", info.codec_name},
-        {"could_carry_frame_level", source == HdrSourceKind::requires_decode},
-        {"mdcv_present", source == HdrSourceKind::stream},
-        {"has_primaries", info.mdcv_has_primaries},
+        {"could_carry_frame_level", could_carry_evidence(resolution.source)},
+        {"mdcv_present", has_source(resolution.source)},
+        {"has_primaries", meta.mdcv_has_primaries},
     };
+    add_decode_evidence(measurement.evidence, resolution);
   }
   fp.measurements.push_back(std::move(measurement));
 }
 
 // video.hdr.cll: the content-light family's own `presence` check --
-// IDENTICAL shape to emit_mdcv above, reusing resolve_cll_source (the SAME
-// shared resolve_hdr_source seam, never a second copy, per this plan's own
-// Task 2 instruction).
-void emit_cll(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+// IDENTICAL shape to emit_mdcv above, reusing the SAME shared
+// resolve_hdr_source seam (never a second copy).
+void emit_cll(const StreamInfo& info, const FrameArm& arm, Scope scope, Fingerprint& fp) {
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_cll);
   measurement.scope = scope;
 
-  const HdrSourceKind source = resolve_cll_source(info);
-  if (source == HdrSourceKind::stream) {
+  const HdrResolution resolution = resolve_cll_source(info, arm);
+  const HdrStaticMetadata& meta = resolution.meta;
+  if (has_source(resolution.source)) {
     measurement.value = std::string("present");
     measurement.evidence = nlohmann::ordered_json{
-        {"source", "stream"},
-        {"max_cll", info.cll_max_cll},
-        {"max_fall", info.cll_max_fall},
-        {"short_payload", info.cll_short_payload},
+        {"source", source_name(resolution.source)},
+        {"max_cll", meta.cll_max_cll},
+        {"max_fall", meta.cll_max_fall},
+        {"short_payload", meta.cll_short_payload},
     };
   } else {
     measurement.value = Absent{};
     measurement.evidence = nlohmann::ordered_json{
         {"codec", info.codec_name},
-        {"could_carry_frame_level", source == HdrSourceKind::requires_decode},
-        {"short_payload", info.cll_short_payload},
+        {"could_carry_frame_level", could_carry_evidence(resolution.source)},
+        {"short_payload", meta.cll_short_payload},
     };
-    if (source == HdrSourceKind::requires_decode) {
-      measurement.skip_reason = SkipReason::requires_decode;
-    }
+    add_decode_evidence(measurement.evidence, resolution);
+    measurement.skip_reason = presence_skip_reason(resolution.source);
   }
   fp.measurements.push_back(std::move(measurement));
 }
@@ -435,22 +728,23 @@ void emit_cll(const StreamInfo& info, Scope scope, Fingerprint& fp) {
 // video.hdr.cll.max: split from video.hdr.cll for MaxCLL --
 // AVContentLightMetadata's own plain unsigned integer (cd/m^2, no rational
 // wrapping, unlike the mastering-display family). `tol` at five percent;
-// "nothing to measure" (source != stream) emits the same shared
-// requires_decode skip as the mdcv value checks, never Absent{}.
-void emit_cll_max(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+// "nothing to measure" (no arm holds a value) emits the same shared skip as
+// the mdcv value checks, never Absent{}.
+void emit_cll_max(const StreamInfo& info, const FrameArm& arm, Scope scope, Fingerprint& fp) {
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_cll_max);
   measurement.scope = scope;
 
-  const HdrSourceKind source = resolve_cll_source(info);
-  if (source == HdrSourceKind::stream) {
-    measurement.value = info.cll_max_cll;
-    measurement.evidence = nlohmann::ordered_json{{"source", "stream"}};
+  const HdrResolution resolution = resolve_cll_source(info, arm);
+  if (has_source(resolution.source)) {
+    measurement.value = resolution.meta.cll_max_cll;
+    measurement.evidence = nlohmann::ordered_json{{"source", source_name(resolution.source)}};
   } else {
     measurement.value = Absent{};
-    measurement.skip_reason = SkipReason::requires_decode;
+    measurement.skip_reason = value_skip_reason(resolution.source);
     measurement.evidence = nlohmann::ordered_json{
-        {"codec", info.codec_name}, {"could_carry_frame_level", source == HdrSourceKind::requires_decode}};
+        {"codec", info.codec_name}, {"could_carry_frame_level", could_carry_evidence(resolution.source)}};
+    add_decode_evidence(measurement.evidence, resolution);
   }
   fp.measurements.push_back(std::move(measurement));
 }
@@ -460,35 +754,41 @@ void emit_cll_max(const StreamInfo& info, Scope scope, Fingerprint& fp) {
 // MaxFALL alone is still caught (04-CHECK-ROSTER.md's own addition
 // rationale; T-4 threat model's own "a halved MDCV would report pass"
 // reasoning applies identically here).
-void emit_cll_avg(const StreamInfo& info, Scope scope, Fingerprint& fp) {
+void emit_cll_avg(const StreamInfo& info, const FrameArm& arm, Scope scope, Fingerprint& fp) {
   Measurement measurement;
   measurement.check_index = static_cast<std::uint32_t>(CheckId::video_hdr_cll_avg);
   measurement.scope = scope;
 
-  const HdrSourceKind source = resolve_cll_source(info);
-  if (source == HdrSourceKind::stream) {
-    measurement.value = info.cll_max_fall;
-    measurement.evidence = nlohmann::ordered_json{{"source", "stream"}};
+  const HdrResolution resolution = resolve_cll_source(info, arm);
+  if (has_source(resolution.source)) {
+    measurement.value = resolution.meta.cll_max_fall;
+    measurement.evidence = nlohmann::ordered_json{{"source", source_name(resolution.source)}};
   } else {
     measurement.value = Absent{};
-    measurement.skip_reason = SkipReason::requires_decode;
+    measurement.skip_reason = value_skip_reason(resolution.source);
     measurement.evidence = nlohmann::ordered_json{
-        {"codec", info.codec_name}, {"could_carry_frame_level", source == HdrSourceKind::requires_decode}};
+        {"codec", info.codec_name}, {"could_carry_frame_level", could_carry_evidence(resolution.source)}};
+    add_decode_evidence(measurement.evidence, resolution);
   }
   fp.measurements.push_back(std::move(measurement));
 }
 
 // 04-12-PLAN.md (VIDEO-09's third HDR family): video.hdr.dovi's own
-// extraction source -- REUSES resolve_hdr_source verbatim (the SAME shared
-// seam mdcv/cll already share), never a third, independently-written
-// codec-capability decision. "Could this codec, if decoded, ever carry a
-// real Dolby Vision RPU some other way" is the same hevc/av1-only question
-// could_carry_frame_level_hdr already answers -- the configuration record
-// itself is a box-level fact read identically for every codec, but its
-// ABSENCE reuses the identical could/could-not-carry classification the
-// other two HDR families use (this plan's own Test 6 instruction: "not a
-// third copy of it").
-HdrSourceKind resolve_dovi_source(const StreamInfo& info) { return resolve_hdr_source(info.dovi_present, info.codec_name); }
+// extraction source. The configuration record itself is a box-level fact read
+// identically for every codec; its ABSENCE keeps the could/could-not-carry
+// classification 04-12 gave it (hevc/av1 only). 07-07-PLAN.md: Dolby Vision has
+// no first-frame arm (a configuration record, not per-frame static metadata),
+// so this is stream-level only and uses its OWN codec table
+// (detail::could_carry_frame_level_dovi), not the HDR10 one 07-07 widened with
+// H.264 -- otherwise every H.264 stream's dovi absence would become a permanent
+// skipped:requires_decode that no decode pass could ever resolve.
+HdrSourceKind resolve_dovi_source(const StreamInfo& info) {
+  if (info.dovi_present) {
+    return HdrSourceKind::stream;
+  }
+  return detail::could_carry_frame_level_dovi(info.codec_name) ? HdrSourceKind::requires_decode
+                                                                 : HdrSourceKind::not_applicable;
+}
 
 // video.hdr.dovi: the `presence` semantic (doc 01 section 3), IDENTICAL
 // shape to emit_mdcv/emit_cll above -- reusing resolve_dovi_source (the
@@ -708,11 +1008,11 @@ void emit_coherence(const StreamInfo& info, Scope scope, Fingerprint& fp) {
   fp.measurements.push_back(std::move(measurement));
 }
 
-// video_hdr_analyzer's run(): every video-scoped stream gets all six HDR
-// checks unconditionally -- codecpar alone, no scan dependency of any kind
-// (matches video_color_analyzer()'s own Pass::demux_header-only shape).
-// Task 2 (04-11-PLAN.md) reuses this exact loop and Task 1's shared
-// resolve_hdr_source seam for the content-light family below -- never a
+// video_hdr_analyzer's run(): every video-scoped stream gets all nine HDR
+// checks unconditionally. The stream arm needs codecpar alone; the frame arm
+// (07-07-PLAN.md) reads the decode sweep's first-frame result when one exists
+// and otherwise leaves `requires_decode` standing. The content-light family
+// reuses this exact loop and the shared resolve_hdr_source seam -- never a
 // second, independently-written copy.
 void run_video_hdr(const ProbeResults& results, Fingerprint& fp) {
   if (results.demux == nullptr) {
@@ -732,13 +1032,16 @@ void run_video_hdr(const ProbeResults& results, Fingerprint& fp) {
     }
     const Scope scope = *scopes[i];
     const StreamInfo info = demux.stream_info(static_cast<int>(i));
+    // 07-07-PLAN.md: what the decode sweep read from this stream's first frame
+    // (`unavailable` when there is no decode result, e.g. `--no-content`).
+    const FrameArm arm = resolve_frame_arm(results, i);
 
-    emit_mdcv(info, scope, fp);
-    emit_mdcv_luminance(info, scope, fp);
-    emit_mdcv_primaries(info, scope, fp);
-    emit_cll(info, scope, fp);
-    emit_cll_max(info, scope, fp);
-    emit_cll_avg(info, scope, fp);
+    emit_mdcv(info, arm, scope, fp);
+    emit_mdcv_luminance(info, arm, scope, fp);
+    emit_mdcv_primaries(info, arm, scope, fp);
+    emit_cll(info, arm, scope, fp);
+    emit_cll_max(info, arm, scope, fp);
+    emit_cll_avg(info, arm, scope, fp);
     emit_dovi(info, scope, fp);
     emit_dovi_config(info, scope, fp);
     emit_coherence(info, scope, fp);
@@ -748,7 +1051,10 @@ void run_video_hdr(const ProbeResults& results, Fingerprint& fp) {
 }  // namespace
 
 const AnalyzerSpec& video_hdr_analyzer() {
-  static const AnalyzerSpec spec{"video_hdr", PassSet{Pass::demux_header}, ContainerFamily::other, &run_video_hdr};
+  // 07-07-PLAN.md: Pass::video_decode (and the packet_scan it implies) for the
+  // first-frame arm; the orchestrator clears video_decode under `--no-content`.
+  static const AnalyzerSpec spec{"video_hdr", PassSet{Pass::demux_header, Pass::packet_scan, Pass::video_decode},
+                                   ContainerFamily::other, &run_video_hdr};
   return spec;
 }
 

@@ -139,6 +139,10 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // order (TRUST-05), rather than interleaved among the ParserScan-
       // consuming ones just above it.
       video_hdr_analyzer(),
+      // 07-06-PLAN.md (VIDEO-11): video.closed_captions -- a video-family check
+      // that needs the decode sweep, listed directly after the HDR analyzer so
+      // the video family stays grouped (TRUST-05) and appended in commit order.
+      video_closed_captions_analyzer(),
       // 05-01-PLAN.md Task 2 (TIME-01/TIME-03, D-03): timeline.start, this
       // phase's tracer -- ContainerFamily::other (a timeline check applies
       // to every container), Pass::packet_scan only (no parser_scan, no
@@ -191,6 +195,26 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
       // (TRUST-05) keeps this phase's own family appended, never
       // interleaved among Phase 5's.
       content_audio_sample_hash_analyzer(),
+      // 07-01-PLAN.md (this phase's tracer, CONTENT-01): content.video.
+      // frame_hash -- the video counterpart of the entry directly above,
+      // ContainerFamily::other, declaring Pass::video_decode (implied into
+      // the union alongside Pass::packet_scan below). Listed directly after
+      // the audio hash so the content family stays grouped and appended in
+      // commit order (TRUST-05), ahead of Phase 6's own later audio entries.
+      content_video_frame_hash_analyzer(),
+      // 07-05-PLAN.md (CONTENT-06): content.video.frozen_runs/black_runs --
+      // the detector sinks' consumer, appended directly after the frame hash
+      // it shares a decode sweep with.
+      content_video_runs_analyzer(),
+      // 07-08-PLAN.md (CONTENT-04; D-01): content.video.perceptual's ONE-SIDED
+      // emission (skipped:requires_media, or requires_decode under
+      // --no-content); a live media-vs-media compare replaces it with the real
+      // two-file measurement (probe/lockstep.cpp).
+      content_video_perceptual_analyzer(),
+      // 07-10-PLAN.md (CONTENT-08, CONTENT-10; D-01): quality.psnr/quality.ssim's
+      // ONE-SIDED emission, the same shape as the perceptual placeholder above;
+      // a live compare replaces both on both fingerprints.
+      content_quality_analyzer(),
       // 06-03-PLAN.md (AUDIO-01, AUDIO-02): audio.codec/sample_rate/
       // sample_fmt/bit_depth/channels/layout -- the six per-audio-stream
       // identity checks, mirroring video_stream_params_analyzer()'s own
@@ -237,9 +261,31 @@ const std::vector<AnalyzerSpec>& all_analyzers() {
 
 namespace detail {
 
+mediadiff::expected<std::optional<Fingerprint>, Error> resolve_input(const std::string& utf8_path,
+                                                                       const CheckRegistry& registry) {
+  auto snapshot_result = read_snapshot(utf8_path, registry);
+  if (snapshot_result) {
+    return std::optional<Fingerprint>(std::move(*snapshot_result));
+  }
+  if (snapshot_result.error().kind != ErrorKind::input_unsupported) {
+    // input_open (the bytes never opened at all) propagates unchanged --
+    // a missing file must not become a probe attempt.
+    return mediadiff::unexpected(snapshot_result.error());
+  }
+  if (looks_like_json_document(utf8_path)) {
+    // JSON-shaped but explicitly rejected by read_snapshot (a
+    // schema_version major mismatch, an unregistered check ID, or
+    // malformed content) -- that rejection is authoritative and must not
+    // be silently reinterpreted as "try probing it as media instead".
+    return mediadiff::unexpected(snapshot_result.error());
+  }
+  return std::optional<Fingerprint>();
+}
+
 mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
                                                      const std::vector<AnalyzerSpec>& analyzers,
-                                                     PassExecutionLog* pass_log, const ProbeOptions& options) {
+                                                     PassExecutionLog* pass_log, const ProbeOptions& options,
+                                                     ProbeScanStats* scan_stats) {
   auto session_result = DemuxSession::open(utf8_path, DemuxOptions{});
   if (!session_result) {
     return mediadiff::unexpected(session_result.error());
@@ -277,6 +323,11 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   // rather than a fabricated value.
   if (!options.content_enabled) {
     union_passes.clear(Pass::audio_decode);
+    // 07-01-PLAN.md (Phase 6 D-12): the video decode pass is removed from
+    // the union by the SAME switch -- ProbeResults::video_decode stays
+    // std::nullopt and content.video.frame_hash reports
+    // skipped:requires_decode, never a fabricated value.
+    union_passes.clear(Pass::video_decode);
   }
 
   // PROBE-03 (04-01-PLAN.md Task 2): an analyzer that declared ONLY
@@ -294,6 +345,13 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
   // fused loop), so packet_scan must always be in the union whenever
   // audio_decode is.
   if (union_passes.test(Pass::audio_decode)) {
+    union_passes.set(Pass::packet_scan);
+  }
+
+  // 07-01-PLAN.md (CONTENT-01, PROBE-08): the same implication for the video
+  // decode pass -- its data is produced INSIDE Pass::packet_scan's own arm
+  // too (probe/packet_scan.cpp's fused loop).
+  if (union_passes.test(Pass::video_decode)) {
     union_passes.set(Pass::packet_scan);
   }
 
@@ -389,11 +447,24 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
       // selection -- never a profile (this invocation's own resolved
       // Policy is not even in scope here).
       request.hash_decoder = options.hash_decoder;
+      // 07-01-PLAN.md (CONTENT-01, PROBE-08): mirrors `decode_audio` above --
+      // the video decode is fused INSIDE this same call, never a second
+      // dispatch arm.
+      request.decode_video = union_passes.test(Pass::video_decode);
+      request.video_decode_threads = options.video_decode_threads;
+      request.video_sample_stride = options.sample_stride;
+      // 07-08-PLAN.md (CONTENT-11): the lockstep tap rides the SAME sweep, bound
+      // to the file's primary video stream inside run_packet_scan.
+      request.frame_tap = options.frame_tap;
       auto scan_result = run_packet_scan(session, request);
       if (scan_result) {
+        if (scan_stats != nullptr) {
+          scan_stats->read_frame_call_count = scan_result->packets.read_frame_call_count;
+        }
         results.packet_scan = std::move(scan_result->packets);
         results.parser_scan = std::move(scan_result->access_units);
         results.audio_decode = std::move(scan_result->audio_decode);
+        results.video_decode = std::move(scan_result->video_decode);
       } else {
         packet_scan_error = mediadiff::unexpected(scan_result.error());
       }
@@ -553,23 +624,13 @@ mediadiff::expected<Fingerprint, Error> run_probe(const std::string& utf8_path,
 
 mediadiff::expected<Fingerprint, Error> fingerprint_input(const std::string& utf8_path, const CheckRegistry& registry,
                                                              const ProbeOptions& options) {
-  auto snapshot_result = read_snapshot(utf8_path, registry);
-  if (snapshot_result) {
-    return snapshot_result;
+  auto resolved = detail::resolve_input(utf8_path, registry);
+  if (!resolved) {
+    return mediadiff::unexpected(resolved.error());
   }
-  if (snapshot_result.error().kind != ErrorKind::input_unsupported) {
-    // input_open (the bytes never opened at all) propagates unchanged --
-    // a missing file must not become a probe attempt.
-    return mediadiff::unexpected(snapshot_result.error());
+  if (resolved->has_value()) {
+    return std::move(**resolved);
   }
-  if (looks_like_json_document(utf8_path)) {
-    // JSON-shaped but explicitly rejected by read_snapshot (a
-    // schema_version major mismatch, an unregistered check ID, or
-    // malformed content) -- that rejection is authoritative and must not
-    // be silently reinterpreted as "try probing it as media instead".
-    return mediadiff::unexpected(snapshot_result.error());
-  }
-
   return detail::run_probe(utf8_path, all_analyzers(), nullptr, options);
 }
 

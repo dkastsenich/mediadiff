@@ -16,16 +16,20 @@ The minimum mastering-display luminance rides alongside in evidence, for
 context, but is never itself compared -- doc 03 section 4 tolerates only
 the maximum.
 
-When there is nothing to measure (mastering-display data absent at the
-stream level, present but missing its own `has_luminance` flag, or
-carrying an unusable luminance rational), this check emits a named skip
-rather than `Absent` -- the tolerance comparator treats an absent value
-as an error, which is a worse report than an honest skip. Evidence on a
-skip records the codec and whether it could, in principle, carry
-frame-level HDR metadata a future decode pass might surface (VIDEO-09-E1)
--- see `video.hdr.mdcv`'s own doc for the full could/could-not
-distinction, which this check's skip evidence echoes without itself
-splitting into two different skip reasons.
+When there is nothing to measure (mastering-display data found by neither
+the stream-level nor the first-frame arm, present but missing its own
+`has_luminance` flag, or carrying an unusable luminance rational), this check
+emits a named skip rather than `Absent` -- the tolerance comparator treats an
+absent value as an error, which is a worse report than an honest skip. The
+skip reason says why: `requires_decode` when no decode result exists to read
+a frame from (and for the pre-existing stream-level and non-carrying-codec
+cases), `partial_scan` when the decode was cut short or the stream could not
+be decoded, `insufficient_data` when the decode completed and found no
+mastering-display metadata (or no frame at all). Evidence on a skip records
+the codec and whether it could, in principle, carry frame-level HDR metadata
+(VIDEO-09-E1), and `decode_available` once a decode ran -- see
+`video.hdr.mdcv`'s own doc for the full two-arm distinction. The value
+carries the evidence `source`, `"stream"` or `"frame"`.
 
 ## Why it matters
 

@@ -290,6 +290,18 @@ nlohmann::ordered_json value_to_json(const Value& value, Unit unit) {
             j["block_digests"] = std::move(digests);
             j["element_stride"] = v.element_stride;
           }
+          // 07-01-PLAN.md (CONTENT-01, D-05/D-07): the per-element tick
+          // array and its time base, emitted only when non-empty for the same
+          // byte-identical-goldens reason. One integer per line, as
+          // block_digests' own elements are.
+          if (!v.element_ticks.empty()) {
+            nlohmann::ordered_json ticks = nlohmann::ordered_json::array();
+            for (const std::int64_t t : v.element_ticks) {
+              ticks.push_back(t);
+            }
+            j["element_ticks"] = std::move(ticks);
+            j["element_tb"] = nlohmann::ordered_json{{"num", v.element_tb.num}, {"den", v.element_tb.den}};
+          }
           return j;
         } else {
           static_assert(!sizeof(T*), "value_to_json: unhandled Value alternative");
@@ -481,6 +493,43 @@ mediadiff::expected<Value, Error> value_from_json(const nlohmann::ordered_json& 
               Error{ErrorKind::input_unsupported, "hash_chain 'element_stride' is not an integer"});
         }
         chain.element_stride = json.at("element_stride").get<std::int64_t>();
+      }
+      // 07-01-PLAN.md (CONTENT-01, D-05/D-07): element_ticks/element_tb are
+      // optional -- absent on every audio chain and on every pre-Phase-7
+      // snapshot.
+      if (json.contains("element_ticks")) {
+        if (!json.at("element_ticks").is_array()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "hash_chain 'element_ticks' is not an array"});
+        }
+        for (const auto& tick_json : json.at("element_ticks")) {
+          if (!tick_json.is_number_integer()) {
+            return mediadiff::unexpected(
+                Error{ErrorKind::input_unsupported, "hash_chain 'element_ticks' element is not an integer"});
+          }
+          chain.element_ticks.push_back(tick_json.get<std::int64_t>());
+        }
+        if (!json.contains("element_tb") || !json.at("element_tb").is_object() ||
+            !json.at("element_tb").contains("num") || !json.at("element_tb").contains("den") ||
+            !json.at("element_tb").at("num").is_number_integer() ||
+            !json.at("element_tb").at("den").is_number_integer()) {
+          return mediadiff::unexpected(
+              Error{ErrorKind::input_unsupported, "hash_chain 'element_ticks' requires an {num, den} 'element_tb'"});
+        }
+        chain.element_tb = Rational{json.at("element_tb").at("num").get<std::int64_t>(),
+                                    json.at("element_tb").at("den").get<std::int64_t>()};
+      }
+      // T-07-04: a per-element array whose length disagrees with
+      // element_count is refused before any consumer indexes it -- an
+      // untrusted *.snap.json must not make the locator read past an array
+      // (closes the video half of T-06-03's unchecked-length gap).
+      if ((!chain.block_digests.empty() &&
+           static_cast<std::int64_t>(chain.block_digests.size()) != chain.element_count) ||
+          (!chain.element_ticks.empty() &&
+           static_cast<std::int64_t>(chain.element_ticks.size()) != chain.element_count)) {
+        return mediadiff::unexpected(Error{ErrorKind::input_unsupported,
+                                            "hash_chain 'block_digests'/'element_ticks' length disagrees with "
+                                            "'element_count'"});
       }
       return Value{std::move(chain)};
     }

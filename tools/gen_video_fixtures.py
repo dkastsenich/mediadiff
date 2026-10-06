@@ -137,6 +137,13 @@ warnings), for the exact same access-unit content differing ONLY in the
 presence of the leading VPS NAL. `--selftest` asserts this comparison
 directly rather than asserting on `pict_type`.
 
+07-06-PLAN.md adds the first DECODABLE output: an H.264 I_PCM writer
+(`--pcm-plain/--pcm-cc/--pcm-crop/--pcm-hdr`) whose pictures are known by
+construction (`pcm_sample`), carrying A53 caption, mastering-display and
+content-light SEI, and an MPEG-2 GA94 user-data inserter (`--mpeg2-cc-in/
+--mpeg2-cc-out`) over a native-encoder elementary stream. Neither needs a GPL
+encoder. See the I_PCM section below for the field-level notes.
+
 Never write a fixture directly to its final path (write a temp file plus
 `os.replace`); never make output depend on the wall clock, the environment,
 or dictionary iteration order (this writer holds no fixture-affecting data in
@@ -205,6 +212,21 @@ class BitWriter:
         while len(self.bits) % 8 != 0:
             self.u(1, 0)  # rbsp_alignment_zero_bit
 
+    def align_zero(self):
+        """Pads with zero bits to the next byte boundary (H.264's
+        pcm_alignment_zero_bit); a no-op when already aligned."""
+        while len(self.bits) % 8 != 0:
+            self.bits.append(0)
+
+    def raw_bytes(self, data):
+        """Appends whole bytes at a byte-aligned position (the I_PCM sample
+        payload). Refuses an unaligned position instead of silently shifting
+        the payload."""
+        if len(self.bits) % 8 != 0:
+            raise FixtureError("raw_bytes requires a byte-aligned position")
+        for byte in data:
+            self.bits.extend(((byte >> shift) & 1) for shift in range(7, -1, -1))
+
     def to_bytes(self):
         bits = self.bits
         if len(bits) % 8 != 0:
@@ -267,7 +289,7 @@ H264_LOG2_MAX_FRAME_NUM_MINUS4 = 0
 H264_LOG2_MAX_FRAME_NUM = H264_LOG2_MAX_FRAME_NUM_MINUS4 + 4
 
 
-def build_h264_sps(*, sps_id=0, max_num_ref_frames):
+def build_h264_sps(*, sps_id=0, max_num_ref_frames, width_mbs=H264_WIDTH_MBS, height_mbs=H264_HEIGHT_MBS):
     w = BitWriter()
     w.u(8, 66)  # profile_idc = Baseline -- no high-profile chroma_format_idc block
     w.u(1, 0)  # constraint_set0_flag
@@ -283,8 +305,8 @@ def build_h264_sps(*, sps_id=0, max_num_ref_frames):
     w.ue(2)  # pic_order_cnt_type = 2: no POC syntax anywhere, in SPS or slice header
     w.ue(max_num_ref_frames)
     w.u(1, 0)  # gaps_in_frame_num_value_allowed_flag
-    w.ue(H264_WIDTH_MBS - 1)
-    w.ue(H264_HEIGHT_MBS - 1)
+    w.ue(width_mbs - 1)
+    w.ue(height_mbs - 1)
     w.u(1, 1)  # frame_mbs_only_flag
     w.u(1, 1)  # direct_8x8_inference_flag
     w.u(1, 0)  # frame_cropping_flag
@@ -327,7 +349,7 @@ def build_h264_slice(*, first_mb_in_slice=0, slice_type, pps_id=0, frame_num, is
 
 
 def build_h264_stream(*, total_access_units, idr_interval, max_num_ref_frames, num_ref_idx_l0_default_active_minus1,
-                       leading_idr_only):
+                       leading_idr_only, width_mbs=H264_WIDTH_MBS, height_mbs=H264_HEIGHT_MBS):
     """Emits SPS, PPS, then `total_access_units` access units. A keyframe
     position occurs every `idr_interval` access units, starting at 0.
     `leading_idr_only=True` makes ONLY position 0 a real IDR NAL (type 5);
@@ -336,7 +358,10 @@ def build_h264_stream(*, total_access_units, idr_interval, max_num_ref_frames, n
     position a real IDR -- the closed-GOP shape. Every non-keyframe position
     is a P slice (type 1)."""
     out = bytearray()
-    out += h264_nal(3, H264_NAL_SPS, build_h264_sps(max_num_ref_frames=max_num_ref_frames))
+    out += h264_nal(
+        3, H264_NAL_SPS,
+        build_h264_sps(max_num_ref_frames=max_num_ref_frames, width_mbs=width_mbs, height_mbs=height_mbs),
+    )
     out += h264_nal(
         3, H264_NAL_PPS,
         build_h264_pps(num_ref_idx_l0_default_active_minus1=num_ref_idx_l0_default_active_minus1),
@@ -547,6 +572,326 @@ def build_hevc_stream(*, total_access_units, idr_interval, cra_mode, emit_vps=Tr
                 build_hevc_slice(nal_type=HEVC_NAL_TRAIL_R, slice_type=HEVC_SLICE_P, poc_lsb=poc),
             )
         poc = (poc + 1) % (1 << HEVC_LOG2_MAX_POC_LSB)
+    return bytes(out)
+
+
+# ---------------------------------------------------------------------------
+# DECODABLE H.264: the I_PCM writer (07-06-PLAN.md, VIDEO-11, D-05).
+#
+# Everything above this line is "parseable, not decodable". This section is
+# the opposite: a stream the linked libavcodec decodes to pictures whose
+# samples are KNOWN BY CONSTRUCTION. Every macroblock is I_PCM (mb_type 25 in
+# an I slice): its 256 luma, 64 Cb and 64 Cr samples are stored raw after a
+# byte alignment, so there is no transform, no prediction, no entropy-coded
+# residual and no encoder of any kind -- and therefore nothing a GPL encoder
+# could have contributed (the corpus stays LGPL-only, D-01), and nothing that
+# can differ between two machines. Deblocking is disabled in every slice
+# header (`disable_deblocking_filter_idc` = 1), which is what keeps the
+# decoded picture equal to the stored samples.
+#
+# The stream serves three proofs at once:
+#   * VIDEO-11 without a GPL encoder: an SEI NAL (type 6) of payload type 4
+#     (ITU-T T.35, country code 0xB5, provider 0x0031, user identifier "GA94")
+#     decodes to AV_FRAME_DATA_A53_CC on the access unit that carries it;
+#   * D-05's independent oracle: the C++ tests re-derive `pcm_sample` below and
+#     recompute each frame's XXH3-128 from the known cropped rows;
+#   * research Pitfall 3: a stream whose SPS crops all four edges must decode
+#     to the 54x54 display rectangle, not the 60-wide one a decoder without
+#     AV_CODEC_FLAG_UNALIGNED reports.
+# The SEI 137 (mastering display) and 144 (content light level) builders give
+# the first-frame HDR fixture 07-07 reads.
+#
+# Field order follows the H.264 syntax tables and was checked against the
+# linked libavcodec's decode output, never against memory alone.
+# ---------------------------------------------------------------------------
+
+H264_NAL_SEI = 6
+
+PCM_FRAME_COUNT = 10
+PCM_WIDTH_MBS = 4
+PCM_HEIGHT_MBS = 4
+# The access unit that carries the caption SEI (0-based): the FOURTH, so the
+# fixture proves captions that start mid-stream are still detected (any frame
+# counts, not only the first).
+PCM_CC_FRAME = 3
+# Crop offsets in 4:2:0 crop units (left, right, top, bottom): one unit is two
+# luma samples, so (2, 3, 2, 3) removes 4 + 6 = 10 columns and 4 + 6 = 10 rows
+# from the 64x64 coded picture, leaving the 54x54 display rectangle whose
+# origin is (4, 4).
+PCM_CROP_UNITS = (2, 3, 2, 3)
+
+SEI_TYPE_A53 = 4
+SEI_TYPE_MDCV = 137
+SEI_TYPE_CLL = 144
+
+# The CEA-608 "resume caption loading" control pair (parity-coded). Any two
+# bytes would do -- only presence is ever read -- but a realistic pair keeps
+# the fixture recognisable to other tools.
+PCM_CC_PAIRS = ((0x94, 0x20),)
+
+
+def pcm_sample(plane, x, y, frame):
+    """The ONE definition of every sample value in the I_PCM fixtures: plane 0
+    is Y, 1 is Cb, 2 is Cr; (x, y) is the coordinate within THAT plane (the
+    chroma planes are half size); `frame` is the 0-based access unit index.
+    The range 16..215 stays inside limited range and never produces the
+    forbidden PCM value 0. tests/support/video_handwritten_identity.cpp
+    re-implements this function byte for byte as the D-05 oracle -- change
+    both or neither."""
+    return (x * 3 + y * 5 + frame * 7 + plane * 11) % 200 + 16
+
+
+def pcm_frame_samples(frame, wmb, hmb):
+    """One picture's raw PCM payload in macroblock order (raster order), each
+    macroblock 256 luma samples then 64 Cb then 64 Cr, each plane in raster
+    order within the macroblock."""
+    out = bytearray()
+    for mby in range(hmb):
+        for mbx in range(wmb):
+            for j in range(16):
+                for i in range(16):
+                    out.append(pcm_sample(0, mbx * 16 + i, mby * 16 + j, frame))
+            for plane in (1, 2):
+                for j in range(8):
+                    for i in range(8):
+                        out.append(pcm_sample(plane, mbx * 8 + i, mby * 8 + j, frame))
+    return bytes(out)
+
+
+def build_h264_pcm_sps(wmb, hmb, crop=None, *, hdr10_vui=False):
+    """Baseline (profile 66) SPS, pic_order_cnt_type 2, frame_mbs_only 1, an
+    optional frame_cropping rectangle (`crop` = (left, right, top, bottom) in
+    crop units) and an optional VUI that carries ONLY video_signal_type with a
+    colour description: BT.2020 primaries (9), PQ transfer (16), BT.2020
+    non-constant matrix (9), limited range -- the HDR10 signalling."""
+    w = BitWriter()
+    w.u(8, 66)  # profile_idc = Baseline
+    w.u(8, 0)  # constraint_set0..5 flags and reserved_zero_2bits
+    w.u(8, 30)  # level_idc
+    w.ue(0)  # seq_parameter_set_id
+    w.ue(H264_LOG2_MAX_FRAME_NUM_MINUS4)
+    w.ue(2)  # pic_order_cnt_type = 2: output order is decode order, no POC syntax
+    w.ue(1)  # max_num_ref_frames
+    w.u(1, 0)  # gaps_in_frame_num_value_allowed_flag
+    w.ue(wmb - 1)
+    w.ue(hmb - 1)
+    w.u(1, 1)  # frame_mbs_only_flag
+    w.u(1, 1)  # direct_8x8_inference_flag
+    if crop is None:
+        w.u(1, 0)  # frame_cropping_flag
+    else:
+        w.u(1, 1)
+        for offset in crop:  # left, right, top, bottom
+            w.ue(offset)
+    if not hdr10_vui:
+        w.u(1, 0)  # vui_parameters_present_flag
+    else:
+        w.u(1, 1)  # vui_parameters_present_flag
+        w.u(1, 0)  # aspect_ratio_info_present_flag
+        w.u(1, 0)  # overscan_info_present_flag
+        w.u(1, 1)  # video_signal_type_present_flag
+        w.u(3, 5)  # video_format = unspecified
+        w.u(1, 0)  # video_full_range_flag = limited
+        w.u(1, 1)  # colour_description_present_flag
+        w.u(8, 9)  # colour_primaries = BT.2020
+        w.u(8, 16)  # transfer_characteristics = SMPTE ST 2084 (PQ)
+        w.u(8, 9)  # matrix_coefficients = BT.2020 non-constant luminance
+        w.u(1, 0)  # chroma_loc_info_present_flag
+        w.u(1, 0)  # timing_info_present_flag
+        w.u(1, 0)  # nal_hrd_parameters_present_flag
+        w.u(1, 0)  # vcl_hrd_parameters_present_flag
+        w.u(1, 0)  # pic_struct_present_flag
+        w.u(1, 0)  # bitstream_restriction_flag
+    w.rbsp_trailing_bits()
+    return w.to_bytes()
+
+
+def build_h264_pcm_pps():
+    """CAVLC PPS with deblocking_filter_control_present_flag 1, so every slice
+    header can switch the deblocking filter off."""
+    w = BitWriter()
+    w.ue(0)  # pic_parameter_set_id
+    w.ue(0)  # seq_parameter_set_id
+    w.u(1, 0)  # entropy_coding_mode_flag (CAVLC)
+    w.u(1, 0)  # bottom_field_pic_order_in_frame_present_flag
+    w.ue(0)  # num_slice_groups_minus1
+    w.ue(0)  # num_ref_idx_l0_default_active_minus1
+    w.ue(0)  # num_ref_idx_l1_default_active_minus1
+    w.u(1, 0)  # weighted_pred_flag
+    w.u(2, 0)  # weighted_bipred_idc
+    w.se(0)  # pic_init_qp_minus26
+    w.se(0)  # pic_init_qs_minus26
+    w.se(0)  # chroma_qp_index_offset
+    w.u(1, 1)  # deblocking_filter_control_present_flag
+    w.u(1, 0)  # constrained_intra_pred_flag
+    w.u(1, 0)  # redundant_pic_cnt_present_flag
+    w.rbsp_trailing_bits()
+    return w.to_bytes()
+
+
+def build_h264_pcm_idr_slice(frame_index, samples, macroblocks):
+    """One IDR slice covering the whole picture: slice_type 7 (I, all slices
+    of the picture), every macroblock mb_type ue(25) = I_PCM, byte alignment,
+    then that macroblock's 384 raw bytes out of `samples`."""
+    if len(samples) != macroblocks * 384:
+        raise FixtureError(f"I_PCM payload is {len(samples)} bytes, expected {macroblocks * 384}")
+    w = BitWriter()
+    w.ue(0)  # first_mb_in_slice
+    w.ue(7)  # slice_type = I, every slice of the picture
+    w.ue(0)  # pic_parameter_set_id
+    w.u(H264_LOG2_MAX_FRAME_NUM, 0)  # frame_num (an IDR's is always 0)
+    w.ue(frame_index % 2)  # idr_pic_id: consecutive IDRs must differ
+    w.u(1, 0)  # no_output_of_prior_pics_flag
+    w.u(1, 0)  # long_term_reference_flag
+    w.se(0)  # slice_qp_delta
+    w.ue(1)  # disable_deblocking_filter_idc = 1 (the filter is off)
+    for mb in range(macroblocks):
+        w.ue(25)  # mb_type = I_PCM
+        w.align_zero()  # pcm_alignment_zero_bit
+        w.raw_bytes(samples[mb * 384 : (mb + 1) * 384])
+    w.rbsp_trailing_bits()
+    return w.to_bytes()
+
+
+def _sei_nal(payload_type, payload):
+    """One SEI NAL (type 6) holding exactly one sei_message: the payload type
+    and size are each coded as a run of 0xFF bytes plus a remainder."""
+    body = bytearray()
+    t = payload_type
+    while t >= 255:
+        body.append(0xFF)
+        t -= 255
+    body.append(t)
+    s = len(payload)
+    while s >= 255:
+        body.append(0xFF)
+        s -= 255
+    body.append(s)
+    body += payload
+    body.append(0x80)  # rbsp_trailing_bits
+    return h264_nal(0, H264_NAL_SEI, bytes(body))
+
+
+def a53_cc_data(cc_pairs):
+    """The ATSC A/53 Part 4 cc_data() carried after the `GA94` user
+    identifier, shared by the H.264 SEI and the MPEG-2 user data: user data
+    type code 0x03, process_cc_data_flag plus cc_count, em_data 0xFF, then one
+    `FC d1 d2` triple per pair (marker bits, cc_valid, cc_type 0) and the
+    0xFF marker."""
+    if not 0 < len(cc_pairs) < 32:
+        raise FixtureError(f"cc_count must be 1..31, got {len(cc_pairs)}")
+    out = bytearray(b"GA94")
+    out.append(0x03)
+    out.append(0x40 | len(cc_pairs))
+    out.append(0xFF)
+    for d1, d2 in cc_pairs:
+        out += bytes([0xFC, d1, d2])
+    out.append(0xFF)
+    return bytes(out)
+
+
+def build_sei_a53_cc(cc_pairs):
+    """SEI payload type 4: user_data_registered_itu_t_t35 (country code 0xB5,
+    provider 0x0031) wrapping an A/53 cc_data()."""
+    return _sei_nal(SEI_TYPE_A53, bytes([0xB5, 0x00, 0x31]) + a53_cc_data(cc_pairs))
+
+
+def _u16(v):
+    return bytes([(v >> 8) & 0xFF, v & 0xFF])
+
+
+def _u32(v):
+    return bytes([(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF])
+
+
+def build_sei_mdcv(primaries_gbr, white_point, max_luminance, min_luminance):
+    """SEI payload type 137, mastering_display_colour_volume: the three
+    display primaries in the order G, B, R as (x, y) u16 pairs in 0.00002
+    units, the white point (x, y) u16, then the maximum and minimum
+    luminance as u32 in 0.0001 cd/m2. The decoder reorders to R, G, B."""
+    payload = bytearray()
+    for x, y in primaries_gbr:
+        payload += _u16(x) + _u16(y)
+    payload += _u16(white_point[0]) + _u16(white_point[1])
+    payload += _u32(max_luminance) + _u32(min_luminance)
+    return _sei_nal(SEI_TYPE_MDCV, bytes(payload))
+
+
+def build_sei_cll(max_cll, max_fall):
+    """SEI payload type 144, content_light_level_info: MaxCLL and MaxFALL,
+    each u16 in cd/m2."""
+    return _sei_nal(SEI_TYPE_CLL, _u16(max_cll) + _u16(max_fall))
+
+
+def build_h264_pcm_stream(*, frame_count=PCM_FRAME_COUNT, wmb=PCM_WIDTH_MBS, hmb=PCM_HEIGHT_MBS, crop=None,
+                          hdr10_vui=False, first_au_sei=(), cc_frame=None):
+    """SPS, PPS, then `frame_count` IDR access units. `first_au_sei` are
+    ready-made SEI NALs placed in the FIRST access unit only (the HDR static
+    metadata rides there); `cc_frame`, when not None, is the one access unit
+    that carries the caption SEI."""
+    out = bytearray()
+    out += h264_nal(3, H264_NAL_SPS, build_h264_pcm_sps(wmb, hmb, crop, hdr10_vui=hdr10_vui))
+    out += h264_nal(3, H264_NAL_PPS, build_h264_pcm_pps())
+    for f in range(frame_count):
+        if f == 0:
+            for sei in first_au_sei:
+                out += sei
+        if cc_frame is not None and f == cc_frame:
+            out += build_sei_a53_cc(PCM_CC_PAIRS)
+        out += h264_nal(
+            3, H264_NAL_IDR_SLICE,
+            build_h264_pcm_idr_slice(f, pcm_frame_samples(f, wmb, hmb), wmb * hmb),
+        )
+    return bytes(out)
+
+
+# ---------------------------------------------------------------------------
+# MPEG-2 closed-caption insertion (07-06-PLAN.md, VIDEO-11 route A).
+# ---------------------------------------------------------------------------
+
+
+def insert_mpeg2_ga94(es_bytes, cc_pairs):
+    """Returns `es_bytes` (an MPEG-2 video elementary stream from the native
+    encoder) with an ATSC GA94 user-data unit inserted before the first slice
+    of EVERY picture. A picture starts at `00 00 01 00`; its slices are the
+    start codes `00 00 01 01`..`00 00 01 AF`; whatever lies between (picture
+    coding extension, any user data) stays in front of the inserted unit.
+    MPEG-2 forbids `00 00 01` inside payload, so every such triple is a real
+    start code and a linear scan is exact. Nothing else changes: the decoded
+    pixels are identical with and without the insertion, so the pair differs
+    in exactly the captions."""
+    unit = b"\x00\x00\x01\xb2" + a53_cc_data(cc_pairs)
+    out = bytearray()
+    pos = 0
+    n = len(es_bytes)
+    pictures = 0
+    while True:
+        pic = es_bytes.find(b"\x00\x00\x01\x00", pos)
+        if pic < 0:
+            break
+        # The first slice start code after this picture header.
+        scan = pic + 4
+        slice_at = -1
+        while True:
+            sc = es_bytes.find(b"\x00\x00\x01", scan)
+            if sc < 0 or sc + 3 >= n:
+                break
+            code = es_bytes[sc + 3]
+            if 0x01 <= code <= 0xAF:
+                slice_at = sc
+                break
+            if code == 0x00:
+                break  # the next picture header: this picture had no slice
+            scan = sc + 3
+        if slice_at < 0:
+            raise FixtureError("an MPEG-2 picture has no slice start code after its header")
+        out += es_bytes[pos:slice_at]
+        out += unit
+        pos = slice_at
+        pictures += 1
+    if pictures == 0:
+        raise FixtureError("the MPEG-2 elementary stream holds no picture start code")
+    out += es_bytes[pos:]
     return bytes(out)
 
 
@@ -824,12 +1169,72 @@ def make_h264_refs4():
     )
 
 
+# 07-02-PLAN.md (T-07-06): an SPS that DECLARES 8208 x 8192 (513 x 512
+# macroblocks) over the same parse-only slices, one macroblock column past the
+# decode pass's kMaxVideoPixels bound (8192 x 8192), so the pre-open check on a
+# stream's declared dimensions is exercised by a real fixture at its exact
+# edge. Nothing decodes it; the point is that nothing TRIES to. The plan
+# proposed 16384 x 16384, but libavcodec's own av_image_check_size rejects
+# that size before the SPS is even accepted (measured: the stream then reports
+# 0x0, so the bound could never be reached); this is the smallest size that
+# is both accepted as a stream and over the bound, which also keeps the
+# probe's own find_stream_info allocation modest.
+H264_HUGE_DIMS_WIDTH_MBS = 513
+H264_HUGE_DIMS_HEIGHT_MBS = 512
+H264_HUGE_DIMS_ACCESS_UNITS = 4
+
+
+def make_h264_huge_dims():
+    return build_h264_stream(
+        total_access_units=H264_HUGE_DIMS_ACCESS_UNITS,
+        idr_interval=H264_HUGE_DIMS_ACCESS_UNITS,
+        max_num_ref_frames=DEFAULT_MAX_REF_FRAMES,
+        num_ref_idx_l0_default_active_minus1=DEFAULT_NUM_REF_IDX_L0_DEFAULT_ACTIVE_MINUS1,
+        leading_idr_only=False,
+        width_mbs=H264_HUGE_DIMS_WIDTH_MBS,
+        height_mbs=H264_HUGE_DIMS_HEIGHT_MBS,
+    )
+
+
 def make_hevc_idr():
     return build_hevc_stream(total_access_units=HEVC_TOTAL_ACCESS_UNITS, idr_interval=HEVC_IDR_INTERVAL, cra_mode=False)
 
 
 def make_hevc_cra():
     return build_hevc_stream(total_access_units=HEVC_TOTAL_ACCESS_UNITS, idr_interval=HEVC_IDR_INTERVAL, cra_mode=True)
+
+
+def make_pcm_plain():
+    return build_h264_pcm_stream()
+
+
+def make_pcm_cc():
+    return build_h264_pcm_stream(cc_frame=PCM_CC_FRAME)
+
+
+def make_pcm_crop():
+    return build_h264_pcm_stream(crop=PCM_CROP_UNITS)
+
+
+# BT.2020 primaries in 0.00002 units, in the SEI's G, B, R order; D65 white
+# point; 1000 / 0.005 cd/m2 in 0.0001 units; MaxCLL 1000, MaxFALL 400 -- a
+# coherent HDR10 set, so video.hdr.coherence sees no incoherence.
+PCM_HDR_PRIMARIES_GBR = ((8500, 39850), (6550, 2300), (35400, 14600))
+PCM_HDR_WHITE_POINT = (15635, 16450)
+PCM_HDR_MAX_LUMINANCE = 10000000
+PCM_HDR_MIN_LUMINANCE = 50
+PCM_HDR_MAX_CLL = 1000
+PCM_HDR_MAX_FALL = 400
+
+
+def make_pcm_hdr():
+    return build_h264_pcm_stream(
+        hdr10_vui=True,
+        first_au_sei=(
+            build_sei_mdcv(PCM_HDR_PRIMARIES_GBR, PCM_HDR_WHITE_POINT, PCM_HDR_MAX_LUMINANCE, PCM_HDR_MIN_LUMINANCE),
+            build_sei_cll(PCM_HDR_MAX_CLL, PCM_HDR_MAX_FALL),
+        ),
+    )
 
 
 def make_dovi_a_payload():
@@ -998,6 +1403,23 @@ def selftest(mediadiff_bin):
         if make_hevc_idr() != make_hevc_idr():
             failures.append("HEVC IDR stream: two invocations with identical arguments produced different bytes")
 
+        # --- 07-06: the decodable I_PCM streams are deterministic, differ from
+        # each other exactly where they should, and the GA94 inserter keeps every
+        # original byte (a pure insertion, never an edit).
+        for label, make in (("plain", make_pcm_plain), ("cc", make_pcm_cc), ("crop", make_pcm_crop),
+                            ("hdr", make_pcm_hdr)):
+            if make() != make():
+                failures.append(f"I_PCM '{label}' stream: two invocations produced different bytes")
+        if len({make_pcm_plain(), make_pcm_cc(), make_pcm_crop(), make_pcm_hdr()}) != 4:
+            failures.append("the four I_PCM streams are not pairwise distinct")
+        fake_es = (b"\x00\x00\x01\xb3\x00\x00\x01\x00\x00\x00\x01\xb5\x00\x00\x01\x01\xaa"
+                   b"\x00\x00\x01\x00\x00\x00\x01\x01\xbb")
+        captioned = insert_mpeg2_ga94(fake_es, PCM_CC_PAIRS)
+        if captioned.count(b"GA94") != 2:
+            failures.append("insert_mpeg2_ga94 did not insert one unit per picture")
+        if captioned.replace(b"\x00\x00\x01\xb2" + a53_cc_data(PCM_CC_PAIRS), b"") != fake_es:
+            failures.append("insert_mpeg2_ga94 changed an original byte instead of only inserting")
+
         # --- DOVI + pasp: requires the corpus carriers this plan depends on.
         carrier_dovi = os.path.join("tests", "fixtures", "video_base.mp4")
         carrier_sar = os.path.join("tests", "fixtures", "video_sar_4_3.mp4")
@@ -1076,8 +1498,15 @@ def main():
     parser.add_argument("--h264-open", help="output path for the open-GOP H.264 Annex-B stream")
     parser.add_argument("--h264-refs1", help="output path for the max_num_ref_frames=1 H.264 Annex-B stream")
     parser.add_argument("--h264-refs4", help="output path for the max_num_ref_frames=4 H.264 Annex-B stream")
+    parser.add_argument("--h264-huge-dims", help="output path for the 8208x8192-declaring H.264 Annex-B stream")
     parser.add_argument("--hevc-idr", help="output path for the closed-GOP (IDR) HEVC Annex-B stream")
     parser.add_argument("--hevc-cra", help="output path for the open-GOP (CRA) HEVC Annex-B stream")
+    parser.add_argument("--pcm-plain", help="output path for the decodable I_PCM H.264 stream without SEI")
+    parser.add_argument("--pcm-cc", help="output path for the I_PCM H.264 stream with an A53 caption SEI in frame 3")
+    parser.add_argument("--pcm-crop", help="output path for the I_PCM H.264 stream cropped to 54x54 on all four edges")
+    parser.add_argument("--pcm-hdr", help="output path for the I_PCM H.264 stream with HDR10 VUI and SEI 137/144")
+    parser.add_argument("--mpeg2-cc-in", help="input MPEG-2 elementary stream to insert ATSC GA94 captions into")
+    parser.add_argument("--mpeg2-cc-out", help="output path for the captioned copy of --mpeg2-cc-in")
     parser.add_argument("--dovi-carrier", help="input MP4 to splice a dvcC box into (e.g. video_base.mp4)")
     parser.add_argument("--dovi-a", help="output path for the profile-8/level-6 DOVI fixture")
     parser.add_argument("--dovi-b", help="output path for the profile-5/level-4 DOVI fixture")
@@ -1108,8 +1537,23 @@ def main():
     add_task("h264-open", args.h264_open, make_h264_open)
     add_task("h264-refs1", args.h264_refs1, make_h264_refs1)
     add_task("h264-refs4", args.h264_refs4, make_h264_refs4)
+    add_task("h264-huge-dims", args.h264_huge_dims, make_h264_huge_dims)
     add_task("hevc-idr", args.hevc_idr, make_hevc_idr)
     add_task("hevc-cra", args.hevc_cra, make_hevc_cra)
+    add_task("pcm-plain", args.pcm_plain, make_pcm_plain)
+    add_task("pcm-cc", args.pcm_cc, make_pcm_cc)
+    add_task("pcm-crop", args.pcm_crop, make_pcm_crop)
+    add_task("pcm-hdr", args.pcm_hdr, make_pcm_hdr)
+
+    if args.mpeg2_cc_in is not None or args.mpeg2_cc_out is not None:
+        if args.mpeg2_cc_in is None or args.mpeg2_cc_out is None:
+            failures.append("--mpeg2-cc-in and --mpeg2-cc-out must be given together")
+        else:
+            try:
+                es = read_file(args.mpeg2_cc_in, what="--mpeg2-cc-in")
+                write_atomic(args.mpeg2_cc_out, insert_mpeg2_ga94(es, PCM_CC_PAIRS))
+            except FixtureError as exc:
+                failures.append(f"--mpeg2-cc-out: {exc}")
 
     dovi_a_bytes = None
     if args.dovi_a is not None or args.dovi_a_copy is not None or args.dovi_b is not None:

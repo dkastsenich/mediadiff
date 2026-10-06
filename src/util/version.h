@@ -16,6 +16,12 @@ std::string compose_version_string();
 // — CUDA-accelerated VMAF is v2 scope (PROJECT.md Out of Scope).
 std::string enabled_features_csv();
 
+// 07-11-PLAN.md (CONTENT-09): true only in a build configured with
+// MEDIADIFF_WITH_VMAF=ON, i.e. one that links libvmaf. The CLI and tests ask
+// this instead of carrying a macro of their own, so code that is compiled on
+// every platform (options.cpp, the DOC-03 gate) stays free of #ifdefs.
+bool vmaf_built_in();
+
 // Just the tool's own version string ("0.1.0"), with none of
 // compose_version_string()'s FFmpeg/license/features detail. This is what
 // core/snapshot.cpp stamps into every snapshot this build writes, and what

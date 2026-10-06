@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 26
 waived_count: 2
-fixed_count: 22
-total_count: 43
-last_updated: 2026-09-28T18:30:47.156Z
+fixed_count: 23
+total_count: 51
+last_updated: 2026-10-01T20:49:40.443Z
 ---
 
 # Broken Windows Ledger
@@ -57,7 +57,15 @@ last_updated: 2026-09-28T18:30:47.156Z
 | 40 | 06 | unrun-verify | src/probe/audio_decode.cpp |  | CR-01 residual: the libav-internal path where a stream's first packets fail inside avformat_find_stream_info but decode later is not reproduced with real media (.planning/debug/audio-sweep-rate-truncation.md's own session could not construct it, and new ffmpeg-encoded media is out of scope). Its end state, codecpar keeping the header rate while the decoder emits another, is covered in-process by the CR-01 oracle test ('audio_decode - the sweep is configured from the decoded frame's rate even when codecpar declares a different one (CR-01)', tests/unit/test_audio_decode.cpp). Since 06-15 the sweep configures every sink from the decoded frame in any case, so this residual is diagnostic-only, not a live gap. | open |  | 2026-09-23T20:10:26.407Z |  |
 | 41 | 06 | todo | src/probe/audio_decode.cpp |  | T-06-55 (Denial of Service, low, accept): dropout_window_ (a std::deque<std::int64_t>) holds up to dropout_window_samples_ = max(1, sample_rate * kDropoutRmsWindowMs(100) / 1000) entries -- i.e. up to sample_rate/10 int64 (8-byte) values, so a crafted declared sample rate directly sizes this one deque. Growth is bounded by the samples ACTUALLY DECODED, not by the declared rate alone: for PCM (the format most exposed, since its rate is taken directly from the container header with no codec-side ceiling), the deque can reach at most about 4x the raw PCM input size (one int64 per interleaved sample, versus 2 bytes/sample for s16 or up to 8 for s64 -- worst case roughly 4x for common 16-bit PCM), because the number of decoded samples is itself bounded by how many sample-frames worth of bytes the packet stream actually contains. Compressed codecs additionally cap the rate in their own bitstream headers (FLAC's STREAMINFO sample-rate field is a 20-bit value, topping out near 1,048,575 Hz -- nowhere near the pathological INT_MAX rates size.* checks already guard against for other fields). A crafted rate therefore amplifies memory in PROPORTION TO the input size actually supplied, never unboundedly independent of it -- distinct from an unbounded-allocation vulnerability, where memory grows independent of input size. | waived | accepted risk T-06-55: dropout_window_'s size scales with a crafted sample rate, but only in proportion to the input actually supplied (at most ~4x raw PCM input size; compressed codecs cap the rate in their own headers, e.g. FLAC's 20-bit STREAMINFO field). Not an unbounded-allocation vulnerability. Recorded and waived per 06-16-PLAN.md Task 3. | 2026-09-23T20:44:26.714Z | 2026-09-23T20:44:44.179Z |
 | 42 | 06 | deviation | tests/unit/test_audio_config.cpp |  | 06-18 Task 2 carries tdd="true" but was executed as a single feat commit (5fde258) rather than a separate RED test(...) commit followed by a GREEN feat(...) commit -- the new decode_observed_rate_hz assertions and the four-fixture cross-pass invariant were written alongside the implementation change, not proven to fail first. All tests pass and the plan's own acceptance criteria are met; only the RED/GREEN commit-separation discipline was skipped. | open |  | 2026-09-23T21:39:15.041Z |  |
-| 43 | 06 | todo | src/probe/demux_session.cpp | 250 | T-06-34 (Denial of Service, high; accepted 2026-09-28 at the phase 6 security audit, with a Phase 7 follow-up). Nothing bounds a crafted stream that makes a libav decoder hang, i.e. a single avcodec_send_packet/avcodec_receive_frame call that never returns. The wall-clock budget is disarmed right after open (demux_session.cpp:250), and libav consults AVIOInterruptCB only for I/O, never inside a decode call. The packet caps (packet_scan.cpp:183-215) and the 64-consecutive-error stop (audio_decode.h:112-120) bound every case that makes progress or returns errors. Accepted for Phase 6: the hang sits inside the libav trust boundary, and 06-18 (CR-05) removed post-open wall-clock bounds so that results stay deterministic. FOLLOW-UP for Phase 7: build a single process-level decode watchdog there, because the video DecodeSession has the same exposure. A watchdog trip must surface as a could-not-run Error and exit, never as a changed value (CR-05's determinism rule). | open |  | 2026-09-28T13:04:20.285Z |  |
+| 43 | 06 | todo | src/probe/demux_session.cpp | 250 | T-06-34 (Denial of Service, high; accepted 2026-09-28 at the phase 6 security audit, with a Phase 7 follow-up). Nothing bounds a crafted stream that makes a libav decoder hang, i.e. a single avcodec_send_packet/avcodec_receive_frame call that never returns. The wall-clock budget is disarmed right after open (demux_session.cpp:250), and libav consults AVIOInterruptCB only for I/O, never inside a decode call. The packet caps (packet_scan.cpp:183-215) and the 64-consecutive-error stop (audio_decode.h:112-120) bound every case that makes progress or returns errors. Accepted for Phase 6: the hang sits inside the libav trust boundary, and 06-18 (CR-05) removed post-open wall-clock bounds so that results stay deterministic. FOLLOW-UP for Phase 7: build a single process-level decode watchdog there, because the video DecodeSession has the same exposure. A watchdog trip must surface as a could-not-run Error and exit, never as a changed value (CR-05's determinism rule). | fixed |  | 2026-09-28T13:04:20.285Z | 2026-10-01T20:22:07.498Z |
+| 44 | 07 | deviation | tests/golden/inspect_container.txt |  | 07-02 hand-added four meta.decode_errors video[N] rows (value 0, verified only against this workstation's rendering) to a designated-leg golden; the x64-linux CI leg must confirm them | open |  | 2026-09-30T21:22:49.366Z |  |
+| 45 | 07 | deviation | docs/checks/content.video.frame_hash.md |  | 07-02 frame_record_budget_exhausted with a complete packet scan is reachable only when the last frame records overflow (EOF drain); a mid-stream exhaustion is followed by the packet scan's own partial and reports skipped:partial_scan. Shared-budget design question for the user | open |  | 2026-09-30T21:22:49.513Z |  |
+| 46 | 07 | todo | src/probe/demux_session.cpp | 219 | Pre-existing memory-DoS exposure found by the 07-02 executor: DemuxSession::open calls avformat_find_stream_info (src/probe/demux_session.cpp:219) with no max_pixels bound on the decoders libavformat opens to probe streams. Measured by that executor: a stream header declaring 8208x8192 cost 195 MB RSS through inspect, and 12288x12288 cost 420 MB; libavcodec's own av_image_check_size caps the exposure at roughly 1 GB. Outside T-07-06's scope, which bounds only mediadiff's own video decode open (kMaxVideoPixels). Needs a disposition at the Phase 7 security audit: bound it (for example pass max_pixels through avformat_find_stream_info's per-stream codec options) or accept it with a reason. | open |  | 2026-09-30T21:25:45.499Z |  |
+| 47 | 07 | todo | src/probe/video_detectors.h |  | 07-05 (CONTENT-06, A10/A11): the frozen and black detector constants (kFrozenEnterMicro 999500, kFrozenContinueMicro 995000, kFrozenMinFrames 3, kBlackMeanMargin 2, kBlackVarianceLimit 4, kBlackMinFrames 3) are validated on synthetic content only (testsrc2 freeze across MPEG-4/MPEG-2/MJPEG/TS encodes; a synthetic black segment in tv and pc range). A real-content review against a sample of natural video is still owed. Known limit: a near-static smooth source is indistinguishable from frozen at 128 pixels wide (both sides of a compare flag it identically and only introduced runs gate, so it is not a false-positive source by itself), and a starved encode can start a frozen run one frame late (measured on a 1 Mbit/s CIF MPEG-2 encode). | open |  | 2026-09-30T22:37:47.397Z |  |
+| 48 | 7 | unrun-verify | .github/workflows/ci.yml |  | 07-11: the designated-leg 'VMAF build and tests (CONTENT-09)' CI step has never run on a GitHub runner; its steps and its did-the-VMAF-tests-pass guard were exercised locally against the x64-linux-vmaf build only. macOS libvmaf build is supported by the vcpkg port but not exercised in CI (A22). | open |  | 2026-10-01T19:34:51.001Z |  |
+| 49 | 07 | unrun-verify |  |  | 07-12: the ci.yml steps 'Build the video sweep benchmark target (designated leg only)' and 'Video instruction-count ratchet (PERF-02, designated leg only)' have never run on a GitHub runner (YAML validated; the script was exercised end to end in an ubuntu:24.04 container). The two video ratchet baselines are provisional until 07-15 transcribes the designated leg. | open |  | 2026-10-01T19:56:10.468Z |  |
+| 50 | 07 | unrun-verify | src/cli/watchdog.cpp |  | 07-13 (A27): the stall watchdog's trip path ends the process with std::_Exit, and the heartbeat, abandonable pool and watchdog are threaded cross-platform code compiled and run only on this Linux workstation. std::_Exit in MSVC v143's UCRT, the MSVC /W4 /WX and AppleClang -Werror builds, and the integration trip tests (a child process ending in _Exit with its report flushed) have not run on the Windows and macOS legs; if std::_Exit is missing on MSVC the plan's fallback is std::quick_exit with no registered handlers. | open |  | 2026-10-01T20:26:07.223Z |  |
+| 51 | 07 | unrun-verify |  |  | 07-14: the video-proof-streams producer job, the upload/download-artifact handoff (flagged assumption A29), the per-leg manifest check (incl. Git Bash on Windows and the shasum fallback on macOS), the MEDIADIFF_REQUIRE_VIDEO_PROOF ran-guard on both Test-step branches and the proof-row print step cannot run locally; validated as YAML plus the guard function exercised against real passing/skipped ctest logs. 07-15's first real CI run is the proof. | open |  | 2026-10-01T20:49:40.443Z |  |
 
 ````json
 [
@@ -572,9 +580,105 @@ last_updated: 2026-09-28T18:30:47.156Z
     "file": "src/probe/demux_session.cpp",
     "line": 250,
     "description": "T-06-34 (Denial of Service, high; accepted 2026-09-28 at the phase 6 security audit, with a Phase 7 follow-up). Nothing bounds a crafted stream that makes a libav decoder hang, i.e. a single avcodec_send_packet/avcodec_receive_frame call that never returns. The wall-clock budget is disarmed right after open (demux_session.cpp:250), and libav consults AVIOInterruptCB only for I/O, never inside a decode call. The packet caps (packet_scan.cpp:183-215) and the 64-consecutive-error stop (audio_decode.h:112-120) bound every case that makes progress or returns errors. Accepted for Phase 6: the hang sits inside the libav trust boundary, and 06-18 (CR-05) removed post-open wall-clock bounds so that results stay deterministic. FOLLOW-UP for Phase 7: build a single process-level decode watchdog there, because the video DecodeSession has the same exposure. A watchdog trip must surface as a could-not-run Error and exit, never as a changed value (CR-05's determinism rule).",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-28T13:04:20.285Z",
+    "resolved_at": "2026-10-01T20:22:07.498Z"
+  },
+  {
+    "id": 44,
+    "kind": "deviation",
+    "phase": "07",
+    "file": "tests/golden/inspect_container.txt",
+    "line": null,
+    "description": "07-02 hand-added four meta.decode_errors video[N] rows (value 0, verified only against this workstation's rendering) to a designated-leg golden; the x64-linux CI leg must confirm them",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T21:22:49.366Z",
+    "resolved_at": null
+  },
+  {
+    "id": 45,
+    "kind": "deviation",
+    "phase": "07",
+    "file": "docs/checks/content.video.frame_hash.md",
+    "line": null,
+    "description": "07-02 frame_record_budget_exhausted with a complete packet scan is reachable only when the last frame records overflow (EOF drain); a mid-stream exhaustion is followed by the packet scan's own partial and reports skipped:partial_scan. Shared-budget design question for the user",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T21:22:49.513Z",
+    "resolved_at": null
+  },
+  {
+    "id": 46,
+    "kind": "todo",
+    "phase": "07",
+    "file": "src/probe/demux_session.cpp",
+    "line": 219,
+    "description": "Pre-existing memory-DoS exposure found by the 07-02 executor: DemuxSession::open calls avformat_find_stream_info (src/probe/demux_session.cpp:219) with no max_pixels bound on the decoders libavformat opens to probe streams. Measured by that executor: a stream header declaring 8208x8192 cost 195 MB RSS through inspect, and 12288x12288 cost 420 MB; libavcodec's own av_image_check_size caps the exposure at roughly 1 GB. Outside T-07-06's scope, which bounds only mediadiff's own video decode open (kMaxVideoPixels). Needs a disposition at the Phase 7 security audit: bound it (for example pass max_pixels through avformat_find_stream_info's per-stream codec options) or accept it with a reason.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T21:25:45.499Z",
+    "resolved_at": null
+  },
+  {
+    "id": 47,
+    "kind": "todo",
+    "phase": "07",
+    "file": "src/probe/video_detectors.h",
+    "line": null,
+    "description": "07-05 (CONTENT-06, A10/A11): the frozen and black detector constants (kFrozenEnterMicro 999500, kFrozenContinueMicro 995000, kFrozenMinFrames 3, kBlackMeanMargin 2, kBlackVarianceLimit 4, kBlackMinFrames 3) are validated on synthetic content only (testsrc2 freeze across MPEG-4/MPEG-2/MJPEG/TS encodes; a synthetic black segment in tv and pc range). A real-content review against a sample of natural video is still owed. Known limit: a near-static smooth source is indistinguishable from frozen at 128 pixels wide (both sides of a compare flag it identically and only introduced runs gate, so it is not a false-positive source by itself), and a starved encode can start a frozen run one frame late (measured on a 1 Mbit/s CIF MPEG-2 encode).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-30T22:37:47.397Z",
+    "resolved_at": null
+  },
+  {
+    "id": 48,
+    "kind": "unrun-verify",
+    "phase": "7",
+    "file": ".github/workflows/ci.yml",
+    "line": null,
+    "description": "07-11: the designated-leg 'VMAF build and tests (CONTENT-09)' CI step has never run on a GitHub runner; its steps and its did-the-VMAF-tests-pass guard were exercised locally against the x64-linux-vmaf build only. macOS libvmaf build is supported by the vcpkg port but not exercised in CI (A22).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T19:34:51.001Z",
+    "resolved_at": null
+  },
+  {
+    "id": 49,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "",
+    "line": null,
+    "description": "07-12: the ci.yml steps 'Build the video sweep benchmark target (designated leg only)' and 'Video instruction-count ratchet (PERF-02, designated leg only)' have never run on a GitHub runner (YAML validated; the script was exercised end to end in an ubuntu:24.04 container). The two video ratchet baselines are provisional until 07-15 transcribes the designated leg.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T19:56:10.468Z",
+    "resolved_at": null
+  },
+  {
+    "id": 50,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "src/cli/watchdog.cpp",
+    "line": null,
+    "description": "07-13 (A27): the stall watchdog's trip path ends the process with std::_Exit, and the heartbeat, abandonable pool and watchdog are threaded cross-platform code compiled and run only on this Linux workstation. std::_Exit in MSVC v143's UCRT, the MSVC /W4 /WX and AppleClang -Werror builds, and the integration trip tests (a child process ending in _Exit with its report flushed) have not run on the Windows and macOS legs; if std::_Exit is missing on MSVC the plan's fallback is std::quick_exit with no registered handlers.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T20:26:07.223Z",
+    "resolved_at": null
+  },
+  {
+    "id": 51,
+    "kind": "unrun-verify",
+    "phase": "07",
+    "file": "",
+    "line": null,
+    "description": "07-14: the video-proof-streams producer job, the upload/download-artifact handoff (flagged assumption A29), the per-leg manifest check (incl. Git Bash on Windows and the shasum fallback on macOS), the MEDIADIFF_REQUIRE_VIDEO_PROOF ran-guard on both Test-step branches and the proof-row print step cannot run locally; validated as YAML plus the guard function exercised against real passing/skipped ctest logs. 07-15's first real CI run is the proof.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-01T20:49:40.443Z",
     "resolved_at": null
   }
 ]

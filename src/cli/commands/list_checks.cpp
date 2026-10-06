@@ -79,7 +79,7 @@ std::string render_tolerance(const std::optional<Tolerance>& tolerance) {
   if (!tolerance.has_value()) {
     return "<none>";
   }
-  std::string text = fmt::format("{}/{} {}", tolerance->num, tolerance->den, unit_suffix(tolerance->unit));
+  std::string text = fmt::format("{}/{} {}", tolerance->num, tolerance->den, unit_label(tolerance->unit));
   if (tolerance->warn_num.has_value()) {
     text += fmt::format(" (warn {}/{})", *tolerance->warn_num, tolerance->den);
   }
@@ -102,7 +102,7 @@ void register_list_checks_flags_and_callback(CLI::App& cmd) {
       for (std::uint32_t i = 0; i < registry.size(); ++i) {
         const CheckDef& check = registry.at(i);
         out += fmt::format("{}  group={}  semantic={}  unit={}  value_kind={}  severity={}\n", check.id, check.group,
-                            semantic_to_string(check.semantic), unit_suffix(check.unit),
+                            semantic_to_string(check.semantic), unit_label(check.unit),
                             value_kind_to_string(check.value_kind), severity_to_string(check.default_severity));
       }
       std::fwrite(out.data(), 1, out.size(), stdout);

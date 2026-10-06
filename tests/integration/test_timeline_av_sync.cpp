@@ -92,6 +92,12 @@ TEST_CASE("timeline_av_sync - the video-shift (recoverable-priming) trigger pair
   expect_declared_set(
       report,
       {
+          // 07-01-PLAN.md (content.video.frame_hash): the pair's pixels genuinely differ --
+          // timeline_avoffset_video_shift.mp4 is a SEPARATE re-encode of a video input
+          // time-shifted by `-itsoffset 0.042`, not a stream copy. Independently confirmed
+          // with `ffmpeg -f framemd5`: the two decoded frame sequences differ (first
+          // divergent frame 7, 56 of 100 frames divergent).
+          "content.video.frame_hash",
           // Shifting the video input's own start moves its MP4 edit-list
           // segment_duration entry -- the same class of effect
           // timeline_start_duration's own gap/shift trigger pairs declare.
@@ -371,6 +377,10 @@ TEST_CASE("timeline_av_sync - ROADMAP SC1: the constant-offset, linear-drift and
         compare_json(fixture("timeline_start_base.mp4"), fixture("timeline_avoffset_video_shift.mp4"),
                      "sw-encoder");
     expect_declared_set(report, {
+                                     // 07-01-PLAN.md (content.video.frame_hash): the same separate, time-shifted
+                                     // re-encode as the video-shift pair above -- decoded pixels genuinely differ
+                                     // (first divergent frame 7, 56 frames divergent; `ffmpeg -f framemd5` agrees).
+                                     "content.video.frame_hash",
                                      "container.mp4.edit_list",
                                      "timeline.start",
                                      "timeline.av_offset",
