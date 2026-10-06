@@ -573,10 +573,10 @@ TEST_CASE("quality - scorer latches its own stops and perceptual runs on", "[int
   // Different display dimensions: the quality scorers latch geometry_mismatch,
   // naming both layouts; perceptual (its own thumbnails are equal) is unaffected.
   {
-    const FramePtr small = yuv420(false, 64, 48);
-    const FramePtr large = yuv420(false, 128, 96);
+    const FramePtr small_frame = yuv420(false, 64, 48);
+    const FramePtr large_frame = yuv420(false, 128, 96);
     mediadiff::PairScorer scorer(1, 0, mediadiff::QualityRequest{true, true, false});
-    scorer.step(tapped(small.get(), &thumb), tapped(large.get(), &thumb));
+    scorer.step(tapped(small_frame.get(), &thumb), tapped(large_frame.get(), &thumb));
     CHECK(scorer.quality_stop() == mediadiff::PairScorer::QualityStop::geometry_mismatch);
     CHECK(scorer.quality_baseline_label() == "64x48 yuv420p");
     CHECK(scorer.quality_candidate_label() == "128x96 yuv420p");

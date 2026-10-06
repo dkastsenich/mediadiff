@@ -262,11 +262,11 @@ TEST_CASE("video_detectors_unit - a size change breaks a frozen run and a short 
           "[video_detectors_unit]") {
   {
     FrozenDetector detector;
-    const Thumbnail small = flat(90, 128, 72);
-    const Thumbnail large = flat(90, 128, 104);
+    const Thumbnail small_thumb = flat(90, 128, 72);
+    const Thumbnail large_thumb = flat(90, 128, 104);
     // Three identical pictures, then the geometry changes, then three more.
-    for (int i = 0; i < 3; ++i) detector.feed(large, i);
-    for (int i = 3; i < 6; ++i) detector.feed(small, i);
+    for (int i = 0; i < 3; ++i) detector.feed(large_thumb, i);
+    for (int i = 3; i < 6; ++i) detector.feed(small_thumb, i);
     detector.finish();
     // Two runs, not one of six: SSIM across the two sizes is undefined.
     REQUIRE(detector.runs().size() == 2);

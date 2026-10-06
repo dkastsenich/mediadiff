@@ -312,10 +312,10 @@ TEST_CASE("pair_scorer - an unscorable thumbnail stops the scorer with a reason"
 
   // A thumbnail shorter than one 8x8 SSIM window cannot be scored.
   const Thumbnail tiny = texture(4);
-  PairScorer small(1, 0);
-  small.step(frame(0, 0, &tiny), frame(0, 0, &tiny));
-  CHECK(small.stop_reason() == PairScorer::StopReason::thumbnail_too_small);
-  CHECK_FALSE(small.summary().has_value());
+  PairScorer too_small_scorer(1, 0);
+  too_small_scorer.step(frame(0, 0, &tiny), frame(0, 0, &tiny));
+  CHECK(too_small_scorer.stop_reason() == PairScorer::StopReason::thumbnail_too_small);
+  CHECK_FALSE(too_small_scorer.summary().has_value());
 
   // A thumbnail whose pixel buffer does not match its claimed size.
   Thumbnail broken = texture(104);

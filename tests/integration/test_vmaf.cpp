@@ -705,9 +705,9 @@ TEST_CASE("vmaf - layouts and bit depths through the scorer", "[integration]") {
 
   // Different dimensions: the shared quality latch stops VMAF before any copy.
   {
-    const FramePtr small = make_frame(AV_PIX_FMT_YUV420P, 64, 48);
-    const FramePtr large = make_frame(AV_PIX_FMT_YUV420P, 128, 96);
-    const mediadiff::PairScorer scorer = score_two_pairs(small.get(), large.get());
+    const FramePtr small_frame = make_frame(AV_PIX_FMT_YUV420P, 64, 48);
+    const FramePtr large_frame = make_frame(AV_PIX_FMT_YUV420P, 128, 96);
+    const mediadiff::PairScorer scorer = score_two_pairs(small_frame.get(), large_frame.get());
     CHECK(scorer.quality_stop() == mediadiff::PairScorer::QualityStop::geometry_mismatch);
     CHECK_FALSE(scorer.vmaf_summary().has_value());
   }
